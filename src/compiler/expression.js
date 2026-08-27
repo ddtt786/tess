@@ -7,6 +7,7 @@
 //   - slice(s, a, b): Tess 는 [a, b), 엔트리 substring 은 1부터 양끝 포함
 // ============================================================================
 import { keyCodeOf } from './keycodes.js';
+import { requirePowerRefiner } from './runtime.js';
 import { OPTION_KEYWORDS, STATE_VALUES } from '../builtins.js';
 
 /** 결과가 엔트리 "판단(boolean)" 블록인 타입들 */
@@ -158,33 +159,158 @@ function compileBinary(node, ctx) {
 }
 
 /**
- * 엔트리에는 일반 거듭제곱 블록이 없다.
- *  - ** 2      -> 제곱(square)
- *  - ** 0.5    -> 제곱근(root)
- *  - ** 정수 n -> 곱셈 n번으로 펼치기
+ * 상수만으로 이루어진 식이면 그 값을, 아니면 null 을 돌려준다.
+ * (`x ** (1/3)` 처럼 지수를 계산해서 적을 수 있게 하기 위한 것)
+ */
+export function foldConstant(node) {
+  if (!node) return null;
+  switch (node.type) {
+    case 'Number': return node.value;
+    case 'Unary': {
+      if (node.operator !== '-') return null;
+      const value = foldConstant(node.argument);
+      return value === null ? null : -value;
+    }
+    case 'Binary': {
+      const left = foldConstant(node.left);
+      const right = foldConstant(node.right);
+      if (left === null || right === null) return null;
+      switch (node.operator) {
+        case '+': return left + right;
+        case '-': return left - right;
+        case '*': return left * right;
+        case '/': return right === 0 ? null : left / right;
+        case '%': return right === 0 ? null : left % right;
+        case '//': return right === 0 ? null : Math.floor(left / right);
+        case '**': return left ** right;
+        default: return null;
+      }
+    }
+    default: return null;
+  }
+}
+
+/** 소수부를 몇 자리까지 이진 전개할지 (2^-20 ≈ 0.000001) */
+const FRACTION_BITS = 20;
+
+/**
+ * 엔트리에는 일반 거듭제곱 블록이 없다. 있는 것은 제곱(square)과 제곱근(root)뿐이다.
+ * 그런데 이 둘만으로 모든 실수 지수를 만들 수 있다.
+ *
+ *   정수부  x^13 = ((x^2)^2 · x)^2 · x        (제곱과 곱셈으로, 자릿수만큼만)
+ *   소수부  x^0.b1b2b3… = √(x^b1 · √(x^b2 · √(x^b3 · …)))
+ *
+ * 소수부 전개는 지수를 2배씩 하며 1이 넘는지 보는 이진 전개다.
+ * 0.5, 0.25, 0.75 처럼 2의 거듭제곱으로 떨어지는 지수는 **정확히** 맞고,
+ * 1/3 같은 무한소수는 20자리에서 끊어 사실상 같은 값(오차 10^-6 수준)이 된다.
+ *
+ * 반복 블록을 쓰지 않는 이유: 엔트리 반복은 한 번 돌 때마다 프레임을 넘긴다.
+ * 값을 구하는 식이 여러 프레임에 걸치면 안 되므로 컴파일할 때 펼쳐 둔다.
  */
 function compilePower(node, ctx) {
-  const exponent = node.right;
-  const base = compileValue(node.left, ctx);
-  if (!base) return null;
+  const exponent = foldConstant(node.right);
+  if (exponent === null) {
+    return ctx.error(
+      node,
+      '거듭제곱의 지수는 숫자로 정해져 있어야 합니다. (엔트리에는 거듭제곱 블록이 없어서 컴파일할 때 펼쳐 넣습니다)',
+    );
+  }
+  return buildPower(node.left, exponent, node, ctx);
+}
 
-  if (exponent.type === 'Number') {
-    if (exponent.value === 2) return ctx.block('calc_operation', [null, base, null, 'square']);
-    if (exponent.value === 0.5) return ctx.block('calc_operation', [null, base, null, 'root']);
-    if (Number.isInteger(exponent.value) && exponent.value >= 1 && exponent.value <= 8) {
-      let result = base;
-      for (let i = 1; i < exponent.value; i += 1) {
-        result = ctx.block('calc_basic', [result, 'MULTI', compileValue(node.left, ctx)]);
-      }
-      return result;
-    }
-    if (exponent.value === 1) return base;
+/**
+ * 밑(baseNode)의 exponent 제곱을 블록 트리로 만든다.
+ * 지수에 따라 밑이 여러 번 들어가므로, 값이 매번 달라지는 random() 은 막는다.
+ */
+export function buildPower(baseNode, exponent, node, ctx) {
+  if (!Number.isFinite(exponent)) return ctx.error(node, '거듭제곱의 지수가 올바르지 않습니다.');
+  if (exponent === 0) return ctx.number(1);
+
+  if (exponent < 0) {
+    const positive = buildPower(baseNode, -exponent, node, ctx);
+    return positive && ctx.block('calc_basic', [ctx.number(1), 'DIVIDE', positive]);
   }
 
-  return ctx.error(
-    node,
-    '엔트리에는 일반 거듭제곱 블록이 없습니다. ** 뒤에는 2(제곱), 0.5(제곱근), 또는 1~8 사이 정수만 쓸 수 있습니다.',
-  );
+  let uses = 0;
+  let failed = false;
+  const base = () => {
+    uses += 1;
+    const compiled = compileValue(baseNode, ctx);
+    if (!compiled) failed = true;
+    return compiled;
+  };
+  const square = (value) => ctx.block('calc_operation', [null, value, null, 'square']);
+  const root = (value) => ctx.block('calc_operation', [null, value, null, 'root']);
+  const multiply = (left, right) => ctx.block('calc_basic', [left, 'MULTI', right]);
+
+  const whole = Math.floor(exponent);
+  const { bits, exact } = fractionBits(exponent - whole);
+  const wholePart = integerPower(whole, base, square, multiply);
+  const fractionPart = fractionPower(bits, 0, base, root, multiply);
+
+  let result = wholePart && fractionPart ? multiply(wholePart, fractionPart) : wholePart ?? fractionPart;
+
+  // 이진 전개가 딱 떨어지지 않았으면 남은 오차를 뉴턴 보정으로 지운다
+  if (result && !exact) {
+    const refiner = requirePowerRefiner(ctx);
+    result = ctx.block(`func_${refiner.id}`, [result, base(), ctx.number(exponent)]);
+  }
+
+  if (failed) return null;
+  if (uses > 1 && containsRandom(baseNode)) {
+    return ctx.error(
+      node,
+      '이 지수는 밑을 여러 번 써야 해서 random() 이 들어간 값에는 쓸 수 없습니다. 변수에 먼저 담아 두고 쓰세요.',
+    );
+  }
+
+  return result ?? ctx.number(1);
+}
+
+/** x^n 을 제곱과 곱셈으로. n 이 0이면 null(=1) */
+function integerPower(n, base, square, multiply) {
+  if (n <= 0) return null;
+  if (n === 1) return base();
+  const half = integerPower(Math.floor(n / 2), base, square, multiply);
+  const squared = square(half);
+  return n % 2 === 1 ? multiply(squared, base()) : squared;
+}
+
+/** 소수부를 이진 전개해서 √ 중첩으로. 남은 자리가 모두 0이면 null(=1) */
+function fractionPower(bits, index, base, root, multiply) {
+  if (index >= bits.length) return null;
+  const rest = fractionPower(bits, index + 1, base, root, multiply);
+  let inner = rest;
+  if (bits[index] === 1) inner = rest ? multiply(base(), rest) : base();
+  return inner ? root(inner) : null;
+}
+
+/**
+ * 0 <= fraction < 1 을 이진 소수로. 뒤쪽 0은 버린다.
+ * 자릿수 안에서 딱 떨어졌으면 exact 가 true 다 (0.5, 0.25, 0.75 …).
+ */
+function fractionBits(fraction) {
+  const bits = [];
+  let rest = fraction;
+  while (bits.length < FRACTION_BITS && rest > 0) {
+    rest *= 2;
+    if (rest >= 1) {
+      bits.push(1);
+      rest -= 1;
+    } else {
+      bits.push(0);
+    }
+  }
+  while (bits.length > 0 && bits[bits.length - 1] === 0) bits.pop();
+  return { bits, exact: rest === 0 };
+}
+
+/** 밑을 두 번 이상 쓰면 값이 달라지는 식인지 */
+function containsRandom(node) {
+  if (node === null || typeof node !== 'object') return false;
+  if (Array.isArray(node)) return node.some(containsRandom);
+  if (node.type === 'Call' && (node.callee === 'random' || node.callee === 'random_color')) return true;
+  return Object.entries(node).some(([key, value]) => key !== 'loc' && containsRandom(value));
 }
 
 function compileComparison(node, ctx) {
@@ -327,6 +453,16 @@ function compileCall(node, ctx) {
       const from = value(0);
       const to = value(1);
       return from && to && ctx.block('calc_rand', [null, from, null, to, null]);
+    }
+
+    case 'root': {
+      // n제곱근 = x ^ (1/n). 지수 규칙은 ** 와 같다.
+      if (!arity(2)) return null;
+      const degree = foldConstant(args[1]);
+      if (degree === null || degree === 0) {
+        return ctx.error(node, 'root(값, n) 의 n 은 0이 아닌 숫자로 정해져 있어야 합니다.');
+      }
+      return buildPower(args[0], 1 / degree, node, ctx);
     }
 
     case 'key_down': {

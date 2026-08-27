@@ -6,11 +6,11 @@
 
 ```bash
 pnpm install
-pnpm test                                              # 180개 테스트
+pnpm test                                              # 223개 테스트
 
 node index.js check examples/tour.tess                 # 문법 · 의미 검사
 node index.js build examples/gift_delivery/main.tess -o build/gift.ent
-node index.js build examples/all_blocks.tess -o build/project.json
+node index.js run   examples/gift_delivery/main.tess   # 컴파일해서 브라우저로 열기
 ```
 
 `.ent` 파일은 엔트리 오프라인 에디터에서 그대로 열 수 있는 tar 묶음입니다.
@@ -43,6 +43,8 @@ main.tess -> build/gift.ent
 | `src/compiler/include.js` | `use` · `useobject` · `usetext` 를 그 자리에 펼치기 |
 | `src/compiler/comments.js` | Tess 주석 → 엔트리 블록 주석 |
 | `src/compiler/runtime.js` | 엔트리에 없는 동작을 대신할 함수 만들어 넣기 |
+| `src/player/` | `run` 이 띄우는 미리보기 서버와 실행 페이지 |
+| `editors/vscode/` | VS Code 문법 강조 (설치법은 그 폴더의 README) |
 | `src/compiler/assets.js` | 모양·소리 파일 → 엔트리 리소스 경로 |
 | `src/compiler/bundle.js` | `.ent` (tar) 묶기 — 의존성 없이 직접 |
 | `src/compiler/verify.js` | 만든 프로젝트가 엔트리 구조에 맞는지 검사 |
@@ -289,6 +291,7 @@ id 는 `[a-z0-9]` 4글자입니다.
 | `# 주석` | 버려지지 않고 **엔트리 블록의 주석**이 됩니다. 문장 위에 쓰면 그 블록에, 줄 끝에 쓰면 같은 줄 블록에 붙습니다 |
 | `useobject "objects/치로.tess"` | 파일을 불러오면서 **오브젝트로 감싸 줍니다**. 파일에 `object "..." : … end` 를 쓰지 않아도 됩니다. 오브젝트 이름은 파일 이름이 됩니다 (`usetext` 는 글상자로) |
 | `scale_x = 50` | 엔트리에 없는 "가로 비율 정하기" 를 컴파일러가 만든 함수로 해냅니다 (아래) |
+| `27 ** (1/3)` · `root(27, 3)` | 엔트리에 없는 일반 거듭제곱·n제곱근을 제곱·제곱근·자연로그로 펼칩니다 (아래) |
 | `costume 기본 "a.png" size 200 100`<br>`sound 딸깍 "click.mp3" for 0.3` | 그림·소리 파일이 아직 없어도 필요한 정보를 적어 두면 조용히 넘어갑니다 |
 
 ### 엔트리에 없는 블록 만들어 내기 — `가로 비율 정하기`
@@ -314,6 +317,65 @@ id 는 `[a-z0-9]` 4글자입니다.
 이 함수가 정말로 맞게 계산하는지는 **엔트리의 크기 규칙을 그대로 흉내 낸 시뮬레이터**로
 확인합니다(`test/runtime-scale.test.js`). 시작 배율이 100%가 아닐 때, 모양이 바뀌어 원본
 크기가 달라졌을 때, 두 번 이어서 정할 때까지 실제 배율을 계산해서 비교합니다.
+
+### 엔트리에 없는 계산 만들어 내기 — 거듭제곱과 n제곱근
+
+엔트리에 있는 것은 제곱(`square`)과 제곱근(`root`)뿐입니다. 그런데 이 둘만으로 모든 실수
+지수를 만들 수 있습니다.
+
+```
+정수부   x^13 = ((x^2)^2 · x)^2 · x                 (자릿수만큼만)
+소수부   x^0.b₁b₂b₃… = √(x^b₁ · √(x^b₂ · √(x^b₃ · …)))
+```
+
+소수부는 지수를 2배씩 하며 1을 넘는지 보는 이진 전개입니다. `0.5`, `0.75`, `2.5` 처럼 2의
+거듭제곱으로 떨어지는 지수는 **오차 없이 정확**하고, `1/3` 같은 무한소수는 20자리에서 끊습니다.
+
+여기서 한 걸음 더 갑니다. 엔트리에는 자연로그(`ln`)가 있으므로 **뉴턴 보정을 한 번** 하면
+끊어서 생긴 오차가 제곱으로 줄어듭니다.
+
+```
+y ≈ x^p 일 때   y ← y × (1 + p·ln x − ln y)      오차 ε → ε²/2
+```
+
+그래서 무한소수 지수도 상대오차 10⁻¹¹~10⁻¹³ 까지 내려갑니다.
+
+| 식 | 블록 수 | 결과 | 상대오차 |
+|---|---|---|---|
+| `2 ** 10` | 6 | 1024 | 0 |
+| `16 ** 0.5` | 2 | 4 | 0 |
+| `7 ** 2.5` | 5 | 129.64181424216494 | 0 |
+| `root(16, 4)` | 3 | 2 | 0 |
+| `27 ** (1/3)` | 42 | 2.9999999999983533 | 5.5e-13 |
+| `1000 ** 0.3` | 38 | 7.9432823471325005 | 1.4e-11 |
+
+반복 블록을 쓰지 않는 이유가 있습니다. **엔트리 반복은 한 번 돌 때마다 프레임을 넘깁니다.**
+값을 구하는 식이 여러 프레임에 걸치면 안 되므로 컴파일할 때 펼쳐 둡니다.
+계산이 맞는지는 블록 트리를 그대로 계산해서 `Math.pow` 와 비교합니다(`test/power.test.js`).
+
+### 브라우저에서 바로 실행 — `run`
+
+```
+$ node index.js run examples/gift_delivery/main.tess
+main.tess -> http://127.0.0.1:41234/
+  실행기: CDN (https://cdn.jsdelivr.net/npm/@entrylabs/entry@4)
+  Ctrl+C 로 끕니다.
+```
+
+컴파일한 작품을 그 자리에서 띄우고 브라우저를 엽니다. 서버가 주는 것은
+
+| 주소 | 내용 |
+|---|---|
+| `/` | 엔트리 실행기를 붙인 실행 페이지 |
+| `/project.json` | 컴파일한 작품 |
+| `/<작품이름>.ent` | 내려받기용 묶음 |
+| `/temp/…` | 모양·소리 리소스 |
+| `/lib/…` | `@entrylabs/entry` 가 설치돼 있으면 그 파일들 |
+
+엔트리 실행기(entryjs)는 서드파티 라이브러리가 많아 저장소에 담지 않고, **설치돼 있으면
+그것을, 없으면 CDN 을** 씁니다. 인터넷이 막힌 곳에서는 `pnpm add -D @entrylabs/entry` 로
+설치하면 그 파일을 씁니다. 둘 다 안 되면 페이지가 그 사실과 함께 `.ent` 를 받아
+playentry.org 에서 여는 방법을 안내합니다.
 
 ### 컴파일하면서 하는 일
 
@@ -385,6 +447,9 @@ pnpm test
 | `test/validate.test.js` | 의미 규칙과 에러 위치 |
 | `test/compile.test.js` | 엔트리 블록 매핑 · 인덱스 보정 · 함수 · `use` · 주석 · 구조 검증 · `.ent` 묶음 |
 | `test/runtime-scale.test.js` | 만들어 넣은 크기 함수를 엔트리 규칙 시뮬레이터로 계산 검증 |
+| `test/power.test.js` | 거듭제곱·n제곱근이 내는 값을 `Math.pow` 와 비교 |
+| `test/player.test.js` | `run` 서버의 응답과 파일 경로 |
+| `test/highlight.test.js` | VS Code 문법 강조를 실제 토크나이저로 검사 |
 | `test/examples.test.js` | `examples/` 의 모든 `.tess` 가 에러 없이 통과 |
 
 `examples/all_blocks.tess` 는 Tess 의 거의 모든 명령을 한 번씩 쓰는 파일입니다.

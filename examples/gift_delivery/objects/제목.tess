@@ -10,11 +10,13 @@ x = 0
 y = 80
 
 when scene start do
-  # 제목을 깜빡이게 한다
+  # 글상자는 밝기·색깔 효과를 쓸 수 없어서 글씨색과 크기로 눈에 띄게 한다
   forever:
-    effect_brightness = 40
+    font_color = #ffe066
+    size = 105
     wait 0.4
-    effect_brightness = 0
+    font_color = #ffffff
+    size = 100
     wait 0.4
   end
 end

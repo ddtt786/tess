@@ -15,7 +15,7 @@ export const BUILTIN_FUNCTIONS = new Set([
   'key_down', 'touching', 'type',
   // 수학
   'sin', 'cos', 'tan', 'asin', 'acos', 'atan',
-  'log2', 'ln', 'log10', 'floor', 'ceil', 'round', 'abs', 'random',
+  'log2', 'ln', 'log10', 'floor', 'ceil', 'round', 'abs', 'random', 'root',
   // 객체 정보
   'x', 'y', 'angle', 'way', 'size', 'distance', 'block_count', 'text_content',
   // 문자열

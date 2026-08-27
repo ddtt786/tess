@@ -379,20 +379,76 @@ end`;
   assert.equal(thread[1].statements[0][0].type, 'wait_until_true');
 });
 
-test('거듭제곱은 제곱·제곱근·곱셈 펼치기로만 된다', () => {
-  const { thread } = compileScript('var a = 3 ** 2\nvar b = 16 ** 0.5\nvar c = 2 ** 3');
+test('거듭제곱은 제곱·제곱근으로 펼쳐진다', () => {
+  const { thread } = compileScript('var a = 3 ** 2\nvar b = 16 ** 0.5\nvar c = 2 ** 3\nvar d = 5 ** 0');
   assert.equal(thread[1].params[1].params[3], 'square');
   assert.equal(thread[2].params[1].params[3], 'root');
-  assert.equal(sketch(thread[3].params[1]), 'calc_basic(calc_basic(number(2) MULTI number(2)) MULTI number(2))');
+  // 2^3 = (2^1)^2 × 2  — 자릿수만큼만 펼친다
+  assert.equal(sketch(thread[3].params[1]), 'calc_basic(calc_operation(number(2) square) MULTI number(2))');
+  assert.equal(sketch(thread[4].params[1]), 'number(1)');
+});
 
-  const bad = compileProject(`scene "s":
+test('지수를 계산해서 적을 수 있다', () => {
+  const { thread } = compileScript('var a = 8 ** (6 / 3)');
+  assert.equal(thread[1].params[1].params[3], 'square');
+});
+
+test('지수가 숫자로 정해지지 않으면 알려 준다', () => {
+  const bad = compileProject(`var n = 3
+scene "s":
   object "o":
     when start do
-      var a = 2 ** 9
+      var a = 2 ** n
     end
   end
 end`, { path: 'x.tess' });
-  assert.match(bad.errors[0].message, /거듭제곱/);
+  assert.equal(bad.ok, false);
+  assert.match(bad.errors[0].message, /지수는 숫자로 정해져 있어야/);
+});
+
+test('random 이 든 값은 지수가 밑을 여러 번 쓸 때 막는다', () => {
+  const bad = compileProject(`scene "s":
+  object "o":
+    when start do
+      var a = random(1, 10) ** 3
+    end
+  end
+end`, { path: 'x.tess' });
+  assert.equal(bad.ok, false);
+  assert.match(bad.errors[0].message, /random/);
+
+  // 밑을 한 번만 쓰는 지수는 괜찮다
+  const fine = compileProject(`scene "s":
+  object "o":
+    when start do
+      var a = random(1, 10) ** 0.5
+    end
+  end
+end`, { path: 'x.tess' });
+  assert.deepEqual(fine.errors, []);
+});
+
+test('딱 떨어지지 않는 지수만 다듬기 함수를 부른다', () => {
+  const exact = compileProject(`scene "s":
+  object "o":
+    when start do
+      var a = 4 ** 0.75
+    end
+  end
+end`, { path: 'x.tess' });
+  assert.equal(exact.project.functions.length, 0);
+
+  const inexact = compileProject(`scene "s":
+  object "o":
+    when start do
+      var a = 27 ** (1/3)
+    end
+  end
+end`, { path: 'x.tess' });
+  const refiner = inexact.project.functions[0];
+  assert.ok(refiner.content.includes('거듭제곱 다듬기'));
+  assert.equal(refiner.type, 'value');
+  assert.deepEqual(verifyEntryProject(inexact.project), []);
 });
 
 test('엔트리에 없는 동작은 에러로 알려 준다', () => {

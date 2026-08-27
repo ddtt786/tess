@@ -25,5 +25,9 @@
   "type": "module",
   "dependencies": {
     "ohm-js": "^17.5.0"
+  },
+  "devDependencies": {
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
   }
 }
