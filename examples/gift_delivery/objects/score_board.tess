@@ -1,0 +1,19 @@
+text "점수판":
+  name "점수판"
+  text_content = "점수: 0"
+  font = "DungGeunMo"
+  font_size = 24
+  font_color = #ffffff
+  bg_color = #1b2a49
+  x = -150
+  y = 150
+
+  when signal "점수 변경" do
+    write join("점수: ", 점수)
+  end
+
+  when signal "게임 오버" do
+    write join("최종 점수: ", 점수)
+    text_bold = true
+  end
+end

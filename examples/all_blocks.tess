@@ -1,0 +1,311 @@
+# ============================================================================
+#  Tess 의 거의 모든 명령을 한 번씩 쓰는 컴파일 검증용 작품.
+#  (테스트가 이 파일을 컴파일해서 엔트리 블록 구조를 검사한다)
+# ============================================================================
+project:
+  title "블록 검증"
+  fps 60
+end
+
+var 점수 = 0
+var 속도 = 5
+list 기록 = [1, 2, 3]
+
+function 알리기(내용):
+  say 내용 for 1
+end
+
+function 두배(값):
+  var 배수 = 2
+  return 값 * 배수
+end
+
+scene "무대":
+  object "주인공":
+    name "주인공"
+    default costume 기본 "hero.png" size 100 100
+    costume 달리기 "hero_run.png" size 100 100
+    sound 점프음 "jump.mp3"
+    x = 0
+    y = 0
+    scale_x = 100
+    scale_y = 100
+    visible true
+    lock false
+    rotation free
+    angle = 0
+    way = 90
+
+    var 체력 = 100
+
+    when start do
+      # 움직임
+      forward 10
+      forward 10 at 90
+      bounce
+      move 20 20
+      move 50 0 in 1
+      go 0 0
+      go "상대" in 2
+      go "mouse"
+      turn 45
+      turn 90 in 0.5
+      steer 30
+      steer 45 in 1
+      look "mouse"
+      x = 100
+      x += 10
+      x -= 5
+      y = -50
+      y += 10
+      angle = 90
+      angle += 10
+      way = 180
+      way += 10
+    end
+
+    when scene start do
+      # 모양 · 연출
+      show
+      hide
+      costume = "달리기"
+      next costume
+      prev costume
+      size = 120
+      size += 10
+      scale_x += 20
+      scale_y += 20
+      reset size
+      effect_color = 100
+      effect_color += 10
+      effect_brightness = 50
+      effect_alpha += 20
+      clear effects
+      flip x
+      flip y
+      order front
+      order back
+      say "안녕"
+      say "안녕" for 2
+      think "음..."
+      think "음..." for 1.5
+      clear bubble
+    end
+
+    when click do
+      # 소리
+      play sound "점프음"
+      play sound "점프음" for 0.5
+      play sound "점프음" from 1 to 5
+      play sound "점프음" and wait
+      play sound "점프음" for 2 and wait
+      play sound "점프음" from 0 to 3 and wait
+      play bgm "점프음"
+      stop bgm
+      sound_volume = 80
+      sound_volume += 5
+      sound_speed = 1.2
+      stop sound this
+      stop sound all
+    end
+
+    when click up do
+      # 붓
+      draw_color = #ff0000
+      draw_color = random_color()
+      draw_width = 5
+      draw_width += 1
+      draw_alpha = 70
+      draw_alpha += 5
+      fill_color = #0000ff
+      start draw
+      stop draw
+      stamp
+      clear draw
+      start fill
+      stop fill
+    end
+
+    when stage click do
+      # 흐름
+      wait 1.5
+      wait mouse_down
+      repeat 5:
+        forward 1
+      end
+      forever:
+        if 점수 > 10:
+          break
+        end
+        if 점수 < 0:
+          skip
+        end
+        wait 0.02
+      end
+      while 점수 < 5:
+        점수 += 1
+      end
+      until 점수 > 3:
+        점수 += 1
+      end
+      while true:
+        wait 0.1
+      end
+    end
+
+    when stage click up do
+      stop other
+      stop me
+      stop them
+      stop
+      stop all
+      restart
+    end
+
+    when key "space" do
+      # 신호 · 복제 · 장면
+      send "신호1"
+      call "신호2"
+      clone
+      clone "상대"
+      del clone
+      del clones
+      kill
+      jump "무대2"
+      jump next
+      jump back
+    end
+
+    when key "a" up do
+      알리기("키를 뗐다")
+    end
+
+    when cloned do
+      # 자료
+      var 임시 = 0
+      임시 = 두배(21)
+      점수 = 0
+      점수 += 1
+      점수 -= 1
+      점수 *= 2
+      점수 /= 2
+      점수 %= 3
+      점수 **= 2
+      기록[0] = 99
+      기록[1] += 1
+      in 기록 add 70
+      in 기록 insert 80 at 1
+      remove 기록[2]
+      ask "이름은?"
+      show 점수
+      hide 점수
+      show 기록
+      hide 기록
+      show timer
+      hide timer
+      show answer
+      hide answer
+      start timer
+      stop timer
+      reset timer
+    end
+
+    when signal "신호1" do
+      # 판단 · 계산
+      if key_down("space") and touching("상대"):
+        점수 = 1
+      end
+      if not touching("wall") or mouse_down:
+        점수 = 2
+      end
+      if clicked: 점수 = 3 end
+      if boost_mode: 점수 = 4 end
+      if touchable: 점수 = 5 end
+      if device == "mobile": 점수 = 6 end
+      if type(점수) == "number": 점수 = 7 end
+      if contains(기록, 100): 점수 = 8 end
+      if timer > 10: 점수 = 9 end
+      if block_count > 100: 점수 = 10 end
+
+      점수 = sin(90) + cos(0) + tan(45)
+      점수 = asin(1) + acos(1) + atan(1)
+      점수 = ln(2) + log10(100) + log2(8)
+      점수 = floor(3.7) + ceil(3.2) + round(3.5) + abs(-15)
+      점수 = random(1, 10)
+      점수 = 2 ** 4
+      점수 = 25 ** 0.5
+      점수 = 10 % 3
+      점수 = 10 // 3
+      점수 = x("mouse") + y("mouse")
+      점수 = x("상대") + y("상대") + angle("상대") + way("상대") + size("상대")
+      점수 = distance("상대")
+      점수 = length(기록)
+      점수 = 기록[0]
+      점수 = block_count("상대")
+      점수 = now("year") + now("month") + now("weekday")
+      점수 = from_hex(#ff0000, red)
+    end
+
+    when signal "신호2" do
+      var 글 = "Entry Tess"
+      글 = join("안녕, ", nickname)
+      글 = join(user_id, answer)
+      글 = slice(글, 0, 5)
+      글 = 글[0]
+      글 = replace(글, "a", "b")
+      글 = reverse(글)
+      글 = uppercase(글)
+      글 = lowercase(글)
+      글 = to_hex(255, 0, 0)
+      점수 = length(글)
+      점수 = count(글, "a")
+      점수 = index_of(글, "T")
+      점수 = text_content("점수판")
+    end
+  end
+
+  object "상대":
+    name "상대"
+    costume 기본 "enemy.png" size 60 60
+  end
+
+  text "점수판":
+    name "점수판"
+    text_content = "점수: 0"
+    font = "나눔고딕"
+    font_size = 20
+    font_color = #000000
+    bg_color = transparent
+    text_align = left
+    line_break = false
+    x = 0
+    y = 100
+
+    when start do
+      write "엔트리"
+      append " 환영합니다."
+      prepend "[공지] "
+      clear text
+      font = "DungGeunMo"
+      font_color = #ff0000
+      bg_color = #000000
+      bg_color = transparent
+      text_bold = true
+      text_italic = false
+      text_underline = true
+      text_strikethrough = true
+      text_content = "다시 씀"
+    end
+  end
+end
+
+scene "무대2":
+  object "끝 화면":
+    name "끝 화면"
+    costume 기본 "end.png" size 480 270
+
+    when scene start do
+      알리기("끝!")
+    end
+  end
+end

@@ -1,0 +1,14 @@
+object "인트로 배경":
+  name "인트로 배경"
+  costume 밤하늘 "intro_bg.png" size 960 540
+  x = 0
+  y = 0
+
+  when scene start do
+    effect_alpha = 100
+    repeat 25:
+      effect_alpha -= 4
+      wait 0.02
+    end
+  end
+end

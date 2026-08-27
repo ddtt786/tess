@@ -37,15 +37,19 @@ export function lineAndColumn(source, offset) {
 /**
  * @param {object} program  ast() 로 만든 Program 노드
  * @param {string} source   원본 소스 (에러 위치 계산용)
+ * @param {Map<string,string>} [sources] use 로 불러온 파일들의 소스
  * @returns {{errors: Array, warnings: Array}}
  */
-export function validate(program, source = '') {
+export function validate(program, source = '', sources = null) {
   const errors = [];
   const warnings = [];
 
   const report = (bucket, node, message) => {
-    const { line, column } = lineAndColumn(source, node?.loc?.start ?? 0);
-    bucket.push({ line, column, message, offset: node?.loc?.start ?? 0 });
+    // `use` 로 불러온 노드는 자기 파일 기준으로 위치를 계산해야 한다
+    const file = node?.loc?.file;
+    const text = (file && sources?.get(file)) ?? source;
+    const { line, column } = lineAndColumn(text, node?.loc?.start ?? 0);
+    bucket.push({ line, column, file, message, offset: node?.loc?.start ?? 0 });
   };
   const error = (node, message) => report(errors, node, message);
   const warn = (node, message) => report(warnings, node, message);
