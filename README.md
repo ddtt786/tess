@@ -6,7 +6,7 @@
 
 ```bash
 pnpm install
-pnpm test                                              # 161개 테스트
+pnpm test                                              # 180개 테스트
 
 node index.js check examples/tour.tess                 # 문법 · 의미 검사
 node index.js build examples/gift_delivery/main.tess -o build/gift.ent
@@ -40,7 +40,9 @@ main.tess -> build/gift.ent
 | `src/compiler/index.js` | 심볼 수집 → 스크립트 컴파일 → 프로젝트 조립 |
 | `src/compiler/statement.js` | Tess 문장 → 엔트리 블록 |
 | `src/compiler/expression.js` | Tess 표현식 → 엔트리 값·판단 블록 |
-| `src/compiler/include.js` | `use "파일"` 을 그 자리에 펼치기 |
+| `src/compiler/include.js` | `use` · `useobject` · `usetext` 를 그 자리에 펼치기 |
+| `src/compiler/comments.js` | Tess 주석 → 엔트리 블록 주석 |
+| `src/compiler/runtime.js` | 엔트리에 없는 동작을 대신할 함수 만들어 넣기 |
 | `src/compiler/assets.js` | 모양·소리 파일 → 엔트리 리소스 경로 |
 | `src/compiler/bundle.js` | `.ent` (tar) 묶기 — 의존성 없이 직접 |
 | `src/compiler/verify.js` | 만든 프로젝트가 엔트리 구조에 맞는지 검사 |
@@ -280,6 +282,39 @@ id 는 `[a-z0-9]` 4글자입니다.
 `get_project_timer_value`, `value_of_index_from_list`, `is_current_device_type` 다섯 개의
 자리 개수 오류를 찾아 고쳤습니다.
 
+### 편의 문법
+
+| 쓰는 법 | 하는 일 |
+|---|---|
+| `# 주석` | 버려지지 않고 **엔트리 블록의 주석**이 됩니다. 문장 위에 쓰면 그 블록에, 줄 끝에 쓰면 같은 줄 블록에 붙습니다 |
+| `useobject "objects/치로.tess"` | 파일을 불러오면서 **오브젝트로 감싸 줍니다**. 파일에 `object "..." : … end` 를 쓰지 않아도 됩니다. 오브젝트 이름은 파일 이름이 됩니다 (`usetext` 는 글상자로) |
+| `scale_x = 50` | 엔트리에 없는 "가로 비율 정하기" 를 컴파일러가 만든 함수로 해냅니다 (아래) |
+| `costume 기본 "a.png" size 200 100`<br>`sound 딸깍 "click.mp3" for 0.3` | 그림·소리 파일이 아직 없어도 필요한 정보를 적어 두면 조용히 넘어갑니다 |
+
+### 엔트리에 없는 블록 만들어 내기 — `가로 비율 정하기`
+
+엔트리에는 한 축의 크기를 **정하는** 블록이 없고 늘리는 블록만 있습니다. 게다가 읽을 수
+있는 값은 가로·세로가 섞인 "크기" 하나뿐입니다.
+
+```
+크기 = (원본가로 × |가로배율| + 원본세로 × |세로배율|) / 2
+```
+
+그래서 `scale_x = 50` 을 만나면 컴파일러가 **한 축만 크게 늘려 보고 크기가 얼마나
+변했는지로 그 축의 길이를 되짚는** 엔트리 함수를 만들어 넣습니다.
+
+```
+세로를 100000 만큼 늘린 뒤   2 × 크기 × (새 크기 − 크기) × 0.00001  =  세로 길이
+```
+
+지금 상태와 "원래 크기로 되돌린" 상태에서 각각 재면, 건드리지 않을 축은 그대로 되살리고
+목표 축만 원하는 비율로 맞출 수 있습니다. 함수는 이 문법을 쓴 작품에서만 만들어지고,
+지역 변수를 쓰기 때문에 복제본이 동시에 불러도 서로 섞이지 않습니다.
+
+이 함수가 정말로 맞게 계산하는지는 **엔트리의 크기 규칙을 그대로 흉내 낸 시뮬레이터**로
+확인합니다(`test/runtime-scale.test.js`). 시작 배율이 100%가 아닐 때, 모양이 바뀌어 원본
+크기가 달라졌을 때, 두 번 이어서 정할 때까지 실제 배율을 계산해서 비교합니다.
+
 ### 컴파일하면서 하는 일
 
 | 하는 일 | 설명 |
@@ -289,6 +324,7 @@ id 는 `[a-z0-9]` 4글자입니다.
 | 스코프 해석 | 함수 지역 → 오브젝트 로컬 → 전역 순으로 찾고, 없으면 오브젝트 속성으로 봅니다 |
 | 인덱스 보정 | 0부터인 Tess 인덱스를 1부터인 엔트리 인덱스로 (상수는 미리 계산) |
 | 없는 블록 펼치기 | `move X Y` → 두 블록, `log2` → `ln/ln2`, `**` → 제곱·제곱근·곱셈 |
+| 주석 옮기기 | `#` 주석을 블록의 `comment` 로 (문자열 안의 `#` 과 색상은 건드리지 않습니다) |
 | 리소스 처리 | 이미지 헤더에서 원본 크기를 읽고 `temp/xx/yy/image/…` 경로를 만듭니다 |
 | 결정적 id | 소스에서 만든 시드로 id 를 뽑아, 같은 소스는 항상 같은 결과가 됩니다 |
 
@@ -347,7 +383,8 @@ pnpm test
 | `test/grammar.test.js` | spec 각 절의 코드가 파싱되는지 / 잘못된 코드가 거부되는지 |
 | `test/ast.test.js` | 연산자 우선순위 · 결합 방향 · 문장 AST 모양 |
 | `test/validate.test.js` | 의미 규칙과 에러 위치 |
-| `test/compile.test.js` | 엔트리 블록 매핑 · 인덱스 보정 · 함수 · `use` · 구조 검증 · `.ent` 묶음 |
+| `test/compile.test.js` | 엔트리 블록 매핑 · 인덱스 보정 · 함수 · `use` · 주석 · 구조 검증 · `.ent` 묶음 |
+| `test/runtime-scale.test.js` | 만들어 넣은 크기 함수를 엔트리 규칙 시뮬레이터로 계산 검증 |
 | `test/examples.test.js` | `examples/` 의 모든 `.tess` 가 에러 없이 통과 |
 
 `examples/all_blocks.tess` 는 Tess 의 거의 모든 명령을 한 번씩 쓰는 파일입니다.

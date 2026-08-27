@@ -1,4 +1,0 @@
-object "아지트 배경":
-  name "아지트 배경"
-  costume 실내 "hideout_bg.png" size 960 540
-end

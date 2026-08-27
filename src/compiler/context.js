@@ -5,6 +5,7 @@
 //  한 곳에서 관리한다.
 // ============================================================================
 import { createIdFactory, seedFrom } from './ids.js';
+import { commentKey, makeComment } from './comments.js';
 import { lineAndColumn } from '../validate.js';
 
 /** 엔트리 블록 한 개의 기본 뼈대 */
@@ -32,6 +33,7 @@ export class Context {
     this.sources = options.sources ?? null;
     this.options = options;
     this.assetFiles = [];
+    this.comments = options.comments ?? new Map();
     this.newId = createIdFactory(seedFrom(options.seed ?? source));
     this.errors = [];
     this.warnings = [];
@@ -47,6 +49,7 @@ export class Context {
     this.messageByName = new Map();
     this.functions = [];        // { id, name, node, params, isValue, owner }
     this.functionByName = new Map();
+    this.runtimeFunctions = new Map(); // 컴파일러가 만들어 넣는 함수 (scale_x/scale_y)
 
     // 현재 컴파일 중인 위치
     this.object = null;         // 현재 오브젝트
@@ -78,6 +81,14 @@ export class Context {
     return makeBlock(this.newId(), type, params, statements);
   }
 
+  /** 소스에 달린 주석을 엔트리 블록 주석으로 옮긴다 */
+  applyComment(node, block) {
+    if (!block) return block;
+    const text = this.comments.get(commentKey(node));
+    if (text) block.comment = makeComment(text);
+    return block;
+  }
+
   /** 숫자 리터럴 블록 */
   number(value) {
     return this.block('number', [String(value)]);
@@ -98,7 +109,10 @@ export class Context {
   lookupVariable(name) {
     if (this.funcScope) {
       if (this.funcScope.params.has(name)) return { kind: 'param', name };
-      if (this.funcScope.localVars.has(name)) return { kind: 'funcLocal', name };
+      // 엔트리 함수 지역 변수는 이름이 아니라 `함수id_해시` 로 가리킨다
+      if (this.funcScope.localVars.has(name)) {
+        return { kind: 'funcLocal', name, id: this.funcScope.localVars.get(name) };
+      }
       const global = this.globals.get(name);
       return global ? { kind: 'variable', entry: global } : null;
     }

@@ -1,0 +1,14 @@
+name "소지금"
+text_content = "소지금: 100"
+font = "나눔고딕"
+font_size = 18
+font_color = #ffe066
+x = -180
+y = 120
+
+when scene start do
+  forever:
+    write join("소지금: ", 소지금)
+    wait 0.2
+  end
+end

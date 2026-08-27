@@ -53,9 +53,12 @@ export function imageSize(buffer) {
 
 /**
  * 선언된 파일을 실제로 찾아보고 엔트리 리소스 항목을 만든다.
- * 파일이 없으면 경고만 하고 선언된(또는 기본) 크기로 항목을 만든다.
+ *
+ * 파일을 못 찾아도 필요한 정보(모양은 `size W H`, 소리는 `for N`)를 코드에 적어 뒀으면
+ * 그대로 쓰고 아무 말도 하지 않는다. 그림을 나중에 넣을 생각으로 구조부터 짜는 흐름을
+ * 방해하지 않기 위해서다. 적어 두지도 않았고 파일도 없을 때만 경고한다.
  */
-export function makeAsset(kind, { id, file, name, width, height }, ctx, node) {
+export function makeAsset(kind, { id, file, name, width, height, duration }, ctx, node) {
   const ext = path.extname(file).toLowerCase();
   const isImage = kind === 'image';
 
@@ -63,14 +66,16 @@ export function makeAsset(kind, { id, file, name, width, height }, ctx, node) {
   if (!isImage && !SOUND_TYPES.has(ext)) ctx.warn(node, `'${file}' 은(는) 엔트리가 아는 소리 형식이 아닙니다.`);
 
   const resolved = findAsset(file, ctx);
+  const declared = isImage ? Boolean(width && height) : duration !== null && duration !== undefined;
   let size = width && height ? { width, height } : null;
   let bytes = null;
 
   if (resolved) {
     bytes = fs.readFileSync(resolved);
     if (isImage && !size) size = imageSize(bytes);
-  } else {
-    ctx.warn(node, `리소스 파일 '${file}' 을(를) 찾지 못했습니다. 경로만 기록합니다.`);
+  } else if (!declared) {
+    const hint = isImage ? `size ${'가로'} ${'세로'}` : 'for 초';
+    ctx.warn(node, `리소스 파일 '${file}' 을(를) 찾지 못했습니다. 경로만 기록합니다. (${hint} 를 적어 두면 이 알림이 사라집니다)`);
   }
   if (isImage && !size) size = { width: 100, height: 100 };
 
@@ -88,7 +93,7 @@ export function makeAsset(kind, { id, file, name, width, height }, ctx, node) {
     asset.dimension = { width: size.width, height: size.height };
     delete asset.ext;
   } else {
-    asset.duration = 1;
+    asset.duration = duration ?? 1;
   }
 
   if (resolved) ctx.assetFiles.push({ source: resolved, target: asset.fileurl });

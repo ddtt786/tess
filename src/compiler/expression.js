@@ -95,7 +95,7 @@ function compileIdentifier(node, ctx) {
   const found = ctx.lookupVariable(name);
   if (found) {
     if (found.kind === 'param') return ctx.block(ctx.funcScope.params.get(name), []);
-    if (found.kind === 'funcLocal') return ctx.block('get_func_variable', [name, null]);
+    if (found.kind === 'funcLocal') return ctx.block('get_func_variable', [found.id, null]);
     if (found.entry.variableType === 'list') {
       return ctx.error(node, `리스트 '${name}' 은(는) 값으로 바로 쓸 수 없습니다. ${name}[i] 처럼 항목을 지정하세요.`);
     }

@@ -25,7 +25,7 @@ scene "무대":
     name "주인공"
     default costume 기본 "hero.png" size 100 100
     costume 달리기 "hero_run.png" size 100 100
-    sound 점프음 "jump.mp3"
+    sound 점프음 "jump.mp3" for 0.5
     x = 0
     y = 0
     scale_x = 100
@@ -75,6 +75,8 @@ scene "무대":
       size += 10
       scale_x += 20
       scale_y += 20
+      scale_x = 50
+      scale_y = 150
       reset size
       effect_color = 100
       effect_color += 10

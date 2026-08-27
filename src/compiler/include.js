@@ -37,6 +37,11 @@ export function loadProgram({ source, path: filePath = '<input>', readFile = def
   const expand = (items, file, context) => {
     const output = [];
     for (const item of items) {
+      if (item.type === 'UseObject') {
+        const wrapped = expandUseObject(item, file);
+        if (wrapped) output.push(wrapped);
+        continue;
+      }
       if (item.type !== 'Use') {
         output.push(expandNested(item, file));
         continue;
@@ -63,6 +68,35 @@ export function loadProgram({ source, path: filePath = '<input>', readFile = def
       visiting.delete(target);
     }
     return output;
+  };
+
+  // useobject / usetext: 불러온 조각을 오브젝트로 감싼다. 이름은 파일 이름.
+  const expandUseObject = (item, file) => {
+    const target = path.resolve(path.dirname(file), item.path);
+    if (visiting.has(target)) {
+      errors.push({ ...position(item), file, message: `use 가 순환합니다: ${item.path}` });
+      return null;
+    }
+    let text;
+    try {
+      text = readFile(target);
+    } catch {
+      errors.push({ ...position(item), file, message: `불러올 파일이 없습니다: ${item.path}` });
+      return null;
+    }
+    sources.set(target, text);
+    visiting.add(target);
+    const members = load(text, target, 'object');
+    visiting.delete(target);
+    if (!members) return null;
+
+    return {
+      type: 'Object',
+      kind: item.kind,
+      name: path.basename(target, path.extname(target)),
+      body: expand(members, target, 'object'),
+      loc: item.loc,
+    };
   };
 
   const expandNested = (item, file) => {

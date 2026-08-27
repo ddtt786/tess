@@ -11,6 +11,7 @@
 import path from 'node:path';
 import { Context } from './context.js';
 import { loadProgram } from './include.js';
+import { buildCommentMap } from './comments.js';
 import { makeAsset } from './assets.js';
 import { compileStatements } from './statement.js';
 import { compileValue } from './expression.js';
@@ -38,6 +39,7 @@ export function compileProject(source, options = {}) {
   const ctx = new Context(source, {
     ...options,
     sources: loaded.sources,
+    comments: buildCommentMap(loaded.ast, loaded.sources),
     assetDirs: options.assetDirs ?? [path.dirname(path.resolve(filePath))],
   });
   ctx.errors.push(...semantic.errors);
@@ -207,7 +209,9 @@ function collectObjectMembers(object, ctx) {
         break;
       }
       case 'Sound': {
-        const asset = makeAsset('sound', { id: ctx.newId(), file: member.file, name: member.id }, ctx, member);
+        const asset = makeAsset('sound', {
+          id: ctx.newId(), file: member.file, name: member.id, duration: member.duration,
+        }, ctx, member);
         object.sounds.set(member.id, asset);
         break;
       }
@@ -332,6 +336,7 @@ function collectMessages(node, ctx) {
 // ---------------------------------------------------------------------------
 function compileFunctions(ctx) {
   for (const fn of ctx.functions) {
+    if (fn.generated) continue; // 컴파일러가 이미 완성해 둔 런타임 함수
     ctx.object = fn.owner ? ctx.objectByName.get(fn.owner) : null;
     ctx.locals = ctx.object?.locals ?? new Map();
     ctx.funcScope = {
@@ -341,7 +346,7 @@ function compileFunctions(ctx) {
     };
 
     // 함수 안에서 선언한 var 는 엔트리 함수의 지역 변수로
-    collectFunctionLocals(fn.node.body, ctx.funcScope, ctx);
+    collectFunctionLocals(fn.node.body, ctx.funcScope, ctx, fn);
 
     const body = fn.isValue ? fn.node.body.slice(0, -1) : fn.node.body;
     const statements = compileStatements(body, ctx);
@@ -355,7 +360,7 @@ function compileFunctions(ctx) {
     create.x = 50;
     create.y = 30;
 
-    fn.localVariables = [...ctx.funcScope.localVars.keys()].map((name) => ({ name, value: 0 }));
+    fn.localVariables = [...ctx.funcScope.localVars].map(([name, id]) => ({ id, name, value: 0 }));
     fn.content = [[create]];
     fn.type = fn.isValue ? 'value' : 'normal';
 
@@ -365,14 +370,16 @@ function compileFunctions(ctx) {
   }
 }
 
-function collectFunctionLocals(statements, scope, ctx) {
+function collectFunctionLocals(statements, scope, ctx, fn) {
   for (const statement of statements) {
-    if (statement.type === 'VarDecl') scope.localVars.set(statement.name, true);
+    if (statement.type === 'VarDecl' && !scope.localVars.has(statement.name)) {
+      scope.localVars.set(statement.name, `${fn.id}_${ctx.newId()}`);
+    }
     if (statement.type === 'ListDecl') {
       ctx.error(statement, '함수 안에서는 리스트를 선언할 수 없습니다. 전역 리스트를 쓰세요.');
     }
     for (const key of ['consequent', 'alternate', 'body']) {
-      if (Array.isArray(statement[key])) collectFunctionLocals(statement[key], scope, ctx);
+      if (Array.isArray(statement[key])) collectFunctionLocals(statement[key], scope, ctx, fn);
     }
   }
 }
@@ -401,6 +408,7 @@ function compileObjects(ctx) {
       if (member.type !== 'Event') continue;
       const thread = compileEvent(member, ctx);
       if (!thread) continue;
+      ctx.applyComment(member, thread[0]);
       thread[0].x = 50;
       thread[0].y = 30 + row * 260;
       row += 1;
@@ -433,11 +441,11 @@ function compileEvent(event, ctx) {
     }
 
     case 'key_up': {
-      // 엔트리에는 "키를 뗐을 때" 이벤트가 없다.
-      // 시작하기 -> 계속 반복: (키가 눌릴 때까지 기다림 -> 떼질 때까지 기다림 -> 본문)
+      // 엔트리에는 "키를 뗐을 때" 이벤트가 없어서 감시 스크립트로 바꾼다.
+      //   시작하기 -> 계속 반복: 키가 눌릴 때까지 기다림 -> 떼질 때까지 기다림 -> 본문
+      // (SPEC-ADDENDUM 6.1 에 적어 둔 정해진 변환이라 따로 알리지 않는다)
       const code = keyCodeOf(event.key);
       if (!code) return [ctx.error(event, `알 수 없는 키 이름 "${event.key}" 입니다.`)] && null;
-      ctx.warn(event, `엔트리에는 "키를 뗐을 때" 이벤트가 없어서 계속 반복하기로 감시하는 스크립트로 바꿨습니다.`);
       const pressed = () => ctx.block('is_press_some_key', [code, null]);
       const loop = ctx.block('repeat_inf', [null, null], [[
         ctx.block('wait_until_true', [pressed(), null]),

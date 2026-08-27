@@ -1,0 +1,34 @@
+name "치로"
+default costume 기본 "chiro_idle.png" size 120 160
+costume 인사 "chiro_hi.png" size 120 160
+sound 인사소리 "hello.mp3" for 1.2
+x = -140
+y = -60
+rotation none
+
+# 이 오브젝트에서만 쓰는 변수
+var 대화_단계 = 0
+
+when scene start do
+  대화_단계 = 0
+  show
+  costume = "인사"
+  play sound "인사소리"
+  say join("반가워, ", join(nickname, "!")) for 2
+  ask "선물을 몇 개 준비할까?"
+  남은_선물 = answer
+  say join("좋아, 선물 ", join(남은_선물, "개 준비했어!")) for 2
+  costume = "기본"
+  wait 1
+  jump "메인 게임"
+end
+
+when click do
+  대화_단계 += 1
+  if 대화_단계 >= 3:
+    say "이제 출발하자!" for 2
+    대화_단계 = 0
+  else:
+    think "눈이 많이 왔네..." for 1.5
+  end
+end
