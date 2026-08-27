@@ -1,0 +1,52 @@
+# ============================================================================
+#  선물 배달 — 엔트리 작품으로 컴파일되는 예제
+#
+#  빌드:  node index.js build examples/gift_delivery/main.tess -o build/gift.ent
+# ============================================================================
+
+project:
+  title "선물 배달 대작전"
+  description "치로가 눈길을 달려 선물을 배달하는 미니 게임입니다."
+  fps 60
+end
+
+# --- 전역 자료 ---------------------------------------------------------------
+var 점수 = 0
+var 소지금 = 100
+var 남은_선물 = 5
+var 게임중 = 0
+list 배달_기록 = []
+
+# --- 공용 함수 ---------------------------------------------------------------
+# 값을 돌려주지 않는 함수 -> 엔트리의 일반 함수
+function 점수_더하기(얻은_점수):
+  점수 += 얻은_점수
+  in 배달_기록 add 얻은_점수
+  send "점수 변경"
+end
+
+# return 으로 끝나는 함수 -> 엔트리의 "값 함수"
+function 보너스(기본_점수):
+  var 배수 = 2
+  return 기본_점수 * 배수
+end
+
+# --- 장면 --------------------------------------------------------------------
+scene "인트로":
+  use "objects/intro_background.tess"
+  use "objects/title.tess"
+  use "objects/start_button.tess"
+end
+
+scene "아지트":
+  use "objects/hideout_background.tess"
+  use "objects/chiro.tess"
+  use "objects/money_board.tess"
+end
+
+scene "메인 게임":
+  use "objects/game_background.tess"
+  use "objects/player.tess"
+  use "objects/gift.tess"
+  use "objects/score_board.tess"
+end

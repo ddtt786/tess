@@ -1,0 +1,57 @@
+object "플레이어":
+  name "치로(썰매)"
+  default costume 정지 "sled_idle.png" size 140 120
+  costume 달리기 "sled_run.png" size 140 120
+  sound 부딪힘 "crash.mp3"
+  x = -180
+  y = -120
+  rotation vertical
+
+  when signal "게임 시작" do
+    go -180 -120
+    show
+    forever:
+      if key_down("right"):
+        x += 6
+        next costume
+      end
+      if key_down("left"):
+        x -= 6
+        next costume
+      end
+      if key_down("space"):
+        repeat 8:
+          y += 9
+          wait 0.02
+        end
+        repeat 8:
+          y -= 9
+          wait 0.02
+        end
+      end
+      if x > 220:
+        x = 220
+      end
+      if x < -220:
+        x = -220
+      end
+      wait 0.02
+    end
+  end
+
+  when signal "게임 시작" do
+    until 게임중 == 0:
+      if timer > 30:
+        send "게임 오버"
+      end
+      wait 0.5
+    end
+  end
+
+  when key "s" do
+    play sound "부딪힘"
+    effect_brightness = 80
+    wait 0.2
+    clear effects
+  end
+end

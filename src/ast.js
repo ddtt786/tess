@@ -47,6 +47,13 @@ semantics.addOperation('ast', {
     return { type: 'ProjectField', field: 'fps', value: value.ast(), loc: at(this) };
   },
 
+  SceneFragment(members) {
+    return list(members);
+  },
+  ObjectFragment(members) {
+    return list(members);
+  },
+
   SceneDecl(_scene, name, _open, members, _end) {
     return { type: 'Scene', name: name.ast().value, body: list(members), loc: at(this) };
   },
@@ -59,11 +66,20 @@ semantics.addOperation('ast', {
   },
 
   // --- 오브젝트 속성 --------------------------------------------------------
+  PropertyDecl_defaultCostumeSized(_default, _costume, id, file, _size, width, height) {
+    return costume(this, id, file, true, width, height);
+  },
   PropertyDecl_defaultCostume(_default, _costume, id, file) {
-    return { type: 'Costume', id: id.ast().name, file: file.ast().value, isDefault: true, loc: at(this) };
+    return costume(this, id, file, true, null, null);
+  },
+  PropertyDecl_costumeSized(_costume, id, file, _size, width, height) {
+    return costume(this, id, file, false, width, height);
   },
   PropertyDecl_costume(_costume, id, file) {
-    return { type: 'Costume', id: id.ast().name, file: file.ast().value, isDefault: false, loc: at(this) };
+    return costume(this, id, file, false, null, null);
+  },
+  PropertyDecl_rotation(_rotation, method) {
+    return { type: 'Property', name: 'rotation', value: { type: 'Keyword', name: method.sourceString }, loc: at(this) };
   },
   PropertyDecl_sound(_sound, id, file) {
     return { type: 'Sound', id: id.ast().name, file: file.ast().value, loc: at(this) };
@@ -543,6 +559,18 @@ semantics.addOperation('ast', {
     return this.sourceString;
   },
 });
+
+function costume(node, id, file, isDefault, width, height) {
+  return {
+    type: 'Costume',
+    id: id.ast().name,
+    file: file.ast().value,
+    isDefault,
+    width: width ? width.ast().value : null,
+    height: height ? height.ast().value : null,
+    loc: at(node),
+  };
+}
 
 function binary(node, operator, left, right) {
   return { type: 'Binary', operator, left: left.ast(), right: right.ast(), loc: at(node) };

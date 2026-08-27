@@ -1,0 +1,21 @@
+text "제목":
+  name "제목 글상자"
+  text_content = "선물 배달 대작전"
+  font = "DungGeunMo"
+  font_size = 32
+  font_color = #ffffff
+  bg_color = transparent
+  text_bold = true
+  text_align = center
+  x = 0
+  y = 80
+
+  when scene start do
+    forever:
+      effect_brightness = 40
+      wait 0.4
+      effect_brightness = 0
+      wait 0.4
+    end
+  end
+end

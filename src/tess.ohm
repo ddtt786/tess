@@ -33,6 +33,11 @@ Tess {
   // --- 3.3 파일 불러오기 -----------------------------------------------------
   UseDecl = use stringLiteral
 
+  // `use` 로 불러온 조각 파일은 그 자리에 맞는 조각만 담고 있다.
+  // 컴파일러가 문맥에 따라 시작 규칙으로 골라 쓴다 (Program / SceneFragment / ObjectFragment).
+  SceneFragment  = SceneMember*
+  ObjectFragment = ObjectMember*
+
   // --- 3.2 project (작품 정보) ----------------------------------------------
   ProjectDecl = project blockOpen ProjectField* end_
 
@@ -62,24 +67,31 @@ Tess {
     | UseDecl
 
   // 오브젝트 속성. `default costume` 처럼 접두 키워드가 붙는 형태가 먼저 와야 한다.
+  // 모양 뒤의 `size W H` 는 이미지 파일을 찾을 수 없을 때 쓰는 원본 크기 선언이다.
   PropertyDecl
-    = default costume identifier stringLiteral  -- defaultCostume
-    | costume identifier stringLiteral          -- costume
-    | sound identifier stringLiteral            -- sound
-    | name stringLiteral                        -- name
-    | visible booleanLiteral                    -- visible
-    | lock booleanLiteral                       -- lock
-    | propertyName "=" ~"=" Expr                -- assign
+    = default costume identifier stringLiteral size numberLiteral numberLiteral -- defaultCostumeSized
+    | default costume identifier stringLiteral                                  -- defaultCostume
+    | costume identifier stringLiteral size numberLiteral numberLiteral         -- costumeSized
+    | costume identifier stringLiteral                                          -- costume
+    | sound identifier stringLiteral                                            -- sound
+    | name stringLiteral                                                        -- name
+    | visible booleanLiteral                                                    -- visible
+    | lock booleanLiteral                                                       -- lock
+    | rotation rotateMethod                                                     -- rotation
+    | propertyName "=" ~"=" Expr                                                -- assign
 
   // `=` 로 초기값을 주는 속성 이름 목록.
   // 긴 이름을 먼저 둬야 한다 (PEG 의 선택은 처음 성공한 것을 채택하므로
   // "font" 가 먼저 오면 "font_color" 를 영영 매칭할 수 없다).
   propertyName
-    = ("scale_x" | "scale_y"
+    = ("scale_x" | "scale_y" | "size"
       | "text_content" | "text_bold" | "text_italic"
-      | "text_underline" | "text_strikethrough"
-      | "font_color" | "font" | "bg_color"
-      | "x" | "y") ~identifierPart
+      | "text_underline" | "text_strikethrough" | "text_align"
+      | "font_color" | "font_size" | "font" | "bg_color" | "line_break"
+      | "angle" | "way" | "x" | "y") ~identifierPart
+
+  // 3.5 회전 방식 (엔트리 rotateMethod)
+  rotateMethod = free | vertical | none
 
   // --- 14. 함수 --------------------------------------------------------------
   FunctionDecl
@@ -459,6 +471,7 @@ Tess {
   forever     = "forever"     ~identifierPart
   forward     = "forward"     ~identifierPart
   fps         = "fps"         ~identifierPart
+  free        = "free"        ~identifierPart
   from        = "from"        ~identifierPart
   front       = "front"       ~identifierPart
   function    = "function"    ~identifierPart
@@ -477,6 +490,7 @@ Tess {
   move        = "move"        ~identifierPart
   name        = "name"        ~identifierPart
   next        = "next"        ~identifierPart
+  none        = "none"        ~identifierPart
   not         = "not"         ~identifierPart
   object      = "object"      ~identifierPart
   or          = "or"          ~identifierPart
@@ -491,6 +505,7 @@ Tess {
   reset       = "reset"       ~identifierPart
   restart     = "restart"     ~identifierPart
   return      = "return"      ~identifierPart
+  rotation    = "rotation"    ~identifierPart
   say         = "say"         ~identifierPart
   scene       = "scene"       ~identifierPart
   send        = "send"        ~identifierPart
@@ -519,6 +534,7 @@ Tess {
   up          = "up"          ~identifierPart
   use         = "use"         ~identifierPart
   var         = "var"         ~identifierPart
+  vertical    = "vertical"    ~identifierPart
   visible     = "visible"     ~identifierPart
   wait        = "wait"        ~identifierPart
   when        = "when"        ~identifierPart
