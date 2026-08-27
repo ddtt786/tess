@@ -1,0 +1,35 @@
+# spec 1장 "전체 구조 한눈에 보기" 예제
+var global_score = 0
+list high_scores = [100, 80, 50]
+
+project:
+  title "고양이 달리기"
+  description "스페이스바를 누르면 고양이가 앞으로 달립니다."
+  fps 60
+end
+
+scene "main":
+  object "cat":
+    name "고양이"
+    costume idle "cat_idle.png"
+    costume run "cat_run.png"
+    x = -100
+    y = 0
+    scale_x = 100
+    scale_y = 100
+
+    when start do
+      forever:
+        if mouse_down:
+          forward 5
+        end
+        wait 0.05
+      end
+    end
+
+    when key "space" up do
+      forward 10
+      global_score += 1
+    end
+  end
+end

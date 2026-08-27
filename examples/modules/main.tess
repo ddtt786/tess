@@ -1,0 +1,13 @@
+# spec 3.3 — use 로 파일을 쪼개서 관리하기
+use "common/settings.tess"
+use "common/math_helper.tess"
+
+project:
+  title "모듈화 예제"
+  fps 60
+end
+
+scene "stage1":
+  use "objects/hero.tess"
+  use "objects/monster.tess"
+end

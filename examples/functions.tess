@@ -1,0 +1,40 @@
+# spec 14 — 함수 정의 · 호출 · 스코프
+var global_multiplier = 2
+
+function add(a, b):
+  return a + b
+end
+
+function greet(user_name):
+  say join("안녕하세요, ", user_name) for 2
+end
+
+function sum_numbers(limit):
+  var total = 0
+  var i = 1
+  while i <= limit:
+    total += i
+    i += 1
+  end
+  return total
+end
+
+scene "main":
+  object "hero":
+    var local_power = 50
+
+    # 오브젝트 안의 함수도 전역 변수만 참조할 수 있다.
+    # 오브젝트 로컬 변수가 필요하면 매개변수로 넘긴다.
+    function get_damage(base_dmg):
+      return base_dmg * global_multiplier
+    end
+
+    when start do
+      var sum = add(10, 20)
+      var series = sum_numbers(10)
+      var dmg = get_damage(local_power)
+      greet("철수")
+      say join("합계 ", join(sum, join(" / 데미지 ", dmg)))
+    end
+  end
+end
