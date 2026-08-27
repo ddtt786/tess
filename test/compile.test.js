@@ -253,8 +253,13 @@ scene "s":
 end`;
   const { project } = compileProject(source, { path: 'x.tess' });
   const fn = project.functions[0];
-  assert.deepEqual(fn.localVariables, [{ name: '총합', value: 0 }]);
+  assert.equal(fn.localVariables.length, 1);
+  assert.equal(fn.localVariables[0].name, '총합');
+  assert.equal(fn.localVariables[0].value, 0);
+  // 엔트리는 지역 변수를 이름이 아니라 `함수id_해시` 로 가리킨다
+  assert.match(fn.localVariables[0].id, new RegExp(`^${fn.id}_[a-z0-9]{4}$`));
   assert.equal(fn.useLocalVariables, true);
+  assert.ok(fn.content.includes(`["${fn.localVariables[0].id}"`));
   assert.ok(fn.content.includes('set_func_variable'));
   assert.ok(fn.content.includes('get_func_variable'));
 });
@@ -356,9 +361,10 @@ end`,
 });
 
 // --- 엔트리에 없는 기능 -----------------------------------------------------------
-test('키를 뗐을 때 이벤트는 감시 스크립트로 바꾸고 경고한다', () => {
+test('키를 뗐을 때 이벤트는 감시 스크립트로 바뀐다', () => {
   const source = `scene "s":
   object "o":
+    costume 기본 "a.png" size 10 10
     when key "a" up do
       say "뗐다"
     end
@@ -366,7 +372,7 @@ test('키를 뗐을 때 이벤트는 감시 스크립트로 바꾸고 경고한�
 end`;
   const result = compileProject(source, { path: 'x.tess' });
   assert.deepEqual(result.errors, []);
-  assert.match(result.warnings[0].message, /키를 뗐을 때/);
+  assert.deepEqual(result.warnings, []);
   const thread = JSON.parse(result.project.objects[0].script)[0];
   assert.equal(thread[0].type, 'when_run_button_click');
   assert.equal(thread[1].type, 'repeat_inf');
@@ -391,7 +397,6 @@ end`, { path: 'x.tess' });
 
 test('엔트리에 없는 동작은 에러로 알려 준다', () => {
   const cases = [
-    ['scale_x = 50', /scale_x/],
     ['go "없는오브젝트"', /오브젝트가 없습니다/],
     ['play sound "없는소리"', /소리가 이 오브젝트에 없습니다/],
     ['jump "없는장면"', /장면이 없습니다/],
@@ -420,6 +425,153 @@ end`;
   const result = compileProject(source, { path: 'x.tess' });
   assert.equal(result.ok, false);
   assert.match(result.errors[0].message, /중간에서 값을 돌려줄 수 없습니다/);
+});
+
+// --- 주석 -----------------------------------------------------------------------
+test('문장 위의 주석이 그 블록의 엔트리 주석이 된다', () => {
+  const { thread } = compileScript('# 앞으로 간다\nforward 10');
+  assert.equal(thread[1].type, 'move_direction');
+  assert.equal(thread[1].comment.value, '앞으로 간다');
+  assert.equal(thread[1].comment.type, 'comment');
+  assert.equal(thread[1].comment.isOpened, true);
+});
+
+test('같은 줄 뒤에 붙은 주석도 그 블록에 붙는다', () => {
+  const { thread } = compileScript('x = 5  # 자리 잡기');
+  assert.equal(thread[1].comment.value, '자리 잡기');
+});
+
+test('여러 줄 주석은 하나로 합쳐진다', () => {
+  const { thread } = compileScript('# 첫 줄\n# 둘째 줄\nforward 1');
+  assert.equal(thread[1].comment.value, '첫 줄\n둘째 줄');
+});
+
+test('이벤트 위의 주석은 이벤트 블록에 붙는다', () => {
+  const source = `scene "s":
+  object "o":
+    # 시작할 때 하는 일
+    when start do
+      forward 1
+    end
+  end
+end`;
+  const { project } = compileProject(source, { path: 'x.tess' });
+  const thread = JSON.parse(project.objects[0].script)[0];
+  assert.equal(thread[0].type, 'when_run_button_click');
+  assert.equal(thread[0].comment.value, '시작할 때 하는 일');
+});
+
+test('문자열 안의 # 과 색상 리터럴은 주석이 아니다', () => {
+  const { thread } = compileScript('say "# 우물정"\ndraw_color = #ff0000');
+  assert.equal(thread[1].comment, undefined);
+  assert.equal(thread[1].params[0].params[0], '# 우물정');
+  assert.equal(thread[2].params[0], '#ff0000');
+});
+
+test('붙을 블록이 없는 주석은 그냥 사라진다', () => {
+  const source = `# 파일 설명
+scene "s":
+  object "o":
+    # 오브젝트 설명
+    name "이름"
+  end
+end`;
+  const { project, errors } = compileProject(source, { path: 'x.tess' });
+  assert.deepEqual(errors, []);
+  assert.equal(project.objects[0].name, '이름');
+});
+
+// --- useobject / usetext -----------------------------------------------------------
+test('useobject 는 불러온 조각을 오브젝트로 감싼다', () => {
+  const files = {
+    '/p/main.tess': 'scene "무대":\n  useobject "objects/치로.tess"\n  usetext "objects/점수판.tess"\nend',
+    '/p/objects/치로.tess': 'name "치로"\ncostume 기본 "c.png" size 40 60\nx = -100\n\nwhen start do\n  say "안녕"\nend',
+    '/p/objects/점수판.tess': 'text_content = "점수: 0"\nfont_size = 24',
+  };
+  const result = compileProject(files['/p/main.tess'], {
+    path: '/p/main.tess',
+    readFile: (target) => {
+      if (!files[target]) throw new Error('없음');
+      return files[target];
+    },
+  });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings, []);
+
+  const [sprite, textBox] = result.project.objects;
+  assert.equal(sprite.objectType, 'sprite');
+  assert.equal(sprite.name, '치로');
+  assert.equal(sprite.entity.x, -100);
+  assert.equal(JSON.parse(sprite.script).length, 1);
+  assert.equal(textBox.objectType, 'textBox');
+  assert.equal(textBox.text, '점수: 0');
+});
+
+test('useobject 로 만든 오브젝트는 파일 이름으로 서로를 가리킨다', () => {
+  const files = {
+    '/p/main.tess': 'scene "무대":\n  useobject "objects/주인공.tess"\n  useobject "objects/적.tess"\nend',
+    '/p/objects/주인공.tess': 'costume 기본 "a.png" size 10 10\n\nwhen start do\n  if touching("적"):\n    say "앗"\n  end\nend',
+    '/p/objects/적.tess': 'costume 기본 "b.png" size 10 10',
+  };
+  const result = compileProject(files['/p/main.tess'], {
+    path: '/p/main.tess',
+    readFile: (target) => files[target],
+  });
+  assert.deepEqual(result.errors, []);
+  const enemy = result.project.objects[1];
+  const thread = JSON.parse(result.project.objects[0].script)[0];
+  assert.equal(thread[1].params[0].type, 'reach_something');
+  assert.equal(thread[1].params[0].params[1], enemy.id);
+});
+
+// --- 리소스 선언 ---------------------------------------------------------------------
+test('크기·길이를 적어 두면 파일이 없어도 알리지 않는다', () => {
+  const declared = compileProject(`scene "s":
+  object "o":
+    costume 기본 "a.png" size 200 100
+    sound 점프 "j.mp3" for 1.5
+  end
+end`, { path: 'x.tess' });
+  assert.deepEqual(declared.warnings, []);
+  const object = declared.project.objects[0];
+  assert.deepEqual(object.sprite.pictures[0].dimension, { width: 200, height: 100 });
+  assert.equal(object.sprite.sounds[0].duration, 1.5);
+
+  const bare = compileProject(`scene "s":
+  object "o":
+    costume 기본 "a.png"
+  end
+end`, { path: 'x.tess' });
+  assert.equal(bare.warnings.length, 1);
+  assert.match(bare.warnings[0].message, /찾지 못했습니다/);
+});
+
+// --- scale_x / scale_y 정하기 ----------------------------------------------------------
+test('scale_x = 값 은 컴파일러가 만든 함수를 부른다', () => {
+  const { thread, project } = compileScript('scale_x = 50', {
+    costumes: 'costume 기본 "a.png" size 100 100',
+  });
+  const setter = project.functions.find((fn) => fn.content.includes('가로 비율 정하기'));
+  assert.ok(setter, '가로 비율 정하기 함수가 만들어져야 합니다.');
+  assert.equal(thread[1].type, `func_${setter.id}`);
+  assert.equal(Number(thread[1].params[0].params[0]), 50);
+  assert.equal(Number(thread[1].params[1].params[0]), 1); // 시작 배율 100%
+  assert.deepEqual(verifyEntryProject(project), []);
+});
+
+test('함수 안에서는 비율을 정할 수 없다고 알려 준다', () => {
+  const result = compileProject(`function f():
+  scale_x = 50
+end
+scene "s":
+  object "o":
+    when start do
+      f()
+    end
+  end
+end`, { path: 'x.tess' });
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0].message, /함수 안에서 할 수 없습니다/);
 });
 
 // --- 전체 예제 --------------------------------------------------------------------

@@ -7,6 +7,7 @@
 import {
   compileBoolean, compileValue, isBooleanBlock, resolveList, resolveTarget, shiftIndex,
 } from './expression.js';
+import { requireScaleSetter } from './runtime.js';
 
 const STOP_TARGETS = {
   this: 'thisThread',      // 현재 스크립트만
@@ -40,7 +41,9 @@ export function compileStatements(statements, ctx) {
 
 export function compileStatement(node, ctx) {
   // 하위 컴파일이 실패하면 null 이 올라올 수 있으므로 항상 배열로 맞춰 준다
-  return compile(node, ctx) ?? [];
+  const blocks = compile(node, ctx) ?? [];
+  ctx.applyComment(node, blocks[0]);
+  return blocks;
 }
 
 function compile(node, ctx) {
@@ -399,10 +402,10 @@ function compileVariableAssign(node, found, ctx) {
   }
 
   const read = () => (found.kind === 'funcLocal'
-    ? ctx.block('get_func_variable', [found.name, null])
+    ? ctx.block('get_func_variable', [found.id, null])
     : ctx.block('get_variable', [found.entry.id, null]));
   const write = (value) => (found.kind === 'funcLocal'
-    ? ctx.block('set_func_variable', [found.name, value, null])
+    ? ctx.block('set_func_variable', [found.id, value, null])
     : ctx.block('set_variable', [found.entry.id, value, null]));
 
   if (operator === '=') {
@@ -491,12 +494,23 @@ function compilePropertyAssign(node, name, ctx) {
     case 'way': return simple('direction_absolute', 'direction_relative', angleValue);
 
     case 'scale_x': case 'scale_y': {
-      if (!relative) {
-        return [ctx.error(node, `엔트리에는 ${name} 을(를) 정하는 블록이 없습니다. ${name} += 값 으로 바꾸거나 오브젝트 속성으로 선언하세요.`)].filter(Boolean);
+      if (relative) {
+        const compiled = value();
+        const dimension = name === 'scale_x' ? 'WIDTH' : 'HEIGHT';
+        return compiled ? [ctx.block('stretch_scale_size', [dimension, compiled, null])] : [];
       }
-      const compiled = value();
-      const dimension = name === 'scale_x' ? 'WIDTH' : 'HEIGHT';
-      return compiled ? [ctx.block('stretch_scale_size', [dimension, compiled, null])] : [];
+      if (operator !== '=') {
+        return [ctx.error(node, `${name} 에는 = 과 +=, -= 만 쓸 수 있습니다.`)].filter(Boolean);
+      }
+      // 엔트리에는 한 축의 비율을 "정하는" 블록이 없다.
+      // 컴파일러가 만들어 넣는 함수가 지금 크기를 재서 목표 비율로 맞춘다.
+      if (ctx.funcScope) {
+        return [ctx.error(node, `${name} 을(를) 정하는 일은 함수 안에서 할 수 없습니다. 오브젝트마다 시작 배율이 다르기 때문입니다.`)].filter(Boolean);
+      }
+      const compiled = compileValue(node.value, ctx);
+      if (!compiled) return [];
+      const setter = requireScaleSetter(name, ctx);
+      return [ctx.block(`func_${setter.id}`, [compiled, ctx.number(originScale(name, ctx)), null])];
     }
 
     case 'costume': {
@@ -561,6 +575,16 @@ function compilePropertyAssign(node, name, ctx) {
     default:
       return [ctx.error(node, `선언되지 않은 이름 '${name}' 에 값을 대입했습니다. var 로 먼저 선언하세요.`)].filter(Boolean);
   }
+}
+
+/** 오브젝트가 시작할 때의 가로/세로 배율 (엔트리의 "원래 크기로 되돌리기" 가 돌아가는 값) */
+function originScale(name, ctx) {
+  const properties = ctx.object?.properties;
+  const read = (key) => {
+    const value = properties?.get(key);
+    return value?.type === 'Number' ? value.value : null;
+  };
+  return (read(name) ?? read('size') ?? 100) / 100;
 }
 
 /** 값을 읽어서 계산한 뒤 다시 넣는 방식으로 복합 대입을 푼다 */

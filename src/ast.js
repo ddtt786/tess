@@ -33,6 +33,12 @@ semantics.addOperation('ast', {
   UseDecl(_use, path) {
     return { type: 'Use', path: path.ast().value, loc: at(this) };
   },
+  UseObjectDecl_object(_kw, path) {
+    return { type: 'UseObject', kind: 'object', path: path.ast().value, loc: at(this) };
+  },
+  UseObjectDecl_text(_kw, path) {
+    return { type: 'UseObject', kind: 'text', path: path.ast().value, loc: at(this) };
+  },
 
   ProjectDecl(_project, _open, fields, _end) {
     return { type: 'Project', fields: list(fields), loc: at(this) };
@@ -81,8 +87,17 @@ semantics.addOperation('ast', {
   PropertyDecl_rotation(_rotation, method) {
     return { type: 'Property', name: 'rotation', value: { type: 'Keyword', name: method.sourceString }, loc: at(this) };
   },
+  PropertyDecl_soundLength(_sound, id, file, _for, duration) {
+    return {
+      type: 'Sound',
+      id: id.ast().name,
+      file: file.ast().value,
+      duration: duration.ast().value,
+      loc: at(this),
+    };
+  },
   PropertyDecl_sound(_sound, id, file) {
-    return { type: 'Sound', id: id.ast().name, file: file.ast().value, loc: at(this) };
+    return { type: 'Sound', id: id.ast().name, file: file.ast().value, duration: null, loc: at(this) };
   },
   PropertyDecl_name(_name, value) {
     return { type: 'Property', name: 'name', value: value.ast(), loc: at(this) };

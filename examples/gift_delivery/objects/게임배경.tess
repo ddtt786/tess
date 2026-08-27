@@ -1,0 +1,15 @@
+name "게임 배경"
+costume 눈길 "game_bg.png" size 960 540
+
+when scene start do
+  게임중 = 1
+  start timer
+  send "게임 시작"
+end
+
+when signal "게임 오버" do
+  게임중 = 0
+  stop timer
+  wait 2
+  jump "인트로"
+end

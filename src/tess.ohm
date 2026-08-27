@@ -26,12 +26,19 @@ Tess {
     | ObjectDecl
     | TextDecl
     | FunctionDecl
+    | UseObjectDecl
     | UseDecl
     | VarDecl
     | ListDecl
 
   // --- 3.3 파일 불러오기 -----------------------------------------------------
   UseDecl = use stringLiteral
+
+  // 불러온 파일을 오브젝트/글상자로 감싸 주는 형태.
+  // 파일에는 오브젝트 속성과 when 블록만 적으면 되고, 이름은 파일 이름이 된다.
+  UseObjectDecl
+    = useobject stringLiteral -- object
+    | usetext stringLiteral   -- text
 
   // `use` 로 불러온 조각 파일은 그 자리에 맞는 조각만 담고 있다.
   // 컴파일러가 문맥에 따라 시작 규칙으로 골라 쓴다 (Program / SceneFragment / ObjectFragment).
@@ -52,6 +59,7 @@ Tess {
   SceneMember
     = ObjectDecl
     | TextDecl
+    | UseObjectDecl
     | UseDecl
 
   // --- 3.5 object / 3.6 text -------------------------------------------------
@@ -73,6 +81,7 @@ Tess {
     | default costume identifier stringLiteral                                  -- defaultCostume
     | costume identifier stringLiteral size numberLiteral numberLiteral         -- costumeSized
     | costume identifier stringLiteral                                          -- costume
+    | sound identifier stringLiteral for numberLiteral                          -- soundLength
     | sound identifier stringLiteral                                            -- sound
     | name stringLiteral                                                        -- name
     | visible booleanLiteral                                                    -- visible
@@ -533,6 +542,8 @@ Tess {
   until       = "until"       ~identifierPart
   up          = "up"          ~identifierPart
   use         = "use"         ~identifierPart
+  useobject   = "useobject"   ~identifierPart
+  usetext     = "usetext"     ~identifierPart
   var         = "var"         ~identifierPart
   vertical    = "vertical"    ~identifierPart
   visible     = "visible"     ~identifierPart
