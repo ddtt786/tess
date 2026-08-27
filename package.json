@@ -1,12 +1,18 @@
 {
   "name": "tess",
   "version": "1.0.0",
-  "description": "",
+  "description": "Tess 언어(엔트리 블록 코드로 변환되는 텍스트 언어)의 Ohm 문법 구현",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test test/*.test.js"
   },
-  "keywords": [],
+  "keywords": [
+    "tess",
+    "ohm",
+    "parser",
+    "grammar",
+    "entry"
+  ],
   "author": "",
   "license": "ISC",
   "devEngines": {

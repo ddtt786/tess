@@ -1,0 +1,397 @@
+# ============================================================================
+#  Tess 언어 한 바퀴 — spec 의 모든 문법 요소를 한 파일에 모았습니다.
+# ============================================================================
+
+# --- 3.1 최상위 레벨 (전역 변수 · 리스트) -----------------------------------
+var total_score = 0
+var game_title = "모험의 시작"
+list inventory = ["단검", "회복약"]
+list ranking = []
+
+# --- 3.2 project ------------------------------------------------------------
+project:
+  title "우주 비행사"
+  description "운석을 피하며 목적지까지 비행하는 게임입니다."
+  fps 60
+end
+
+# --- 14. 공용 함수 -----------------------------------------------------------
+function add(a, b):
+  return a + b
+end
+
+function sum_numbers(limit):
+  var total = 0
+  var i = 1
+  while i <= limit:
+    total += i
+    i += 1
+  end
+  return total
+end
+
+scene "play_game":
+  object "player":
+    # --- 3.5 오브젝트 속성 ---------------------------------------------------
+    name "용사"
+    default costume idle "hero_idle.png"
+    costume attack "hero_attack.png"
+    sound slash "slash.mp3"
+    x = 0
+    y = -50
+    scale_x = 100
+    scale_y = 100
+    visible true
+    lock false
+
+    # --- 13.1 로컬 변수 ------------------------------------------------------
+    var local_hp = 100
+    list combo = []
+
+    # --- 14.2 오브젝트 안의 함수 (전역 변수만 참조 가능) ---------------------
+    function get_damage(base_dmg):
+      return base_dmg * total_score
+    end
+
+    when start do
+      # --- 4.1 블록 열고 닫기 -----------------------------------------------
+      say "모험을 시작합니다!" for 2
+
+      if local_hp <= 0 then
+        kill
+      end
+
+      if total_score >= 50:
+        say "통과!"
+      else:
+        say "재도전해 보세요."
+      end
+
+      # --- 12.1 수학 -----------------------------------------------------------
+      var p = 2 ** 4
+      var root = 25 ** 0.5
+      var mixed = floor(3.7) + ceil(3.2) + round(3.5) + abs(-15)
+      var trig = sin(90) + cos(0) + tan(45) + asin(1) + acos(1) + atan(1)
+      var logs = log2(8) + ln(2.718) + log10(100)
+      var rnd = random(1, 10)
+      var rest = 10 % 3
+      var quotient = 10 // 3
+
+      # --- 12.3 문자열 ---------------------------------------------------------
+      var msg = "Entry Tess"
+      var len = length(msg)
+      var first_ch = msg[0]
+      var sub = slice(msg, 0, 5)
+      var cnt = count("banana", "a")
+      var merged = join("Hello, ", "Tess!")
+      var idx = index_of(msg, "Tess")
+      var replaced = replace(msg, "Entry", "Hello")
+      var rev = reverse("Tess")
+      var upper = uppercase("abc")
+      var lower = lowercase("ABC")
+
+      # --- 12.2 객체 정보 · 거리 -----------------------------------------------
+      var mx = x("mouse")
+      var my = y("mouse")
+      var enemy_angle = angle("bot")
+      var enemy_way = way("bot")
+      var enemy_size = size("bot")
+      var dist = distance("player")
+      var board = text_content("score_board")
+
+      # --- 12.4 시간 · 초시계 · 블록 수 ----------------------------------------
+      var current_year = now("year")
+      var current_dayname = now("weekday")
+      start timer
+      wait 2
+      stop timer
+      var record = timer
+      reset timer
+      var all_blocks = block_count
+      var cat_blocks = block_count("player")
+
+      # --- 12.5 색상 변환 ------------------------------------------------------
+      var hex_code = to_hex(255, 0, 0)
+      var red_value = from_hex(#ff0000, red)
+      var green_value = from_hex(#00ff00, green)
+      var blue_value = from_hex(#0000ff, blue)
+
+      # --- 14.1 함수 호출 ------------------------------------------------------
+      var sum = add(10, 20)
+      var series = sum_numbers(10)
+      var dmg = get_damage(local_hp)
+      say dmg
+
+      # --- 13.2 리스트 ---------------------------------------------------------
+      in ranking add 70
+      in ranking insert 80 at 1
+      remove ranking[0]
+      var total_items = length(ranking)
+      var has_perfect = contains(ranking, 100)
+      ranking[0] = 95
+
+      # --- 13.3 대답 -----------------------------------------------------------
+      ask "당신의 이름은 무엇인가요?"
+      say join("반갑습니다, ", answer)
+
+      # --- 13.4 무대 표시 · 숨기기 --------------------------------------------
+      show total_score
+      hide total_score
+      show ranking
+      hide ranking
+      show timer
+      hide timer
+      show answer
+      hide answer
+    end
+
+    # --- 6. 이벤트 -------------------------------------------------------------
+    when scene start do
+      x = 0
+      y = 0
+    end
+
+    when key "space" do
+      say "점프!"
+    end
+
+    when key "space" up do
+      say "착지!"
+    end
+
+    when click do
+      say "나를 클릭했군요!"
+    end
+
+    when click up do
+      say "클릭 해제!"
+    end
+
+    when stage click do
+      say "무대 클릭 감지!"
+    end
+
+    when stage click up do
+      say "무대 클릭 해제!"
+    end
+
+    when signal "game_over" do
+      say "게임 오버..."
+    end
+
+    when cloned do
+      y = 100
+      repeat 10:
+        forward 10
+        wait 0.05
+      end
+      kill
+    end
+
+    # --- 5.2 반복문 · 5.3 흐름 제어 --------------------------------------------
+    when key "r" do
+      repeat 5:
+        forward 10
+        wait 0.1
+      end
+
+      while local_hp > 0:
+        wait 0.5
+      end
+
+      until touching("goal"):
+        forward 5
+      end
+
+      forever:
+        if key_down("right"):
+          x += 5
+        end
+
+        if touching("trap"):
+          break
+        end
+
+        if touching("coin"):
+          skip
+        end
+
+        wait 0.02
+      end
+    end
+
+    when key "q" do
+      wait 1.5
+      wait mouse_down
+      stop other
+      stop me
+      stop them
+      stop
+      stop all
+      restart
+    end
+
+    # --- 7. 신호와 복제본 · 장면 전환 -------------------------------------------
+    when key "c" do
+      send "monster_spawn"
+      call "stage_clear"
+      clone
+      clone "bullet"
+      del clone
+      del clones
+      jump "stage_2"
+      jump next
+      jump back
+    end
+
+    # --- 8.1 위치와 이동 --------------------------------------------------------
+    when key "w" do
+      x = 100
+      y = -50
+      x += 10
+      y -= 5
+      forward 10
+      forward 10 at 90
+      bounce
+      move 20 20
+      move 50 0 in 1
+      move -20 -20
+      go 0 0
+      go "mouse"
+      go "boss" in 2
+    end
+
+    # --- 8.2 각도와 방향 --------------------------------------------------------
+    when key "a" do
+      angle = 90
+      way = 180
+      turn 45
+      turn 90 in 0.5
+      steer 30
+      steer 45 in 1
+      look "mouse"
+      look "enemy"
+    end
+
+    # --- 8.3 모양과 크기 · 8.4 대화 ---------------------------------------------
+    when key "s" do
+      show
+      hide
+      costume = "run"
+      next costume
+      prev costume
+      size = 120
+      size += 10
+      scale_x = 80
+      scale_y = 100
+      reset size
+      effect_color += 10
+      effect_color = 100
+      effect_brightness = 50
+      effect_alpha += 20
+      clear effects
+      flip x
+      flip y
+      order front
+      order back
+      say "안녕하세요!"
+      think "무슨 일이지?"
+      think "조심해야겠어." for 1.5
+      clear bubble
+    end
+
+    # --- 9. 붓 -------------------------------------------------------------------
+    when key "d" do
+      draw_color = #ff0000
+      draw_color = random_color()
+      draw_width = 5
+      draw_alpha = 70
+      fill_color = #0000ff
+
+      start draw
+      forward 50
+      turn 90
+      forward 50
+      stop draw
+
+      stamp
+      clear draw
+
+      start fill
+      forward 40
+      turn 120
+      forward 40
+      turn 120
+      forward 40
+      stop fill
+    end
+
+    # --- 10. 소리 -----------------------------------------------------------------
+    when key "m" do
+      play sound "jump"
+      play sound "laser" for 0.5
+      play sound "bgm_intro" from 1 to 5
+      play sound "explosion" and wait
+      play sound "voice" for 2 and wait
+      play sound "song" from 0 to 3 and wait
+      play bgm "main_theme"
+      stop bgm
+      sound_volume = 80
+      sound_volume += 5
+      sound_speed = 1.2
+      stop sound this
+      stop sound all
+    end
+
+    # --- 11. 판단 및 상태 값 --------------------------------------------------------
+    when key "p" do
+      if mouse_down: forward 5 end
+      if clicked: say "클릭!" end
+      if boost_mode: wait 0.01 end
+      if touchable: say "터치 지원" end
+      if device == "mobile": size = 150 end
+      say user_id
+      say nickname
+      if timer > 10: jump "end_scene" end
+      say answer
+      say block_count
+      if type(total_score) == "number":
+        total_score += 1
+      end
+    end
+  end
+
+  # --- 3.6 / 8.5 글상자 -----------------------------------------------------------
+  text "score_board":
+    name "점수판"
+    x = 0
+    y = 150
+    text_content = "점수: 0"
+    font = "NanumGothic"
+    font_color = #ff0000
+    bg_color = transparent
+
+    when signal "score_changed" do
+      write "엔트리"
+      append " 환영합니다."
+      prepend "[공지] "
+      clear text
+      font = "NanumGothic"
+      font_color = #ff0000
+      bg_color = #000000
+      text_bold = true
+      text_italic = false
+      text_underline = true
+      text_strikethrough = true
+    end
+  end
+end
+
+scene "stage_2":
+  object "boss":
+    name "보스"
+    when scene start do
+      say "최종 보스다!" for 2
+    end
+  end
+end

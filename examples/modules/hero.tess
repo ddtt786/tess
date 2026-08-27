@@ -1,0 +1,25 @@
+# use 로 불러와지는 조각 파일. 오브젝트 하나만 담고 있다.
+object "hero":
+  name "용사"
+  default costume idle "hero_idle.png"
+  costume attack "hero_attack.png"
+  sound slash "slash.mp3"
+  x = 0
+  y = -50
+
+  var hp = 100
+
+  when start do
+    say "모험을 시작합니다!" for 2
+  end
+
+  when key "space" do
+    play sound "slash"
+    forward 10
+    hp -= 1
+    if hp <= 0:
+      say "쓰러졌다..."
+      stop me
+    end
+  end
+end
