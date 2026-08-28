@@ -9,23 +9,23 @@ pnpm install
 pnpm test                                              # 223개 테스트
 
 node index.js check examples/tour.tess                 # 문법 · 의미 검사
-node index.js build examples/gift_delivery/main.tess -o build/gift.ent
-node index.js run   examples/gift_delivery/main.tess   # 컴파일해서 브라우저로 열기
+node index.js build examples/all_blocks.tess -o build/blocks.ent
+node index.js run   examples/all_blocks.tess   # 컴파일해서 브라우저로 열기
 ```
 
 `.ent` 파일은 엔트리 오프라인 에디터에서 그대로 열 수 있는 tar 묶음입니다.
 
 ```
-$ node index.js build examples/gift_delivery/main.tess -o build/gift.ent
-main.tess -> build/gift.ent
-  장면 3 · 오브젝트 10 · 변수 8 · 신호 3 · 함수 2 · 블록 218
+$ node index.js build examples/all_blocks.tess -o build/blocks.ent
+all_blocks.tess -> build/blocks.ent
+  장면 2 · 오브젝트 4 · 변수 8 · 신호 2 · 함수 5 · 블록 609
 ```
 
 ## 구성
 
 | 파일 | 역할 |
 |---|---|
-| `src/tess.ohm` | **문법 정의** — "이 코드가 Tess 로 올바른가" 만 판단 |
+| `src/tess.ohm` | **문법 정의** — "이 코드가 Tess 로 올바른가" 만 판단 (규칙별 상세는 [GRAMMAR.md](./GRAMMAR.md)) |
 | `src/ast.js` | **시맨틱** — 파스 트리(CST) → AST 변환 (`addOperation('ast')`) |
 | `src/validate.js` | **의미 검증** — 문법으로 표현할 수 없는 spec 규칙 검사 |
 | `src/builtins.js` | spec 의 상태 값 · 내장 함수 · 속성 이름 목록 |
@@ -34,6 +34,7 @@ main.tess -> build/gift.ent
 | `index.js` | 라이브러리 재export + CLI |
 | `examples/` | spec 예제 · 언어 한 바퀴 · 컴파일되는 작품 |
 | `SPEC-ADDENDUM.md` | 컴파일을 위해 더한 문법과 엔트리 블록 대응표 |
+| `GRAMMAR.md` | Ohm 문법(`tess.ohm`) 규칙별 상세 명세 — 우선순위, PEG 기법, AST 대응표 |
 
 | 컴파일러 파일 | 역할 |
 |---|---|
@@ -356,9 +357,10 @@ y ≈ x^p 일 때   y ← y × (1 + p·ln x − ln y)      오차 ε → ε²/2
 ### 브라우저에서 바로 실행 — `run`
 
 ```
-$ node index.js run examples/gift_delivery/main.tess
-main.tess -> http://127.0.0.1:41234/
+$ node index.js run examples/all_blocks.tess
+all_blocks.tess -> http://127.0.0.1:41234/
   실행기: CDN (https://cdn.jsdelivr.net/npm/@entrylabs/entry@4)
+  자동 새로고침: 켜짐 (--no-reload 로 끌 수 있습니다)
   Ctrl+C 로 끕니다.
 ```
 
@@ -421,7 +423,7 @@ Event          { event, key?, signal?, body[] }
 문장            If Repeat While Until Forever Wait Break Skip Restart Return
                Stop StopSound StopBgm StopDraw StopFill StopTimer
                StartDraw StartFill StartTimer ResetSize ResetTimer Clear
-               Send Clone DeleteClone DeleteClones Jump
+               Send Clone DeleteClone DeleteClones Jump Read TtsSetting
                Forward Bounce Move Go Turn Steer Look
                Show Hide CostumeStep Say Think Flip Order
                TextWrite Stamp PlaySound PlayBgm

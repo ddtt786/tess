@@ -21,6 +21,10 @@
 | 모양 각도 | `angle = Number` | 시작할 때의 모양 각도 | `0` |
 | 이동 방향 | `way = Number` | 시작할 때의 이동 방향 | `90` |
 | 전체 크기 | `size = Number` | `scale_x`, `scale_y` 를 한 번에 정한다 | `100` |
+| 붓 색 | `draw_color = Color` | 시작할 때의 붓 색 | `#ff0000` (엔트리 기본값) |
+| 채우기 색 | `fill_color = Color` | 시작할 때의 채우기 색 | `#ff0000` |
+| 붓 굵기 | `draw_width = Number` | 시작할 때의 붓 굵기 | `1` |
+| 붓 투명도 | `draw_alpha = Number` | 시작할 때의 붓 투명도(0~100) | `0` |
 
 ```tess
 object "치로":
@@ -29,6 +33,22 @@ object "치로":
   angle = 0
   way = 90
   size = 120
+end
+```
+
+`draw_color`·`fill_color`·`draw_width`·`draw_alpha` 는 엔트리 `project.json` 에 "기본값"을
+적어 둘 자리가 없습니다 — 엔트리는 오브젝트가 시작할 때마다 항상 빨간 붓(`#ff0000`,
+굵기 1, 불투명)으로 시작합니다(`entryjs` 의 `Entry.setBasicBrush`). 그래서 오브젝트
+선언 맨 위에 이 값을 적으면, 컴파일러가 **`when start` 스크립트를 만들어서 그 값을
+제일 먼저 정하게** 합니다. 이 값들은 사실 `object "치로": draw_color = #ff0000 end`
+처럼 선언부에 적으나, `when start do draw_color = #ff0000 end` 처럼 이벤트 안에 직접
+적으나 컴파일 결과가 똑같습니다 — 앞은 뒤의 줄임말입니다.
+
+```tess
+object "붓":
+  costume 기본 "brush.png"
+  draw_color = #3355ff   # -> when start 에 "붓 색을 #3355ff (으)로 정하기" 가 생긴다
+  draw_width = 3
 end
 ```
 
@@ -54,6 +74,15 @@ text "점수판":
   line_break = false
 end
 ```
+
+`font_color`·`bg_color`·`font` 를 안 적으면 **엔트리가 새 글상자를 만들 때와 똑같은
+기본값**을 씁니다 — 글자색 `#000000`, 배경 `#ffffff`(흰 배경, `transparent` 아님),
+글씨체 `Nanum Gothic`(`entryjs` 의 `Entry.EntityObject`, `Entry.Object.getEntityJson` 기준).
+`font =` 에 적는 이름은 화면에 보이는 한글 글씨체 이름이 아니라 **CSS 글꼴 이름**입니다 —
+`entry-cdn.pstatic.net` 이 정의하는 `@font-face` 의 `font-family` 값 그대로 적어야
+글자가 실제로 그 모양으로 나옵니다(예: 나눔고딕코딩 -> `"Nanum Gothic Coding"`,
+둥근모꼴 -> `"DungGeunMo"`, 잘난체 -> `"yg-jalnan"`). `node index.js run` 으로 미리보기를
+열면 이 CSS 를 자동으로 불러오므로(8절 참고) 이름만 맞으면 바로 그 글씨체로 보입니다.
 
 ## 3. 모양 원본 크기 선언
 
@@ -246,6 +275,15 @@ end
 | `play bgm S` / `stop bgm` | `play_bgm` / `stop_bgm` |
 | `sound_volume` / `sound_speed` | `sound_volume_set·change` / `sound_speed_set·change` |
 | `stop sound this \| all` | `sound_silent_all` |
+| `read S [and wait]` / `tts voice V speed S pitch P` | `read_text` / `read_text_wait_with_block` / `set_tts_property` (9절 참고) |
+
+`costume = S`, `play sound S`, `play bgm S`(그리고 `sound_something_*` 계열 전부)의
+`S`는 문자열 리터럴이 아니어도 됩니다 — 변수·계산식도 그대로 씁니다. 리터럴이면
+이 오브젝트에 등록된 이름인지 컴파일할 때 미리 확인해서 오타를 잡아 주고, 그
+밖의 값이면 확인 없이 그대로 흘려보냅니다. 엔트리가 그 값을 실행할 때
+1) 모양/소리 id, 2) 모양/소리 이름, 3) 등록한 순번 순서로 찾기 때문에, 그
+값이 실행 시점에 실제 이름과 같기만 하면 정상 동작합니다(`Entry.Sprite#getPicture`,
+`Entry.Sound#getSound` 참고).
 
 ### 자료 · 계산
 
@@ -440,10 +478,64 @@ Tess 는 이걸 막지 않고 그대로 컴파일하지만, 엔트리에서 열�
 반대로 `write`·`append`·`prepend`·`clear text`·`font`·`font_color`·`bg_color`·`text_*` 는
 일반 오브젝트에서 쓸 수 없고, 이쪽은 컴파일 에러로 알려 줍니다(spec 8.5 에 적힌 규칙이라서).
 
+## 9. TTS 읽어주기 (addendum)
+
+엔트리의 "읽어주기(TTS)" 는 blockspec 이 아니라 **AI 활용 블록**이라는 별도 확장
+카테고리입니다(`entryjs` 의 `Entry.AI_UTILIZE_BLOCK.tts`, `block_ai_utilize_tts.js`).
+Tess 는 `read` 문과 `tts` 설정문으로 이 두 블록을 만듭니다.
+
+```tess
+when start do
+  read "안녕하세요"                                   # 말하는 동안 기다리지 않는다
+  read "준비, 시작!" and wait                          # 다 읽을 때까지 기다린다
+  tts voice "female" speed "normal" pitch "normal"    # 목소리 · 속도 · 음높이
+end
+```
+
+| Tess | 엔트리 블록 |
+| --- | --- |
+| `read S` | `read_text` |
+| `read S and wait` | `read_text_wait_with_block` |
+| `tts voice V speed S pitch P` | `set_tts_property` |
+
+`voice`·`speed`·`pitch` 는 문자열로 적습니다. 엔트리 코드값을 그대로 써도 되고,
+아래 별명을 대신 써도 됩니다(대소문자 구분 없음). 모르는 값이면 컴파일 에러로
+쓸 수 있는 값을 알려 줍니다.
+
+| voice (목소리) | 별명 | speed / pitch (속도 · 음높이) | 별명 |
+| --- | --- | --- | --- |
+| `kyuri` | `female` | `5` | `veryslow` / `verylow` |
+| `jinho` | `male` | `3` | `slow` / `low` |
+| `hana` | `kind` | `0` | `normal` |
+| `dinna` | `sweet` | `-3` | `fast` / `high` |
+| `brown` | `echo` | `-5` | `veryfast` / `veryhigh` |
+| `minions` | `mischievous` | | |
+| `sally` | `dainty` | | |
+| `nsabina`, `nmammon` | | | |
+| `nmeow` | `kitty` | | |
+| `nwoof` | `doggy` | | |
+
+`speed`/`pitch` 는 **느릴수록·낮을수록 +** 인 엔트리 코드값을 그대로 따릅니다
+(`speed 5` = 아주 느리게, `pitch -5` = 아주 높게). `voice`/`speed`/`pitch` 를 안 정하면
+엔트리 기본값(`kyuri`, `0`, `0`) 그대로입니다 — 별도로 `tts` 문을 안 써도 됩니다.
+
+### 알아둘 점 — TTS 음성은 playentry.org 서버가 만듭니다
+
+`read_text`/`read_text_wait_with_block` 은 실행될 때 **엔트리 서버(`/api/expansionBlock/tts/read`,
+네이버 클로바)** 에 문장을 보내 mp3 를 받아 재생합니다. 이 API 는 `playentry.org` 에만
+있으므로:
+
+- `node index.js run` 으로 여는 미리보기는 이 API 가 없어서 **읽어주기 블록이 아무 소리도
+  안 내고 조용히 다음 블록으로 넘어갑니다** (오류가 나지는 않습니다 — `entryjs` 가 요청
+  실패 시 그냥 넘어가게 만들어져 있습니다)
+- `.ent` 로 내보내 **playentry.org 에서 열면** 정상적으로 소리가 납니다
+- `tts` 설정과 `read`/`read ... and wait` 문 자체는 로컬에서도 정확한 블록으로 컴파일되고
+  구조 검사(`verify.js`)도 통과합니다 — 소리만 playentry.org 에서 확인해야 합니다
+
 ## 7. 컴파일 결과물
 
 ```
-build/gift.ent          # tar 묶음
+build/blocks.ent        # tar 묶음
 └─ temp/
    ├─ project.json      # 엔트리 작품 데이터
    ├─ 84/5a/image/845a9347….png
@@ -457,13 +549,19 @@ build/gift.ent          # tar 묶음
 ## 8. 바로 실행해 보기
 
 ```bash
-node index.js run examples/gift_delivery/main.tess
+node index.js run examples/all_blocks.tess
 ```
 
 컴파일해서 그 자리에 작은 서버를 띄우고 브라우저를 엽니다.
 엔트리 실행기는 설치돼 있으면(`pnpm add -D @entrylabs/entry`) 그것을, 없으면 CDN 을 씁니다.
 둘 다 안 되면 페이지가 그 사실을 알려 주고 `.ent` 를 받아 playentry.org 에서 여는 길을
 안내합니다.
+
+미리보기 페이지는 엔트리가 쓰는 한글 글씨체(나눔고딕코딩·둥근모꼴·잘난체 …)의
+`@font-face` 정의도 `entry-cdn.pstatic.net` 에서 함께 불러옵니다 — `entryjs` 자체에는
+없고 `playentry.org` 페이지가 따로 붙이는 스타일이라, 이 CSS 없이는 `font = "DungGeunMo"`
+같은 값이 전부 시스템 기본 글꼴로 보입니다(2절 참고). 인터넷이 막힌 곳에서는 이 CSS 도
+못 받으므로 시스템 기본 글꼴로 대체됩니다.
 
 | 옵션 | 뜻 |
 | --- | --- |

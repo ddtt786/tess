@@ -61,6 +61,11 @@ Tess {
     | TextDecl
     | UseObjectDecl
     | UseDecl
+    | SceneNameDecl
+
+  // 오브젝트의 `name "..."` 와 같은 방식: 장면 식별자(스크립트에서 jump 로 가리키는
+  // 이름)와, 컴파일된 엔트리 작품에 실제로 찍히는 이름을 따로 정할 수 있게 한다.
+  SceneNameDecl = name stringLiteral
 
   // --- 3.5 object / 3.6 text -------------------------------------------------
   ObjectDecl = object stringLiteral blockOpen ObjectMember* end_
@@ -97,6 +102,7 @@ Tess {
       | "text_content" | "text_bold" | "text_italic"
       | "text_underline" | "text_strikethrough" | "text_align"
       | "font_color" | "font_size" | "font" | "bg_color" | "line_break"
+      | "draw_color" | "draw_width" | "draw_alpha" | "fill_color"
       | "angle" | "way" | "x" | "y") ~identifierPart
 
   // 3.5 회전 방식 (엔트리 rotateMethod)
@@ -160,6 +166,8 @@ Tess {
     | TextStatement
     | PenStatement
     | SoundStatement
+    | ReadStatement
+    | TtsStatement
     | DataStatement
     | VarDecl
     | ListDecl
@@ -304,6 +312,14 @@ Tess {
     | play sound Expr from Expr to Expr          -- soundRange
     | play sound Expr                            -- sound
     | play bgm Expr                              -- bgm
+
+  // --- 11. TTS 읽어주기 (addendum) --------------------------------------------
+  // 긴 형태(`and wait`)를 먼저 시도한다 — play sound 와 같은 이유다.
+  ReadStatement
+    = read Expr and wait -- readWait
+    | read Expr           -- read
+
+  TtsStatement = tts voice stringLiteral speed stringLiteral pitch stringLiteral
 
   // --- 13.2 리스트 조작 / 13.3 대답 ------------------------------------------
   DataStatement
@@ -505,10 +521,12 @@ Tess {
   or          = "or"          ~identifierPart
   order       = "order"       ~identifierPart
   other       = "other"       ~identifierPart
+  pitch       = "pitch"       ~identifierPart
   play        = "play"        ~identifierPart
   prepend     = "prepend"     ~identifierPart
   prev        = "prev"        ~identifierPart
   project     = "project"     ~identifierPart
+  read        = "read"        ~identifierPart
   remove      = "remove"      ~identifierPart
   repeat      = "repeat"      ~identifierPart
   reset       = "reset"       ~identifierPart
@@ -523,6 +541,7 @@ Tess {
   size        = "size"        ~identifierPart
   skip        = "skip"        ~identifierPart
   sound       = "sound"       ~identifierPart
+  speed       = "speed"       ~identifierPart
   stage       = "stage"       ~identifierPart
   stamp       = "stamp"       ~identifierPart
   start       = "start"       ~identifierPart
@@ -538,6 +557,7 @@ Tess {
   to          = "to"          ~identifierPart
   transparent = "transparent" ~identifierPart
   true        = "true"        ~identifierPart
+  tts         = "tts"         ~identifierPart
   turn        = "turn"        ~identifierPart
   until       = "until"       ~identifierPart
   up          = "up"          ~identifierPart
@@ -547,6 +567,7 @@ Tess {
   var         = "var"         ~identifierPart
   vertical    = "vertical"    ~identifierPart
   visible     = "visible"     ~identifierPart
+  voice       = "voice"       ~identifierPart
   wait        = "wait"        ~identifierPart
   when        = "when"        ~identifierPart
   while       = "while"       ~identifierPart

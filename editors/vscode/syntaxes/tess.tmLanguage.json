@@ -121,7 +121,7 @@
         },
         {
           "name": "keyword.other.command.tess",
-          "match": "(?<![A-Za-z0-9_])(?:description|rotation|costume|default|effects|forward|prepend|visible|append|bounce|bubble|clones|insert|remove|clear|clone|order|reset|sound|stamp|steer|think|timer|title|write|call|draw|fill|flip|hide|jump|kill|lock|look|move|name|play|prev|send|show|size|turn|add|ask|bgm|del|fps|say|go|x|y)(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_])(?:description|rotation|costume|default|effects|forward|prepend|visible|append|bounce|bubble|clones|insert|remove|clear|clone|order|pitch|reset|sound|speed|stamp|steer|think|timer|title|voice|write|call|draw|fill|flip|hide|jump|kill|lock|look|move|name|play|prev|read|send|show|size|turn|add|ask|bgm|del|fps|say|tts|go|x|y)(?![A-Za-z0-9_])"
         },
         {
           "name": "support.variable.property.tess",

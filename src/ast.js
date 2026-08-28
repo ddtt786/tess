@@ -63,6 +63,11 @@ semantics.addOperation('ast', {
   SceneDecl(_scene, name, _open, members, _end) {
     return { type: 'Scene', name: name.ast().value, body: list(members), loc: at(this) };
   },
+  // 오브젝트의 PropertyDecl_name 과 같은 모양(type: 'Property')으로 만들어서
+  // 컴파일러가 오브젝트 이름 처리와 똑같은 방식으로 다룰 수 있게 한다.
+  SceneNameDecl(_name, value) {
+    return { type: 'Property', name: 'name', value: value.ast(), loc: at(this) };
+  },
 
   ObjectDecl(_object, name, _open, members, _end) {
     return { type: 'Object', kind: 'object', name: name.ast().value, body: list(members), loc: at(this) };
@@ -443,6 +448,19 @@ semantics.addOperation('ast', {
   },
   SoundStatement_bgm(_play, _bgm, name) {
     return { type: 'PlayBgm', name: name.ast(), loc: at(this) };
+  },
+
+  // --- TTS 읽어주기 (addendum) -----------------------------------------------
+  ReadStatement_readWait(_read, value, _and, _wait) {
+    return { type: 'Read', value: value.ast(), wait: true, loc: at(this) };
+  },
+  ReadStatement_read(_read, value) {
+    return { type: 'Read', value: value.ast(), wait: false, loc: at(this) };
+  },
+  TtsStatement(_tts, _voice, voice, _speed, speed, _pitch, pitch) {
+    return {
+      type: 'TtsSetting', voice: voice.ast(), speed: speed.ast(), pitch: pitch.ast(), loc: at(this),
+    };
   },
 
   // ==========================================================================

@@ -631,7 +631,7 @@ end`, { path: 'x.tess' });
 });
 
 // --- 전체 예제 --------------------------------------------------------------------
-const examples = ['examples/all_blocks.tess', 'examples/gift_delivery/main.tess'];
+const examples = ['examples/all_blocks.tess', 'examples/functions.tess'];
 for (const example of examples) {
   test(`예제 컴파일: ${example}`, () => {
     const file = path.join(root, example);
@@ -643,7 +643,7 @@ for (const example of examples) {
 }
 
 test('.ent 묶음은 temp/project.json 을 담은 tar 다', () => {
-  const file = path.join(root, 'examples/gift_delivery/main.tess');
+  const file = path.join(root, 'examples/all_blocks.tess');
   const { project } = compileProject(fs.readFileSync(file, 'utf-8'), { path: file });
   const tar = makeEntryBundle(project, []);
 
@@ -652,12 +652,12 @@ test('.ent 묶음은 temp/project.json 을 담은 tar 다', () => {
   assert.equal(name, 'temp/project.json');
   const size = parseInt(tar.subarray(124, 136).toString('utf-8').replace(/\0/g, '').trim(), 8);
   const content = tar.subarray(512, 512 + size).toString('utf-8');
-  assert.deepEqual(JSON.parse(content).scenes.length, 3);
+  assert.deepEqual(JSON.parse(content).scenes.length, 2);
 });
 
 test('같은 소스는 항상 같은 결과로 컴파일된다', () => {
-  const source = fs.readFileSync(path.join(root, 'examples/gift_delivery/main.tess'), 'utf-8');
-  const options = { path: path.join(root, 'examples/gift_delivery/main.tess') };
+  const source = fs.readFileSync(path.join(root, 'examples/all_blocks.tess'), 'utf-8');
+  const options = { path: path.join(root, 'examples/all_blocks.tess') };
   const first = compileProject(source, options).project;
   const second = compileProject(source, options).project;
   assert.equal(JSON.stringify(first), JSON.stringify(second));

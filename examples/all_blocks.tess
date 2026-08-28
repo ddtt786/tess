@@ -35,6 +35,10 @@ scene "무대":
     rotation free
     angle = 0
     way = 90
+    draw_color = #ff9900
+    fill_color = #0099ff
+    draw_width = 2
+    draw_alpha = 10
 
     var 체력 = 100
 
@@ -109,6 +113,11 @@ scene "무대":
       sound_speed = 1.2
       stop sound this
       stop sound all
+
+      # tts (읽어주기)
+      read "안녕"
+      read "안녕" and wait
+      tts voice "female" speed "normal" pitch "normal"
     end
 
     when click up do

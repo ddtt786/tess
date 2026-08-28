@@ -38,6 +38,13 @@ export class Context {
     this.errors = [];
     this.warnings = [];
 
+    // 블록 id -> 그 블록을 만든 Tess 소스 위치. 실행 중 엔트리가 panic 나면
+    // 어느 블록인지(id)는 알 수 있어도 어느 줄인지는 모르니, 디버그 패널이
+    // 이 표를 찾아서 "블록 -> 소스 위치" 로 되짚어 보여줄 수 있게 모아 둔다.
+    this.sourceMap = {};
+    this.currentNode = null; // 지금 컴파일 중인 문장의 AST 노드 (블록 위치 태깅용)
+    this.usesTts = false; // read / tts 문을 하나라도 쓰면 project.aiUtilizeBlocks 에 'tts' 를 넣는다
+
     // 심볼 테이블
     this.scenes = [];           // { id, name }
     this.sceneByName = new Map();
@@ -78,7 +85,22 @@ export class Context {
 
   // --- 블록 만들기 ---------------------------------------------------------
   block(type, params = [], statements = []) {
-    return makeBlock(this.newId(), type, params, statements);
+    const block = makeBlock(this.newId(), type, params, statements);
+    this.#recordLocation(block);
+    return block;
+  }
+
+  /** 지금 만든 블록이 소스의 어디서 왔는지 sourceMap 에 남긴다 */
+  #recordLocation(block) {
+    const node = this.currentNode;
+    if (!node?.loc) return;
+    const file = node.loc.file ?? this.options.path ?? null;
+    const text = (file && this.sources?.get(file)) ?? this.source;
+    const start = lineAndColumn(text, node.loc.start);
+    const end = lineAndColumn(text, node.loc.end ?? node.loc.start);
+    this.sourceMap[block.id] = {
+      file, line: start.line, column: start.column, endLine: end.line, endColumn: end.column,
+    };
   }
 
   /** 소스에 달린 주석을 엔트리 블록 주석으로 옮긴다 */

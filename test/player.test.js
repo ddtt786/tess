@@ -12,7 +12,7 @@ import { serveProject, findLocalRuntime } from '../src/player/server.js';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function compileExample() {
-  const file = path.join(root, 'examples/gift_delivery/main.tess');
+  const file = path.join(root, 'examples/all_blocks.tess');
   const result = compileProject(fs.readFileSync(file, 'utf-8'), { path: file });
   assert.deepEqual(result.errors, []);
   return result;
@@ -38,8 +38,8 @@ async function withServer(options, body) {
 test('작품과 실행 페이지를 내보낸다', async () => {
   await withServer({}, async (server, result) => {
     const page = await (await fetch(server.url)).text();
-    assert.match(page, /선물 배달 대작전/);
-    assert.match(page, /장면 3 · 오브젝트 10 · 블록 \d+/);
+    assert.match(page, /블록 검증/);
+    assert.match(page, /장면 2 · 오브젝트 4 · 블록 \d+/);
     assert.match(page, /Entry\.loadProject/);
 
     const project = await (await fetch(`${server.url}project.json`)).json();

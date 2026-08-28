@@ -42,30 +42,53 @@ export function findLocalRuntime(from = process.cwd()) {
 /**
  * 작품을 실행할 수 있는 서버를 띄운다.
  *
- * @param {{project: object, bundle: Buffer, assets: Array, name: string, port?: number}} options
- * @returns {Promise<{url: string, close: Function, runtime: string}>}
+ * @param {{project: object, bundle: Buffer, assets: Array, name: string, port?: number, reload?: boolean, sourceMap?: object}} options
+ * @returns {Promise<{url: string, close: Function, runtime: string, update: Function}>}
  */
-export function serveProject({ project, bundle, assets = [], name, port = 0, cwd = process.cwd() }) {
+export function serveProject({
+  project, bundle, assets = [], name, port = 0, cwd = process.cwd(), reload = true, sourceMap = {},
+}) {
   const localRuntime = findLocalRuntime(cwd);
   const base = localRuntime ? '/lib' : CDN;
   const entName = `${safeName(name)}.ent`;
 
-  const summary = {
-    scenes: project.scenes.length,
-    objects: project.objects.length,
-    blocks: project.objects.reduce((sum, object) => sum + countBlocks(JSON.parse(object.script)), 0),
-  };
-  const page = playerPage({ name, base, summary, entName });
-
+  let currentProject = project;
+  let currentBundle = bundle;
+  let currentSourceMap = sourceMap;
   // temp/... 경로 -> 실제 파일
-  const assetFiles = new Map(assets.map((asset) => [`/${asset.target}`, asset.source]));
+  let assetFiles = new Map(assets.map((asset) => [`/${asset.target}`, asset.source]));
+  const reloadClients = new Set();
+
+  const renderPage = () => {
+    const summary = {
+      scenes: currentProject.scenes.length,
+      objects: currentProject.objects.length,
+      blocks: currentProject.objects.reduce((sum, object) => sum + countBlocks(JSON.parse(object.script)), 0),
+    };
+    return playerPage({ name, base, summary, entName, reload });
+  };
 
   const server = http.createServer((request, response) => {
     const url = decodeURIComponent((request.url ?? '/').split('?')[0]);
 
-    if (url === '/' || url === '/index.html') return send(response, 200, '.html', page);
-    if (url === '/project.json') return send(response, 200, '.json', JSON.stringify(project));
-    if (url === `/${entName}`) return send(response, 200, '.ent', bundle);
+    if (reload && url === '/__reload') {
+      response.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      });
+      response.write(':ok\n\n');
+      reloadClients.add(response);
+      request.on('close', () => reloadClients.delete(response));
+      return;
+    }
+
+    if (request.method === 'POST' && url === '/__log') return receiveLog(request, response);
+
+    if (url === '/' || url === '/index.html') return send(response, 200, '.html', renderPage());
+    if (url === '/project.json') return send(response, 200, '.json', JSON.stringify(currentProject));
+    if (url === '/sourcemap.json') return send(response, 200, '.json', JSON.stringify(currentSourceMap));
+    if (url === `/${entName}`) return send(response, 200, '.ent', currentBundle);
 
     if (assetFiles.has(url)) return sendFile(response, assetFiles.get(url));
 
@@ -84,9 +107,46 @@ export function serveProject({ project, bundle, assets = [], name, port = 0, cwd
       resolve({
         url: `http://127.0.0.1:${actual}/`,
         runtime: localRuntime ? `설치된 @entrylabs/entry (${localRuntime})` : `CDN (${CDN})`,
-        close: () => new Promise((done) => server.close(done)),
+        // /__reload 의 SSE 연결은 브라우저가 열려 있는 한 계속 붙어 있어서,
+        // 그냥 server.close() 만 부르면 콜백이 영영 안 불려 Ctrl+C 로도 못 끝난다
+        // (Node 는 켜져 있는 커넥션이 다 끝나야 close 콜백을 부른다). 그래서
+        // SSE 응답을 먼저 끝내고, 혹시 남은 커넥션까지 강제로 닫아 준다.
+        close: () => {
+          for (const client of reloadClients) client.end();
+          reloadClients.clear();
+          server.closeAllConnections?.();
+          return new Promise((done) => server.close(done));
+        },
+        /** 다시 컴파일한 작품으로 갈아 끼우고, 열려 있는 브라우저를 새로고침한다 */
+        update({ project: nextProject, bundle: nextBundle, assets: nextAssets = [], sourceMap: nextSourceMap = {} }) {
+          currentProject = nextProject;
+          currentBundle = nextBundle;
+          currentSourceMap = nextSourceMap;
+          assetFiles = new Map(nextAssets.map((asset) => [`/${asset.target}`, asset.source]));
+          for (const client of reloadClients) client.write('event: reload\ndata: ok\n\n');
+        },
       });
     });
+  });
+}
+
+/** 브라우저에서 실행하다 난 panic 을 받아서 이 서버를 띄운 터미널에 그대로 찍는다 */
+function receiveLog(request, response) {
+  let body = '';
+  request.on('data', (chunk) => {
+    body += chunk;
+    if (body.length > 1_000_000) request.destroy();
+  });
+  request.on('end', () => {
+    try {
+      const { kind, message, stack, time } = JSON.parse(body);
+      const when = new Date(time ?? Date.now()).toLocaleTimeString('ko-KR', { hour12: false });
+      console.error(`\n[${when}] 엔트리 실행 중 ${kind ?? '오류'}: ${message ?? '(메시지 없음)'}`);
+      if (stack) console.error(stack);
+    } catch {
+      // 로그 본문을 못 읽어도 서버는 계속 돈다
+    }
+    response.writeHead(204).end();
   });
 }
 
