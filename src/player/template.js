@@ -4,7 +4,10 @@
 //  엔트리 실행기(entryjs)는 서드파티 라이브러리가 많아서 통째로 담지 않고
 //  다음 순서로 찾는다.
 //    1. 프로젝트에 설치된 node_modules/@entrylabs/entry  (오프라인)
-//    2. jsDelivr / unpkg CDN                              (기본)
+//    2. unpkg CDN                                          (기본, server.js 의 CDN 상수)
+//  @entrylabs/entry 자체는 jsDelivr 로는 못 받는다 — 패키지 전체 크기가 jsDelivr 의
+//  150MB 한도를 넘어서 entry.min.js 조차 403 으로 막힌다(server.js CDN 상수 주석 참고).
+//  나머지 서드파티 라이브러리(THIRD_PARTY_SCRIPTS)는 각각 크기가 작아 jsDelivr 로도 잘 받아진다.
 //  둘 다 못 쓰면 페이지가 그 사실을 알려 주고, 작품 파일을 내려받아
 //  playentry.org 에서 여는 길을 안내한다.
 //
@@ -55,7 +58,20 @@ export const RUNTIME_STYLE = 'dist/entry.css';
 
 const escapeHtml = (text) => String(text)
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-  .replaceAll('"', '&quot;');
+  .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+
+/**
+ * 값을 `<script>` 안에 그대로 넣어도 되는 자바스크립트 리터럴로 바꾼다.
+ *
+ * 스크립트 안에서는 HTML 이스케이프(escapeHtml)가 소용없다. 브라우저는 `<script>`
+ * 본문을 HTML 로 해석하지 않으므로 `&quot;` 가 글자 그대로 남고, 반대로 문자열 안의
+ * `</script`(대소문자 무관)를 만나면 거기서 스크립트를 끝내고 그 뒤를 마크업으로 읽는다.
+ * 그래서 JSON 으로 만든 뒤 `<`, `>`, `&` 와 자바스크립트가 줄바꿈으로 취급하는
+ * U+2028, U+2029 까지 유니코드 이스케이프로 바꾼다.
+ */
+const jsValue = (value) => JSON.stringify(value ?? null)
+  .replaceAll('<', '\\u003c').replaceAll('>', '\\u003e').replaceAll('&', '\\u0026')
+  .replaceAll('\u2028', '\\u2028').replaceAll('\u2029', '\\u2029');
 
 /**
  * @param {{name: string, base: string, summary: object, entName: string, reload?: boolean}} options
@@ -63,11 +79,21 @@ const escapeHtml = (text) => String(text)
  *   reload 가 true 면 서버가 다시 컴파일할 때마다 페이지를 자동으로 새로고침한다
  */
 export function playerPage({ name, base, summary, entName, reload = true }) {
+  // crossorigin="anonymous" 가 없으면, 실행 중 이 스크립트들(cross-origin CDN 이면)
+  // 안에서 던진 오류는 브라우저가 보안상 진짜 메시지·스택을 숨기고 그냥 "Script error."
+  // 라고만 알려준다 — 디버그 패널에 그렇게 뜨면 원인을 전혀 알 수 없다. jsDelivr·unpkg
+  // 모두 access-control-allow-origin: * 를 보내므로 이 속성을 붙여도 로딩엔 문제없고
+  // (같은 origin 인 /lib 로컬 파일에는 애초에 영향이 없다), 진짜 오류 메시지가 보인다.
+  // base 는 서버가 정하는 값이지만(로컬 '/lib' 또는 CDN 주소) 속성 자리에 그대로
+  // 이어 붙이지 않는다. 따옴표 하나만 섞여 들어가도 속성이 거기서 끝나고 그 뒤가 새
+  // 속성으로 읽히기 때문이다. 이 페이지에서 값을 끼워 넣는 자리는 모두 escapeHtml
+  // (속성과 본문) 이나 jsValue(`<script>` 안)를 거친다.
+  const libBase = escapeHtml(base);
   const thirdPartyScripts = THIRD_PARTY_SCRIPTS
-    .map((url) => `<script src="${url}"></script>`)
+    .map((url) => `<script src="${escapeHtml(url)}" crossorigin="anonymous"></script>`)
     .join('\n    ');
   const runtimeScripts = RUNTIME_FILES
-    .map((file) => `<script src="${base}/${file}"></script>`)
+    .map((file) => `<script src="${libBase}/${escapeHtml(file)}" crossorigin="anonymous"></script>`)
     .join('\n    ');
 
   return `<!doctype html>
@@ -76,9 +102,9 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(name)} — Tess</title>
-<link rel="stylesheet" href="${THIRD_PARTY_STYLE}">
-<link rel="stylesheet" href="${base}/${RUNTIME_STYLE}">
-<link rel="stylesheet" href="${ENTRY_FONTS_STYLE}">
+<link rel="stylesheet" href="${escapeHtml(THIRD_PARTY_STYLE)}">
+<link rel="stylesheet" href="${libBase}/${escapeHtml(RUNTIME_STYLE)}">
+<link rel="stylesheet" href="${escapeHtml(ENTRY_FONTS_STYLE)}">
 <style>
   :root { color-scheme: light dark; }
   html, body { height: 100%; }
@@ -166,6 +192,78 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
   .block-param { margin-left: 4px; }
   .block-highlight > .block-type { background: #e5484d; color: #fff; padding: 1px 5px; border-radius: 4px; }
   .block-highlight-child > .block-type { background: #e5484d33; padding: 1px 5px; border-radius: 4px; }
+
+  /* 엔트리 minimize 실행기 바는 정지하기와 일시정지 버튼을 바로 붙여서 그린다
+     (entry.min.js 가 stopButton 다음에 pauseButton 을 붙인다). 멈추려다 일시정지를
+     누르는 일이 잦으므로 사이를 벌려 둔다. */
+  .entryEngineMinimize .entryStopButtonMinimize { margin-right: 20px; }
+
+  /* --- 디버그 패널: 탭 --- */
+  .debug-tabs { display: flex; flex: none; border-bottom: 1px solid #0002; padding: 0 8px; gap: 2px; }
+  .debug-tab {
+    border: none; background: none; color: inherit; cursor: pointer;
+    font-size: 13px; padding: 8px 10px; border-bottom: 2px solid transparent; opacity: .6;
+  }
+  .debug-tab:hover { opacity: .9; }
+  .debug-tab[aria-selected="true"] { opacity: 1; font-weight: 600; border-bottom-color: #4f80ff; }
+  .debug-tab .badge { margin-left: 4px; }
+  .debug-panelbody { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .debug-panelbody[hidden] { display: none; }
+  .debug-panelbody > .debug-section:last-child { flex: 1 1 auto; min-height: 120px; }
+
+  /* --- 실행 탭 --- */
+  .debug-run-state { font-size: 13px; margin: 0 0 10px; }
+  .debug-run-state .dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: #8a8f98; margin-right: 6px; vertical-align: 1px;
+  }
+  .debug-run-state.state-run .dot { background: #30a46c; }
+  .debug-run-state.state-pause .dot { background: #f5a524; }
+  .debug-run-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+  .debug-run-buttons button {
+    flex: 1 1 auto; min-width: 84px; font-size: 13px; padding: 7px 10px; cursor: pointer;
+    border: 1px solid #0003; border-radius: 6px; background: none; color: inherit;
+  }
+  .debug-run-buttons button:hover:not(:disabled) { background: #4f80ff22; }
+  .debug-run-buttons button:disabled { opacity: .4; cursor: default; }
+  .debug-field { display: flex; align-items: center; gap: 8px; margin: 7px 0; font-size: 13px; }
+  .debug-field label { flex: 1 1 auto; }
+  .debug-field select { font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 5px;
+                        border: 1px solid #0003; background: none; color: inherit; }
+  .debug-field select option { color: initial; }
+  .debug-note { font-size: 12px; opacity: .55; margin: 8px 0 0; line-height: 1.6; }
+
+  /* --- 자료 탭 --- */
+  .debug-rows { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+  .debug-rows li { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; border-bottom: 1px solid #0001; }
+  .debug-rows .key { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .debug-rows .val {
+    margin-left: auto; text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; overflow-wrap: anywhere; max-width: 60%;
+  }
+  .debug-rows .tag { font-size: 11px; opacity: .5; }
+  .debug-send-btn {
+    margin-left: auto; font-size: 11px; padding: 1px 8px; border-radius: 999px;
+    border: 1px solid #0003; background: none; color: inherit; cursor: pointer;
+  }
+  .debug-send-btn:hover { background: #4f80ff22; }
+  /* 브라우저는 사용자가 페이지와 아직 상호작용하지 않았으면 소리 재생을 조용히 막는다
+     (자동재생 정책 — createjs 가 쓰는 AudioContext 도 예외가 아니다). 실행하기를 페이지가
+     뜨자마자 스스로 누르면, 그 시점엔 아직 클릭 한 번 없었으니 when start 에서 바로
+     나오는 배경음악 같은 소리가 막혀 버린다(그러다 사용자가 아무 데나 한 번 누르면 그제서야
+     풀려서 "좀 있다가 하면 되는" 것처럼 보인다). 그래서 실제로 실행하기 전에 이 화면을
+     띄워 눌러 달라고 해서, 그 클릭 자체를 소리가 필요로 하는 "사용자 상호작용"으로 쓴다. */
+  #start-gate {
+    position: fixed; inset: 0; z-index: 900;
+    display: flex; align-items: center; justify-content: center;
+    background: #10131acc; cursor: pointer;
+  }
+  #start-gate-card {
+    display: flex; align-items: center; gap: 8px;
+    color: #fff; font-size: 15px; padding: 14px 24px; border-radius: 999px;
+    background: #ffffff22; border: 1px solid #ffffff55; backdrop-filter: blur(2px);
+  }
+  #start-gate-card .icon { font-size: 13px; }
 </style>
 </head>
 <body>
@@ -181,25 +279,102 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
 
 <div id="workspace"></div>
 
+<div id="start-gate" role="button" tabindex="0" aria-label="클릭하거나 아무 키나 눌러서 시작">
+  <div id="start-gate-card"><span class="icon">▶</span> 클릭하거나 아무 키나 눌러서 시작</div>
+</div>
+
 <aside id="debug-panel" aria-hidden="true">
   <div id="debug-resize-handle" title="드래그해서 크기 조절"></div>
   <div class="debug-header">
     <h2>디버그</h2>
     <button id="debug-close" type="button" aria-label="닫기">×</button>
   </div>
-  <section class="debug-section">
-    <h3>오류 로그 <span id="error-count" class="badge" hidden>0</span></h3>
-    <div id="error-log"><p class="debug-empty">아직 오류가 없습니다. entryjs 가 실행 중 panic 을 내면 여기와
-    이 서버를 띄운 터미널에 같이 찍힙니다.</p></div>
-  </section>
-  <section class="debug-section">
-    <h3>장면 · 오브젝트</h3>
-    <div id="scene-tree"><p class="debug-empty">불러오는 중…</p></div>
-  </section>
-  <section class="debug-section">
-    <h3>컴파일된 블록 <span id="block-object-name"></span></h3>
-    <div id="block-tree"><p class="debug-empty">왼쪽 목록에서 오브젝트를 고르세요.</p></div>
-  </section>
+
+  <div class="debug-tabs" role="tablist">
+    <button class="debug-tab" type="button" role="tab" data-tab="run" aria-selected="true" aria-controls="tab-run">실행</button>
+    <button class="debug-tab" type="button" role="tab" data-tab="data" aria-selected="false" aria-controls="tab-data">자료</button>
+    <button class="debug-tab" type="button" role="tab" data-tab="objects" aria-selected="false" aria-controls="tab-objects">오브젝트</button>
+    <button class="debug-tab" type="button" role="tab" data-tab="errors" aria-selected="false" aria-controls="tab-errors">
+      오류 <span id="error-count" class="badge" hidden>0</span>
+    </button>
+  </div>
+
+  <div class="debug-panelbody" id="tab-run" role="tabpanel">
+    <section class="debug-section">
+      <h3>실행 제어</h3>
+      <p class="debug-run-state" id="run-state"><span class="dot"></span><span id="run-state-text">준비 중…</span></p>
+      <div class="debug-run-buttons">
+        <button id="run-btn" type="button">시작하기</button>
+        <button id="pause-btn" type="button">일시정지</button>
+        <button id="stop-btn" type="button">정지하기</button>
+      </div>
+      <p class="debug-note">정지한 뒤에도 <b>시작하기</b> 로 처음부터 다시 실행할 수 있습니다.</p>
+    </section>
+    <section class="debug-section">
+      <h3>실행 환경 흉내내기</h3>
+      <div class="debug-field">
+        <label for="env-boost">부스트 모드</label>
+        <select id="env-boost">
+          <option value="">실제 값 그대로</option>
+          <option value="true">켜짐 (참)</option>
+          <option value="false">꺼짐 (거짓)</option>
+        </select>
+      </div>
+      <div class="debug-field">
+        <label for="env-device">기기 종류</label>
+        <select id="env-device">
+          <option value="">실제 값 그대로</option>
+          <option value="desktop">컴퓨터</option>
+          <option value="tablet">태블릿</option>
+          <option value="mobile">스마트폰</option>
+        </select>
+      </div>
+      <div class="debug-field">
+        <label for="env-touch">터치 지원</label>
+        <select id="env-touch">
+          <option value="">실제 값 그대로</option>
+          <option value="true">지원함 (참)</option>
+          <option value="false">지원 안 함 (거짓)</option>
+        </select>
+      </div>
+      <p class="debug-note">Tess 의 <code>boost_mode</code> · <code>device == "..."</code> ·
+      <code>touchable</code> 이 여기서 정한 값을 그대로 돌려줍니다. 브라우저를 바꾸지 않고도
+      다른 기기에서만 도는 분기를 확인할 수 있습니다.</p>
+    </section>
+  </div>
+
+  <div class="debug-panelbody" id="tab-data" role="tabpanel" hidden>
+    <section class="debug-section">
+      <h3>변수 · 리스트 <span id="var-note" class="debug-empty"></span></h3>
+      <div id="var-list"><p class="debug-empty">불러오는 중…</p></div>
+    </section>
+    <section class="debug-section">
+      <h3>신호</h3>
+      <div id="signal-list"><p class="debug-empty">불러오는 중…</p></div>
+    </section>
+    <section class="debug-section">
+      <h3>함수</h3>
+      <div id="function-list"><p class="debug-empty">불러오는 중…</p></div>
+    </section>
+  </div>
+
+  <div class="debug-panelbody" id="tab-objects" role="tabpanel" hidden>
+    <section class="debug-section">
+      <h3>장면 · 오브젝트</h3>
+      <div id="scene-tree"><p class="debug-empty">불러오는 중…</p></div>
+    </section>
+    <section class="debug-section">
+      <h3>컴파일된 블록 <span id="block-object-name"></span></h3>
+      <div id="block-tree"><p class="debug-empty">위 목록에서 오브젝트를 고르세요.</p></div>
+    </section>
+  </div>
+
+  <div class="debug-panelbody" id="tab-errors" role="tabpanel" hidden>
+    <section class="debug-section">
+      <h3>오류 로그</h3>
+      <div id="error-log"></div>
+    </section>
+  </div>
 </aside>
 
 <section id="fallback">
@@ -237,6 +412,46 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
 
   let errorCount = 0;
 
+  // --------------------------------------------------------------------
+  // DOM 을 만드는 도우미들.
+  //
+  // 이 패널이 보여 주는 이름(오브젝트, 장면, 변수, 신호, 함수)은 모두 작품에서 온
+  // 값이고, 그 작품은 다른 사람이 만든 .ent 를 되돌린 것일 수도 있다. innerHTML 로
+  // 문자열을 이어 붙이면 이름 안에 들어 있는 <img onerror=...> 가 그대로 실행되므로,
+  // 디버그 UI 는 innerHTML 을 쓰지 않고 textContent 로만 글자를 넣는다.
+  // --------------------------------------------------------------------
+  const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  };
+  const clear = (node) => { while (node.firstChild) node.removeChild(node.firstChild); };
+  const setEmpty = (node, text) => { clear(node); node.appendChild(el('p', 'debug-empty', text)); };
+
+  // --------------------------------------------------------------------
+  // 탭
+  // --------------------------------------------------------------------
+  setEmpty(errorLogEl, '아직 오류가 없습니다. entryjs 가 실행 중 panic 을 내면 여기와 '
+    + '이 서버를 띄운 터미널에 같이 찍힙니다.');
+
+  const tabButtons = Array.from(document.querySelectorAll('.debug-tab'));
+  const tabPanels = {};
+  for (const button of tabButtons) tabPanels[button.dataset.tab] = document.getElementById('tab-' + button.dataset.tab);
+  let activeTab = 'run';
+
+  const showTab = (name) => {
+    if (!tabPanels[name]) return;
+    activeTab = name;
+    for (const button of tabButtons) {
+      const on = button.dataset.tab === name;
+      button.setAttribute('aria-selected', on ? 'true' : 'false');
+      tabPanels[button.dataset.tab].hidden = !on;
+    }
+    if (name === 'data') refreshData();
+  };
+  for (const button of tabButtons) button.addEventListener('click', () => showTab(button.dataset.tab));
+
   // 패널이 지금 차지하는 폭을 --debug-panel-width 로 내보내서 header·#workspace 가
   // 그만큼 밀리게 하고, 엔트리 화면도 남은 공간에 맞춰 다시 배치한다.
   const syncPanelWidth = () => {
@@ -245,9 +460,10 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
     window.tessLayoutCanvas();
   };
 
-  const openPanel = () => {
+  const openPanel = (tab) => {
     panel.classList.add('open');
     panel.setAttribute('aria-hidden', 'false');
+    if (tab) showTab(tab);
     syncPanelWidth();
   };
   const closePanel = () => {
@@ -328,6 +544,110 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
   };
   window.addEventListener('resize', () => window.tessLayoutCanvas());
 
+  // --------------------------------------------------------------------
+  // 실행 제어 — 시작 / 일시정지 / 정지
+  //
+  // 엔트리 실행기 바에도 같은 버튼이 있다. 다만 minimize 모드에서는 정지한 뒤 다시
+  // 시작하려면 화면을 덮는 큰 재생 버튼을 눌러야 하는데, 그 버튼이 디버그 패널이나
+  // 캔버스 배치에 가려지기도 한다. 그래서 여기에서 직접 부른다.
+  // --------------------------------------------------------------------
+  const runStateEl = document.getElementById('run-state');
+  const runStateTextEl = document.getElementById('run-state-text');
+  const runBtn = document.getElementById('run-btn');
+  const pauseBtn = document.getElementById('pause-btn');
+  const stopBtn = document.getElementById('stop-btn');
+
+  const engine = () => (window.Entry && Entry.engine) || null;
+  /** 'run', 'pause', 'stop' 중 하나. 실행기가 아직 없으면 null. */
+  const engineState = () => {
+    const e = engine();
+    if (!e || typeof e.isState !== 'function') return null;
+    for (const state of ['run', 'pause', 'stop']) {
+      try { if (e.isState(state)) return state; } catch (err) { /* 상태를 못 읽으면 다음 것 */ }
+    }
+    return null;
+  };
+
+  const STATE_TEXT = { run: '실행 중', pause: '일시정지됨', stop: '멈춰 있음' };
+  const syncRunButtons = () => {
+    const state = engineState();
+    runStateEl.className = 'debug-run-state' + (state ? ' state-' + state : '');
+    runStateTextEl.textContent = state ? STATE_TEXT[state] : '실행기를 기다리는 중…';
+    runBtn.disabled = !state || state === 'run';
+    pauseBtn.disabled = !state || state === 'stop';
+    stopBtn.disabled = !state || state === 'stop';
+    pauseBtn.textContent = state === 'pause' ? '이어서 하기' : '일시정지';
+  };
+
+  const guard = (action) => {
+    try { action(); } catch (error) { window.tessReportError('실행 제어', error); }
+    // 엔트리는 상태를 비동기로 바꾸므로 잠시 뒤에 한 번 더 맞춰 준다
+    syncRunButtons();
+    setTimeout(syncRunButtons, 60);
+  };
+
+  runBtn.addEventListener('click', () => guard(() => {
+    const e = engine();
+    if (!e) return;
+    // 일시정지 상태에서 시작하기를 누르면 이어서 하기로 본다. 멈춰 있으면
+    // toggleRun 이 처음부터 다시 실행한다. 정지한 뒤의 재실행이 여기에서 이루어진다.
+    if (engineState() === 'pause') e.togglePause();
+    else e.toggleRun();
+  }));
+  pauseBtn.addEventListener('click', () => guard(() => engine() && engine().togglePause()));
+  stopBtn.addEventListener('click', () => guard(() => engine() && engine().toggleStop()));
+  setInterval(() => {
+    syncRunButtons();
+    // 자료 탭이 열려 있을 때만 변수 값을 다시 읽는다. 닫혀 있으면 읽어도 소용이 없다.
+    if (activeTab === 'data' && panel.classList.contains('open')) refreshData();
+  }, 400);
+
+  // --------------------------------------------------------------------
+  // 실행 환경 흉내내기 — 부스트 모드 · 기기 종류 · 터치 지원
+  //
+  // 이 세 가지는 엔트리 판단 블록이 브라우저에게 직접 물어보는 값이다(각각
+  // Entry.options.useWebGL, Entry.Utils.getDeviceType(), 'ontouchstart' in window).
+  // 그래서 데스크톱 브라우저 하나로는 다른 갈래를 확인할 방법이 없다. 블록의 func 을
+  // 감싸서, 여기에서 정한 값이 있으면 그 값을 대신 돌려주게 한다.
+  // --------------------------------------------------------------------
+  const env = { boost: null, device: null, touch: null };
+  window.tessEnv = env;
+
+  const readChoice = (value) => (value === '' ? null : value === 'true');
+  document.getElementById('env-boost').addEventListener('change', (event) => {
+    env.boost = readChoice(event.target.value);
+  });
+  document.getElementById('env-touch').addEventListener('change', (event) => {
+    env.touch = readChoice(event.target.value);
+  });
+  document.getElementById('env-device').addEventListener('change', (event) => {
+    env.device = event.target.value === '' ? null : event.target.value;
+  });
+
+  /** Entry.init 이 블록 정의(Entry.block)를 만든 뒤에 불러야 한다 */
+  window.tessPatchEnvironmentBlocks = function patchEnvironmentBlocks() {
+    const blocks = window.Entry && Entry.block;
+    if (!blocks) return;
+    const wrap = (type, forced) => {
+      const spec = blocks[type];
+      if (!spec || typeof spec.func !== 'function' || spec.tessWrapped) return;
+      const original = spec.func;
+      spec.func = function (...args) {
+        const value = forced(args);
+        return value === null ? original.apply(this, args) : value;
+      };
+      spec.tessWrapped = true;
+    };
+    wrap('is_boost_mode', () => env.boost);
+    wrap('is_touch_supported', () => env.touch);
+    wrap('is_current_device_type', (args) => {
+      if (env.device === null) return null;
+      // func(sprite, script) 형태이고, 어떤 기기를 묻는지는 DEVICE 필드에 들어 있다
+      const script = args[1];
+      try { return script.getField('DEVICE', script) === env.device; } catch (e) { return null; }
+    });
+  };
+
   window.tessReportError = function reportError(kind, error) {
     const message = (error && error.message) || String(error);
     const stack = (error && error.stack) || '';
@@ -343,17 +663,11 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
     const item = document.createElement('details');
     item.className = 'error-item';
     item.open = errorCount <= 3;
-    const summary = document.createElement('summary');
     const time = new Date().toLocaleTimeString('ko-KR', { hour12: false });
-    summary.textContent = '[' + time + '] ' + kind + ': ' + message;
-    item.appendChild(summary);
-    if (stack) {
-      const pre = document.createElement('pre');
-      pre.textContent = stack;
-      item.appendChild(pre);
-    }
+    item.appendChild(el('summary', null, '[' + time + '] ' + kind + ': ' + message));
+    if (stack) item.appendChild(el('pre', null, stack));
     errorLogEl.prepend(item);
-    if (errorCount === 1) openPanel();
+    if (errorCount === 1) openPanel('errors');
 
     fetch('/__log', {
       method: 'POST',
@@ -362,7 +676,20 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
     }).catch(() => {});
   };
 
+  // createjs(SoundJS)의 AbstractPlugin._handlePreloadComplete 는 소리를 미리 불러올 때
+  // (project.json 의 일반 소리든 tts 읽어주기든 다 해당) 내부적으로 PreloadJS 의 LoadQueue
+  // 완료 이벤트와 자기 자신의 재생 목록(_soundInstances) 갱신 시점이 어긋나는 경우가 있어,
+  // 'e.setPlaybackResource is not a function' 을 종종 붙잡지 못한 채로 던진다 — 실제로는
+  // 그 뒤에도 소리가 정상적으로 만들어지고 재생된다(직접 확인함: AudioContext 는 계속
+  // 'running' 상태고 해당 소리의 재생 인스턴스도 만들어진다), 즉 겉보기엔 무섭지만 아무
+  // 기능도 막지 않는 순전히 시각적인 소음이다. createjs.min.js 는 CDN 에서 통째로 받아
+  // 오는 서드파티 파일이라 이 라이브러리 자체의 버그를 여기서 고칠 수는 없으니, 이
+  // 정확한 메시지만 걸러서 디버그 패널의 오류 로그로는 올리지 않는다(그 외 오류는 계속
+  // 다 잡는다).
+  const isBenignCreatejsPreloadNoise = (message) => /setPlaybackResource is not a function/.test(message ?? '');
+
   window.addEventListener('error', (event) => {
+    if (isBenignCreatejsPreloadNoise(event.message) || isBenignCreatejsPreloadNoise(event.error?.message)) return;
     // <script src> 로딩 실패(예: CDN 이 막힘)는 별도 target 이 있고 message 가 없다
     if (event.target && event.target !== window && !event.message) {
       window.tessReportError('로딩 실패', new Error((event.target.src || event.target.href || '리소스') + ' 를 불러오지 못했습니다.'));
@@ -377,6 +704,7 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
     // 나서 원래 동작대로 예외를 던지는데, 그 예외는 비동기 함수 안이라 다시 여기
     // (처리 안 된 Promise 거부)로 들어온다. 두 번 보고하지 않으려고 표시를 본다.
     if (reason && reason.tessAlreadyReported) return;
+    if (isBenignCreatejsPreloadNoise(reason && reason.message)) return;
     window.tessReportError('처리되지 않은 Promise 거부', reason instanceof Error ? reason : new Error(String(reason)));
   });
 
@@ -420,7 +748,7 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
   const showBlocks = (object) => {
     currentObject = object;
     blockObjectNameEl.textContent = '— ' + object.name;
-    blockTreeEl.innerHTML = '';
+    clear(blockTreeEl);
     for (const btn of sceneTreeEl.querySelectorAll('.debug-object-btn')) {
       btn.classList.toggle('active', btn.dataset.objectId === object.id);
     }
@@ -432,16 +760,12 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
       return;
     }
     if (!threads.length) {
-      blockTreeEl.innerHTML = '<p class="debug-empty">이 오브젝트에는 블록이 없습니다.</p>';
+      setEmpty(blockTreeEl, '이 오브젝트에는 블록이 없습니다.');
       return;
     }
     threads.forEach((thread, index) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'debug-thread';
-      const label = document.createElement('div');
-      label.className = 'debug-thread-label';
-      label.textContent = '스크립트 ' + (index + 1);
-      wrap.appendChild(label);
+      const wrap = el('div', 'debug-thread');
+      wrap.appendChild(el('div', 'debug-thread-label', '스크립트 ' + (index + 1)));
       const ul = document.createElement('ul');
       thread.forEach((block) => ul.appendChild(renderBlockNode(block)));
       wrap.appendChild(ul);
@@ -535,8 +859,132 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
     }
   };
 
+  // --------------------------------------------------------------------
+  // 자료 탭 — 변수·리스트의 지금 값, 신호, 함수
+  //
+  // 이름과 구성은 project.json 에서 읽고, 값은 실행 중인 Entry.variableContainer 에서
+  // 읽는다. 아직 실행하지 않았거나 실행기가 없으면 컴파일할 때의 초기값을 보여 준다.
+  // --------------------------------------------------------------------
+  const varListEl = document.getElementById('var-list');
+  const varNoteEl = document.getElementById('var-note');
+  const signalListEl = document.getElementById('signal-list');
+  const functionListEl = document.getElementById('function-list');
+  let projectData = null;
+
+  const preview = (value) => {
+    if (value === null || value === undefined) return '(없음)';
+    const text = typeof value === 'string' ? value : JSON.stringify(value);
+    return text.length > 80 ? text.slice(0, 80) + '…' : text;
+  };
+
+  /** 실행 중이면 지금 값을, 그렇지 않으면 project.json 의 초기값을 돌려준다 */
+  const liveValue = (entry) => {
+    const container = window.Entry && Entry.variableContainer;
+    try {
+      if (entry.variableType === 'list') {
+        const list = container && container.getList && container.getList(entry.id);
+        const array = list && typeof list.getArray === 'function'
+          ? list.getArray()
+          : (entry.array || []);
+        return '[' + array.length + '개] ' + preview(array.map((item) => item && item.data));
+      }
+      const variable = container && container.getVariable && container.getVariable(entry.id);
+      if (variable && typeof variable.getValue === 'function') return preview(variable.getValue());
+    } catch (error) { /* 실행기에서 읽지 못하면 초기값을 보여 준다 */ }
+    return preview(entry.value);
+  };
+
+  const row = (name, tag, valueText) => {
+    const li = document.createElement('li');
+    const key = el('span', 'key', name);
+    li.appendChild(key);
+    if (tag) li.appendChild(el('span', 'tag', tag));
+    li.appendChild(el('span', 'val', valueText));
+    return li;
+  };
+
+  function refreshData() {
+    if (!projectData) return;
+
+    const variables = (projectData.variables || [])
+      .filter((entry) => entry.variableType !== 'timer' && entry.variableType !== 'answer');
+    if (variables.length === 0) {
+      setEmpty(varListEl, '변수나 리스트가 없습니다.');
+    } else {
+      const list = el('ul', 'debug-rows');
+      for (const entry of variables) {
+        const scope = entry.object ? (objectNameById[entry.object] || '오브젝트') : '전역';
+        const kind = entry.variableType === 'list' ? '리스트' : '변수';
+        list.appendChild(row(entry.name, scope + ' · ' + kind, liveValue(entry)));
+      }
+      clear(varListEl);
+      varListEl.appendChild(list);
+    }
+    varNoteEl.textContent = engineState() === 'run' ? '(실행 중 · 실시간)' : '';
+
+    const messages = projectData.messages || [];
+    if (messages.length === 0) {
+      setEmpty(signalListEl, '신호가 없습니다.');
+    } else {
+      const list = el('ul', 'debug-rows');
+      for (const message of messages) {
+        const li = document.createElement('li');
+        li.appendChild(el('span', 'key', message.name));
+        const send = el('button', 'debug-send-btn', '보내기');
+        send.type = 'button';
+        send.addEventListener('click', () => {
+          try {
+            Entry.engine.fireEvent('when_message_cast', message.id);
+          } catch (error) { window.tessReportError('신호 보내기', error); }
+        });
+        li.appendChild(send);
+        list.appendChild(li);
+      }
+      clear(signalListEl);
+      signalListEl.appendChild(list);
+    }
+
+    const functions = projectData.functions || [];
+    if (functions.length === 0) {
+      setEmpty(functionListEl, '함수가 없습니다.');
+    } else {
+      const list = el('ul', 'debug-rows');
+      for (const fn of functions) {
+        const head = describeFunction(fn);
+        list.appendChild(row(head.name, head.params + '개 인자', head.kind));
+      }
+      clear(functionListEl);
+      functionListEl.appendChild(list);
+    }
+  }
+
+  /** 함수 정의 블록의 머리에서 이름과 인자 개수, 종류를 읽는다 (컴파일러가 만드는 사슬과 같은 구조다) */
+  const describeFunction = (fn) => {
+    let name = fn.id;
+    let params = 0;
+    let kind = '일반 함수';
+    try {
+      const create = JSON.parse(fn.content || '[]')[0][0];
+      if (create && create.type === 'function_create_value') kind = '값 함수';
+      let node = create && create.params && create.params[0];
+      const labels = [];
+      while (node && typeof node === 'object') {
+        if (node.type === 'function_field_label') labels.push(String(node.params[0] ?? ''));
+        else if (node.type === 'function_field_string' || node.type === 'function_field_boolean') params += 1;
+        else break;
+        node = node.params[1];
+      }
+      if (labels.length) name = labels.join(' … ');
+    } catch (error) { /* 읽지 못하면 id 를 대신 보여 준다 */ }
+    return { name, params, kind };
+  };
+
+  const objectNameById = {};
+
   window.tessRenderProjectDebug = function renderProjectDebug(project) {
-    sceneTreeEl.innerHTML = '';
+    projectData = project;
+    for (const object of project.objects) objectNameById[object.id] = object.name;
+    clear(sceneTreeEl);
     for (const scene of project.scenes) {
       const sceneEl = document.createElement('div');
       const title = document.createElement('div');
@@ -580,8 +1028,8 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
     const owner = blockOwners[blockId];
     if (!owner) return;
     if (!currentObject || currentObject.id !== owner.id) showBlocks(owner);
-    for (const el of blockTreeEl.querySelectorAll('.block-highlight, .block-highlight-child')) {
-      el.classList.remove('block-highlight', 'block-highlight-child');
+    for (const node of blockTreeEl.querySelectorAll('.block-highlight, .block-highlight-child')) {
+      node.classList.remove('block-highlight', 'block-highlight-child');
     }
     const ids = window.tessCollectParamIds(blockDataById[blockId], []);
     ids.forEach((id, index) => {
@@ -590,7 +1038,7 @@ export function playerPage({ name, base, summary, entName, reload = true }) {
       target.classList.add(index === 0 ? 'block-highlight' : 'block-highlight-child');
       if (index === 0) target.scrollIntoView({ block: 'center' });
     });
-    openPanel();
+    openPanel('objects');
   };
 })();
 </script>
@@ -599,6 +1047,38 @@ ${thirdPartyScripts}
   window.EntrySoundEditor = window.EntrySoundEditor || {};
   window.EntryPaint = window.EntryPaint || {};
 </script>
+<script>
+(function () {
+  // 브라우저의 자동재생 정책 때문에, 사용자가 이 페이지와 아직 한 번도 진짜로
+  // 상호작용(클릭·키·터치)하지 않았으면 AudioContext 는 'suspended' 로 시작해서
+  // 소리가 하나도 안 들린다. createjs(SoundJS) 는 이걸 직접 깨우는 코드
+  // (WebAudioPlugin.playEmptySound, 무음 버퍼를 만들어 그 안에서 바로 start() 호출)
+  // 를 갖고 있지만 "ontouchstart" in window 일 때만 문서 클릭에 걸어 둔다
+  // (createjs.js 안 _unlock 메서드) — 즉 터치 기기(모바일)에서만 자동으로 풀리고,
+  // 데스크톱 브라우저에서는 아무도 이걸 불러 주지 않는다. start-gate(위 화면의
+  // "클릭하거나 아무 키나 눌러서 시작")를 눌러도 AudioContext 를 실제로 깨우는
+  // 코드가 아무 데도 없으면 그 클릭은 그냥 화면만 넘길 뿐 소리는 여전히 막혀
+  // 있다가, 나중에 우연히(예: 브라우저 자체의 미디어 참여도 판단으로) 풀리는
+  // 것처럼 보일 뿐이다 — 그래서 desktop 에서도 똑같이 직접 걸어서 확실하게 푼다.
+  const unlock = () => {
+    try {
+      const ctx = window.createjs && createjs.WebAudioPlugin && createjs.WebAudioPlugin.context;
+      if (!ctx) return; // 아직 안 만들어졌으면 다음 상호작용 때 다시 시도한다
+      if (ctx.state !== 'running') {
+        const source = ctx.createBufferSource();
+        source.buffer = ctx.createBuffer(1, 1, 22050);
+        source.connect(ctx.destination);
+        source.start(0);
+        ctx.resume && ctx.resume();
+      }
+      if (ctx.state === 'running') detach();
+    } catch (e) { /* 실패해도 다음 상호작용 때 다시 시도한다 */ }
+  };
+  const events = ['mousedown', 'click', 'touchstart', 'keydown'];
+  const detach = () => events.forEach((type) => document.removeEventListener(type, unlock, true));
+  events.forEach((type) => document.addEventListener(type, unlock, true));
+})();
+</script>
 ${runtimeScripts}
 <script>
 (async function () {
@@ -606,6 +1086,7 @@ ${runtimeScripts}
     document.getElementById('workspace').style.display = 'none';
     document.getElementById('fallback').style.display = 'block';
     document.getElementById('fallback-reason').textContent = reason;
+    document.getElementById('start-gate')?.remove();
   };
 
   if (typeof window.Entry === 'undefined' || typeof window.Entry.init !== 'function') {
@@ -630,6 +1111,12 @@ ${runtimeScripts}
         const text = Array.isArray(message) ? message.join(' ') : String(message ?? '');
         window.tessReportError(String(title || '알림'), new Error(text));
       };
+      // Entry.toast.warning 은 진짜 오류가 아니라 엔트리 자체의 안내성 팝업이다 — 예를
+      // 들어 리스트가 5000개를 넘으면(listVariable.js _showListFullWarning) 자동으로
+      // 잘라내면서 "리스트에는 최대 5000개까지 넣을 수 있습니다" 를 띄운다. workspace
+      // 모드에서나 뜻이 있는 팝업이고, 우리 minimize 뷰어에서는 화면을 가리기만 하니
+      // 그냥 띄우지 않는다(진짜 오류는 위 alert/아래 stopProjectWithToast 로 계속 잡힌다).
+      Entry.toast.warning = function () {};
     }
     if (!Entry.Utils) return;
     Entry.Utils.stopProjectWithToast = async function (scope, type, err) {
@@ -670,20 +1157,119 @@ ${runtimeScripts}
     };
   };
 
+  // ------------------------------------------------------------------
+  // 글상자에 쓰는 커스텀 폰트(나눔고딕 · DungGeunMo · SDChildfundkorea ...)는
+  // @font-face 로 "선언"만 돼 있을 뿐(ENTRY_FONTS_STYLE), 실제 폰트 파일은
+  // 그 폰트가 처음 쓰일 때(캔버스에 그 글꼴로 글자를 그릴 때) 브라우저가 그제서야
+  // 내려받기 시작한다 — 그런데 캔버스는 DOM 과 달리 폰트가 늦게 도착해도 알아서
+  // 다시 그려주지 않는다. 그래서 when start 에서 곧바로 보이는 글상자(이 프로젝트의
+  // 인트로 화면처럼)는 폰트가 아직 준비되기 전에 첫 프레임이 그려져 버리면, 그
+  // 대체 글꼴 모습 그대로 남아 버릴 수 있다. 실행하기 전에 프로젝트가 쓰는 글꼴을
+  // 전부 미리 내려받아 둬서, 첫 프레임부터 올바른 글꼴로 그려지게 한다.
+  const preloadTextFonts = async (project) => {
+    const fonts = new Set(
+      (project.objects ?? [])
+        .filter((object) => object.objectType === 'textBox' && object.entity?.font)
+        .map((object) => object.entity.font),
+    );
+    await Promise.all([...fonts].map((font) => document.fonts.load(font).catch(() => {})));
+    await document.fonts.ready.catch(() => {});
+  };
+
+  // start-gate 오버레이(위 CSS 주석 참고)를 눌러야 실행을 시작한다 — 그 클릭/키 입력
+  // 자체가 브라우저의 자동재생 정책이 요구하는 "사용자 상호작용"이 되어, when start 에서
+  // 바로 나오는 소리도 처음부터 정상적으로 들리게 한다. 정작 gate 자체는 여기서 지우지
+  // 않는다 — waitForSoundsLoaded 가 끝날 때까지 화면에 남겨 둬야(아래) mp3 가 아직
+  // 로딩 중인데도 실행이 이미 시작된 것처럼 보이는 일이 없다.
+  const waitForStartGate = () => new Promise((resolve) => {
+    const gate = document.getElementById('start-gate');
+    if (!gate) { resolve(); return; }
+    const dismiss = () => {
+      gate.removeEventListener('click', dismiss);
+      gate.removeEventListener('keydown', dismiss);
+      resolve();
+    };
+    gate.addEventListener('click', dismiss);
+    gate.addEventListener('keydown', dismiss);
+    gate.focus();
+  });
+
+  // Entry.loadProject 는 project.objects 를 훑으면서 소리 파일마다 Entry.initSound 를
+  // 불러 Entry.soundQueue(공유 PreloadJS 큐)에 로딩을 등록만 해 두고 기다리지는
+  // 않는다(entryjs util/init.js) — 그래서 실행하기(toggleRun)가 곧바로 이어지면,
+  // 아직 데이터가 도착하지 않은 소리를 재생하는 블록이 "재생은 됐지만 소리는 안 나는"
+  // 상태가 된다(재생 자체는 성공한 것처럼 보여도 재생할 데이터가 없다). Entry.soundQueue
+  // 는 등록된 소리가 전부 도착하면 'soundLoaded' 이벤트를 스스로 쏘므로(같은 파일의
+  // loadCallback), 그걸 기다렸다가 실행한다. entryjs 자신도 소리 하나당 3초가 지나면
+  // 포기하고 넘어가므로(Entry.initSound 의 setTimeout), 우리도 그와 비슷하게 여유를
+  // 주고 그래도 안 끝나면 (예: 파일이 404 라서 영영 안 끝나면) 무한정 기다리지 않는다.
+  const waitForSoundsLoaded = () => new Promise((resolve) => {
+    const queue = window.Entry && Entry.soundQueue;
+    if (!queue || queue.loadComplete || !queue.urls || queue.urls.size === 0) { resolve(); return; }
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      Entry.removeEventListener('soundLoaded', finish);
+      clearTimeout(timer);
+      resolve();
+    };
+    Entry.addEventListener('soundLoaded', finish);
+    const timer = setTimeout(finish, 8000);
+  });
+
   try {
     const project = await (await fetch('/project.json')).json();
     const sourceMap = await (await fetch('/sourcemap.json')).json().catch(() => ({}));
     window.tessSourceMap = sourceMap;
     window.tessRenderProjectDebug(project);
-    interceptRuntimeErrors(sourceMap);
+    await preloadTextFonts(project);
     Entry.init(document.getElementById('workspace'), {
       type: 'minimize',
-      libDir: '${escapeHtml(base)}',
+      libDir: ${jsValue(base)},
+      // baseUrl 은 일부러 안 정한다 — entryjs 기본값이 location.origin(util/init.js
+      // setDefaultPathsFromOptions)이라 tts 읽어주기(block_ai_utilize_tts.js) 같은
+      // 'AI 활용' 블록이 우리 서버(/api/expansionBlock/tts/read.mp3)로 요청을 보내는데,
+      // 이 서버가 그 경로를 playentry.org 로 그대로 대신 요청해 돌려준다(아래 참고).
+      // baseUrl 을 여기서 playentry.org 로 바로 바꾸면 더 간단해 보이지만, 브라우저가
+      // 다른 origin(playentry.org)으로 직접 요청을 보내는 순간 그쪽 서버가 CORS 허용
+      // 헤더를 안 주기 때문에 그냥 막힌다 — 그래서 꼭 우리 서버를 거쳐야 한다.
+      // 엔트리 기본 이미지 (entryDir) 는 서버 응답을 필요로 하지 않는 로컬/CDN 정적
+      // 파일이라 이 문제가 없다.
+      // entryjs 는 기본값으로 mediaFilePath 를 \`\${libDir}/@entrylabs/entry/images/\` 로 만든다
+      // (util/init.js setDefaultPathsFromOptions, entryDir 기본값 '/@entrylabs/entry') — 즉
+      // libDir 밑에 '@entrylabs/entry' 폴더가 한 번 더 있다고 가정한다. 그런데 우리 base 는
+      // ('/lib' 든 CDN 이든) 이미 그 패키지 폴더 자체를 가리키므로, 그대로 두면
+      // '.../lib/@entrylabs/entry/images/...' 처럼 경로가 겹쳐 자를(회전 손잡이, 좌표계,
+      // 크기 조절 손잡이 등) 엔트리 자체 기본 이미지가 전부 404 난다. entryDir 를 빈 문자열로
+      // 줘서 mediaFilePath 가 우리 base 와 같은 규칙(밑에 바로 images/)을 쓰게 맞춘다.
+      entryDir: '',
       fonts: [],
     });
+    // Entry.init 은 그 안에서 매번 Entry.toast = new Entry.Toast() 를 새로 만든다
+    // (entryjs util/init.js). interceptRuntimeErrors 가 Entry.init 보다 먼저 실행되면
+    // 아직 없거나(첫 실행) 곧 버려질 예전 Entry.toast 를 고치는 셈이라 아무 효과가
+    // 없다 — 그래서 반드시 Entry.init 이 끝난 다음, 이제부터 계속 쓰일 진짜 Entry.toast
+    // 가 만들어진 뒤에 걸어야 한다.
+    interceptRuntimeErrors(sourceMap);
+    // 부스트 모드·기기·터치 판단 블록을 디버그 패널이 정한 값으로 바꿔 둔다.
+    // Entry.init 이 블록 정의(Entry.block)를 채운 뒤에 불러야 한다.
+    window.tessPatchEnvironmentBlocks();
     Entry.loadProject(project);
-    Entry.engine && Entry.engine.toggleRun && Entry.engine.toggleRun();
     requestAnimationFrame(() => window.tessLayoutCanvas());
+    await waitForStartGate();
+    const gate = document.getElementById('start-gate');
+    const gateCard = document.getElementById('start-gate-card');
+    const soundsReady = waitForSoundsLoaded();
+    // 클릭은 이미 받았지만(오디오 잠금 해제엔 그걸로 충분하다) 소리 데이터가 아직
+    // 안 왔으면, 실행하기 전까지 게이트를 안내 문구로 바꿔 그대로 띄워 둔다 — 그냥
+    // 사라져 버리면 "실행은 됐는데 왜 소리가 하나도 안 나지" 하고 헷갈리게 된다.
+    if (gateCard && window.Entry?.soundQueue?.urls?.size > 0 && !Entry.soundQueue.loadComplete) {
+      gateCard.textContent = '소리를 불러오는 중…';
+    }
+    await soundsReady;
+    gate && gate.remove();
+    Entry.engine && Entry.engine.toggleRun && Entry.engine.toggleRun();
   } catch (error) {
     showFallback('작품을 실행하는 중 문제가 생겼습니다: ' + error.message);
     window.tessReportError('초기화 오류', error);

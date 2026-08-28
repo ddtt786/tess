@@ -58,6 +58,38 @@ test('x = / x += 를 서로 다른 블록으로 바꾼다', () => {
   assert.equal(sketch(thread[3]), 'move_x(number(-5))');
 });
 
+test('costume / costume_number 로 자기·다른 오브젝트의 모양 이름·번호를 읽는다', () => {
+  // 엔트리의 coordinate_object 드롭다운은 x/y/방향/이동방향/크기 말고도
+  // "모양 번호"(picture_index)·"모양 이름"(picture_name) 을 갖고 있다(entryjs
+  // block_calc.js) — costume/costume_number 로 이 둘을 읽는다.
+  const source = `
+scene "s":
+  object "다른":
+    default costume 기본 "a.png" size 1 1
+    costume 점프 "b.png" size 1 1
+  end
+  object "o":
+    default costume 기본 "a.png" size 1 1
+    when start do
+      var 이름 = costume("다른")
+      var 번호 = costume_number("다른")
+      var 내이름 = costume
+      var 내번호 = costume_number
+    end
+  end
+end`;
+  const result = compileProject(source, { path: path.join(root, 'test.tess') });
+  assert.deepEqual(result.errors, [], result.errors.map((e) => e.message).join('\n'));
+
+  const object = result.project.objects.find((o) => o.name === 'o');
+  const otherId = result.project.objects.find((o) => o.name === '다른').id;
+  const thread = JSON.parse(object.script)[0];
+  assert.match(sketch(thread[1]), new RegExp(`^set_variable\\(\\w+ coordinate_object\\(${otherId} picture_name\\)\\)$`));
+  assert.match(sketch(thread[2]), new RegExp(`^set_variable\\(\\w+ coordinate_object\\(${otherId} picture_index\\)\\)$`));
+  assert.match(sketch(thread[3]), /^set_variable\(\w+ coordinate_object\(self picture_name\)\)$/);
+  assert.match(sketch(thread[4]), /^set_variable\(\w+ coordinate_object\(self picture_index\)\)$/);
+});
+
 test('move x y 는 엔트리 블록 두 개로 펼친다', () => {
   const { thread } = compileScript('move 20 -30');
   assert.equal(sketch(thread[1]), 'move_x(number(20))');
@@ -329,6 +361,51 @@ test('모양·소리를 엔트리 리소스 경로로 만든다', () => {
   assert.equal(picture.imageType, 'png');
   assert.match(sound.fileurl, /^temp\/[a-z0-9]{2}\/[a-z0-9]{2}\/sound\/[a-z0-9]{32}\.mp3$/);
   assert.equal(sound.ext, '.mp3');
+});
+
+test('force id 는 모양·소리의 엔트리 id 를 그 문자열로 고정한다', () => {
+  const { project } = compileScript('', {
+    costumes: 'costume 기본 "hero.png" size 10 20 force id "qio1"\n    sound 점프 "jump.mp3" force id "aabb"',
+  });
+  const object = project.objects.find((o) => o.name === 'o');
+  assert.equal(object.sprite.pictures[0].id, 'qio1');
+  assert.equal(object.sprite.sounds[0].id, 'aabb');
+});
+
+test('force id 가 이미 다른 곳에서 쓰이고 있으면 에러다', () => {
+  const source = `
+scene "s":
+  object "o":
+    costume 하나 "a.png" size 1 1 force id "qio1"
+    costume 둘 "b.png" size 1 1 force id "qio1"
+  end
+end`;
+  const result = compileProject(source, { path: path.join(root, 'test.tess') });
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0].message, /이미 다른/);
+});
+
+test('force id 로 고정된 id 는 이 오브젝트 소유가 아니어도 costume = 로 그대로 흘려보낸다', () => {
+  // 함수 안에 다른 오브젝트의 모양 id 를 그대로 박아 넣던 관습을 되돌릴 때 쓰는 패턴
+  // (SPEC-ADDENDUM.md 1.4절) — force id 로 고정된 문자열은 이 오브젝트의 모양 이름이
+  // 아니어도 에러 없이 그대로 통과해야 한다.
+  const source = `
+scene "s":
+  object "다른":
+    default costume 점프 "jump.png" size 1 1 force id "qio1"
+  end
+  object "o":
+    default costume 기본 "a.png" size 1 1
+    when start do
+      costume = "qio1"
+    end
+  end
+end`;
+  const result = compileProject(source, { path: path.join(root, 'test.tess') });
+  assert.deepEqual(result.errors, [], result.errors.map((e) => e.message).join('\n'));
+  const object = result.project.objects.find((o) => o.name === 'o');
+  const thread = JSON.parse(object.script)[0];
+  assert.equal(sketch(thread[1]), 'change_to_some_shape(qio1)');
 });
 
 // --- use ------------------------------------------------------------------------
@@ -661,4 +738,151 @@ test('같은 소스는 항상 같은 결과로 컴파일된다', () => {
   const first = compileProject(source, options).project;
   const second = compileProject(source, options).project;
   assert.equal(JSON.stringify(first), JSON.stringify(second));
+});
+
+// --- force: 에러가 있어도 만들다 만 작품 받아 가기 -------------------------------
+// 컴파일러는 에러를 만나도 그 자리만 빼고 끝까지 가므로(한 번에 에러를 다 보여
+// 주기 위해서다), 만들다 만 작품이 이미 손에 있다. --force / options.force 는 그걸
+// 그대로 돌려준다 — 큰 작품을 되돌려 놓고 아직 안 고친 부분이 남았을 때 나머지가
+// 제대로 도는지 먼저 실행해 보는 용도다.
+const FORCE_SOURCE = `project:
+  title "강제"
+end
+
+object "주인공":
+  costume 기본 "없음.png" size 10 10
+  when start do
+    costume = "없는모양"
+    x += 1
+  end
+end`;
+
+test('에러가 있으면 project 는 null 이고, force 를 주면 만들다 만 작품을 그대로 돌려준다', () => {
+  const plain = compileProject(FORCE_SOURCE, { path: 'x.tess' });
+  assert.equal(plain.ok, false);
+  assert.equal(plain.project, null);
+
+  const forced = compileProject(FORCE_SOURCE, { path: 'x.tess', force: true });
+  assert.equal(forced.ok, false); // force 를 줘도 에러가 없어지는 건 아니다
+  assert.deepEqual(forced.errors.map((e) => e.message), plain.errors.map((e) => e.message));
+  assert.ok(forced.project);
+
+  // 에러가 난 문장(costume = "없는모양")은 빠지고, 그 뒤의 멀쩡한 블록은 그대로 남는다
+  const script = JSON.parse(forced.project.objects[0].script);
+  assert.deepEqual(script[0].map((block) => block.type), ['when_run_button_click', 'move_x']);
+});
+
+test('문법 에러는 작품 자체가 안 만들어져서 force 도 소용없다', () => {
+  const result = compileProject('object "주인공":\n  when start do\n    x +=\n', { path: 'x.tess', force: true });
+  assert.equal(result.ok, false);
+  assert.equal(result.project, null);
+});
+
+// --- 함수 머리: 라벨 + 매개변수 이름 (SPEC-ADDENDUM.md 4.6) ------------------------
+// 엔트리 함수 머리는 라벨과 매개변수 칸이 번갈아 나오는 사슬이다. 제자리 자동 이름
+// (a, b, c … z, a1, a2 …)은 라벨 없는 인수를, 그 밖의 이름은 그 이름을 라벨로 단
+// 인수를 뜻한다 — 되돌리기가 읽는 규칙(src/function-params.js)의 정확한 반대다.
+function fieldChain(project, index = 0) {
+  const chain = [];
+  let node = JSON.parse(project.functions[index].content)[0][0].params[0];
+  while (node && typeof node === 'object') {
+    if (node.type === 'function_field_label') chain.push(`label:${node.params[0]}`);
+    else if (node.type?.startsWith('function_field_')) chain.push(`param:${node.params[0]?.type.split('_')[0]}`);
+    else break;
+    node = node.params[1];
+  }
+  return chain;
+}
+
+test('자동 이름 매개변수는 라벨 없이, 이름 붙인 매개변수는 라벨을 달고 나간다', () => {
+  const plain = compileProject('function 스폰(a, b):\n  say a\nend', { path: 'x.tess' });
+  assert.deepEqual(fieldChain(plain.project), ['label:스폰', 'param:stringParam', 'param:stringParam']);
+
+  const named = compileProject('function 스폰(a, 체력):\n  say 체력\nend', { path: 'x.tess' });
+  assert.deepEqual(fieldChain(named.project),
+    ['label:스폰', 'param:stringParam', 'label:체력', 'param:stringParam']);
+});
+
+// --- 판단 <-> 값 자동 변환 (SPEC-ADDENDUM.md 4) -----------------------------------
+// 엔트리는 판단 칸과 값 칸이 엄격히 나뉘어 있는데 Tess 에는 타입이 없다. 어긋나는
+// 자리는 엔트리가 실제로 쓰는 블록(참/거짓, `(<판단>의 값)`)으로 이어 준다.
+function firstBlocks(source) {
+  const { project } = compileProject(`scene "s":\n  object "o":\n${source}\n  end\nend`, { path: 'x.tess' });
+  return { project, thread: JSON.parse(project.objects[0].script)[0] };
+}
+
+test('판단 자리의 리터럴은 참/거짓 블록이 되고, 계산되는 값은 == "TRUE" 로 감싼다', () => {
+  const { thread } = firstBlocks(`    var flag = false
+    when start do
+      if true then
+        say "a"
+      end
+      if "살아있음" then
+        say "b"
+      end
+      if 1 then
+        say "c"
+      end
+      if flag then
+        say "d"
+      end
+    end`);
+  const conditions = thread.slice(1).map((block) => block.params[0]);
+  assert.deepEqual(conditions.slice(0, 3).map((c) => c.type), ['True', 'True', 'True']);
+  assert.equal(conditions[3].type, 'boolean_basic_operator');
+  assert.equal(conditions[3].params[2].params[0], 'TRUE');
+});
+
+test('값 자리의 판단은 (<판단>의 값) 으로 감싸고, true/false 는 "TRUE"/"FALSE" 가 된다', () => {
+  const { project, thread } = firstBlocks(`    var flag = true
+    when start do
+      flag = false
+      flag = x > 3
+    end`);
+  // 초기값도 대입식과 같은 글자여야 if flag 가 맞아떨어진다
+  assert.equal(project.variables.find((v) => v.name === 'flag').value, 'TRUE');
+
+  const [, assignLiteral, assignCompare] = thread;
+  assert.equal(assignLiteral.params[1].type, 'get_boolean_value');
+  assert.equal(assignLiteral.params[1].params[0].type, 'False');
+  assert.equal(assignCompare.params[1].type, 'get_boolean_value');
+  assert.equal(assignCompare.params[1].params[0].type, 'boolean_basic_operator');
+});
+
+test('wait 은 판단을 감싸지 않고 "~까지 기다리기" 로 남는다', () => {
+  const { thread } = firstBlocks('    when start do\n      wait x > 3\n    end');
+  assert.equal(thread[1].type, 'wait_until_true');
+  assert.equal(thread[1].params[0].type, 'boolean_basic_operator');
+});
+
+test('매개변수 이름 뒤의 ? 는 엔트리 판단 칸이 된다', () => {
+  const source = `function 스폰(a, 살았나?):
+  if 살았나 then
+    say a
+  end
+end
+scene "s":
+  object "o":
+    when start do
+      스폰("치로", x > 3)
+      스폰("나무", true)
+    end
+  end
+end`;
+  const result = compileProject(source, { path: 'x.tess' });
+  assert.deepEqual(result.errors, [], result.errors.map((e) => e.message).join('\n'));
+  assert.deepEqual(verifyEntryProject(result.project), []);
+
+  // 머리: 라벨 -> 값 칸 -> 라벨(살았나) -> 판단 칸
+  assert.deepEqual(fieldChain(result.project),
+    ['label:스폰', 'param:stringParam', 'label:살았나', 'param:booleanParam']);
+
+  // 본문에서는 판단 자리에 그대로 꽂힌다 (== "TRUE" 로 감싸지 않는다)
+  const create = JSON.parse(result.project.functions[0].content)[0][0];
+  assert.match(create.statements[0][0].params[0].type, /^booleanParam_/);
+
+  // 호출: 판단 칸에는 판단이 그대로, 리터럴 true 는 참 블록으로 들어간다
+  const [, compare, literal] = JSON.parse(result.project.objects[0].script)[0];
+  assert.equal(compare.params[1].type, 'boolean_basic_operator');
+  assert.equal(literal.params[1].type, 'True');
 });

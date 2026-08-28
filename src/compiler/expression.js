@@ -12,11 +12,22 @@ import { OPTION_KEYWORDS, STATE_VALUES } from '../builtins.js';
 
 /** 결과가 엔트리 "판단(boolean)" 블록인 타입들 */
 const BOOLEAN_TYPES = new Set([
+  'True', 'False',
   'boolean_basic_operator', 'boolean_and_or', 'boolean_not',
   'is_clicked', 'is_object_clicked', 'is_press_some_key', 'reach_something',
   'is_type', 'is_boost_mode', 'is_current_device_type', 'is_touch_supported',
   'is_included_in_list',
 ]);
+
+// 계산할 필요 없이 값이 정해지는 리터럴들이다. 판단 자리에 오면 참으로 본다.
+const LITERAL_TYPES = new Set(['Number', 'String', 'Color', 'Transparent']);
+
+/**
+ * Tess 의 true/false 를 엔트리 값으로 옮기면 "TRUE"/"FALSE" 라는 문자열이 된다.
+ * 엔트리의 `(<판단>의 값)`(get_boolean_value) 블록이 그 글자를 돌려주기 때문이다.
+ * 리터럴에서 왔든 비교식에서 왔든 항상 같은 글자가 나오도록 맞춘다.
+ */
+export const BOOLEAN_TEXT = { true: 'TRUE', false: 'FALSE' };
 
 const COMPARE_OPERATORS = {
   '==': 'EQUAL', '!=': 'NOT_EQUAL',
@@ -34,8 +45,17 @@ const MATH_OPERATIONS = {
   floor: 'floor', ceil: 'ceil', round: 'round', abs: 'abs',
 };
 
-/** 오브젝트 정보 조회 함수 -> coordinate_object 의 COORDINATE 값 */
-const OBJECT_COORDINATES = { x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size' };
+/**
+ * 오브젝트 정보 조회 함수 -> coordinate_object 의 COORDINATE 값.
+ * 엔트리의 실제 coordinate_object 드롭다운은 x/y/방향/이동방향/크기 말고도
+ * "모양 번호"(picture_index)·"모양 이름"(picture_name) 을 갖고 있다
+ * (entryjs block_calc.js). costume/costume_number 로 다른 오브젝트의 모양도
+ * 이름·번호로 읽을 수 있게 한다.
+ */
+const OBJECT_COORDINATES = {
+  x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size',
+  costume: 'picture_name', costume_number: 'picture_index',
+};
 
 /** 상태 값(괄호 없이 쓰는 읽기 전용 값) */
 const STATE_BLOCKS = {
@@ -49,30 +69,60 @@ const STATE_BLOCKS = {
   answer: 'get_canvas_input_value',
 };
 
-/** 오브젝트 속성을 읽는 coordinate_object 의 COORDINATE 값 */
+/** 오브젝트 속성을 읽는 coordinate_object 의 COORDINATE 값 (자기 자신, 괄호 없이) */
 const PROPERTY_COORDINATES = {
-  x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size', costume: 'picture_name',
+  x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size',
+  costume: 'picture_name', costume_number: 'picture_index',
 };
 
 export function isBooleanBlock(node) {
-  return Boolean(node) && typeof node === 'object' && BOOLEAN_TYPES.has(node.type);
+  if (!node || typeof node !== 'object') return false;
+  // 판단 매개변수(`이름?`)를 가리키는 블록은 함수마다 타입 이름이 다르므로 접두사로 가린다
+  return BOOLEAN_TYPES.has(node.type) || String(node.type).startsWith('booleanParam_');
 }
 
-/** 판단 자리에 들어갈 블록. 값 블록이면 `== "true"` 로 감싼다. */
+/**
+ * 판단 자리에 들어갈 블록을 만든다.
+ *
+ * 엔트리의 판단 칸에는 판단 블록만 꽂을 수 있지만, Tess 에는 타입이 없어서 값이 올 수
+ * 있다. 그런 자리는 다음과 같이 맞춰 준다.
+ *  - `true`/`false` 리터럴은 엔트리의 참·거짓 블록이 된다.
+ *  - 그 밖의 리터럴("살아있음", 1 …)은 참으로 본다. 문자열을 참으로 보는 오랜 관례를 따른다.
+ *  - 변수나 매개변수처럼 실행해 봐야 아는 값은 `== "TRUE"` 비교로 감싼다.
+ */
 export function compileBoolean(node, ctx) {
-  const compiled = compileValue(node, ctx);
+  if (node?.type === 'Boolean') return ctx.block(node.value ? 'True' : 'False', [null]);
+  if (LITERAL_TYPES.has(node?.type)) return ctx.block('True', [null]);
+
+  const compiled = compileAnyValue(node, ctx);
   if (compiled === null) return null;
   if (isBooleanBlock(compiled)) return compiled;
-  return ctx.block('boolean_basic_operator', [compiled, 'EQUAL', ctx.text('true')]);
+  return ctx.block('boolean_basic_operator', [compiled, 'EQUAL', ctx.text(BOOLEAN_TEXT.true)]);
 }
 
-/** 값 자리에 들어갈 블록 */
+/**
+ * 값 자리에 들어갈 블록을 만든다.
+ *
+ * 판단 블록이 값 자리에 오면(`이름 = (x > 3)` 처럼, 또는 판단을 받지 않는 함수에 넘길 때)
+ * 엔트리의 `(<판단>의 값)` 블록으로 감싼다. 엔트리도 판단을 값 칸에 꽂을 때 이 블록을
+ * 쓰며, 그 결과는 "TRUE"/"FALSE" 문자열이다.
+ */
 export function compileValue(node, ctx) {
+  const compiled = compileAnyValue(node, ctx);
+  if (compiled === null) return null;
+  return isBooleanBlock(compiled) ? ctx.block('get_boolean_value', [compiled]) : compiled;
+}
+
+/**
+ * 감싸기 전의 블록을 그대로 돌려준다. 판단 블록이 나올 수도 있다.
+ * 값이냐 판단이냐에 따라 다른 블록을 쓰는 자리(`wait` 이 대표적이다)에서 직접 부른다.
+ */
+export function compileAnyValue(node, ctx) {
   if (!node) return null;
   switch (node.type) {
     case 'Number': return ctx.number(node.value);
     case 'String': return ctx.text(node.value);
-    case 'Boolean': return ctx.text(String(node.value));
+    case 'Boolean': return ctx.block(node.value ? 'True' : 'False', [null]);
     case 'Color': return ctx.text(node.value);
     case 'Transparent': return ctx.text('transparent');
     case 'Identifier': return compileIdentifier(node, ctx);
@@ -95,7 +145,11 @@ function compileIdentifier(node, ctx) {
 
   const found = ctx.lookupVariable(name);
   if (found) {
-    if (found.kind === 'param') return ctx.block(ctx.funcScope.params.get(name), []);
+    if (found.kind === 'param') {
+      const type = ctx.funcScope.params.get(name);
+      // 판단 칸 매개변수 블록은 엔트리가 만든 원본에서도 빈 자리를 하나 갖는다
+      return ctx.block(type, type.startsWith('booleanParam_') ? [null] : []);
+    }
     if (found.kind === 'funcLocal') return ctx.block('get_func_variable', [found.id, null]);
     if (found.entry.variableType === 'list') {
       return ctx.error(node, `리스트 '${name}' 은(는) 값으로 바로 쓸 수 없습니다. ${name}[i] 처럼 항목을 지정하세요.`);
@@ -394,6 +448,17 @@ function compileIndex(node, ctx) {
   return target && ctx.block('char_at', [null, target, null, index, null]);
 }
 
+/**
+ * 사용자 정의 함수에 넘길 인자들을 만든다.
+ * `이름?` 으로 선언한 자리는 판단 칸이라 판단 블록만 꽂을 수 있으므로 compileBoolean 을
+ * 쓰고, 나머지 자리는 값으로 맞춰 넣는다.
+ */
+export function compileCallArguments(fn, args, ctx) {
+  return args.map((arg, index) => (fn.booleanParams?.has(fn.params[index])
+    ? compileBoolean(arg, ctx)
+    : compileValue(arg, ctx)));
+}
+
 /** 식별자가 리스트를 가리키면 그 엔트리 변수 항목을 돌려준다 */
 export function resolveList(node, ctx) {
   if (!node || node.type !== 'Identifier') return null;
@@ -424,7 +489,7 @@ function compileCall(node, ctx) {
       ctx.error(node, `함수 '${callee}' 는 인자가 ${fn.params.length}개여야 합니다.`);
       return null;
     }
-    const params = args.map((arg) => compileValue(arg, ctx));
+    const params = compileCallArguments(fn, args, ctx);
     if (params.some((p) => p === null)) return null;
     return ctx.block(`func_${fn.id}`, params);
   }
@@ -486,7 +551,8 @@ function compileCall(node, ctx) {
       return target && ctx.block('distance_something', [null, target, null]);
     }
 
-    case 'x': case 'y': case 'angle': case 'way': case 'size': {
+    case 'x': case 'y': case 'angle': case 'way': case 'size':
+    case 'costume': case 'costume_number': {
       if (!arity(1)) return null;
       const coordinate = OBJECT_COORDINATES[callee];
       if (args[0].type === 'String' && args[0].value === 'mouse') {

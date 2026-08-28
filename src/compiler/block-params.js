@@ -68,6 +68,8 @@ export const BLOCK_PARAM_COUNTS = {
   function_value: 0,
   get_block_count: 1,
   get_boolean_value: 1,
+  True: 1,
+  False: 1,
   get_canvas_input_value: 1,
   get_date: 3,
   get_func_variable: 2,

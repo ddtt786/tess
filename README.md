@@ -1,12 +1,15 @@
 # Tess — Ohm 문법 구현과 엔트리 컴파일러
 
-[Tess 언어 명세](#)를 [Ohm.js](https://ohmjs.org) 로 구현한 파서와,
+[Tess 언어](./SPEC.md)를 [Ohm.js](https://ohmjs.org) 로 구현한 파서와,
 그 결과를 **실제 엔트리 작품(`project.json` / `.ent`)으로 컴파일**하는 컴파일러입니다.
 `tuto/` 의 한국어 Ohm 튜토리얼에서 배운 기법을 그대로 적용했습니다.
 
+Tess 로 뭘, 어떻게 쓰는지 알고 싶다면 **[SPEC.md](./SPEC.md)** (언어 가이드) 를 먼저
+읽으세요 — 이 README 는 프로젝트 구조와 컴파일러 내부, CLI 사용법을 다룹니다.
+
 ```bash
 pnpm install
-pnpm test                                              # 223개 테스트
+pnpm test                                              # 268개 테스트
 
 node index.js check examples/tour.tess                 # 문법 · 의미 검사
 node index.js build examples/all_blocks.tess -o build/blocks.ent
@@ -33,8 +36,9 @@ all_blocks.tess -> build/blocks.ent
 | `src/compiler/` | **엔트리 컴파일러** (아래 표 참고) |
 | `index.js` | 라이브러리 재export + CLI |
 | `examples/` | spec 예제 · 언어 한 바퀴 · 컴파일되는 작품 |
-| `SPEC-ADDENDUM.md` | 컴파일을 위해 더한 문법과 엔트리 블록 대응표 |
-| `GRAMMAR.md` | Ohm 문법(`tess.ohm`) 규칙별 상세 명세 — 우선순위, PEG 기법, AST 대응표 |
+| `SPEC.md` | **Tess 언어 가이드** — 문법·문장·표현식·내장 함수를 처음부터 설명(일반 사용자용) |
+| `SPEC-ADDENDUM.md` | 엔트리에는 없는 Tess 전용 문법과, 컴파일러가 알아서 다르게 만드는 부분 |
+| `GRAMMAR.md` | Ohm 문법(`tess.ohm`) 규칙별 상세 명세 — 우선순위, PEG 기법, AST 대응표(파서/컴파일러 기여자용) |
 
 | 컴파일러 파일 | 역할 |
 |---|---|
@@ -45,8 +49,10 @@ all_blocks.tess -> build/blocks.ent
 | `src/compiler/comments.js` | Tess 주석 → 엔트리 블록 주석 |
 | `src/compiler/runtime.js` | 엔트리에 없는 동작을 대신할 함수 만들어 넣기 |
 | `src/player/` | `run` 이 띄우는 미리보기 서버와 실행 페이지 |
+| `src/decompiler/` | `decompile` — `.ent` → Tess 소스(기본적으로 오브젝트마다 `objects/이름.tess` 조각 파일 + `useobject`/`usetext`) |
 | `editors/vscode/` | VS Code 문법 강조 (설치법은 그 폴더의 README) |
-| `src/compiler/assets.js` | 모양·소리 파일 → 엔트리 리소스 경로 |
+| `src/compiler/assets.js` | 모양·소리 파일 → 엔트리 리소스 경로, 그림 원본 크기 재기 |
+| `src/compiler/audio.js` | 소리 파일 헤더에서 재생 길이 재기 (mp3 · wav · ogg · m4a) |
 | `src/compiler/bundle.js` | `.ent` (tar) 묶기 — 의존성 없이 직접 |
 | `src/compiler/verify.js` | 만든 프로젝트가 엔트리 구조에 맞는지 검사 |
 | `src/compiler/block-params.js` | 엔트리 블록별 파라미터 자리 개수표 |
@@ -294,6 +300,9 @@ id 는 `[a-z0-9]` 4글자입니다.
 | `scale_x = 50` | 엔트리에 없는 "가로 비율 정하기" 를 컴파일러가 만든 함수로 해냅니다 (아래) |
 | `27 ** (1/3)` · `root(27, 3)` | 엔트리에 없는 일반 거듭제곱·n제곱근을 제곱·제곱근·자연로그로 펼칩니다 (아래) |
 | `costume 기본 "a.png" size 200 100`<br>`sound 딸깍 "click.mp3" for 0.3` | 그림·소리 파일이 아직 없어도 필요한 정보를 적어 두면 조용히 넘어갑니다 |
+| `if "살아있음":` · `깃발 = (x > 3)` | 엔트리는 판단 칸과 값 칸이 엄격히 나뉘어 있는데 Tess 는 타입이 없습니다. 어긋나는 자리는 참/거짓 블록과 `(<판단>의 값)` 으로 이어 줍니다 (SPEC-ADDENDUM.md 4절) |
+| `function 스폰(a, 체력)` | 자동 이름(`a`, `b`, …)이 아닌 매개변수는 엔트리에서 이름표를 달고 `스폰 (인수) 체력 (인수)` 로 보입니다 (SPEC-ADDENDUM.md 4.6) |
+| `function 스폰(살았나?)` | 이름 뒤 `?` 는 그 자리를 엔트리의 **판단 칸**으로 만듭니다 — 판단을 그대로 넘겨받습니다 |
 
 ### 엔트리에 없는 블록 만들어 내기 — `가로 비율 정하기`
 
@@ -359,7 +368,7 @@ y ≈ x^p 일 때   y ← y × (1 + p·ln x − ln y)      오차 ε → ε²/2
 ```
 $ node index.js run examples/all_blocks.tess
 all_blocks.tess -> http://127.0.0.1:41234/
-  실행기: CDN (https://cdn.jsdelivr.net/npm/@entrylabs/entry@4)
+  실행기: CDN (https://unpkg.com/@entrylabs/entry@4.0.22)
   자동 새로고침: 켜짐 (--no-reload 로 끌 수 있습니다)
   Ctrl+C 로 끕니다.
 ```
@@ -379,6 +388,123 @@ all_blocks.tess -> http://127.0.0.1:41234/
 설치하면 그 파일을 씁니다. 둘 다 안 되면 페이지가 그 사실과 함께 `.ent` 를 받아
 playentry.org 에서 여는 방법을 안내합니다.
 
+#### 디버그 패널
+
+실행 페이지 오른쪽 위 **디버그** 버튼으로 엽니다. 네 개의 탭이 있습니다.
+
+| 탭 | 하는 일 |
+|---|---|
+| **실행** | 시작 · 일시정지 · 정지. **정지한 뒤에도 다시 시작할 수 있습니다** — 엔트리 minimize 실행기 바의 큰 재생 버튼은 캔버스 레이아웃에 가려지기도 해서 여기에 따로 뒀습니다. 아래에서 **부스트 모드 · 기기 종류 · 터치 지원**을 골라 흉내낼 수 있습니다 |
+| **자료** | 변수·리스트의 **지금 값**(실행 중이면 실시간), 신호(눌러서 바로 보내기), 함수(이름·인자 수·값 함수 여부) |
+| **오브젝트** | 장면·오브젝트 목록과 고른 오브젝트의 컴파일된 블록 트리 |
+| **오류** | 실행 중 난 오류. 블록을 만든 `.tess` 원본 줄·열까지 찾아서 알려 주고, 그 블록을 블록 트리에서 강조합니다 |
+
+`boost_mode` · `device == "mobile"` · `touchable` 은 엔트리 판단 블록이 브라우저에게 직접
+물어보는 값이라(각각 `Entry.options.useWebGL`, `Entry.Utils.getDeviceType()`,
+`'ontouchstart' in window`) 데스크톱 브라우저 하나로는 다른 갈래를 볼 방법이 없습니다.
+디버그 패널은 그 블록들을 감싸서 여기서 고른 값을 대신 돌려주게 합니다 — 브라우저를
+바꾸지 않고도 모바일에서만 도는 분기를 확인할 수 있습니다.
+
+패널이 보여 주는 이름(오브젝트·장면·변수·신호)은 전부 작품에서 온 값이고, 작품은 남이
+만든 `.ent` 를 되돌린 것일 수도 있습니다. 그래서 이 UI 는 `innerHTML` 을 아예 쓰지 않고
+`textContent` 로만 글자를 넣습니다 (`test/player-debug.test.js` 가 jsdom 으로 확인합니다).
+
+### 엔트리 작품을 Tess 로 되돌리기 — `decompile`
+
+```
+$ node index.js decompile temp/dd.ent -o temp/dd_tess
+dd.ent -> temp/dd_tess/main.tess
+  오브젝트 조각 파일 11개, 에셋(모양·소리) 36개 옮김
+  되돌린 소스가 다시 정상적으로 컴파일됩니다.
+```
+
+이미 있는 `.ent`(엔트리 작품)를 Tess 소스로 되돌립니다. **오브젝트/글상자 하나마다 조각
+파일 하나(`objects/이름.tess`)로 따로 써 두고, `main.tess` 에는 `useobject`/`usetext`
+한 줄만 남기는 것이 기본 동작입니다** — 한 파일에 모든 오브젝트가 인라인으로 들어간
+거대한 `main.tess` 하나가 아니라, 손으로 짠 것처럼 오브젝트별로 파일이 나뉘어 있어야
+나중에 사람이 찾아 고치기 쉽기 때문입니다.
+
+```
+temp/dd_tess/
+  main.tess                        # scene 마다 useobject/usetext 만 나열
+  objects/
+    들꽃_연보라.tess                 # useobject 로 감싸질 오브젝트
+    질문.tess                        # usetext 로 감싸질 글상자
+    ...
+  assets/
+    image/들꽃_연보라_새그림.png       # <오브젝트이름>_<모양이름>
+    sound/들꽃_연보라_딸깍.mp3
+    ...
+```
+
+모양·소리 이름은 오브젝트마다 따로 붙습니다. 엔트리가 자동으로 붙여 주는 "새그림"
+같은 이름은 여러 오브젝트에 그대로 남아 있기 마련이라, 그 이름을 그대로 파일 이름으로
+쓰면 **나중에 저장한 파일이 앞의 파일을 덮어써서** 모양 하나만 남습니다(실제로
+`bounce.ent` 는 모양·소리 910개 중 824개를 그렇게 잃었습니다). 그래서 파일 이름을
+`<오브젝트이름>_<모양이름>` 으로 만들고, 장면이 여러 개면 조각 파일과 같은 기준으로
+장면별 폴더에 나눠 담습니다.
+
+```
+temp/rider_tess/
+  objects/장면_1/새_오브젝트7.tess
+  assets/image/장면_1/새_오브젝트7_새그림.png
+  assets/sound/장면_2/배경_배경음.mp3
+```
+
+그래도 경로가 겹치면 뒤에 번호를 붙여서(`..._2.png`) 반드시 다른 파일이 되게 합니다.
+같은 파일을 여러 모양이 함께 쓰면 한 번만 저장하고 모두 그 경로를 가리킵니다.
+
+```tess
+# main.tess
+scene "장면_1":
+  useobject "objects/들꽃_연보라.tess"
+  usetext "objects/질문.tess"
+end
+```
+
+```tess
+# objects/질문.tess — object/text 로 감싸지 않은, 오브젝트 속성과 when 블록만
+name "질문"
+font_color = #00ffff
+bg_color = transparent
+
+when start do
+  ...
+end
+```
+
+조각 파일 이름은 항상 그 오브젝트의 **되돌린 식별자**(파일 이름 → 다시 불러올 때
+`touching(...)` 등이 가리키는 이름)와 같아서, 되돌린 결과를 그대로 다시 컴파일해도
+참조가 어긋나지 않습니다(`decompile` 명령은 되돌린 뒤 바로 다시 컴파일해 보고 그 결과를
+알려 줍니다). `useobject`/`usetext` 자체의 문법은 [SPEC-ADDENDUM.md 1.2절](./SPEC-ADDENDUM.md)에
+있습니다.
+
+아직 옮기지 못하는 블록이나, 엔트리 워크스페이스에서 어디에도 안 연결된 채 남아 있던
+블록 뭉치는 실패로 끝내지 않고 `# [decompile] ...` 주석으로 표시한 뒤 계속 진행합니다 —
+명령이 끝나면 몇 개가 그렇게 남았는지만 알려 주고, 하나하나 무엇인지는 `--warnings` 를
+붙여야 보여 줍니다.
+
+**함수 머리**도 그대로 살립니다. 엔트리 함수는 `스폰 (인수) 체력 (인수)` 처럼 이름이
+중간에 끼어들 수 있고 판단 칸도 받는데, 그 정보를 매개변수 **이름**에 담아
+`function 스폰(a, 체력)` 으로 되돌립니다 — 다시 컴파일하면 원래 사슬로 돌아갑니다
+(SPEC-ADDENDUM.md 4.6). 자동 이름은 `a`, `b`, … `z`, `a1`, `a2` … 순입니다.
+
+**엔트리 기본 오브젝트**(걷는 엔트리봇 등)의 모양·소리는 작품 파일 안에 안 들어 있습니다 —
+`project.json` 이 엔트리 실행기가 자기 번들에 들고 다니는 파일을
+`./bower_components/entry-js/images/media/entrybot1.svg` 처럼 가리킬 뿐입니다. 이 경로를
+그대로 옮겨 두면 그런 파일이 없어서 다시 컴파일했을 때 모양이 통째로 비어 버리므로,
+되돌리기는 설치된 entryjs(`@entrylabs/entry` — `run` 이 쓰는 그 실행기)에서 진짜 파일을
+꺼내 와 다른 리소스와 똑같이 `assets/` 밑에 담습니다. 그래서 되돌린 폴더만으로 그림이
+살아 있는 작품을 다시 만들 수 있습니다.
+
+엔트리 사용자들이 흔히 쓰는 트릭도 알아봅니다 — "OO 모양으로 바꾸기"/"소리 OO
+재생하기" 값 칸에 목록에서 고르는 대신 그 모양·소리의 **진짜 엔트리 id 를 문자열로
+직접 적어 넣어도** 엔트리는 그 모양·소리로 바꿔 줍니다(값을 1) id 2) 이름 3) 등록
+순번 순으로 찾기 때문). 되돌리기는 이런 리터럴 id 를 프로젝트에 있는 진짜 id 와
+맞춰 보고, 맞으면 (다시 컴파일할 때 id 가 새로 배정돼도 안 깨지도록) 그 모양·소리의
+Tess 이름으로 바꿔 둡니다. 숫자를 직접 적어 넣는 "n번째 모양으로 바꾸기"도 그대로
+숫자로 옮깁니다(`costume = 3`처럼 — Tess 컴파일러도 이 숫자 형태를 그대로 받습니다).
+
 ### 컴파일하면서 하는 일
 
 | 하는 일 | 설명 |
@@ -389,11 +515,11 @@ playentry.org 에서 여는 방법을 안내합니다.
 | 인덱스 보정 | 0부터인 Tess 인덱스를 1부터인 엔트리 인덱스로 (상수는 미리 계산) |
 | 없는 블록 펼치기 | `move X Y` → 두 블록, `log2` → `ln/ln2`, `**` → 제곱·제곱근·곱셈 |
 | 주석 옮기기 | `#` 주석을 블록의 `comment` 로 (문자열 안의 `#` 과 색상은 건드리지 않습니다) |
-| 리소스 처리 | 이미지 헤더에서 원본 크기를 읽고 `temp/xx/yy/image/…` 경로를 만듭니다 |
+| 리소스 처리 | 그림에서 원본 크기를, 소리에서 재생 길이를 헤더만 읽어 재고(`assets.js`·`audio.js`) `temp/xx/yy/image/…` 경로를 만듭니다 — 엔트리는 `project.json` 에 적힌 값을 그대로 믿어서, 안 재면 100×100·1초로 굳습니다 |
 | 결정적 id | 소스에서 만든 시드로 id 를 뽑아, 같은 소스는 항상 같은 결과가 됩니다 |
 
-자세한 대응표와 엔트리에 없어서 다르게 만드는 것들은 [SPEC-ADDENDUM.md](./SPEC-ADDENDUM.md)에
-정리했습니다.
+엔트리에 없어서 다르게 만드는 것들(그리고 `use`/`useobject`/`usetext` 같은, 엔트리에는
+없는 Tess 만의 문법)은 [SPEC-ADDENDUM.md](./SPEC-ADDENDUM.md)에 정리했습니다.
 
 ### 컴파일 에러
 
@@ -405,6 +531,21 @@ broken.tess:12:7  에러: 엔트리에는 scale_x 을(를) 정하는 블록이 �
 broken.tess:15:12  에러: 'bullet' 이라는 오브젝트가 없습니다.
 broken.tess:21:5  에러: 엔트리 함수는 중간에서 값을 돌려줄 수 없습니다. return 은 함수의 마지막 문장에만 쓸 수 있습니다.
 ```
+
+컴파일러는 에러를 만나도 거기서 멈추지 않고 그 문장만 빼고 끝까지 갑니다 — 한
+번에 에러를 다 보여 주기 위해서입니다. 그래서 만들다 만 작품이 이미 손에 있고,
+`--force` 를 붙이면 그걸 그대로 내보냅니다(`compileProject` 의 `options.force`).
+큰 작품을 되돌려 놓고 아직 안 고친 부분이 남았을 때, 나머지가 제대로 도는지 먼저
+실행해 보는 용도입니다.
+
+```
+$ node index.js run broken.tess --force
+broken.tess:12:7  에러: 엔트리에는 scale_x 을(를) 정하는 블록이 없습니다. ...
+broken.tess: --force — 에러 1개를 무시하고 그대로 실행합니다.
+```
+
+에러가 난 문장은 **통째로 빠진 채**로 나오므로 그 부분은 아예 돌지 않습니다.
+`ok` 는 여전히 `false` 고, 문법 에러는 작품을 만들 수조차 없어서 `--force` 도 소용없습니다.
 
 ## AST
 
@@ -451,6 +592,7 @@ pnpm test
 | `test/runtime-scale.test.js` | 만들어 넣은 크기 함수를 엔트리 규칙 시뮬레이터로 계산 검증 |
 | `test/power.test.js` | 거듭제곱·n제곱근이 내는 값을 `Math.pow` 와 비교 |
 | `test/player.test.js` | `run` 서버의 응답과 파일 경로 |
+| `test/player-debug.test.js` | 디버그 패널 — 탭 · 실행 제어 · 실행 환경 흉내내기 · 자료 보기 · XSS (jsdom) |
 | `test/highlight.test.js` | VS Code 문법 강조를 실제 토크나이저로 검사 |
 | `test/examples.test.js` | `examples/` 의 모든 `.tess` 가 에러 없이 통과 |
 

@@ -16,7 +16,14 @@ const REVERSE_MATH = {
   sin: 'sin', cos: 'cos', tan: 'tan', asin_radian: 'asin', acos_radian: 'acos', atan_radian: 'atan',
   ln: 'ln', log: 'log10', floor: 'floor', ceil: 'ceil', round: 'round', abs: 'abs',
 };
-const REVERSE_PROPERTY_COORD = { x: 'x', y: 'y', rotation: 'angle', direction: 'way', size: 'size', picture_name: 'costume' };
+// coordinate_object 의 COORDINATE 드롭다운은 x/y/방향/이동방향/크기 말고도
+// "모양 번호"(picture_index)·"모양 이름"(picture_name) 을 갖고 있다(entryjs
+// block_calc.js) — 이 둘이 빠져 있으면 그 값을 쓴 블록이 통째로 옮겨지지 못하고
+// `??("coordinate_object", ...)` 자리표시자로 남는다(예전 버그).
+const REVERSE_PROPERTY_COORD = {
+  x: 'x', y: 'y', rotation: 'angle', direction: 'way', size: 'size',
+  picture_name: 'costume', picture_index: 'costume_number',
+};
 const REVERSE_OBJECT_COORD = { x: 'x', y: 'y', rotation: 'angle', direction: 'way', size: 'size' };
 const REVERSE_DATE_UNITS = {
   YEAR: 'year', MONTH: 'month', DAY: 'day', HOUR: 'hour', MINUTE: 'minute', SECOND: 'second', DAY_OF_WEEK: 'weekday',
@@ -50,6 +57,20 @@ function unshiftIndex(block, ctx, delta = 1) {
   }
   const inner = exprOf(block, ctx);
   return delta === 0 ? inner : `(${inner} - ${delta})`;
+}
+
+/**
+ * 편집기 목록에서 고른 모양·소리(get_pictures/get_sounds)를 옮긴다.
+ *
+ * 평소에는 그 이름으로 옮기지만, 함수 안에서는 이름 대신 id 를 그대로 남긴다.
+ * 엔트리에서 함수는 전역이라 어느 오브젝트가 부를지 알 수 없는데, 모양·소리 이름은
+ * 오브젝트마다 다르기 때문이다. 그 id 를 가진 모양·소리 선언에는 `force id` 가
+ * 붙으므로 다시 컴파일해도 같은 id 가 나온다
+ * (src/decompiler/index.js 의 buildContext 주석 참고).
+ */
+function resourceRef(ctx, id, byId, nameOf) {
+  if (ctx.inFunction && byId.has(id)) return tessString(id);
+  return tessString(nameOf(id));
 }
 
 function placeholder(ctx, block) {
@@ -123,6 +144,12 @@ export function exprOf(block, ctx) {
     }
     case 'boolean_and_or': return `(${exprOf(at(0), ctx)} ${at(1) === 'AND' ? 'and' : 'or'} ${exprOf(at(2), ctx)})`;
     case 'boolean_not': return `not (${exprOf(at(1), ctx)})`;
+    case 'True': return 'true';
+    case 'False': return 'false';
+    // `(<판단>의 값)` 은 판단을 값 자리에 넣으려고 엔트리가 씌우는 블록이며
+    // "TRUE"/"FALSE" 를 돌려준다. Tess 에서는 판단을 값 자리에 그냥 쓰면 컴파일러가
+    // 다시 씌워 주므로(compileValue 참고), 껍데기를 벗기고 안쪽만 옮긴다.
+    case 'get_boolean_value': return exprOf(at(0), ctx);
     case 'is_clicked': case 'is_object_clicked': case 'is_boost_mode':
     case 'is_touch_supported': case 'get_user_name': case 'get_nickname':
     case 'get_project_timer_value': case 'get_canvas_input_value':
@@ -175,11 +202,15 @@ export function exprOf(block, ctx) {
     }
     case 'text_read': return `text_content(${tessString(targetName(ctx, at(0)))})`;
 
-    case 'get_pictures': return tessString(ctx.pictureName(at(0)));
-    case 'get_sounds': return tessString(ctx.soundName(at(0)));
+    case 'get_pictures': return resourceRef(ctx, at(0), ctx.picturesById, ctx.pictureName);
+    case 'get_sounds': return resourceRef(ctx, at(0), ctx.soundsById, ctx.soundName);
 
     // 사용자 정의 함수 호출(값을 돌려주는 것) — func_<함수id>
     default: {
+      // 함수 본문에서 매개변수를 가리키는 블록 — stringParam_xxxx / booleanParam_xxxx
+      const paramName = ctx.funcParamName?.(block.type);
+      if (paramName) return paramName;
+
       if (block.type.startsWith('func_')) {
         const fn = ctx.functionsById.get(block.type.slice('func_'.length));
         if (fn) {

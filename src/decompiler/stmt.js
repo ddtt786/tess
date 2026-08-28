@@ -142,7 +142,7 @@ function statementLines(block, ctx) {
     case 'set_visible_project_timer': return [`${at(1) === 'SHOW' ? 'show' : 'hide'} timer`];
     case 'set_visible_answer': return [`${at(0) === 'SHOW' ? 'show' : 'hide'} answer`];
     case 'change_to_next_shape': return [at(0) === 'prev' ? 'prev costume' : 'next costume'];
-    case 'change_to_some_shape': return [`costume = ${e(0)}`];
+    case 'change_to_some_shape': return [`costume = ${resourceExpr(at(0), ctx, ctx.picturesById)}`];
     case 'dialog': return [`${at(1) === 'think' ? 'think' : 'say'} ${e(0)}`];
     case 'dialog_time': return [`${at(2) === 'think' ? 'think' : 'say'} ${e(0)} for ${e(1)}`];
     case 'flip_y': return ['flip x']; // 엔트리 flip_x/flip_y 는 이름이 뒤집혀 있다
@@ -163,8 +163,8 @@ function statementLines(block, ctx) {
     case 'text_prepend': return [`prepend ${e(0)}`];
     case 'text_flush': return ['clear text'];
     case 'text_change_font': return [`font = ${tessString(at(0))}`];
-    case 'text_change_font_color': return [`font_color = ${colorExpr(at(0))}`];
-    case 'text_change_bg_color': return [`bg_color = ${colorExpr(at(0))}`];
+    case 'text_change_font_color': return [`font_color = ${colorExpr(at(0), ctx)}`];
+    case 'text_change_bg_color': return [`bg_color = ${colorExpr(at(0), ctx)}`];
     case 'text_change_effect': {
       const name = REVERSE_TEXT_EFFECT[at(0)];
       return name ? [`${name} = ${at(1) === 'on' ? 'true' : 'false'}`] : unsupported(ctx, block);
@@ -177,8 +177,8 @@ function statementLines(block, ctx) {
     case 'stop_fill': return ['stop fill'];
     case 'brush_stamp': return ['stamp'];
     case 'brush_erase_all': return ['clear draw'];
-    case 'set_color': return [`draw_color = ${colorExpr(at(0))}`];
-    case 'set_fill_color': return [`fill_color = ${colorExpr(at(0))}`];
+    case 'set_color': return [`draw_color = ${colorExpr(at(0), ctx)}`];
+    case 'set_fill_color': return [`fill_color = ${colorExpr(at(0), ctx)}`];
     case 'set_random_color': return ['draw_color = random_color()'];
     case 'set_thickness': return [`draw_width = ${e(0)}`];
     case 'change_thickness': return [`draw_width += ${e(0)}`];
@@ -192,13 +192,13 @@ function statementLines(block, ctx) {
     }
 
     // --- 소리 ---------------------------------------------------------------
-    case 'sound_something_with_block': return [`play sound ${e(0)}`];
-    case 'sound_something_wait_with_block': return [`play sound ${e(0)} and wait`];
-    case 'sound_something_second_with_block': return [`play sound ${e(0)} for ${e(1)}`];
-    case 'sound_something_second_wait_with_block': return [`play sound ${e(0)} for ${e(1)} and wait`];
-    case 'sound_from_to': return [`play sound ${e(0)} from ${e(1)} to ${e(2)}`];
-    case 'sound_from_to_and_wait': return [`play sound ${e(0)} from ${e(1)} to ${e(2)} and wait`];
-    case 'play_bgm': return [`play bgm ${e(0)}`];
+    case 'sound_something_with_block': return [`play sound ${resourceExpr(at(0), ctx, ctx.soundsById)}`];
+    case 'sound_something_wait_with_block': return [`play sound ${resourceExpr(at(0), ctx, ctx.soundsById)} and wait`];
+    case 'sound_something_second_with_block': return [`play sound ${resourceExpr(at(0), ctx, ctx.soundsById)} for ${e(1)}`];
+    case 'sound_something_second_wait_with_block': return [`play sound ${resourceExpr(at(0), ctx, ctx.soundsById)} for ${e(1)} and wait`];
+    case 'sound_from_to': return [`play sound ${resourceExpr(at(0), ctx, ctx.soundsById)} from ${e(1)} to ${e(2)}`];
+    case 'sound_from_to_and_wait': return [`play sound ${resourceExpr(at(0), ctx, ctx.soundsById)} from ${e(1)} to ${e(2)} and wait`];
+    case 'play_bgm': return [`play bgm ${resourceExpr(at(0), ctx, ctx.soundsById)}`];
     case 'stop_bgm': return ['stop bgm'];
     case 'sound_silent_all': return [`stop sound ${at(0) === 'thisOnly' ? 'this' : 'all'}`];
     case 'sound_volume_set': return [`sound_volume = ${e(0)}`];
@@ -239,10 +239,56 @@ function unshift(indexBlock, ctx) {
   return `(${exprOf(indexBlock, ctx)} - 1)`;
 }
 
-export function colorExpr(value) {
-  if (typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)) return value;
-  if (value === 'transparent') return 'transparent';
-  return tessString(String(value ?? ''));
+/**
+ * 색 값 파라미터는 엔트리가 '#RRGGBB' 를 그냥 문자열로 담아 두기도 하고(정적 엔티티
+ * 값), `{type:'number', params:['#RRGGBB']}` 처럼 편집기의 색 선택 필드가 만드는 값
+ * 블록으로 감싸 두기도 한다(실제 프로젝트에서 흔한 형태 — set_color 등의 VALUE 필드가
+ * `Block, accept:'string'` 이라 편집기가 리터럴 값도 값 블록으로 저장한다). 이 감싸진
+ * 형태를 처리하지 않으면 `String(그블록객체)` 가 그대로 "[object Object]" 라는 문자열
+ * 리터럴로 남아 버린다(예전 버그). 리터럴이 아니라 변수·계산식처럼 진짜 계산되는
+ * 값이면 ctx 를 받아 exprOf 로 제대로 된 Tess 표현식으로 옮긴다.
+ */
+export function colorExpr(value, ctx) {
+  const literal = literalStringOf(value);
+  if (literal !== null) {
+    if (/^#[0-9a-fA-F]{6}$/.test(literal)) return literal;
+    if (literal === 'transparent') return 'transparent';
+    return tessString(literal);
+  }
+  return ctx ? exprOf(value, ctx) : tessString(String(value ?? ''));
+}
+
+/** 값 블록(또는 원시값) 하나가 리터럴이면 그 문자열 값을, 계산되는 값이면 null 을 돌려준다 */
+function literalStringOf(value) {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object' && (value.type === 'number' || value.type === 'text')) {
+    const raw = value.params?.[0];
+    if (typeof raw === 'string') return raw;
+  }
+  return null;
+}
+
+/**
+ * 모양/소리 값 자리 — 편집기에서 고른 게 아니라(그러면 get_pictures/get_sounds 블록),
+ * 그 모양·소리의 진짜 엔트리 id 를 문자열로 직접 박아 넣는 트릭일 수도 있다. 엔트리는
+ * "OO 모양으로 바꾸기"/"소리 OO 재생하기" 값을 1) id 2) 이름 3) 등록 순번 순으로 맞춰서
+ * 찾기 때문에, id 를 그대로 넣어도 실제로 그 모양·소리로 바뀐다 — 실제 엔트리 사용자들이
+ * 흔히 쓰는 방법이다. 그 id 를 문자열 그대로 옮기면, 되돌린 소스를 다시 컴파일할 때
+ * 모든 id 가 새로 배정되면서(결정적이지만 원본과는 다른 id) 더 이상 아무 모양도
+ * 가리키지 않게 되어 컴파일 에러가 난다 — 그래서 프로젝트에 실제로 있는 id 와
+ * 맞는지 먼저 확인해서, 맞으면 get_pictures/get_sounds 와 똑같이 그 이름으로 옮긴다.
+ * (숫자 그대로 넣는 것 — "n번째 모양으로 바꾸기" — 은 리터럴 id 와 안 겹치므로
+ * literalStringOf 가 null 을 돌려주지 않는 한 그냥 보통 값(숫자)으로 옮겨진다.)
+ */
+function resourceExpr(value, ctx, byId) {
+  const literal = literalStringOf(value);
+  if (literal !== null && byId.has(literal)) {
+    // 함수 안에서는 이름으로 바꾸지 않고 id 를 그대로 둔다. 그 모양·소리 선언에
+    // `force id` 가 붙으므로 다시 컴파일해도 같은 id 가 나온다(index.js 참고).
+    if (ctx.inFunction) return tessString(literal);
+    return tessString(byId.get(literal).identifier);
+  }
+  return exprOf(value, ctx);
 }
 
 /**
@@ -254,9 +300,18 @@ export function colorExpr(value) {
 export function functionDeclarationLines(fn, createBlock, ctx) {
   const p = createBlock.params ?? [];
   const isValue = createBlock.type === 'function_create_value';
+  // 함수 안에서는 리터럴 모양·소리 id 를 이름으로 되짚지 않는다(resourceExpr) — 함수는
+  // 엔트리에서 전역이라 여러 오브젝트가 같이 부를 수 있는데, id 로 하드코딩된 값을
+  // "이 오브젝트의 이 이름" 으로 바꿔 버리면 다른 오브젝트가 불렀을 때 어긋난다
+  // (index.js buildContext 의 forcedIds 주석 참고).
+  const previousInFunction = ctx.inFunction;
+  ctx.inFunction = true;
   const body = indent(blocksToLines(createBlock.statements?.[0] ?? [], ctx));
+  const returnExpr = isValue ? exprOf(p[3], ctx) : null;
+  ctx.inFunction = previousInFunction;
+
   const lines = [`function ${fn.name}(${fn.params.join(', ')}):`, ...body];
-  if (isValue) lines.push(...indent([`return ${exprOf(p[3], ctx)}`]));
+  if (isValue) lines.push(...indent([`return ${returnExpr}`]));
   lines.push('end');
   return lines;
 }

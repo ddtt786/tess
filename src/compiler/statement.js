@@ -5,7 +5,8 @@
 //  (예: `move 20 20` 은 엔트리에 대응 블록이 없어서 move_x + move_y 로 펼친다)
 // ============================================================================
 import {
-  compileBoolean, compileValue, isBooleanBlock, resolveList, resolveTarget, shiftIndex,
+  compileAnyValue, compileBoolean, compileCallArguments, compileValue,
+  isBooleanBlock, resolveList, resolveTarget, shiftIndex,
 } from './expression.js';
 import { requireScaleSetter } from './runtime.js';
 
@@ -113,7 +114,9 @@ function compile(node, ctx) {
     }
 
     case 'Wait': {
-      const value = compileValue(node.value, ctx);
+      // 값이면 "n초 기다리기", 판단이면 "~까지 기다리기" 가 된다. 어느 쪽인지 알아야
+      // 하므로 get_boolean_value 로 감싸기 전의 블록을 본다.
+      const value = compileAnyValue(node.value, ctx);
       if (!value) return [];
       return one(isBooleanBlock(value)
         ? ctx.block('wait_until_true', [value, null])
@@ -401,10 +404,14 @@ function compilePlaySound(node, ctx) {
 function resolveSound(node, ctx) {
   if (node.type === 'String') {
     const sound = ctx.object?.sounds.get(node.value);
-    if (!sound) {
-      return ctx.error(node, `'${node.value}' 소리가 이 오브젝트에 없습니다. sound ${node.value} "파일명" 으로 먼저 등록하세요.`);
-    }
-    return ctx.block('get_sounds', [sound.id]);
+    if (sound) return ctx.block('get_sounds', [sound.id]);
+    // 이 오브젝트 소리 이름은 아니지만, force id 로 어딘가에 고정해 둔 진짜 엔트리
+    // id 와 정확히 같으면(1.4절 참고) 그대로 흘려보낸다 — 엔트리는 값을 1) id 2) 이름
+    // 3) 순번 순으로 찾으므로, 그 id 만 맞으면 어느 오브젝트가 불러도 그 소리를 그대로
+    // 가리킨다(예전에 함수 안에 특정 오브젝트의 소리 id 를 그대로 박아 넣던 관습을
+    // 되돌릴 때 쓴다).
+    if (ctx.forcedResourceIds.has(node.value)) return node.value;
+    return ctx.error(node, `'${node.value}' 소리가 이 오브젝트에 없습니다. sound ${node.value} "파일명" 으로 먼저 등록하세요.`);
   }
   return compileValue(node, ctx);
 }
@@ -413,10 +420,9 @@ function resolveSound(node, ctx) {
 function resolvePicture(node, ctx) {
   if (node.type === 'String') {
     const picture = ctx.object?.pictures.get(node.value);
-    if (!picture) {
-      return ctx.error(node, `'${node.value}' 모양이 이 오브젝트에 없습니다. costume ${node.value} "파일명" 으로 먼저 등록하세요.`);
-    }
-    return ctx.block('get_pictures', [picture.id]);
+    if (picture) return ctx.block('get_pictures', [picture.id]);
+    if (ctx.forcedResourceIds.has(node.value)) return node.value;
+    return ctx.error(node, `'${node.value}' 모양이 이 오브젝트에 없습니다. costume ${node.value} "파일명" 으로 먼저 등록하세요.`);
   }
   return compileValue(node, ctx);
 }
@@ -597,6 +603,7 @@ function compilePropertyAssign(node, name, ctx) {
         return [ctx.block('set_random_color', [null])];
       }
       const compiled = compileColor(node.value, ctx);
+      if (compiled === 'transparent') return [rejectRuntimeTransparent(name, node, ctx)].filter(Boolean);
       const type = name === 'draw_color' ? 'set_color' : 'set_fill_color';
       return compiled ? [ctx.block(type, [compiled, null])] : [];
     }
@@ -620,6 +627,7 @@ function compilePropertyAssign(node, name, ctx) {
 
     case 'font_color': case 'bg_color': {
       const compiled = compileColor(node.value, ctx);
+      if (compiled === 'transparent') return [rejectRuntimeTransparent(name, node, ctx)].filter(Boolean);
       const type = name === 'font_color' ? 'text_change_font_color' : 'text_change_bg_color';
       return compiled ? [ctx.block(type, [compiled, null])] : [];
     }
@@ -658,7 +666,7 @@ function readModifyWrite(name, setType, node, ctx) {
   return combined ? [ctx.block(setType, [combined, null])] : [];
 }
 
-/** tts 문의 voice/speed/pitch 값을 엔트리 코드값으로 바꾼다 (SPEC-ADDENDUM.md 9 참고) */
+/** tts 문의 voice/speed/pitch 값을 엔트리 코드값으로 바꾼다 (SPEC-ADDENDUM.md 5 참고) */
 function ttsOption(table, node, label, ctx) {
   if (node.type !== 'String') return ctx.error(node, `tts ${label}은(는) 문자열로 적어야 합니다.`);
   const key = node.value.trim().toLowerCase();
@@ -677,6 +685,27 @@ function compileColor(node, ctx) {
   return ctx.error(node, '색은 #ff0000 처럼 색상 리터럴로 적어야 합니다.');
 }
 
+/**
+ * set_color/set_fill_color/text_change_font_color/text_change_bg_color 네 블록은
+ * 모두 값이 '#' 로 시작하지 않으면 무조건 '#' 를 붙인다(entryjs block_brush.js·block_text.js
+ * func 안의 `if (color.indexOf('#') !== 0) color = '#' + color`). 그래서 'transparent' 를
+ * 넘기면 실제로는 "#transparent" 라는 잘못된 색이 되어 버리는데, 이 잘못된 값을 다시
+ * hex2rgb 가 '#000000'(검정)으로 되돌리거나(붓) 브라우저가 잘못된 CSS 색을 그냥 무시하며
+ * 이전 색(대개 검정에 가까운 값)을 그대로 두거나(글상자) 한다 — 결과적으로 실행 중에는
+ * 이 네 속성을 이 블록만으로는 절대 transparent 로 만들 수 없다(엔트리 자체의 한계).
+ * 반면 오브젝트/글상자 선언 맨 위에 적는 정적 속성은 이 블록을 거치지 않고 엔트리
+ * project.json 의 엔티티 값으로 바로 들어가므로 문제없이 동작한다.
+ */
+function rejectRuntimeTransparent(name, node, ctx) {
+  return ctx.error(
+    node,
+    `실행 중에는 ${name} 을(를) transparent 로 정할 수 없습니다. 엔트리의 색 블록은 '#' 로 시작하지 `
+    + `않는 값을 받으면 강제로 '#' 를 붙이는데, 그러면 transparent 가 잘못된 색이 되어 오히려 검은색으로 `
+    + `보입니다(엔트리 자체의 한계로, 이 프로젝트가 만들 수 있는 블록으로는 피할 방법이 없습니다). `
+    + `오브젝트/글상자 선언 맨 위에서 ${name} = transparent 로 정적으로만 쓸 수 있습니다.`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 //  함수 호출 문장
 // ---------------------------------------------------------------------------
@@ -692,7 +721,7 @@ function compileCallStatement(node, ctx) {
   if (call.arguments.length !== fn.params.length) {
     return [ctx.error(node, `함수 '${call.callee}' 는 인자가 ${fn.params.length}개여야 합니다.`)].filter(Boolean);
   }
-  const params = call.arguments.map((argument) => compileValue(argument, ctx));
+  const params = compileCallArguments(fn, call.arguments, ctx);
   if (params.some((param) => param === null)) return [];
   // 값을 돌려주지 않는 함수 블록은 끝에 아이콘 자리(null)가 하나 더 붙는다
   return [ctx.block(`func_${fn.id}`, [...params, null])];

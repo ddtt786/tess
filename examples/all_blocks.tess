@@ -307,7 +307,7 @@ scene "무대":
       font = "DungGeunMo"
       font_color = #ff0000
       bg_color = #000000
-      bg_color = transparent
+      bg_color = #ffffff
       text_bold = true
       text_italic = false
       text_underline = true

@@ -44,6 +44,12 @@ export class Context {
     this.sourceMap = {};
     this.currentNode = null; // 지금 컴파일 중인 문장의 AST 노드 (블록 위치 태깅용)
     this.usesTts = false; // read / tts 문을 하나라도 쓰면 project.aiUtilizeBlocks 에 'tts' 를 넣는다
+    // costume/sound 선언의 `force id "..."` 로 고정해 둔 진짜 엔트리 id 들 (SPEC-ADDENDUM.md
+    // 1.4절). resolvePicture/resolveSound 가 "이 문자열이 이 오브젝트의 이름은 아니어도,
+    // 어딘가에 고정해 둔 진짜 id 인가" 를 볼 때 쓴다 — ctx.newId 가 만든 모든 id(장면·
+    // 오브젝트·변수·블록 id 전부 포함)를 그대로 쓰면, 코스튬 이름 오타가 우연히 무관한
+    // id 와 겹쳐서 조용히 잘못된 걸 가리키게 될 수 있어 따로 둔다.
+    this.forcedResourceIds = new Set();
 
     // 심볼 테이블
     this.scenes = [];           // { id, name }

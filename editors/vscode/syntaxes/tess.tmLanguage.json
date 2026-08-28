@@ -89,7 +89,7 @@
       "patterns": [
         {
           "name": "support.function.builtin.tess",
-          "match": "(?<![A-Za-z0-9_])(?:text_content|random_color|block_count|uppercase|lowercase|key_down|touching|distance|index_of|contains|from_hex|replace|reverse|random|length|to_hex|log10|floor|round|angle|slice|count|type|asin|acos|atan|log2|ceil|root|size|join|sin|cos|tan|abs|way|now|ln|x|y)(?![A-Za-z0-9_])(?=\\s*\\()"
+          "match": "(?<![A-Za-z0-9_])(?:costume_number|text_content|random_color|block_count|uppercase|lowercase|key_down|touching|distance|index_of|contains|from_hex|costume|replace|reverse|random|length|to_hex|log10|floor|round|angle|slice|count|type|asin|acos|atan|log2|ceil|root|size|join|sin|cos|tan|abs|way|now|ln|x|y)(?![A-Za-z0-9_])(?=\\s*\\()"
         },
         {
           "match": "([A-Za-z_\\p{L}][A-Za-z0-9_\\p{L}]*)(?=\\s*\\()",
@@ -109,7 +109,7 @@
         },
         {
           "name": "variable.language.tess",
-          "match": "(?<![A-Za-z0-9_])(?:block_count|mouse_down|boost_mode|touchable|nickname|clicked|user_id|device|answer|timer)(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_])(?:costume_number|block_count|mouse_down|boost_mode|touchable|nickname|clicked|user_id|device|answer|timer)(?![A-Za-z0-9_])"
         },
         {
           "name": "keyword.control.tess",
@@ -121,7 +121,7 @@
         },
         {
           "name": "keyword.other.command.tess",
-          "match": "(?<![A-Za-z0-9_])(?:description|rotation|costume|default|effects|forward|prepend|visible|append|bounce|bubble|clones|insert|remove|clear|clone|order|pitch|reset|sound|speed|stamp|steer|think|timer|title|voice|write|call|draw|fill|flip|hide|jump|kill|lock|look|move|name|play|prev|read|send|show|size|turn|add|ask|bgm|del|fps|say|tts|go|x|y)(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_])(?:description|rotation|costume|default|effects|forward|prepend|visible|append|bounce|bubble|clones|insert|remove|clear|clone|force|order|pitch|reset|sound|speed|stamp|steer|think|timer|title|voice|write|call|draw|fill|flip|hide|jump|kill|lock|look|move|name|play|prev|read|send|show|size|turn|add|ask|bgm|del|fps|say|tts|go|id|x|y)(?![A-Za-z0-9_])"
         },
         {
           "name": "support.variable.property.tess",

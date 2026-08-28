@@ -7,12 +7,23 @@
 //    /<이름>.ent        내려받기용 묶음
 //    /temp/...         모양·소리 리소스
 //    /lib/...          @entrylabs/entry 가 설치돼 있으면 그 파일들
+//    /api/expansionBlock/tts/read.mp3   tts 읽어주기 — playentry.org 로 대신 요청해 준다
 // ============================================================================
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { playerPage } from './template.js';
+
+// entryjs 의 tts 읽어주기(block_ai_utilize_tts.js)는 `${Entry.baseUrl}/api/expansionBlock/tts/read.mp3?...`
+// 로 브라우저에서 직접 요청한다. Entry.baseUrl 기본값은 location.origin(우리 서버)이라
+// 이 경로가 여기로 들어오는데, playentry.org 로 바로 요청하게 바꾸면(baseUrl 을 그렇게
+// 정하면) playentry.org 가 CORS 허용 헤더를 안 줘서 브라우저가 그냥 막아 버린다(서버
+// 쪽 요청은 CORS 대상이 아니다). 그래서 이 서버가 대신 playentry.org 로 요청해서
+// 그 응답(mp3)을 그대로 돌려준다 — 브라우저 입장에서는 항상 같은 origin(우리 서버)
+// 이라 CORS 문제가 없다.
+const TTS_PROXY_PATH = '/api/expansionBlock/tts/read.mp3';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -25,7 +36,11 @@ const MIME = {
   '.ent': 'application/octet-stream',
 };
 
-const CDN = 'https://cdn.jsdelivr.net/npm/@entrylabs/entry@4';
+// jsDelivr 는 npm 패키지 전체 크기가 150MB 를 넘으면 그 패키지의 어떤 파일이든 403 으로
+// 거부한다(`Package size exceeded the configured limit of 150 MB.`) — @entrylabs/entry 는
+// 그 한도를 넘어서 jsDelivr 로는 아예 못 받아 온다(entry.min.js 조차 403). 같은 파일을
+// unpkg 는 문제없이 준다(같은 npm 레지스트리에서 직접 서빙하며 패키지 전체 크기 제한이 없다).
+const CDN = 'https://unpkg.com/@entrylabs/entry@4.0.22';
 
 /** 프로젝트에 entryjs 가 설치돼 있으면 그 폴더를 돌려준다 */
 export function findLocalRuntime(from = process.cwd()) {
@@ -84,6 +99,7 @@ export function serveProject({
     }
 
     if (request.method === 'POST' && url === '/__log') return receiveLog(request, response);
+    if (url === TTS_PROXY_PATH) return proxyTts(request, response);
 
     if (url === '/' || url === '/index.html') return send(response, 200, '.html', renderPage());
     if (url === '/project.json') return send(response, 200, '.json', JSON.stringify(currentProject));
@@ -148,6 +164,22 @@ function receiveLog(request, response) {
     }
     response.writeHead(204).end();
   });
+}
+
+/** tts 읽어주기 요청을 playentry.org 로 대신 보내고 mp3 응답을 그대로 돌려준다 (TTS_PROXY_PATH 주석 참고) */
+async function proxyTts(request, response) {
+  const target = `https://playentry.org${request.url}`;
+  try {
+    const upstream = await fetch(target);
+    if (!upstream.ok || !upstream.body) {
+      send(response, upstream.status || 502, '.html', '<h1>tts 요청이 playentry.org 에서 실패했습니다</h1>');
+      return;
+    }
+    response.writeHead(200, { 'content-type': upstream.headers.get('content-type') ?? 'audio/mpeg' });
+    Readable.fromWeb(upstream.body).pipe(response);
+  } catch (error) {
+    send(response, 502, '.html', `<h1>tts 요청을 playentry.org 로 보내지 못했습니다: ${error.message}</h1>`);
+  }
 }
 
 function send(response, status, ext, body) {

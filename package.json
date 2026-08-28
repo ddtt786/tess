@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@entrylabs/entry": "^4.0.22",
+    "jsdom": "^30.0.1",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
   }

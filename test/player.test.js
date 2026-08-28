@@ -48,6 +48,31 @@ test('작품과 실행 페이지를 내보낸다', async () => {
   });
 });
 
+test('실행하기 전에 글상자 폰트를 먼저 내려받는다', async () => {
+  // 커스텀 폰트(나눔고딕 · DungGeunMo ...)는 @font-face 로 "선언"만 돼 있고 실제 파일은
+  // 처음 쓰일 때 늦게 도착한다. 캔버스는 폰트가 늦게 와도 알아서 다시 그려주지 않으므로,
+  // 시작하자마자 보이는 글상자가 대체 글꼴로 굳어 버리지 않으려면 Entry.loadProject/
+  // toggleRun 으로 블록을 실행하기 '전에' 그 프로젝트가 쓰는 폰트를 전부 미리 내려받아
+  // 둬야 한다 — 이 순서가 페이지 스크립트에 실제로 지켜지는지를 검사한다.
+  await withServer({}, async (server) => {
+    const page = await (await fetch(server.url)).text();
+
+    const preloadCall = page.indexOf('preloadTextFonts(project)');
+    const loadProjectCall = page.indexOf('Entry.loadProject(project)');
+    assert.notEqual(preloadCall, -1, '폰트를 미리 불러오는 코드가 있어야 한다');
+    assert.notEqual(loadProjectCall, -1);
+    assert.ok(
+      preloadCall < loadProjectCall,
+      '폰트를 먼저 불러온 다음에 Entry.loadProject 를 불러야 한다',
+    );
+
+    // preloadTextFonts 자체는 document.fonts.load 로 실제 다운로드를 트리거해야 한다
+    // (그냥 CSS 를 <link> 로 붙이기만 해서는 폰트가 실제로 쓰이기 전까진 안 받아진다).
+    assert.match(page, /document\.fonts\.load/);
+    assert.match(page, /document\.fonts\.ready/);
+  });
+});
+
 test('작품 파일(.ent)을 내려받을 수 있다', async () => {
   await withServer({}, async (server) => {
     const page = await (await fetch(server.url)).text();
@@ -71,6 +96,10 @@ test('설치된 entryjs 가 없으면 CDN 을 가리킨다', async () => {
   await withServer({ cwd: os.tmpdir() }, async (server) => {
     assert.match(server.runtime, /^CDN/);
     const page = await (await fetch(server.url)).text();
+    // @entrylabs/entry 본체는 unpkg 에서 받는다 — jsDelivr 는 이 패키지 전체 크기가
+    // 150MB 한도를 넘어 entry.min.js 조차 403 으로 막는다(server.js CDN 상수 주석 참고).
+    assert.match(page, /unpkg\.com\/@entrylabs\/entry/);
+    // 나머지 서드파티 라이브러리(jquery, createjs, @entrylabs/tool ...)는 jsDelivr 에서 받는다
     assert.match(page, /cdn\.jsdelivr\.net/);
     // 못 불러왔을 때 안내가 페이지에 들어 있다
     assert.match(page, /엔트리 실행기를 불러오지 못했습니다/);

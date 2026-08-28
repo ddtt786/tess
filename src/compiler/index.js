@@ -14,9 +14,10 @@ import { loadProgram } from './include.js';
 import { buildCommentMap } from './comments.js';
 import { makeAsset } from './assets.js';
 import { compileStatements, compileStatement } from './statement.js';
-import { compileValue } from './expression.js';
+import { compileValue, BOOLEAN_TEXT } from './expression.js';
 import { keyCodeOf } from './keycodes.js';
 import { validate } from '../validate.js';
+import { isAutoParamName } from '../function-params.js';
 
 const DEFAULT_SCENE_NAME = '장면 1';
 // 엔트리 글상자의 실제 기본 글씨체는 CSS font-family 이름 'Nanum Gothic'이다(entryjs
@@ -32,8 +33,14 @@ const BRUSH_DEFAULT_PROPERTIES = ['draw_color', 'fill_color', 'draw_width', 'dra
 /**
  * Tess 소스를 엔트리 프로젝트 객체로 컴파일한다.
  *
+ * 에러가 하나라도 있으면 `ok: false` 이고 `project` 는 null 이다. `force: true` 를 주면
+ * 에러가 있어도 거기까지 만든 작품을 그대로 돌려준다. 컴파일러는 에러를 만나도 그
+ * 문장만 빼고 끝까지 진행하기 때문에(ctx.error 가 null 을 돌려주면 부르는 쪽이 그
+ * 문장을 버린다), 나머지 부분만이라도 실행해 보고 싶을 때 쓸 수 있다. 대신 에러가 난
+ * 문장은 통째로 빠지므로 그 부분은 동작하지 않는다. `ok` 는 그대로 false 이다.
+ *
  * @param {string} source
- * @param {{path?: string, assetDirs?: string[], name?: string, readFile?: Function}} [options]
+ * @param {{path?: string, assetDirs?: string[], name?: string, readFile?: Function, force?: boolean}} [options]
  * @returns {{ok: boolean, project: object|null, errors: Array, warnings: Array, assets: Array, sourceMap: object}}
  */
 export function compileProject(source, options = {}) {
@@ -64,9 +71,10 @@ export function compileProject(source, options = {}) {
   compileObjects(ctx);
 
   const project = assemble(program, ctx, options);
+  const ok = ctx.errors.length === 0;
   return {
-    ok: ctx.errors.length === 0,
-    project: ctx.errors.length === 0 ? project : null,
+    ok,
+    project: ok || options.force ? project : null,
     errors: ctx.errors,
     warnings: ctx.warnings,
     assets: ctx.assetFiles,
@@ -168,7 +176,8 @@ function constantOf(node, ctx) {
   switch (node.type) {
     case 'Number': return node.value;
     case 'String': return node.value;
-    case 'Boolean': return String(node.value);
+    // 초기값도 대입할 때와 같은 글자를 쓴다. 엔트리에서 true 는 "TRUE" 이다(expression.js 참고).
+    case 'Boolean': return BOOLEAN_TEXT[String(node.value)];
     case 'Color': return node.value;
     case 'Transparent': return 'transparent';
     case 'Unary':
@@ -219,6 +228,24 @@ function collectObjects(program, ctx) {
   for (const object of ctx.objects) collectObjectMembers(object, ctx);
 }
 
+/**
+ * 모양/소리의 엔트리 id — `force id "..."` 를 안 적었으면 평소처럼 시드로 새로 뽑고,
+ * 적었으면 그 문자열을 그대로 쓴다(addendum, SPEC-ADDENDUM.md 참고). `force id` 는
+ * 예전에 함수 안에 특정 오브젝트의 모양·소리 id 를 그대로 박아 넣던 작품을 되돌릴 때,
+ * 되돌리기가 그 id 를 다시 그대로 배정해 살리는 용도다 — 자동 생성 id 와 겹치면
+ * project.json 안에서 서로 다른 리소스가 같은 id 를 갖게 되어 엔트리가 엉뚱한 것을
+ * 가리키게 되므로, 이미 쓰인 id 와 겹치면 컴파일 에러로 막는다.
+ */
+function resourceId(member, ctx) {
+  if (!member.forceId) return ctx.newId();
+  if (ctx.newId.has(member.forceId)) {
+    return ctx.error(member, `force id "${member.forceId}" 는 이미 다른 모양·소리·오브젝트가 쓰고 있습니다.`);
+  }
+  ctx.newId.reserve(member.forceId);
+  ctx.forcedResourceIds.add(member.forceId);
+  return member.forceId;
+}
+
 function collectObjectMembers(object, ctx) {
   ctx.object = object;
 
@@ -226,7 +253,7 @@ function collectObjectMembers(object, ctx) {
     switch (member.type) {
       case 'Costume': {
         const asset = makeAsset('image', {
-          id: ctx.newId(), file: member.file, name: member.id,
+          id: resourceId(member, ctx), file: member.file, name: member.id,
           width: member.width, height: member.height,
         }, ctx, member);
         object.pictures.set(member.id, asset);
@@ -235,7 +262,7 @@ function collectObjectMembers(object, ctx) {
       }
       case 'Sound': {
         const asset = makeAsset('sound', {
-          id: ctx.newId(), file: member.file, name: member.id, duration: member.duration,
+          id: resourceId(member, ctx), file: member.file, name: member.id, duration: member.duration,
         }, ctx, member);
         object.sounds.set(member.id, asset);
         break;
@@ -302,13 +329,19 @@ function collectFunctions(program, ctx) {
       ctx.error(returns[0], '엔트리 함수는 중간에서 값을 돌려줄 수 없습니다. return 은 함수의 마지막 문장에만 쓸 수 있습니다.');
     }
 
+    // `이름?` 으로 적은 매개변수는 엔트리에서도 판단 칸이 된다 (SPEC-ADDENDUM.md 4.6)
+    const booleanParams = new Set(node.booleanParams ?? []);
     const fn = {
       id: ctx.newId(),
       name: node.name,
       node,
       owner,
       params: node.params,
-      paramTypes: new Map(node.params.map((param) => [param, `stringParam_${ctx.newId()}`])),
+      booleanParams,
+      paramTypes: new Map(node.params.map((param) => [
+        param,
+        `${booleanParams.has(param) ? 'booleanParam' : 'stringParam'}_${ctx.newId()}`,
+      ])),
       isValue: isTailReturn,
       localVariables: [],
     };
@@ -409,12 +442,22 @@ function collectFunctionLocals(statements, scope, ctx, fn) {
   }
 }
 
-/** function_field_label -> function_field_string 사슬 만들기 */
+/**
+ * 함수 머리 부분(function_field_label 과 매개변수 칸의 사슬)을 만든다.
+ *
+ * 제자리에 있는 자동 이름(a, b, c …)은 라벨 없는 매개변수 칸이 되고, 그 밖의 이름은
+ * 그 이름을 라벨로 단 매개변수 칸이 된다. 되돌리기가 읽는 규칙을 그대로 뒤집은 것이다
+ * (src/function-params.js 참고). 그래서 `function 스폰(a, 체력)` 은 엔트리에서
+ * `스폰 (인수) 체력 (인수)` 로 보이고, 그런 함수를 되돌린 소스도 원래 모양으로 돌아온다.
+ */
 function buildFunctionFields(fn, ctx) {
   let next = null;
   for (let i = fn.params.length - 1; i >= 0; i -= 1) {
-    const paramType = fn.paramTypes.get(fn.params[i]);
-    next = ctx.block('function_field_string', [ctx.block(paramType, []), next]);
+    const name = fn.params[i];
+    next = fn.booleanParams?.has(name)
+      ? ctx.block('function_field_boolean', [ctx.block(fn.paramTypes.get(name), [null]), next])
+      : ctx.block('function_field_string', [ctx.block(fn.paramTypes.get(name), []), next]);
+    if (!isAutoParamName(name, i)) next = ctx.block('function_field_label', [name, next]);
   }
   return ctx.block('function_field_label', [fn.name, next]);
 }
@@ -475,7 +518,7 @@ function compileEvent(event, ctx) {
     case 'key_up': {
       // 엔트리에는 "키를 뗐을 때" 이벤트가 없어서 감시 스크립트로 바꾼다.
       //   시작하기 -> 계속 반복: 키가 눌릴 때까지 기다림 -> 떼질 때까지 기다림 -> 본문
-      // (SPEC-ADDENDUM 6.1 에 적어 둔 정해진 변환이라 따로 알리지 않는다)
+      // (SPEC-ADDENDUM 4 에 적어 둔 정해진 변환이라 따로 알리지 않는다)
       const code = keyCodeOf(event.key);
       if (!code) return [ctx.error(event, `알 수 없는 키 이름 "${event.key}" 입니다.`)] && null;
       const pressed = () => ctx.block('is_press_some_key', [code, null]);

@@ -106,7 +106,8 @@ ObjectFragment = ObjectMember*  // object/text 안에 use 로 끼워 넣을 때
 | `PropertyDecl` | 아래 표 참고 | 오브젝트 속성 한 줄 |
 | `propertyName` | `"scale_x" \| "scale_y" \| ... ` (긴 이름 먼저) | `이름 = 값` 형태 속성의 키 |
 | `rotateMethod` | `free \| vertical \| none` | 회전 방식 |
-| `FunctionDecl` | `function id "(" ListOf<id, ","> ")" blockOpen Block end_` | 함수 선언. 매개변수는 콤마로 나열 |
+| `FunctionDecl` | `function id "(" ListOf<FunctionParam, ","> ")" blockOpen Block end_` | 함수 선언. 매개변수는 콤마로 나열 |
+| `FunctionParam` | `identifier "?"?` | 매개변수 하나. 뒤의 `?` 는 "엔트리에서도 판단 칸" (SPEC-ADDENDUM.md 4.6) |
 | `VarDecl` | `var id "=" ~"=" Expr` | 변수 선언(대입 연산자 `==`와 헷갈리지 않게 `~"="`로 막음) |
 | `ListDecl` | `list id "=" ~"=" ListLiteral` | 리스트 선언. 초기값은 반드시 `[...]` 리터럴 |
 

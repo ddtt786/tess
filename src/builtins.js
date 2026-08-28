@@ -7,6 +7,9 @@
 export const STATE_VALUES = new Set([
   'mouse_down', 'clicked', 'boost_mode', 'touchable', 'device',
   'user_id', 'nickname', 'timer', 'answer', 'block_count',
+  // costume 은 costume = ... 로도 쓸 수 있어 OBJECT_PROPERTIES 에 있지만,
+  // costume_number("지금 몇 번째 모양인지")는 쓰는 자리가 없는 순수 읽기 전용이다.
+  'costume_number',
 ]);
 
 /** 11.2 · 12 내장 함수 */
@@ -17,7 +20,7 @@ export const BUILTIN_FUNCTIONS = new Set([
   'sin', 'cos', 'tan', 'asin', 'acos', 'atan',
   'log2', 'ln', 'log10', 'floor', 'ceil', 'round', 'abs', 'random', 'root',
   // 객체 정보
-  'x', 'y', 'angle', 'way', 'size', 'distance', 'block_count', 'text_content',
+  'x', 'y', 'angle', 'way', 'size', 'costume', 'costume_number', 'distance', 'block_count', 'text_content',
   // 문자열
   'length', 'slice', 'count', 'join', 'index_of', 'replace',
   'reverse', 'uppercase', 'lowercase',

@@ -1,0 +1,772 @@
+# Tess 언어 가이드 및 명세서
+
+Tess 는 엔트리(playentry.org) 블록 코드로 컴파일되는 텍스트 프로그래밍 언어입니다.
+이 문서는 **언어 자체**를 처음부터 설명합니다 — Tess 로 무엇을, 어떻게 쓰는지 알고
+싶다면 이 문서를 읽으세요.
+
+다른 문서와의 관계:
+
+| 문서 | 다루는 것 |
+| --- | --- |
+| **SPEC.md (이 문서)** | Tess 언어 자체 — 문법, 문장, 표현식, 내장 함수 |
+| [SPEC-ADDENDUM.md](./SPEC-ADDENDUM.md) | 엔트리로 **컴파일**하면서 생기는 것 — 엔트리에는 없는 Tess 전용 문법(`useobject`/`usetext` 등), 컴파일러가 다르게 만드는 부분 |
+| [GRAMMAR.md](./GRAMMAR.md) | `tess.ohm` 문법 파일의 규칙별 구현 상세 — 파서/컴파일러를 고치려는 사람을 위한 문서 |
+| [README.md](./README.md) | 프로젝트 구조, CLI 사용법(`build`/`run`/`decompile`) |
+
+---
+
+## 목차
+
+1. [시작하기](#1-시작하기)
+2. [기본 구조](#2-기본-구조)
+3. [문법 기초](#3-문법-기초) — 블록, 리터럴, 주석
+4. [변수와 리스트](#4-변수와-리스트)
+5. [연산자와 표현식](#5-연산자와-표현식)
+6. [제어 흐름](#6-제어-흐름)
+7. [이벤트](#7-이벤트)
+8. [신호 · 복제 · 장면 전환](#8-신호--복제--장면-전환)
+9. [움직임과 모양](#9-움직임과-모양)
+10. [글상자](#10-글상자)
+11. [붓](#11-붓)
+12. [소리](#12-소리)
+13. [판단 및 상태 값](#13-판단-및-상태-값)
+14. [내장 함수](#14-내장-함수)
+15. [자료](#15-자료)
+16. [함수](#16-함수)
+17. [여러 파일로 나누기](#17-여러-파일로-나누기)
+18. [예약어](#18-예약어)
+
+---
+
+## 1. 시작하기
+
+```tess
+project:
+  title "첫 작품"
+end
+
+scene "무대":
+  object "고양이":
+    default costume 기본 "cat.png"
+
+    when start do
+      say "안녕!" for 2
+      forever:
+        if key_down("right"):
+          x += 5
+        end
+        wait 0.02
+      end
+    end
+  end
+end
+```
+
+```bash
+node index.js check  첫작품.tess          # 문법·의미 검사만
+node index.js build  첫작품.tess          # 엔트리 작품(.ent)으로 컴파일
+node index.js run    첫작품.tess          # 컴파일해서 브라우저로 바로 열기
+```
+
+## 2. 기본 구조
+
+Tess 소스는 다음 요소들의 나열입니다. 순서는 자유롭습니다(전역 변수를 `project` 뒤에
+적어도 됩니다).
+
+| 요소 | 뜻 |
+| --- | --- |
+| `project: ... end` | 작품 정보(제목·설명·초당 프레임) — 파일 하나에 최대 하나 |
+| `scene "이름": ... end` | 장면 하나. 오브젝트·글상자를 담습니다 |
+| `object "이름": ... end` | 그림으로 된 오브젝트(스프라이트) |
+| `text "이름": ... end` | 글상자 |
+| `function 이름(매개변수, ...): ... end` | 함수 |
+| `var 이름 = 값` / `list 이름 = [값, ...]` | 전역 변수·리스트 |
+| `use "파일"` | 다른 파일을 그 자리에 통째로 불러오기 ([17절](#17-여러-파일로-나누기)) |
+
+`object`/`text`는 보통 `scene` 안에 쓰지만, `use` 로 조각 파일을 불러올 때는 최상위에도
+올 수 있습니다.
+
+### 2.1 project
+
+```tess
+project:
+  title "우주 비행사"
+  description "운석을 피하며 목적지까지 비행하는 게임입니다."
+  fps 60
+end
+```
+
+세 필드 모두 선택입니다. `title`이 없으면 파일 이름을 씁니다.
+
+### 2.2 scene
+
+```tess
+scene "장면_1":
+  name "메인 화면"     # 실제로 화면에 찍히는 이름 (없으면 따옴표 안 문자열을 그대로 씀)
+  object "..." ... end
+  text "..." ... end
+end
+```
+
+`scene "장면_1"`의 `"장면_1"`은 스크립트에서 `jump "장면_1"`처럼 그 장면을 가리킬 때
+쓰는 **식별자**입니다. 화면에 실제로 보이는 이름을 따로 정하고 싶으면 `name`을 씁니다.
+
+### 2.3 object / text
+
+```tess
+object "플레이어":
+  name "치로"                             # 화면에 보이는 이름
+  default costume 정지 "idle.png"         # 기본 모양 (모양 목록의 첫 순서)
+  costume 공격 "attack.png"               # 추가 모양
+  sound 타격음 "hit.mp3"                  # 소리
+  x = 0
+  y = -50
+  scale_x = 100
+  scale_y = 100
+  visible true
+  lock false
+  rotation vertical                       # free(기본) | vertical | none
+
+  var 체력 = 100                          # 이 오브젝트만의 지역 변수
+  list 콤보 = []
+
+  function 대미지_계산(기본):              # 이 오브젝트 안의 함수 — 지역 변수 참조 가능
+    return 기본 * 2
+  end
+
+  when start do
+    ...
+  end
+end
+```
+
+`text`도 문법은 같고, 대신 [10절](#10-글상자)의 글상자 전용 속성(`text_content`,
+`font`, `font_color` ...)을 쓸 수 있습니다. `object`에는 이 속성들을 쓸 수 없고,
+반대로 `text`에는 붓 관련 명령을 쓸 수 없습니다.
+
+`object "이름"`/`text "이름"`의 `"이름"`도 scene 과 마찬가지로 **식별자**입니다 —
+`touching("이름")`처럼 스크립트에서 이 오브젝트를 가리킬 때 씁니다. 화면에 보이는
+이름은 `name`으로 따로 정합니다(안 정하면 식별자를 그대로 씁니다).
+
+`costume`/`sound` 뒤의 `size W H`/`for N`은 이미지·소리 파일이 아직 없을 때 크기·길이를
+미리 적어 두는 것입니다(파일이 있으면 필요 없습니다).
+
+```tess
+costume 기본 "hero.png" size 200 120     # 아직 hero.png 가 없어도 200×120 으로 기록
+sound 딸깍 "click.mp3" for 0.3           # 아직 click.mp3 가 없어도 0.3초로 기록
+```
+
+**오브젝트 속성 전체 목록** (모두 선택, 순서 무관, 오브젝트 선언 맨 위에서 시작값을 정함):
+
+| 속성 | 뜻 | 기본값 |
+| --- | --- | --- |
+| `x = N` / `y = N` | 시작 좌표 | `0` |
+| `angle = N` | 모양 각도 | `0` |
+| `way = N` | 이동 방향 | `90` |
+| `size = N` | 전체 크기(%) — `scale_x`/`scale_y`를 한 번에 정함 | `100` |
+| `scale_x = N` / `scale_y = N` | 가로/세로 비율(%)만 따로 정함 | `100` |
+| `visible true\|false` | 시작할 때 보이는지 | `true` |
+| `lock true\|false` | 편집기에서 잠글지 | `false` |
+| `rotation free\|vertical\|none` | 회전 방식 | `free` |
+| `draw_color`/`fill_color`/`draw_width`/`draw_alpha` | 붓 시작 상태 ([11절](#11-붓)) | 붓 기본값 |
+
+## 3. 문법 기초
+
+### 3.1 블록 열고 닫기
+
+블록을 여는 말은 `then`·`do`·`:` 셋 중 아무거나 골라 쓸 수 있고(뜻은 완전히 같습니다),
+닫는 말은 항상 `end`입니다.
+
+```tess
+if 점수 > 90 then say "A" end
+if 점수 > 90 do   say "A" end
+if 점수 > 90:     say "A" end
+```
+
+### 3.2 리터럴
+
+| 종류 | 예 |
+| --- | --- |
+| 숫자 | `42`, `3.14`, `-5` (음수는 단항 연산자) |
+| 문자열 | `"안녕"`, `"줄바꿈\n"`, `"유니코드A"` |
+| 불리언 | `true`, `false` |
+| 색상 | `#ff0000` (16진수 6자리) |
+| 투명 | `transparent` (배경색 등에서 "색 없음") |
+| 리스트 | `[1, 2, 3]`, `["가", "나"]`, `[]` (리스트 **선언**에서만 씀) |
+
+Tess 에는 타입이 없어서 판단(`true`/`false`, 비교식)과 값(숫자·문자)이 서로의 자리에
+올 수 있습니다. 그럴 때는 엔트리가 실제로 쓰는 블록으로 이어 줍니다.
+
+| 쓴 것 | 되는 것 |
+| --- | --- |
+| `if "살아있음":` · `if 1:` | 판단 자리의 리터럴은 **참**으로 봅니다 (문자열을 참으로 보는 전통) |
+| `if 깃발:` | 실행해 봐야 아는 값은 `깃발 == "TRUE"` 비교가 됩니다 |
+| `깃발 = true` · `말 = (x > 3)` | 값 자리의 판단은 엔트리의 `(<판단>의 값)` 으로 감쌉니다 |
+
+그래서 **`true`/`false` 를 값으로 쓰면 `"TRUE"`/`"FALSE"` 라는 문자열**입니다 —
+엔트리의 `(<판단>의 값)` 블록이 그렇게 돌려주기 때문이고, `var 깃발 = true` 같은
+초기값도 같은 글자를 씁니다.
+
+### 3.3 주석
+
+`#`으로 시작해서 그 줄 끝까지입니다. 문자열 안의 `#`이나 색상 리터럴(`#ff0000`)은
+주석으로 보지 않습니다.
+
+```tess
+# 이건 주석입니다
+x = 5  # 이것도 주석
+var 색 = #ff0000   # 이 # 은 색상이지 주석이 아니다
+```
+
+## 4. 변수와 리스트
+
+```tess
+var 점수 = 0              # 전역 변수 — project 밖, scene 밖 어디서든 최상위에
+list 기록 = [1, 2, 3]     # 전역 리스트
+```
+
+세 가지 범위가 있습니다.
+
+| 선언 위치 | 범위 |
+| --- | --- |
+| 최상위(파일 맨 위) | 전역 — 모든 오브젝트에서 읽고 쓸 수 있음 |
+| `object`/`text` 안, `when` 밖 | 그 오브젝트만의 지역 변수 |
+| `function` 안 | 그 함수 호출마다 새로 생기는 지역 변수 (엔트리 함수 지역 변수) |
+
+```tess
+var 이름 = 값          # 대입
+이름 = 새값            # 다시 대입
+이름 += 1               # 더하기 (문자열이면 이어 붙이기)
+이름 -= 1
+이름 *= 2
+이름 /= 2
+이름 %= 2
+이름 **= 2
+```
+
+초기값은 **상수**여야 합니다(계산식·다른 변수 참조 불가). 계산된 값으로 시작하고
+싶으면 `when start`에서 대입하세요.
+
+```tess
+var 랜덤값 = random(1, 10)   # 안 됩니다 — 컴파일 에러
+var 랜덤값 = 0
+when start do
+  랜덤값 = random(1, 10)     # 됩니다
+end
+```
+
+함수 안에서는 `list`를 선언할 수 없습니다(엔트리 함수는 전역 리스트만 다룹니다) —
+전역 리스트를 쓰세요. 함수 안에서는 오브젝트의 지역 변수도 직접 읽을 수 없습니다 —
+매개변수로 넘겨받으세요([16절](#16-함수) 참고).
+
+## 5. 연산자와 표현식
+
+우선순위 (낮음 → 높음):
+
+```
+or  <  and  <  not  <  비교(==, !=, >, <, >=, <=)  <  +, -  <  *, /, %, //  <  **  <  단항 -
+```
+
+| 연산자 | 뜻 |
+| --- | --- |
+| `+` `-` `*` `/` | 사칙연산(문자열에 `+`를 쓰면 이어 붙이기) |
+| `%` | 나머지 |
+| `//` | 몫 |
+| `**` | 거듭제곱(오른쪽 결합: `2 ** 3 ** 2` == `2 ** (3 ** 2)`). 지수는 상수로 정해져 있어야 합니다 |
+| `==` `!=` `>` `<` `>=` `<=` | 비교 |
+| `and` `or` `not` | 논리 |
+| `(` `)` | 괄호로 우선순위 바꾸기 |
+
+```tess
+var 결과 = (1 + 2) * 3 ** 2 - 4 / 2
+if 점수 >= 90 and 목숨 > 0:
+  say "합격"
+end
+```
+
+**공백으로 인자를 늘어놓는 명령**(`move X Y`, `go X Y` 등)에서는 각 인자가 단항
+수준까지만 허용됩니다 — `move 50 -30`이 `move (50 - 30)`으로 잘못 묶이는 걸 막기
+위해서입니다. 이항 연산이 필요하면 괄호로 감싸세요: `move (a + b) 10`.
+
+## 6. 제어 흐름
+
+### 6.1 조건문
+
+```tess
+if 점수 > 90:
+  say "A"
+else:
+  say "B"
+end
+```
+
+### 6.2 반복문
+
+```tess
+repeat 5:        # 5번 반복
+  forward 10
+end
+
+while 체력 > 0:   # 조건이 참인 동안
+  wait 0.5
+end
+
+until touching("골"):  # 조건이 참이 될 때까지
+  forward 5
+end
+
+forever:          # 무한 반복
+  ...
+end
+```
+
+### 6.3 흐름 제어
+
+| 문장 | 뜻 |
+| --- | --- |
+| `wait N` | N초 기다리기 (N이 판단식이면 그 값이 참이 될 때까지 기다리기) |
+| `break` | 반복문 하나 빠져나가기 |
+| `skip` | 반복문의 다음 차례로 |
+| `restart` | 작품 처음부터 다시 시작 |
+| `stop` | 이 스크립트 멈추기 |
+| `stop me` / `stop other` / `stop them` / `stop all` | 이 오브젝트의 다른 스크립트 / 다른 오브젝트 / 다른 오브젝트들 / 모든 오브젝트 멈추기 |
+| `stop sound this` / `stop sound all` | 이 오브젝트의 / 모든 소리 멈추기 |
+| `stop timer` / `start timer` / `reset timer` | 초시계 |
+| `stop draw` / `start draw` · `stop fill` / `start fill` | 붓 그리기·채우기 (11절) |
+| `stop bgm` | 배경음악 멈추기 |
+| `reset size` | 크기를 원래대로 되돌리기 |
+| `clear effects` / `clear bubble` / `clear draw` / `clear text` | 효과 / 말풍선 / 그림 / 글상자 내용 지우기 |
+
+`break`/`skip`은 반복문 안에서만 쓸 수 있습니다.
+
+## 7. 이벤트
+
+`object`/`text` 안에서, `when ... do ... end` 형태로 씁니다. 오브젝트 하나에 몇 개든
+쓸 수 있고, 전부 동시에(병렬로) 실행됩니다.
+
+| 이벤트 | 실행되는 때 |
+| --- | --- |
+| `when start do` | 시작하기(초록 깃발) 눌렀을 때 |
+| `when scene start do` | 이 장면이 시작될 때 |
+| `when key "S" do` | 키 S 를 누르고 있는 동안(누를 때마다) |
+| `when key "S" up do` | 키 S 를 뗄 때 |
+| `when click do` / `when click up do` | 이 오브젝트를 클릭 / 클릭 해제할 때 |
+| `when stage click do` / `when stage click up do` | 무대를 클릭 / 클릭 해제할 때 |
+| `when signal "S" do` | 신호 S 를 받을 때 ([8.1절](#81-신호-통신)) |
+| `when cloned do` | 복제본이 만들어질 때 |
+
+키 이름: 알파벳(`"a"`~`"z"`), 숫자(`"0"`~`"9"`), `"space"`, `"enter"`, `"esc"`,
+`"tab"`, `"shift"`, `"ctrl"`, `"alt"`, `"backspace"`, 방향키(`"left"` `"right"`
+`"up"` `"down"`).
+
+## 8. 신호 · 복제 · 장면 전환
+
+### 8.1 신호 통신
+
+```tess
+send "게임 시작"        # 신호를 보내고 바로 다음 줄로 진행
+call "게임 시작"        # 신호를 보내고, 그 신호를 받는 스크립트들이 다 끝날 때까지 기다림
+```
+
+### 8.2 복제본 제어
+
+```tess
+clone            # 자기 자신을 복제
+clone "적"        # "적" 오브젝트를 복제 (그 오브젝트의 when cloned 가 실행된다)
+kill              # (= del clone) 이 복제본(자기 자신) 삭제
+del clones        # 이 오브젝트의 복제본을 전부 삭제
+```
+
+### 8.3 장면 전환
+
+```tess
+jump "다음장면"    # 그 이름의 장면으로
+jump next          # 장면 목록에서 다음 장면으로
+jump back          # 이전 장면으로
+```
+
+## 9. 움직임과 모양
+
+### 9.1 위치와 이동
+
+```tess
+x = 100            # 좌표 정하기
+y -= 50            # 상대 이동
+
+forward 10          # 지금 방향으로 10만큼
+forward 10 at 90    # 90도 방향으로 10만큼
+bounce              # 벽에 닿으면 튕기기
+
+move 20 20          # 상대 좌표로 이동 (move_x + move_y 두 동작)
+move 50 0 in 1       # 1초 동안 부드럽게
+
+go 0 0               # 절대 좌표로 이동
+go "mouse"            # 마우스 포인터로 이동
+go "적" in 2          # "적" 오브젝트 위치로 2초 동안 이동
+```
+
+### 9.2 각도와 방향
+
+```tess
+angle = 90          # 모양 각도 정하기
+way = 180           # 이동 방향 정하기
+turn 45              # 각도 상대 회전
+turn 90 in 0.5        # 0.5초 동안 부드럽게
+steer 30              # 이동 방향 상대 회전
+look "mouse"           # 마우스를 바라보는 방향으로
+look "적"              # "적" 오브젝트를 바라보는 방향으로
+```
+
+### 9.3 모양과 크기
+
+```tess
+show                 # 보이기
+hide                 # 숨기기
+costume = "공격"       # 모양 이름으로 바꾸기
+costume = 3           # n 번째 모양으로 바꾸기 (엔트리 모양 목록의 순번, 1부터)
+costume = 매개변수      # 변수·매개변수 등 계산되는 값도 그대로 됩니다 — 아래 참고
+next costume          # 다음 모양
+prev costume          # 이전 모양
+
+size = 120             # 전체 크기 % 로 정하기
+size += 10
+scale_x = 80            # 가로만 %로 정하기 (컴파일러가 함수를 만들어 계산합니다 — SPEC-ADDENDUM.md 4.1)
+scale_y += 10
+reset size              # 원래 크기(100%)로
+
+effect_color = 100      # 효과 정하기 (색깔·밝기·투명도)
+effect_brightness += 10
+effect_alpha = 50
+clear effects            # 효과 전부 지우기
+
+flip x                   # 좌우 뒤집기
+flip y                   # 상하 뒤집기
+order front               # 맨 앞으로
+order back                # 맨 뒤로
+```
+
+`costume = 값`의 값 자리는 리터럴 이름·번호뿐 아니라 계산되는 값도 됩니다 — 그래서
+함수가 "어떤 모양으로 바꿀지"를 매개변수로 받아, [14.2절](#142-객체-정보--거리)의
+`costume`/`costume("대상")`을 그대로 인자로 넘기는 식으로 재사용 가능한 함수를 짤 수
+있습니다. 여러 오브젝트가 같이 쓰는 함수 안에 특정 오브젝트의 모양을 직접 문자열로
+박아 넣는(예전 방식) 대신 이 패턴을 권합니다 — 자세한 사정은
+[SPEC-ADDENDUM.md 1.4절](./SPEC-ADDENDUM.md)에 있습니다.
+
+### 9.4 대화와 생각
+
+```tess
+say "안녕하세요!"              # 말풍선 (계속 보임)
+say "3초만 보임" for 3         # 3초 뒤 사라짐
+think "무슨 일이지?"           # 생각 풍선
+clear bubble                   # 말풍선 지우기
+```
+
+## 10. 글상자
+
+`text` 오브젝트 전용입니다. 속성으로(시작 상태) 또는 `when` 안 명령으로(실행 중 변경)
+씁니다 — 이름과 문법이 같습니다.
+
+```tess
+text "점수판":
+  text_content = "점수: 0"
+  font = "NanumGothic"        # CSS 글꼴 이름 (SPEC-ADDENDUM.md 7절 참고)
+  font_size = 24
+  font_color = #ffffff
+  bg_color = transparent
+  text_align = left            # left | center(기본) | right
+  line_break = false           # 여러 줄 글상자 여부
+  text_bold = true
+  text_italic = false
+  text_underline = false
+  text_strikethrough = false
+
+  when signal "점수 변경" do
+    write "엔트리"              # 내용을 통째로 바꾸기
+    append " 환영합니다."        # 뒤에 이어 붙이기
+    prepend "[공지] "           # 앞에 붙이기
+    clear text                 # 내용 지우기
+  end
+end
+```
+
+글상자에는 `costume`·붓 관련 명령을 쓸 수 없고, 반대로 일반 `object`에는
+`write`/`font`/`font_color` 같은 글상자 명령을 쓸 수 없습니다.
+
+## 11. 붓
+
+```tess
+object "그림판":
+  draw_color = #ff0000    # 시작할 때의 붓 색 (선언 맨 위에 적으면 when start 로 만들어짐)
+  draw_width = 5
+  draw_alpha = 0            # 0=불투명 ~ 100=완전 투명
+  fill_color = #0000ff
+
+  when start do
+    draw_color = random_color()   # 무작위 색 (draw_color 에만 씀)
+    start draw
+    forward 50
+    turn 90
+    forward 50
+    stop draw
+
+    stamp           # 지금 모양을 도장처럼 찍기
+    clear draw       # 그린 것 전부 지우기
+
+    start fill        # 그린 다음 안쪽을 채우기
+    forward 40
+    turn 120
+    forward 40
+    turn 120
+    forward 40
+    stop fill
+  end
+end
+```
+
+## 12. 소리
+
+```tess
+sound 점프음 "jump.mp3"     # object/text 선언 맨 위에서 등록
+
+when start do
+  play sound "점프음"                        # 재생만 하고 바로 다음 줄로
+  play sound "점프음" and wait                # 다 끝날 때까지 기다림
+  play sound "점프음" for 2                   # 2초만 재생
+  play sound "점프음" from 1 to 3              # 1초~3초 구간만
+  play sound "점프음" for 2 and wait
+  play sound "점프음" from 1 to 3 and wait
+
+  play bgm "배경음악"       # 배경음악 (동시에 하나만)
+  stop bgm
+
+  sound_volume = 80
+  sound_volume += 5
+  sound_speed = 1.2
+
+  stop sound this      # 이 오브젝트의 소리만 멈추기
+  stop sound all        # 모든 소리 멈추기
+end
+```
+
+## 13. 판단 및 상태 값
+
+`if`/`while`/`until`의 조건 자리에 씁니다.
+
+| 판단 | 뜻 |
+| --- | --- |
+| `key_down("S")` | 키 S 를 누르고 있는지 |
+| `touching("대상")` | 이 오브젝트가 대상에 닿았는지 (`"wall"`도 가능) |
+| `type(V) == "number"` | 값의 자료형 판단 (지금은 `"number"`만) |
+| `device == "mobile"` | 실행 기기 판단 |
+
+**상태 값** — 괄호 없이 이름 그대로 쓰는 읽기 전용 값입니다.
+
+| 이름 | 뜻 |
+| --- | --- |
+| `mouse_down` | 마우스 버튼이 눌려 있는지 |
+| `clicked` | 이 오브젝트가 클릭된 상태인지 |
+| `boost_mode` | 저사양 모드인지 |
+| `touchable` | 터치를 지원하는 기기인지 |
+| `timer` | 초시계 값(초) |
+| `answer` | `ask`로 받은 마지막 대답 |
+| `block_count` | 이 작품의 전체 블록 수 |
+| `user_id` / `nickname` | 로그인한 사용자 아이디 / 닉네임 |
+
+```tess
+if mouse_down: forward 5 end
+if timer > 10: jump "종료" end
+say answer
+```
+
+## 14. 내장 함수
+
+### 14.1 수학
+
+| 함수 | 뜻 |
+| --- | --- |
+| `sin(x)` `cos(x)` `tan(x)` `asin(x)` `acos(x)` `atan(x)` | 삼각함수 (도 단위) |
+| `log2(x)` `ln(x)` `log10(x)` | 로그 |
+| `floor(x)` `ceil(x)` `round(x)` `abs(x)` | 반올림류 |
+| `random(a, b)` | a ~ b 사이 무작위 정수 |
+| `root(값, n)` | n제곱근 (`값 ** (1/n)`과 같음) |
+
+`**`/`root`는 엔트리에 없는 계산이라 컴파일러가 제곱·제곱근으로 펼쳐 만듭니다
+(자세한 오차·제약은 [SPEC-ADDENDUM.md 4.2절](./SPEC-ADDENDUM.md)).
+
+### 14.2 객체 정보 · 거리
+
+다른 오브젝트(또는 자기 자신)의 상태를 읽습니다. 괄호 없이 쓰면 **자기 자신**을
+가리킵니다.
+
+| 함수 / 값 | 뜻 |
+| --- | --- |
+| `x("대상")` / `x` | 대상(생략 시 자신)의 x 좌표. `"mouse"`도 가능(x, y 만) |
+| `y("대상")` / `y` | y 좌표 |
+| `angle("대상")` / `angle` | 모양 각도 |
+| `way("대상")` / `way` | 이동 방향 |
+| `size("대상")` / `size` | 전체 크기(%) |
+| `costume("대상")` / `costume` | 지금 모양의 **이름** |
+| `costume_number("대상")` / `costume_number` | 지금 모양이 모양 목록에서 몇 번째인지(1부터) |
+| `distance("대상")` | 이 오브젝트에서 대상까지 거리(`"mouse"` 가능) |
+| `text_content("대상")` | 글상자의 지금 내용 |
+
+```tess
+var mx = x("mouse")
+var 상대각도 = angle("적")
+var 지금모양 = costume        # 자기 자신의 현재 모양 이름
+if costume_number("적") == 3:
+  say "적이 공격 모양이다"
+end
+```
+
+### 14.3 문자열
+
+| 함수 | 뜻 |
+| --- | --- |
+| `length(s)` | 길이 |
+| `s[i]` | i번째 글자 (0부터) |
+| `slice(s, from, to)` | 부분 문자열 |
+| `count(s, t)` | t가 나오는 횟수 |
+| `join(a, b)` | 이어 붙이기 |
+| `index_of(s, t)` | t가 처음 나오는 위치(0부터, 없으면 -1) |
+| `replace(s, from, to)` | 바꾸기 |
+| `reverse(s)` | 뒤집기 |
+| `uppercase(s)` / `lowercase(s)` | 대문자/소문자로 |
+
+### 14.4 시간 · 초시계 · 블록 수
+
+```tess
+var 올해 = now("year")     # year|month|day|hour|minute|second|weekday
+start timer
+wait 2
+stop timer
+var 기록 = timer
+reset timer
+var 전체블록수 = block_count
+var 오브젝트블록수 = block_count("치로")
+```
+
+### 14.5 색상 변환
+
+```tess
+var 코드 = to_hex(255, 0, 0)              # "#ff0000"
+var 빨강 = from_hex(#ff0000, red)          # red | green | blue
+```
+
+## 15. 자료
+
+### 15.1 리스트 조작
+
+```tess
+list 순위 = [70, 80]
+
+in 순위 add 90               # 맨 뒤에 추가
+in 순위 insert 100 at 1        # 1번(0부터) 자리에 끼워 넣기
+remove 순위[0]                 # 0번 항목 제거
+순위[0] = 95                    # 항목 값 바꾸기
+var 개수 = length(순위)
+var 있음 = contains(순위, 100)
+```
+
+리스트·문자열 인덱스는 항상 **0부터**입니다(컴파일러가 엔트리의 1부터 인덱스로 자동
+보정합니다).
+
+### 15.2 대답
+
+```tess
+ask "이름이 뭐예요?"    # 입력창을 띄우고 기다림
+say answer               # 방금 받은 대답
+```
+
+### 15.3 무대에 표시·숨기기
+
+변수·리스트·초시계·대답 값을 무대 위에 작은 창으로 보여주거나 숨깁니다.
+
+```tess
+show 점수     # 변수/리스트 이름
+hide 점수
+show timer
+hide timer
+show answer
+hide answer
+```
+
+## 16. 함수
+
+```tess
+function 이름(매개변수1, 매개변수2):
+  ...
+end
+```
+
+- **중간에 `return`을 쓸 수 없습니다.** 엔트리의 "값을 돌려주는 함수"는 함수가 끝난 뒤
+  계산할 식 하나만 가질 수 있어서, `return`은 함수의 **마지막 문장**이어야 합니다.
+- 함수 **안에서 선언한 `var`**는 그 호출마다 새로 생기는 지역 변수입니다(엔트리 함수
+  지역 변수). `list`는 함수 안에서 선언할 수 없습니다 — 전역 리스트를 쓰세요.
+- 함수는 **오브젝트의 지역 변수를 직접 읽을 수 없습니다** — 매개변수로 받으세요.
+- `object`/`text` 안에 함수를 선언하면 그 오브젝트에서만 부를 수 있고, **전역 변수는
+  그대로 참조**할 수 있습니다.
+- 매개변수 이름 뒤에 **`?`** 를 붙이면 그 자리는 엔트리에서도 **판단 칸**이 됩니다
+  (`function 스폰(a, 살았나?)`). `?` 는 표시일 뿐 이름의 일부가 아니라서, 함수 안에서는
+  `살았나` 로 씁니다.
+
+```tess
+function 두배(값):          # return 으로 끝남 -> "값 함수" (식으로 씀)
+  var 배수 = 2
+  return 값 * 배수
+end
+
+function 점수_더하기(추가):   # return 없음 -> 일반 함수 (문장으로 씀)
+  점수 += 추가
+end
+
+function 스폰(이름, 살았나?):  # 살았나 는 판단 칸 — 판단을 그대로 넘긴다
+  if 살았나:
+    say 이름
+  end
+end
+
+when start do
+  var 결과 = 두배(21)   # 값 함수는 식으로
+  점수_더하기(10)        # 일반 함수는 문장으로
+end
+```
+
+값 함수는 문장으로 쓸 수 없고, 일반 함수는 값으로 쓸 수 없습니다(엔트리와 같은 규칙).
+
+## 17. 여러 파일로 나누기
+
+```tess
+# main.tess
+scene "메인":
+  use "objects/플레이어.tess"
+end
+```
+
+`use "파일"`은 그 파일의 내용을 **그 자리에 통째로 붙여 넣습니다**. 경로는 불러오는
+파일 기준 상대 경로이고, 순환 참조는 에러입니다. 불러오는 파일에 들어갈 수 있는
+내용은 놓인 자리에 따라 다릅니다.
+
+| `use`를 쓴 자리 | 불러올 파일에 들어갈 수 있는 것 |
+| --- | --- |
+| 최상위 | `project`, `scene`, `object`, `text`, `function`, `var`, `list` |
+| `scene` 안 | `object`, `text` |
+| `object`/`text` 안 | 오브젝트 속성, `var`, `list`, `function`, `when` 블록 |
+
+오브젝트 하나를 파일 하나로 관리할 때 `object "..." : ... end`로 매번 감싸는 게
+번거로우면, 엔트리 컴파일러가 추가한 `useobject`/`usetext` 문법으로 불러오면서
+바로 감쌀 수 있습니다 — 자세한 건 [SPEC-ADDENDUM.md 1.2절](./SPEC-ADDENDUM.md)을
+보세요. `node index.js decompile`로 이미 있는 엔트리 작품을 Tess로 되돌릴 때도
+기본적으로 이 문법을 씁니다.
+
+## 18. 예약어
+
+식별자(변수·함수·오브젝트 이름)로 쓸 수 **없는** 최소한의 낱말입니다: `and` `or` `not`
+`true` `false` `end` `then` `do` `in` `wait`.
+
+그 밖의 낱말 — `name`, `size`, `costume`, `x`, `way` 같은 속성 이름이나 `if`, `when`
+같은 문장 키워드 —은 전부 **위치로만** 구분되므로, 변수 이름으로 계속 쓸 수 있습니다.
+다만 헷갈리기 쉬우니 되도록 피하는 걸 권합니다.
+
+전체 키워드는 [tess.ohm](./src/tess.ohm)의 `keyword` 규칙(예약어)과 그 아래 나열된
+모든 어휘 규칙(문장 키워드)을 참고하세요.

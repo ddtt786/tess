@@ -42,7 +42,12 @@ const USAGE = `사용법
   --name <이름>      작품 이름 (기본값: project 의 title)
   --port <번호>      run 이 쓸 포트 (기본값: 비어 있는 포트)
   --no-open          run 할 때 브라우저를 자동으로 열지 않는다
-  --no-reload        run 할 때 소스가 바뀌어도 자동으로 새로고침하지 않는다`;
+  --no-reload        run 할 때 소스가 바뀌어도 자동으로 새로고침하지 않는다
+  --force            컴파일 에러가 있어도 build/run 을 끝까지 밀어붙인다. 에러가 난
+                     문장은 빠진 채로 나오니, 남은 부분만 확인하고 싶을 때만 쓰세요
+                     (문법 에러는 작품을 만들 수조차 없어서 --force 도 소용없습니다)
+  --warnings         decompile 이 옮기지 못한 부분을 콘솔에도 알려준다 (기본은 결과
+                     소스에 '# [decompile]' 주석으로만 남기고 콘솔은 개수만 보여준다)`;
 
 function report(label, diagnostics, kind) {
   for (const item of diagnostics) {
@@ -63,6 +68,8 @@ function parseArgs(argv) {
     else if (arg === '--port') options.port = Number(argv[++i]);
     else if (arg === '--no-open') options.noOpen = true;
     else if (arg === '--no-reload') options.noReload = true;
+    else if (arg === '--warnings') options.warnings = true;
+    else if (arg === '--force') options.force = true;
     else rest.push(arg);
   }
   return { options, rest };
@@ -96,11 +103,14 @@ function runBuild(file, options) {
     ? options.assets.map((dir) => path.resolve(dir))
     : [path.dirname(path.resolve(file))];
 
-  const result = compileProject(source, { path: file, assetDirs, name: options.name });
+  const result = compileProject(source, { path: file, assetDirs, name: options.name, force: options.force });
   report(label, result.warnings, '경고');
   if (!result.ok) {
     report(label, result.errors, '에러');
-    return 1;
+    // --force 는 에러가 난 문장만 빼고 나머지를 그대로 내보낸다. 문법 에러 때문에
+    // 작품 자체가 만들어지지 않았으면(project 가 null) 내보낼 것이 없다.
+    if (!options.force || !result.project) return 1;
+    console.error(`${label}: --force — 에러 ${result.errors.length}개를 무시하고 그대로 내보냅니다.`);
   }
 
   const out = options.out ?? `${file.replace(/\.tess$/, '')}.ent`;
@@ -131,11 +141,12 @@ async function runProject(file, options) {
     ? options.assets.map((dir) => path.resolve(dir))
     : [path.dirname(path.resolve(file))];
 
-  const result = compileProject(source, { path: file, assetDirs, name: options.name });
+  const result = compileProject(source, { path: file, assetDirs, name: options.name, force: options.force });
   report(label, result.warnings, '경고');
   if (!result.ok) {
     report(label, result.errors, '에러');
-    return 1;
+    if (!options.force || !result.project) return 1;
+    console.error(`${label}: --force — 에러 ${result.errors.length}개를 무시하고 그대로 실행합니다.`);
   }
 
   const bundle = makeEntryBundle(result.project, result.assets);
@@ -178,12 +189,15 @@ function watchAndReload(file, options, assetDirs, label, server) {
   const rebuild = () => {
     try {
       const source = fs.readFileSync(file, 'utf-8');
-      const result = compileProject(source, { path: file, assetDirs, name: options.name });
+      const result = compileProject(source, { path: file, assetDirs, name: options.name, force: options.force });
       report(label, result.warnings, '경고');
       if (!result.ok) {
         report(label, result.errors, '에러');
-        console.error(`${label}: 다시 불러오기 실패 — 이전 버전을 계속 보여줍니다.`);
-        return;
+        if (!options.force || !result.project) {
+          console.error(`${label}: 다시 불러오기 실패 — 이전 버전을 계속 보여줍니다.`);
+          return;
+        }
+        console.error(`${label}: --force — 에러 ${result.errors.length}개를 무시하고 그대로 반영합니다.`);
       }
       const nextBundle = makeEntryBundle(result.project, result.assets);
       server.update({
@@ -256,13 +270,18 @@ async function runDecompile(file, options) {
     fs.writeFileSync(target, asset.data);
   }
 
+  const fragmentCount = result.assets.filter((asset) => asset.path.endsWith('.tess')).length;
   console.log(`${label} -> ${mainFile}`);
-  console.log(`  에셋 ${result.assets.length}개 옮김`);
+  console.log(`  오브젝트 조각 파일 ${fragmentCount}개, 에셋(모양·소리) ${result.assets.length - fragmentCount}개 옮김`);
 
   if (result.warnings.length > 0) {
-    console.log(`  옮기지 못한 부분 ${result.warnings.length}개 — 소스에 '# [decompile]' 주석으로 표시해 뒀습니다:`);
-    for (const warning of result.warnings.slice(0, 20)) console.log(`    - ${warning}`);
-    if (result.warnings.length > 20) console.log(`    ... 그 외 ${result.warnings.length - 20}개`);
+    console.log(`  옮기지 못한 부분 ${result.warnings.length}개 — 소스에 '# [decompile]' 주석으로 표시해 뒀습니다.`);
+    if (options.warnings) {
+      for (const warning of result.warnings.slice(0, 20)) console.log(`    - ${warning}`);
+      if (result.warnings.length > 20) console.log(`    ... 그 외 ${result.warnings.length - 20}개`);
+    } else {
+      console.log(`  자세한 내용은 --warnings 옵션을 붙여서 다시 실행하세요.`);
+    }
   }
 
   try {

@@ -1,7 +1,10 @@
 # Tess 명세 보충 — 엔트리 작품으로 컴파일하기
 
-이 문서는 [Tess 언어 가이드 및 명세서](#)를 **실제 엔트리 작품(`project.json` / `.ent`)으로
-컴파일**하기 위해 추가하거나 다듬은 부분을 정리합니다.
+이 문서는 [Tess 언어 가이드 및 명세서](./SPEC.md)를 **실제 엔트리 작품(`project.json` / `.ent`)으로
+컴파일**하기 위해 Tess 가 새로 얹거나 다듬은 부분만 정리합니다. 엔트리에 원래 있는
+기능(회전 방식, 붓 색·굵기, 글상자 속성 같은 것들)은 명세서에 이미 있으므로 여기서는
+다루지 않습니다 — 여기 적힌 건 **엔트리에는 없지만 Tess 가 새로 만든 문법**과, **컴파일러가
+Tess 코드를 엔트리 블록으로 바꾸면서 겉으로 드러나지 않게 개입하는 지점**뿐입니다.
 
 원칙은 하나입니다. **Tess 의 문법 철학을 그대로 지킨다.**
 
@@ -11,83 +14,12 @@
 
 ---
 
-## 1. 추가한 오브젝트 속성
-
-엔트리 오브젝트에는 있지만 명세에는 없던 값들입니다. 전부 **선언은 선택**이고 기본값이 있습니다.
-
-| 속성 | 문법 | 설명 | 기본값 |
-| --- | --- | --- | --- |
-| 회전 방식 | `rotation free \| vertical \| none` | 엔트리의 회전 방식(모든 방향 / 좌우 / 회전 없음) | `free` |
-| 모양 각도 | `angle = Number` | 시작할 때의 모양 각도 | `0` |
-| 이동 방향 | `way = Number` | 시작할 때의 이동 방향 | `90` |
-| 전체 크기 | `size = Number` | `scale_x`, `scale_y` 를 한 번에 정한다 | `100` |
-| 붓 색 | `draw_color = Color` | 시작할 때의 붓 색 | `#ff0000` (엔트리 기본값) |
-| 채우기 색 | `fill_color = Color` | 시작할 때의 채우기 색 | `#ff0000` |
-| 붓 굵기 | `draw_width = Number` | 시작할 때의 붓 굵기 | `1` |
-| 붓 투명도 | `draw_alpha = Number` | 시작할 때의 붓 투명도(0~100) | `0` |
-
-```tess
-object "치로":
-  name "치로"
-  rotation vertical    # 좌우로만 뒤집힌다
-  angle = 0
-  way = 90
-  size = 120
-end
-```
-
-`draw_color`·`fill_color`·`draw_width`·`draw_alpha` 는 엔트리 `project.json` 에 "기본값"을
-적어 둘 자리가 없습니다 — 엔트리는 오브젝트가 시작할 때마다 항상 빨간 붓(`#ff0000`,
-굵기 1, 불투명)으로 시작합니다(`entryjs` 의 `Entry.setBasicBrush`). 그래서 오브젝트
-선언 맨 위에 이 값을 적으면, 컴파일러가 **`when start` 스크립트를 만들어서 그 값을
-제일 먼저 정하게** 합니다. 이 값들은 사실 `object "치로": draw_color = #ff0000 end`
-처럼 선언부에 적으나, `when start do draw_color = #ff0000 end` 처럼 이벤트 안에 직접
-적으나 컴파일 결과가 똑같습니다 — 앞은 뒤의 줄임말입니다.
-
-```tess
-object "붓":
-  costume 기본 "brush.png"
-  draw_color = #3355ff   # -> when start 에 "붓 색을 #3355ff (으)로 정하기" 가 생긴다
-  draw_width = 3
-end
-```
-
-## 2. 추가한 글상자 속성
-
-`text` 블록에서만 쓸 수 있습니다. 기존 글상자 명령(`font`, `font_color`, `bg_color`,
-`text_bold` …)과 이름·문법이 같고, 오브젝트 상단에 쓰면 시작 상태가 됩니다.
-
-| 속성 | 문법 | 설명 | 기본값 |
-| --- | --- | --- | --- |
-| 글씨 크기 | `font_size = Number` | 글자 크기(px) | `20` |
-| 정렬 | `text_align = left \| center \| right` | 문단 정렬 | `center` |
-| 줄바꿈 | `line_break = Bool` | 여러 줄 글상자 여부 | `false` |
-
-```tess
-text "점수판":
-  text_content = "점수: 0"
-  font = "DungGeunMo"
-  font_size = 24
-  font_color = #ffffff
-  bg_color = transparent
-  text_align = left
-  line_break = false
-end
-```
-
-`font_color`·`bg_color`·`font` 를 안 적으면 **엔트리가 새 글상자를 만들 때와 똑같은
-기본값**을 씁니다 — 글자색 `#000000`, 배경 `#ffffff`(흰 배경, `transparent` 아님),
-글씨체 `Nanum Gothic`(`entryjs` 의 `Entry.EntityObject`, `Entry.Object.getEntityJson` 기준).
-`font =` 에 적는 이름은 화면에 보이는 한글 글씨체 이름이 아니라 **CSS 글꼴 이름**입니다 —
-`entry-cdn.pstatic.net` 이 정의하는 `@font-face` 의 `font-family` 값 그대로 적어야
-글자가 실제로 그 모양으로 나옵니다(예: 나눔고딕코딩 -> `"Nanum Gothic Coding"`,
-둥근모꼴 -> `"DungGeunMo"`, 잘난체 -> `"yg-jalnan"`). `node index.js run` 으로 미리보기를
-열면 이 CSS 를 자동으로 불러오므로(8절 참고) 이름만 맞으면 바로 그 글씨체로 보입니다.
-
-## 3. 모양 원본 크기 선언
+## 1. 모양 원본 크기 선언
 
 이미지 파일을 찾을 수 있으면 컴파일러가 파일에서 크기를 직접 읽습니다.
 파일 없이(예: 이미지를 아직 안 만든 상태로) 구조만 잡을 때는 크기를 직접 적을 수 있습니다.
+엔트리에는 이런 "아직 없는 파일의 크기를 미리 선언"하는 개념 자체가 없습니다 — 항상
+실제 파일이 있어야 합니다.
 
 ```tess
 costume 기본 "hero.png" size 200 120     # 원본 200×120 으로 기록
@@ -96,7 +28,7 @@ default costume 밤하늘 "intro_bg.png" size 960 540
 
 `size W H` 를 생략하고 파일도 없으면 100×100 으로 기록하고 경고합니다.
 
-## 3.1 소리 길이 선언
+## 1.1 소리 길이 선언
 
 소리도 같은 이유로 길이를 적어 둘 수 있습니다. 파일을 찾을 수 있으면 필요 없습니다.
 
@@ -107,10 +39,12 @@ sound 딸깍 "click.mp3" for 0.3      # 0.3초짜리 소리
 `size W H` 나 `for N` 을 적어 두면, 파일이 아직 없어도 컴파일러가 아무 말 없이 지나갑니다.
 둘 다 없고 파일도 못 찾을 때만 알려 줍니다.
 
-## 3.2 `useobject` / `usetext` — 오브젝트 파일 통째로 불러오기
+## 1.2 `useobject` / `usetext` — 오브젝트 파일 통째로 불러오기
 
 오브젝트 하나를 파일 하나로 관리할 때, 파일마다 `object "..." : ... end` 로 감싸는 것은
-군더더기입니다. `useobject` / `usetext` 는 불러오면서 감싸 줍니다.
+군더더기입니다. `useobject` / `usetext` 는 불러오면서 감싸 줍니다. 엔트리에는 애초에
+"파일"이라는 단위가 없으므로(작품 하나가 통째로 `project.json`) 이건 순전히 Tess 가
+소스를 여러 파일로 쪼개 관리하려고 만든 문법입니다.
 
 ```tess
 # main.tess
@@ -141,9 +75,15 @@ end
 
 `use` 는 그대로 남아 있습니다. 감싸지 않고 그대로 펼치고 싶을 때 씁니다.
 
-## 3.3 주석은 엔트리 주석이 됩니다
+`node index.js decompile` 로 이미 있는 `.ent` 를 Tess 로 되돌릴 때도 **기본적으로 이
+문법을 씁니다** — 오브젝트/글상자 하나마다 조각 파일 하나로 나눠 쓰고, `main.tess` 에는
+`useobject`/`usetext` 한 줄만 남깁니다 (자세한 건 [README.md](./README.md#엔트리-작품을-tess-로-되돌리기-decompile) 참고).
 
-Tess 의 `#` 주석은 버려지지 않고 **엔트리 블록의 주석**으로 옮겨집니다.
+## 1.3 주석은 엔트리 주석이 됩니다
+
+Tess 의 `#` 주석은 버려지지 않고 **엔트리 블록의 주석**으로 옮겨집니다. 엔트리에서 주석은
+사람이 워크스페이스에서 블록에 직접 붙이는 것이라, 텍스트 소스의 `#` 을 거기로 옮기는
+건 순전히 컴파일러가 하는 일입니다.
 
 ```tess
 when start do
@@ -162,10 +102,71 @@ end
 
 문자열 안의 `#` 과 색상 리터럴(`#ff0000`)은 주석으로 보지 않습니다.
 
-## 4. `return` 의 위치 제한
+## 1.4 `force id` — 함수에 하드코딩된 모양·소리 id 살리기 (호환용, 새 코드에는 권장 안 함)
+
+엔트리의 "모양으로 바꾸기"/"소리 재생하기" 값은 1) id 2) 이름 3) 등록 순번 순으로
+찾습니다. 그래서 편집기에서 목록으로 고르지 않고, 그 모양·소리의 **진짜 엔트리 id 를
+문자열로 직접 적어 넣어도** 정확히 그 모양·소리로 바뀝니다 — 예를 들어
+`costume = "qio1"`처럼요. 함수는 엔트리에서 늘 **전역**이라(어느 오브젝트에서 정의했든
+프로젝트의 모든 오브젝트가 부를 수 있음) 개인 함수를 흉내 낼 방법이 마땅치 않았는데,
+id 는 프로젝트 전체에서 유일하고 어느 오브젝트가 부르든 항상 같은 모양·소리를
+가리키므로, 많은 실제 작품이 이 성질을 이용해 함수 안에 **특정 오브젝트 하나의**
+모양·소리 id 를 그대로 박아 넣는 방법으로 "이 함수는 이 모양을 다룬다" 를 표현해 왔습니다.
+
+문제는 이 id 가 컴파일할 때마다 새로 정해진다는 것입니다. `node index.js decompile`로
+이런 작품을 Tess 로 되돌리면, 함수 안의 리터럴 id 를 이름으로 되짚어(`costume =
+"점프"`) 버리는 순간 그 이름이 진짜로 그 함수를 부르는 오브젝트에도 있다는 보장이
+없어져 다시 컴파일했을 때 깨질 수 있습니다. `force id "..."` 는 이 문제를 풉니다 —
+이 모양·소리의 엔트리 id 를 새로 뽑지 않고 그 문자열로 그대로 고정합니다.
+
+```tess
+object "치로":
+  default costume 정지 "idle.png"
+  costume 점프 "jump.png" force id "qio1"    # 이 모양의 id 는 항상 "qio1"
+end
+
+function 점프하기():
+  costume = "qio1"     # 어느 오브젝트가 불러도 정확히 "점프"(치로의) 모양으로 바뀐다
+end
+```
+
+`force id`가 이미 다른 모양·소리·오브젝트가 쓰고 있는 id 와 겹치면 컴파일 에러입니다.
+
+**`node index.js decompile`는 이 관습을 자동으로 알아봅니다.** 모든 함수의 내용을
+먼저 훑어서, 함수 안에서 가리키는 모양·소리 id — 리터럴로 박아 넣은 값이든, 편집기
+드롭다운으로 고른 것이든 — 을 찾아 그 모양·소리 선언에 `force id`를 자동으로 붙입니다.
+함수 안의 그 값은 (다른 곳과 달리) 이름으로 바꾸지 않고 id 그대로 둡니다 —
+[README.md](./README.md#엔트리-작품을-tess-로-되돌리기-decompile)의 `--warnings` 참고.
+
+### 새 코드에는 다른 패턴을 쓰세요
+
+`force id`는 **이미 이렇게 짜여 있는 옛 작품을 살리기 위한 호환 수단**입니다. 새로
+Tess 코드를 짤 때는 모양·소리를 **함수의 매개변수로 받으세요** — 그러면 함수 하나로
+어느 오브젝트에도 재사용할 수 있고, 특정 id 에 묶이지 않습니다.
+
+```tess
+function 모양_바꾸기(대상_모양):
+  costume = 대상_모양
+end
+
+when start do
+  모양_바꾸기(costume)              # "자기 자신의 지금 모양"을 그대로 넘긴다
+  모양_바꾸기(costume("다른오브젝트"))  # 다른 오브젝트의 모양을 가져와 넘긴다
+end
+```
+
+이때 인자 자리에는 **직접 id 문자열을 적지 말고, 그 모양을 "가져오는" 표현식**
+(`costume`, `costume("대상")`)을 그대로 넘기는 쪽을 권합니다 — id 가 무엇인지 몰라도
+되고, 나중에 그 모양이 바뀌거나 다시 컴파일돼도 항상 맞게 동작합니다. `costume =
+매개변수`처럼 **계산된 값**(리터럴이 아닌 값)으로 모양을 바꾸는 것은 Tess 기본
+문법에서 원래 됩니다 — [14.2절](./SPEC.md#142-객체-정보--거리)의 `costume`/
+`costume_number` 참고.
+
+## 2. `return` 의 위치 제한
 
 엔트리의 "값을 돌려주는 함수"는 **함수가 끝난 뒤 계산할 식 하나**를 가집니다.
-중간에 빠져나오는 `return` 은 엔트리 블록으로 표현할 방법이 없습니다.
+중간에 빠져나오는 `return` 은 엔트리 블록으로 표현할 방법이 없어서, Tess 는 이 형태를
+아예 컴파일 에러로 막습니다.
 
 ```tess
 # 됩니다 — 마지막 문장이 return
@@ -186,9 +187,11 @@ end
 `return` 이 없는 함수는 엔트리의 일반 함수, `return` 으로 끝나는 함수는 값 함수가 됩니다.
 값 함수는 문장으로 쓸 수 없고, 일반 함수는 값으로 쓸 수 없습니다 (엔트리와 같은 규칙입니다).
 
-## 5. `use` 는 진짜로 펼쳐집니다
+## 3. `use` 는 진짜로 펼쳐집니다
 
 명세대로 "그 위치에 통째로 불러와 포함"합니다. 불러온 파일은 놓인 자리에 맞는 조각이면 됩니다.
+엔트리에는 "파일을 불러와 포함"한다는 개념이 아예 없으므로(작품 하나 = `project.json`
+하나), 이 확장 규칙 전부가 Tess 가 소스를 여러 파일로 쪼개기 위해 새로 만든 것입니다.
 
 | `use` 를 쓴 자리 | 불러올 파일에 들어갈 내용 |
 | --- | --- |
@@ -201,132 +204,27 @@ end
 
 ---
 
-## 6. Tess → 엔트리 블록 대응표
+## 4. 엔트리에 없어서 다르게 만드는 것
 
-컴파일러가 실제로 만드는 블록입니다. (엔트리 블록 이름은 `entryjs` 기준)
-
-### 이벤트
-
-| Tess | 엔트리 블록 |
-| --- | --- |
-| `when start do` | `when_run_button_click` |
-| `when scene start do` | `when_scene_start` |
-| `when key "space" do` | `when_some_key_pressed` |
-| `when key "space" up do` | *(없음 → 6.1 참고)* |
-| `when click do` / `when click up do` | `when_object_click` / `when_object_click_canceled` |
-| `when stage click do` / `... up do` | `mouse_clicked` / `mouse_click_cancled` |
-| `when signal S do` | `when_message_cast` |
-| `when cloned do` | `when_clone_start` |
-
-### 흐름 · 신호 · 장면
-
-| Tess | 엔트리 블록 |
-| --- | --- |
-| `if` / `if ... else` | `_if` / `if_else` |
-| `repeat N:` / `forever:` | `repeat_basic` / `repeat_inf` |
-| `while C:` / `until C:` | `repeat_while_true` (`while` / `until` 모드) |
-| `while true:` | `repeat_inf` |
-| `wait N` / `wait C` | `wait_second` / `wait_until_true` |
-| `break` / `skip` / `restart` | `stop_repeat` / `continue_repeat` / `restart_project` |
-| `stop` `other` `me` `them` `all` | `stop_object` (`thisThread` `otherThread` `thisOnly` `other_objects` `all`) |
-| `send S` / `call S` | `message_cast` / `message_cast_wait` |
-| `clone` / `clone S` | `create_clone` |
-| `kill` · `del clone` / `del clones` | `delete_clone` / `remove_all_clones` |
-| `jump S` / `jump next` / `jump back` | `start_scene` / `start_neighbor_scene` |
-
-### 움직임 · 모양
-
-| Tess | 엔트리 블록 |
-| --- | --- |
-| `forward N` / `forward N at A` | `move_direction` / `move_to_angle` |
-| `bounce` | `bounce_wall` |
-| `move X Y` | `move_x` + `move_y` **(블록 두 개)** |
-| `move X Y in T` / `go X Y in T` | `move_xy_time` / `locate_xy_time` |
-| `go X Y` / `go S` / `go S in T` | `locate_xy` / `locate` / `locate_object_time` |
-| `turn A` / `turn A in T` | `rotate_relative` / `rotate_by_time` |
-| `steer A` / `steer A in T` | `direction_relative` / `direction_relative_duration` |
-| `look S` | `see_angle_object` |
-| `x = N` / `x += N` | `locate_x` / `move_x` |
-| `angle = A` / `way = A` | `rotate_absolute` / `direction_absolute` |
-| `show` / `hide` | `show` / `hide` |
-| `say S [for N]` / `think S [for N]` | `dialog` / `dialog_time` (`speak` · `think`) |
-| `clear bubble` | `remove_dialog` |
-| `costume = S` / `next costume` | `change_to_some_shape` / `change_to_next_shape` |
-| `size = N` / `size += N` / `reset size` | `set_scale_size` / `change_scale_size` / `reset_scale_size` |
-| `scale_x += N` | `stretch_scale_size` (`WIDTH`) |
-| `scale_x = N` | 컴파일러가 만들어 넣는 함수 (6.4 참고) |
-| `effect_* = N` / `effect_* += N` | `change_effect_amount` / `add_effect_amount` |
-| `clear effects` | `erase_all_effects` |
-| `flip x` / `flip y` | `flip_y` / `flip_x` **(이름이 서로 반대입니다)** |
-| `order front` / `order back` | `change_object_index` |
-
-### 글상자 · 붓 · 소리
-
-| Tess | 엔트리 블록 |
-| --- | --- |
-| `write` / `append` / `prepend` / `clear text` | `text_write` / `text_append` / `text_prepend` / `text_flush` |
-| `font =` / `font_color =` / `bg_color =` | `text_change_font` / `text_change_font_color` / `text_change_bg_color` |
-| `text_bold = Bool` 등 | `text_change_effect` (`fontBold` `fontItalic` `underLine` `strike`) |
-| `start draw` / `stop draw` / `stamp` / `clear draw` | `start_drawing` / `stop_drawing` / `brush_stamp` / `brush_erase_all` |
-| `start fill` / `stop fill` | `start_fill` / `stop_fill` |
-| `draw_color = C` / `= random_color()` | `set_color` / `set_random_color` |
-| `draw_width` / `draw_alpha` / `fill_color` | `set_thickness` / `set_brush_tranparency` / `set_fill_color` |
-| `play sound S [for N \| from A to B] [and wait]` | `sound_something_*` 6종 |
-| `play bgm S` / `stop bgm` | `play_bgm` / `stop_bgm` |
-| `sound_volume` / `sound_speed` | `sound_volume_set·change` / `sound_speed_set·change` |
-| `stop sound this \| all` | `sound_silent_all` |
-| `read S [and wait]` / `tts voice V speed S pitch P` | `read_text` / `read_text_wait_with_block` / `set_tts_property` (9절 참고) |
-
-`costume = S`, `play sound S`, `play bgm S`(그리고 `sound_something_*` 계열 전부)의
-`S`는 문자열 리터럴이 아니어도 됩니다 — 변수·계산식도 그대로 씁니다. 리터럴이면
-이 오브젝트에 등록된 이름인지 컴파일할 때 미리 확인해서 오타를 잡아 주고, 그
-밖의 값이면 확인 없이 그대로 흘려보냅니다. 엔트리가 그 값을 실행할 때
-1) 모양/소리 id, 2) 모양/소리 이름, 3) 등록한 순번 순서로 찾기 때문에, 그
-값이 실행 시점에 실제 이름과 같기만 하면 정상 동작합니다(`Entry.Sprite#getPicture`,
-`Entry.Sound#getSound` 참고).
-
-### 자료 · 계산
-
-| Tess | 엔트리 블록 |
-| --- | --- |
-| `var x = v` (선언) | `variables` 항목 (오브젝트 안이면 그 오브젝트 소유) |
-| `x = v` / `x += v` | `set_variable` / `change_variable` |
-| 함수 안의 `var` | 엔트리 함수 지역 변수 (`set_func_variable` / `get_func_variable`) |
-| `list[i]` / `list[i] = v` | `value_of_index_from_list` / `change_value_list_index` |
-| `in l add v` / `insert v at i` / `remove l[i]` | `add_value_to_list` / `insert_value_to_list` / `remove_value_from_list` |
-| `length(l)` / `contains(l, v)` | `length_of_list` / `is_included_in_list` |
-| `ask S` / `answer` | `ask_and_wait` / `get_canvas_input_value` |
-| `show/hide 변수·리스트·timer·answer` | `show_variable` · `show_list` · `set_visible_project_timer` · `set_visible_answer` |
-| `start/stop/reset timer`, `timer` | `choose_project_timer_action`, `get_project_timer_value` |
-| `+ - * /` / `% //` | `calc_basic` / `quotient_and_mod` |
-| `== != > < >= <=` | `boolean_basic_operator` |
-| `and` `or` `not` | `boolean_and_or` / `boolean_not` |
-| `sin cos tan asin acos atan ln log10 floor ceil round abs` | `calc_operation` |
-| `A ** N`, `root(A, N)` | `calc_operation`(제곱·제곱근·자연로그)과 곱셈으로 펼침 (6.5) |
-| `random(a, b)` | `calc_rand` |
-| `key_down(S)` / `touching(S)` | `is_press_some_key` / `reach_something` |
-| `mouse_down` `clicked` `boost_mode` `touchable` | `is_clicked` `is_object_clicked` `is_boost_mode` `is_touch_supported` |
-| `user_id` `nickname` `block_count` | `get_user_name` `get_nickname` `get_block_count` |
-| `x(S) y(S) angle(S) way(S) size(S)` | `coordinate_object` (마우스는 `coordinate_mouse`) |
-| `distance(S)` / `text_content(S)` | `distance_something` / `text_read` |
-| `join` `length` `slice` `count` `index_of` `replace` `reverse` `uppercase` `lowercase` | `combine_something` `length_of_string` `substring` `count_match_string` `index_of_string` `replace_string` `reverse_of_string` `change_string_case` |
-| `now(S)` / `to_hex` / `from_hex` | `get_date` / `change_rgb_to_hex` / `change_hex_to_rgb` |
-
----
-
-## 6.1 엔트리에 없어서 다르게 만드는 것
+Tess 문법 하나가 엔트리 블록 하나로 안 끝나고, 컴파일러가 대신 다른 블록 조합을
+만들어 넣거나 아예 다른 구조로 바꾸는 경우입니다.
 
 | Tess | 컴파일 결과 |
 | --- | --- |
 | `when key S up do` | 엔트리에 "키를 뗐을 때" 이벤트가 없어서, **시작하기 → 계속 반복(키가 눌릴 때까지 기다림 → 떼질 때까지 기다림 → 본문)** 스크립트로 바꿉니다 |
 | `move X Y` | 상대 좌표를 한 번에 옮기는 블록이 없어서 `move_x` + `move_y` 두 블록이 됩니다 |
 | `log2(N)` | 밑이 2인 로그 블록이 없어서 `ln(N) / ln(2)` 로 펼칩니다 |
-| `A ** N` · `root(A, N)` | 제곱·제곱근·자연로그로 펼칩니다 (6.5 참고). 지수는 숫자로 정해져 있어야 합니다 |
+| `A ** N` · `root(A, N)` | 제곱·제곱근·자연로그로 펼칩니다 (4.2 참고). 지수는 숫자로 정해져 있어야 합니다 |
+| `scale_x = N` (한 축만 정하기) | 엔트리에는 한 축의 크기를 **정하는** 블록이 없어서 컴파일러가 함수를 만들어 넣습니다 (4.1 참고) |
+| `draw_color`·`fill_color`·`draw_width`·`draw_alpha` 를 오브젝트 선언 맨 위에 쓰기 | 엔트리 `project.json` 에는 붓의 "기본값"을 적어 둘 자리가 없어서(항상 빨간 붓 `#ff0000`, 굵기 1 로 시작 — `entryjs` 의 `Entry.setBasicBrush`), 컴파일러가 **`when start` 스크립트를 만들어 그 값을 제일 먼저 정하게** 합니다. `object "치로": draw_color = #ff0000 end` 와 `when start do draw_color = #ff0000 end` 는 컴파일 결과가 완전히 같습니다 |
 | `type(V) == "number"` | 엔트리의 `is_type` 판단 블록이 됩니다. `"number"` 외의 자료형은 에러 |
 | `device == "mobile"` | `is_current_device_type` 판단 블록. `device` 를 홀로 쓰면 에러 |
-| 판단이 아닌 값을 조건에 쓰기 | `값 == "true"` 비교로 감쌉니다 |
+| 판단 자리에 값을 쓰기 | `true`/`false` 는 엔트리의 참/거짓 블록, 그 밖의 **리터럴**(`"살아있음"`, `1` …)은 참 블록이 됩니다(문자열을 참으로 보는 전통). 실행해 봐야 아는 값(변수·매개변수)은 `값 == "TRUE"` 비교로 감쌉니다 |
+| 값 자리에 판단을 쓰기 | 엔트리의 `(<판단>의 값)`(`get_boolean_value`) 블록으로 감쌉니다 — 결과는 `"TRUE"`/`"FALSE"` 문자열입니다. 그래서 Tess 의 `true`/`false` 도 값이 될 때는 늘 `"TRUE"`/`"FALSE"` 입니다 |
+| `function 스폰(a, 체력)` | 제자리 자동 이름(`a`, `b`, … `z`, `a1`, `a2` …)이 아닌 매개변수는 그 이름을 **라벨**로 달아서, 엔트리에서 `스폰 (인수) 체력 (인수)` 로 보이게 합니다 (4.6 참고) |
+| `function 스폰(살았나?)` | 이름 뒤의 `?` 는 그 자리를 엔트리의 **판단 칸**으로 만듭니다 (4.6 참고) |
 
-## 6.4 가로/세로 비율 "정하기" — 컴파일러가 만들어 넣는 함수
+## 4.1 가로/세로 비율 "정하기" — 컴파일러가 만들어 넣는 함수
 
 엔트리에는 한 축의 크기를 **정하는** 블록이 없습니다. 늘리는 블록만 있습니다.
 
@@ -383,7 +281,7 @@ end
   절댓값을 쓰기 때문입니다)
 - 목표 크기가 1보다 작아지는 극단적인 경우에는 엔트리 쪽 `max(1, …)` 때문에 어긋납니다
 
-## 6.5 거듭제곱과 n제곱근 — 제곱·제곱근만으로 만들기
+## 4.2 거듭제곱과 n제곱근 — 제곱·제곱근만으로 만들기
 
 엔트리에 있는 계산 블록은 제곱(square)과 제곱근(root)뿐입니다. 그런데 이 둘이면
 모든 실수 지수를 만들 수 있습니다.
@@ -439,7 +337,7 @@ var 제곱근   = root(2, 2)       # 1.4142135623730951 (정확)
   변수에 먼저 담아 두고 쓰세요
 - 밑이 음수인데 지수가 정수가 아니면 결과가 없습니다(엔트리도 마찬가지입니다)
 
-## 6.2 인덱스와 값이 달라지는 곳
+## 4.3 인덱스와 값이 달라지는 곳
 
 엔트리는 리스트·문자열 인덱스가 **1부터**이고 Tess 는 **0부터**입니다. 컴파일러가 보정합니다.
 
@@ -452,19 +350,22 @@ var 제곱근   = root(2, 2)       # 1.4142135623730951 (정확)
 | `slice(s, 0, 3)` | `substring(s, 1, 3)` (엔트리는 양끝 포함) |
 | `index_of(s, t)` | `index_of_string(s, t) - 1` (못 찾으면 Tess 는 `-1`) |
 
-## 6.3 컴파일 에러가 나는 경우
+## 4.4 컴파일 에러가 나는 경우
 
 엔트리에 대응 블록이 정말 없을 때는 조용히 넘어가지 않고 위치와 함께 알려 줍니다.
 
-- `scale_x = N` 을 **함수 안에서** 쓸 때 — 오브젝트마다 시작 배율이 달라서 값을 정할 수 없습니다 (6.4 참고)
+- `scale_x = N` 을 **함수 안에서** 쓸 때 — 오브젝트마다 시작 배율이 달라서 값을 정할 수 없습니다 (4.1 참고)
 - 선언하지 않은 오브젝트·모양·소리·장면·신호를 이름으로 가리킬 때
 - 함수 중간의 `return`, 함수 안의 `list` 선언
 - 전역/오브젝트 변수의 초기값이 상수가 아닐 때 (`when start` 안에서 대입하세요)
 - `random_color()` 를 `draw_color =` 밖에서 쓸 때
+- 실행 중(블록으로) `draw_color`·`fill_color`·`font_color`·`bg_color` 를 `transparent` 로 정할 때 —
+  엔트리의 색 블록 자체가 `'#'` 없는 값을 받으면 강제로 붙여서 `transparent` 가 잘못된 색이
+  되어 버립니다(오브젝트/글상자 선언 맨 위의 정적 속성으로는 됩니다)
 
 ---
 
-## 6.6 글상자에서 쓸 수 없는 명령
+## 4.5 글상자에서 쓸 수 없는 명령
 
 엔트리는 글상자(`text`)에 다음 블록을 주지 않습니다(`entryjs` 의 `isNotFor: ['textBox']`).
 Tess 는 이걸 막지 않고 그대로 컴파일하지만, 엔트리에서 열면 쓸 수 없는 블록이 됩니다.
@@ -478,7 +379,44 @@ Tess 는 이걸 막지 않고 그대로 컴파일하지만, 엔트리에서 열�
 반대로 `write`·`append`·`prepend`·`clear text`·`font`·`font_color`·`bg_color`·`text_*` 는
 일반 오브젝트에서 쓸 수 없고, 이쪽은 컴파일 에러로 알려 줍니다(spec 8.5 에 적힌 규칙이라서).
 
-## 9. TTS 읽어주기 (addendum)
+## 4.6 함수 머리 — 라벨과 매개변수 이름
+
+엔트리 함수의 "머리"는 **라벨(글자)과 매개변수 칸이 번갈아 나올 수 있는 사슬**입니다.
+`스폰 (인수) 체력 (인수)` 처럼 이름이 중간에 끼어 있는 함수를 실제로 많이 씁니다.
+Tess 의 `function 이름(a, b)` 에는 그런 마디가 없으므로, 그 정보를 **매개변수 이름**에 담습니다.
+
+| 엔트리 함수 머리 | Tess |
+| --- | --- |
+| `스폰 (인수) (인수)` | `function 스폰(a, b)` — 맨 앞 라벨만 함수 이름 |
+| `스폰 (인수) 체력 (인수)` | `function 스폰(a, 체력)` — 중간 라벨은 **바로 뒤** 인수의 이름이 됩니다 |
+| `스폰 (인수) 체력` | `function 스폰(a)` — 뒤에 인수가 없는 라벨은 담을 자리가 없어 사라집니다 |
+
+즉 **제자리에 있는 자동 이름**(`a`, `b`, … `z`, 그 뒤로는 `a1`, `a2` …)은 라벨 없는 인수를,
+그 밖의 이름은 "이 이름을 라벨로 단 인수"를 뜻합니다. 컴파일할 때도 이 규칙을 그대로
+뒤집어 쓰므로, 손으로 짠 `function 스폰(a, 체력)` 도 엔트리에서 `스폰 (인수) 체력 (인수)` 로
+보입니다 — 인수가 여럿인 함수는 이렇게 이름을 붙여 두는 편이 훨씬 읽기 좋습니다.
+
+### 판단 매개변수 — `이름?`
+
+매개변수 칸에는 값 칸(`function_field_string`)과 **판단 칸**(`function_field_boolean`)이
+있습니다. 이름 뒤에 `?` 를 붙이면 컴파일한 뒤에도 판단 칸으로 남습니다.
+
+```tess
+function 스폰(a, 살았나?):
+  if 살았나:              # 판단 자리에 그대로 쓴다
+    say a
+  end
+end
+
+스폰("치로", x > 3)        # 판단을 그대로 넘긴다
+스폰("나무", true)         # true -> 참 블록
+```
+
+`?` 는 이름의 일부가 아니라 표시일 뿐이라, 자동 이름 규칙에는 그대로 `a`, `b` … 로
+셉니다(`function 스폰(a?, 체력?)` 이면 `a` 는 라벨 없이, `체력` 은 라벨을 달고 나갑니다).
+되돌릴 때도 판단 칸은 `이름?` 으로 적히므로 왕복해도 그대로입니다.
+
+## 5. TTS 읽어주기 (addendum)
 
 엔트리의 "읽어주기(TTS)" 는 blockspec 이 아니라 **AI 활용 블록**이라는 별도 확장
 카테고리입니다(`entryjs` 의 `Entry.AI_UTILIZE_BLOCK.tts`, `block_ai_utilize_tts.js`).
@@ -499,8 +437,8 @@ end
 | `tts voice V speed S pitch P` | `set_tts_property` |
 
 `voice`·`speed`·`pitch` 는 문자열로 적습니다. 엔트리 코드값을 그대로 써도 되고,
-아래 별명을 대신 써도 됩니다(대소문자 구분 없음). 모르는 값이면 컴파일 에러로
-쓸 수 있는 값을 알려 줍니다.
+아래 별명을 대신 써도 됩니다(대소문자 구분 없음) — 이 별명들은 엔트리에는 없는,
+Tess 가 붙인 것입니다. 모르는 값이면 컴파일 에러로 쓸 수 있는 값을 알려 줍니다.
 
 | voice (목소리) | 별명 | speed / pitch (속도 · 음높이) | 별명 |
 | --- | --- | --- | --- |
@@ -523,16 +461,12 @@ end
 
 `read_text`/`read_text_wait_with_block` 은 실행될 때 **엔트리 서버(`/api/expansionBlock/tts/read`,
 네이버 클로바)** 에 문장을 보내 mp3 를 받아 재생합니다. 이 API 는 `playentry.org` 에만
-있으므로:
+있으므로, `node index.js run` 으로 여는 미리보기는 이 서버 요청을 대신 중계합니다
+(`src/player/server.js`, 브라우저가 우리 로컬 서버로 요청하면 그걸 playentry.org 로 다시
+보내 mp3 를 그대로 돌려줍니다 — 브라우저가 playentry.org 로 직접 요청하면 CORS 로
+막히기 때문입니다). `.ent` 로 내보내 playentry.org 에서 직접 열어도 물론 정상 동작합니다.
 
-- `node index.js run` 으로 여는 미리보기는 이 API 가 없어서 **읽어주기 블록이 아무 소리도
-  안 내고 조용히 다음 블록으로 넘어갑니다** (오류가 나지는 않습니다 — `entryjs` 가 요청
-  실패 시 그냥 넘어가게 만들어져 있습니다)
-- `.ent` 로 내보내 **playentry.org 에서 열면** 정상적으로 소리가 납니다
-- `tts` 설정과 `read`/`read ... and wait` 문 자체는 로컬에서도 정확한 블록으로 컴파일되고
-  구조 검사(`verify.js`)도 통과합니다 — 소리만 playentry.org 에서 확인해야 합니다
-
-## 7. 컴파일 결과물
+## 6. 컴파일 결과물
 
 ```
 build/blocks.ent        # tar 묶음
@@ -546,7 +480,7 @@ build/blocks.ent        # tar 묶음
 담깁니다. `project.json` 의 `fileurl` 이 그 경로를 가리킵니다.
 같은 소스를 다시 컴파일하면 **항상 같은 결과**가 나옵니다(모든 id 를 소스에서 만든 시드로 생성).
 
-## 8. 바로 실행해 보기
+## 7. 바로 실행해 보기
 
 ```bash
 node index.js run examples/all_blocks.tess
@@ -560,8 +494,13 @@ node index.js run examples/all_blocks.tess
 미리보기 페이지는 엔트리가 쓰는 한글 글씨체(나눔고딕코딩·둥근모꼴·잘난체 …)의
 `@font-face` 정의도 `entry-cdn.pstatic.net` 에서 함께 불러옵니다 — `entryjs` 자체에는
 없고 `playentry.org` 페이지가 따로 붙이는 스타일이라, 이 CSS 없이는 `font = "DungGeunMo"`
-같은 값이 전부 시스템 기본 글꼴로 보입니다(2절 참고). 인터넷이 막힌 곳에서는 이 CSS 도
-못 받으므로 시스템 기본 글꼴로 대체됩니다.
+같은 값이 전부 시스템 기본 글꼴로 보입니다. 인터넷이 막힌 곳에서는 이 CSS 도
+못 받으므로 시스템 기본 글꼴로 대체됩니다. `font =` 에 적는 이름은 화면에 보이는 한글
+글씨체 이름이 아니라 이 CSS 가 정의하는 **`font-family` 값 그대로**입니다(예: 나눔고딕코딩
+-> `"Nanum Gothic Coding"`, 둥근모꼴 -> `"DungGeunMo"`, 잘난체 -> `"yg-jalnan"`) — 이름만
+정확히 맞으면 미리보기에서도 바로 그 글씨체로 보입니다. `font_color`·`bg_color`·`font`
+를 아예 안 적은 글상자는 엔트리가 새 글상자를 만들 때와 똑같은 기본값을 씁니다 —
+글자색 `#000000`, 배경 `#ffffff`(흰 배경, `transparent` 아님), 글씨체 `Nanum Gothic`.
 
 | 옵션 | 뜻 |
 | --- | --- |
