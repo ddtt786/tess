@@ -9,7 +9,7 @@
 // ============================================================================
 export { parse, parseOrThrow, check, trace, grammar, semantics, validate } from './src/parse.js';
 export { grammarSource } from './src/grammar.js';
-export { compileProject } from './src/compiler/index.js';
+export { compileProject, createCompileCache } from './src/compiler/index.js';
 export { makeEntryBundle, makeTar } from './src/compiler/bundle.js';
 export { verifyEntryProject } from './src/compiler/verify.js';
 export { serveProject } from './src/player/server.js';
@@ -22,7 +22,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { parse } from './src/parse.js';
-import { compileProject } from './src/compiler/index.js';
+import { compileProject, createCompileCache } from './src/compiler/index.js';
 import { makeEntryBundle } from './src/compiler/bundle.js';
 import { serveProject } from './src/player/server.js';
 
@@ -83,7 +83,9 @@ function runCheck(file, options = { assets: [] }) {
     ? options.assets.map((dir) => path.resolve(dir))
     : [path.dirname(path.resolve(file))];
 
-  const result = compileProject(source, { path: file, assetDirs, name: options.name });
+  const result = compileProject(source, {
+    path: file, assetDirs, name: options.name, cache: options.cache,
+  });
   report(label, result.errors, '에러');
   report(label, result.warnings, '경고');
   if (result.ok) console.log(`${label}: OK`);
@@ -108,7 +110,9 @@ function runBuild(file, options) {
     ? options.assets.map((dir) => path.resolve(dir))
     : [path.dirname(path.resolve(file))];
 
-  const result = compileProject(source, { path: file, assetDirs, name: options.name, force: options.force });
+  const result = compileProject(source, {
+    path: file, assetDirs, name: options.name, force: options.force, cache: options.cache,
+  });
   report(label, result.warnings, '경고');
   if (!result.ok) {
     report(label, result.errors, '에러');
@@ -145,7 +149,9 @@ async function runProject(file, options) {
     ? options.assets.map((dir) => path.resolve(dir))
     : [path.dirname(path.resolve(file))];
 
-  const result = compileProject(source, { path: file, assetDirs, name: options.name, force: options.force });
+  const result = compileProject(source, {
+    path: file, assetDirs, name: options.name, force: options.force, cache: options.cache,
+  });
   report(label, result.warnings, '경고');
   if (!result.ok) {
     report(label, result.errors, '에러');
@@ -185,15 +191,25 @@ async function runProject(file, options) {
   return null; // 서버가 떠 있는 동안 프로세스를 유지한다
 }
 
-/** 소스와 리소스 폴더를 지켜보다가 바뀌면 다시 컴파일해서 서버에 반영한다 */
+/**
+ * 소스와 리소스 폴더를 지켜보다가 바뀌면 다시 컴파일해서 서버에 반영한다.
+ *
+ * Rebuilds share one compile cache, so an edit only re-parses the files it
+ * touched — the rest of the `use` graph is reused from the previous build.
+ */
 function watchAndReload(file, options, assetDirs, label, server) {
   const watchDirs = new Set([path.dirname(path.resolve(file)), ...assetDirs]);
+  const cache = options.cache ?? createCompileCache();
   let timer = null;
 
   const rebuild = () => {
     try {
       const source = fs.readFileSync(file, 'utf-8');
-      const result = compileProject(source, { path: file, assetDirs, name: options.name, force: options.force });
+      const before = cache.parsed;
+      const started = Date.now();
+      const result = compileProject(source, {
+        path: file, assetDirs, name: options.name, force: options.force, cache,
+      });
       report(label, result.warnings, '경고');
       if (!result.ok) {
         report(label, result.errors, '에러');
@@ -207,21 +223,31 @@ function watchAndReload(file, options, assetDirs, label, server) {
       server.update({
         project: result.project, bundle: nextBundle, assets: result.assets, sourceMap: result.sourceMap,
       });
-      console.log(`${label}: 변경 사항을 반영했습니다.`);
+      const parsed = cache.parsed - before;
+      console.log(`${label}: 변경 사항을 반영했습니다.`
+        + ` (파일 ${parsed}개 다시 컴파일 · ${Date.now() - started}ms)`);
     } catch (error) {
       console.error(`${label}: 다시 불러오기 실패 — ${error.message}`);
     }
   };
 
+  const onChange = () => {
+    clearTimeout(timer);
+    timer = setTimeout(rebuild, 150);
+  };
+
+  // Object fragments live under objects/<scene>/, so a non-recursive watch never
+  // fires for the files that are edited most.
   const watchers = [];
   for (const dir of watchDirs) {
     try {
-      watchers.push(fs.watch(dir, () => {
-        clearTimeout(timer);
-        timer = setTimeout(rebuild, 150);
-      }));
+      watchers.push(fs.watch(dir, { recursive: true }, onChange));
     } catch {
-      // 폴더를 지켜볼 수 없어도 (예: 없는 폴더) 조용히 넘어간다
+      try {
+        watchers.push(fs.watch(dir, onChange)); // where recursive is unsupported
+      } catch {
+        // 폴더를 지켜볼 수 없어도 (예: 없는 폴더) 조용히 넘어간다
+      }
     }
   }
   return () => {
@@ -301,6 +327,9 @@ async function runDecompile(file, options) {
 
 async function main(argv) {
   const { options, rest } = parseArgs(argv);
+  // One cache for the whole run: files shared by several inputs are parsed once,
+  // and `run` keeps reusing it for every rebuild.
+  options.cache = createCompileCache();
   const [first, ...others] = rest;
   const commands = {
     check: runCheck, build: runBuild, run: runProject, ast: runAst, decompile: runDecompile,

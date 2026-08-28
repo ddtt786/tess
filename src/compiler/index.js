@@ -10,7 +10,7 @@
 // ============================================================================
 import path from 'node:path';
 import { Context } from './context.js';
-import { loadProgram } from './include.js';
+import { loadProgram, createCompileCache } from './include.js';
 import { buildCommentMap } from './comments.js';
 import { makeAsset } from './assets.js';
 import { compileStatements, compileStatement } from './statement.js';
@@ -18,6 +18,8 @@ import { compileValue, BOOLEAN_TEXT } from './expression.js';
 import { keyCodeOf } from './keycodes.js';
 import { validate } from '../validate.js';
 import { isAutoParamName } from '../function-params.js';
+
+export { createCompileCache };
 
 const DEFAULT_SCENE_NAME = '장면 1';
 // 엔트리 글상자의 실제 기본 글씨체는 CSS font-family 이름 'Nanum Gothic'이다(entryjs
@@ -36,13 +38,17 @@ const BRUSH_DEFAULT_PROPERTIES = ['draw_color', 'fill_color', 'draw_width', 'dra
  * 에러가 있으면 `project` 는 null 이다. `force: true` 면 에러가 난 문장만 빠진 작품을
  * 그대로 돌려준다 (`ok` 는 여전히 false).
  *
+ * With a `cache` from createCompileCache, unchanged files are not re-parsed.
+ *
  * @param {string} source
- * @param {{path?: string, assetDirs?: string[], name?: string, readFile?: Function, force?: boolean}} [options]
+ * @param {{path?: string, assetDirs?: string[], name?: string, readFile?: Function, force?: boolean, cache?: object}} [options]
  * @returns {{ok: boolean, project: object|null, errors: Array, warnings: Array, assets: Array, sourceMap: object}}
  */
 export function compileProject(source, options = {}) {
   const filePath = options.path ?? '<input>';
-  const loaded = loadProgram({ source, path: filePath, readFile: options.readFile });
+  const loaded = loadProgram({
+    source, path: filePath, readFile: options.readFile, cache: options.cache,
+  });
   if (!loaded.ast) {
     return { ok: false, project: null, errors: loaded.errors, warnings: loaded.warnings, assets: [] };
   }
@@ -54,8 +60,12 @@ export function compileProject(source, options = {}) {
     comments: buildCommentMap(loaded.ast, loaded.sources),
     assetDirs: options.assetDirs ?? [path.dirname(path.resolve(filePath))],
   });
-  ctx.errors.push(...semantic.errors);
-  ctx.warnings.push(...semantic.warnings);
+  // Include errors (a fragment that will not parse, a `use` path that is not
+  // there) only reach the caller through here — the top-level file still parsed,
+  // so `loaded.ast` is set and the early return above does not fire. Without
+  // this the object is dropped and the build reports success with nothing in it.
+  ctx.errors.push(...loaded.errors, ...semantic.errors);
+  ctx.warnings.push(...loaded.warnings, ...semantic.warnings);
 
   const program = loaded.ast;
   collectScenes(program, ctx);

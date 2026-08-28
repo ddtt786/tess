@@ -11,26 +11,63 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parse } from '../parse.js';
+import { lineAndColumn } from '../validate.js';
 
 const START_RULES = { top: undefined, scene: 'SceneFragment', object: 'ObjectFragment' };
 
 /**
- * @param {{source: string, path?: string, readFile?: Function}} entry
+ * Store for incremental compiles: keeps the AST of every file that parsed, so a
+ * rebuild only re-parses the files whose text actually changed. Parsing is by far
+ * the most expensive compile step, and `use` graphs are mostly untouched between
+ * edits. Pass the same store to every `compileProject`/`loadProgram` call.
+ */
+export function createCompileCache() {
+  return { asts: new Map(), reused: 0, parsed: 0 };
+}
+
+// A file's AST depends on its text and on the start rule it was loaded with, so
+// the same file included in two positions gets two entries.
+function cacheKey(file, context) {
+  return `${context}\n${file}`;
+}
+
+/**
+ * @param {{source: string, path?: string, readFile?: Function, cache?: object}} entry
  * @returns {{ast: object|null, errors: Array, warnings: Array, sources: Map}}
  */
-export function loadProgram({ source, path: filePath = '<input>', readFile = defaultReadFile }) {
+export function loadProgram({
+  source, path: filePath = '<input>', readFile = defaultReadFile, cache = null,
+}) {
   const errors = [];
   const warnings = [];
   const sources = new Map([[filePath, source]]);
   const visiting = new Set();
 
+  // Where a failing `use` sits, as the line/column the CLI prints.
+  const where = (item, file) => ({
+    ...position(item, sources.get(file) ?? ''),
+    file,
+  });
+
   const load = (text, file, context) => {
+    const key = cache && cacheKey(file, context);
+    const hit = cache?.asts.get(key);
+    if (hit && hit.text === text) {
+      cache.reused += 1;
+      return hit.ast;
+    }
+
     const result = parse(text, { startRule: START_RULES[context], validate: false });
+    if (cache) cache.parsed += 1;
     if (!result.ok) {
+      // Errors are re-reported on every compile, so only successful parses are
+      // cached — a broken file is cheap to re-parse until it is fixed.
+      if (cache) cache.asts.delete(key);
       for (const error of result.errors) errors.push({ ...error, file });
       return null;
     }
     stampSource(result.ast, file);
+    if (cache) cache.asts.set(key, { text, ast: result.ast });
     return result.ast;
   };
 
@@ -48,14 +85,14 @@ export function loadProgram({ source, path: filePath = '<input>', readFile = def
       }
       const target = path.resolve(path.dirname(file), item.path);
       if (visiting.has(target)) {
-        errors.push({ ...position(item), file, message: `use 가 순환합니다: ${item.path}` });
+        errors.push({ ...where(item, file), message: `use 가 순환합니다: ${item.path}` });
         continue;
       }
       let text;
       try {
         text = readFile(target);
       } catch {
-        errors.push({ ...position(item), file, message: `불러올 파일이 없습니다: ${item.path}` });
+        errors.push({ ...where(item, file), message: `불러올 파일이 없습니다: ${item.path}` });
         continue;
       }
       sources.set(target, text);
@@ -74,14 +111,14 @@ export function loadProgram({ source, path: filePath = '<input>', readFile = def
   const expandUseObject = (item, file) => {
     const target = path.resolve(path.dirname(file), item.path);
     if (visiting.has(target)) {
-      errors.push({ ...position(item), file, message: `use 가 순환합니다: ${item.path}` });
+      errors.push({ ...where(item, file), message: `use 가 순환합니다: ${item.path}` });
       return null;
     }
     let text;
     try {
       text = readFile(target);
     } catch {
-      errors.push({ ...position(item), file, message: `불러올 파일이 없습니다: ${item.path}` });
+      errors.push({ ...where(item, file), message: `불러올 파일이 없습니다: ${item.path}` });
       return null;
     }
     sources.set(target, text);
@@ -116,8 +153,9 @@ function defaultReadFile(target) {
   return fs.readFileSync(target, 'utf-8');
 }
 
-function position(node) {
-  return { line: node?.loc?.line ?? 0, column: 0, offset: node?.loc?.start ?? 0 };
+function position(node, text) {
+  const offset = node?.loc?.start ?? 0;
+  return { ...lineAndColumn(text, offset), offset };
 }
 
 /** 불러온 파일의 노드에 어느 파일에서 왔는지 표시해 둔다 (에러 위치 계산용) */

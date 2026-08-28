@@ -201,6 +201,101 @@ test('되돌린 트릭 코드도 다시 정상적으로 컴파일된다', () => 
 });
 
 // ---------------------------------------------------------------------------
+//  "n번째 모양으로 바꾸기" 의 순번이 문자열로 들어 있는 경우
+//
+//  엔트리는 모양·소리 값 칸을 문자열로 읽어서 1) id 2) 이름 3) 순번 순으로 찾는다
+//  (entryjs Entry.Object#getPicture). 그래서 순번이 number 블록이 아니라 text
+//  블록이나 맨 문자열로 들어 있는 작품이 흔하다 — 실제로 문자열 형태를 그대로
+//  `costume = "1"` 로 옮기면 '1' 이라는 이름의 모양이 없어서 다시 컴파일할 때
+//  에러가 났다. 순번은 어느 형태로 들어 있든 숫자로 되돌아와야 한다.
+// ---------------------------------------------------------------------------
+// 엔트리는 같은 순번을 문자열로도 숫자로도 담아 둔다 — text 블록 안이라도 그렇다.
+const NUMBER_VALUES = [
+  ['number 블록', (value) => ({ type: 'number', params: [value] })],
+  ['text 블록', (value) => ({ type: 'text', params: [value] })],
+  ['text 블록 · 숫자', (value) => ({ type: 'text', params: [Number(value)] })],
+  ['number 블록 · 숫자', (value) => ({ type: 'number', params: [Number(value)] })],
+  ['맨 문자열', (value) => value],
+  ['맨 숫자', (value) => Number(value)],
+];
+
+function nthResourceProject(numberValue) {
+  const startHat = () => ({ type: 'when_run_button_click', params: [null], statements: [] });
+
+  return {
+    name: '순번 테스트',
+    speed: 60,
+    scenes: [{ id: 'scene1', name: '장면 1' }],
+    variables: [],
+    messages: [],
+    functions: [],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: 'obj1',
+      name: '주인공',
+      objectType: 'sprite',
+      scene: 'scene1',
+      rotateMethod: 'free',
+      selectedPictureId: 'pic1',
+      entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true },
+      sprite: {
+        pictures: [
+          { id: 'pic1', name: '기본', fileurl: null, dimension: { width: 10, height: 10 } },
+          { id: 'pic2', name: '점프', fileurl: null, dimension: { width: 10, height: 10 } },
+        ],
+        sounds: [{ id: 'snd1', name: '점프음', fileurl: null, ext: '.mp3', duration: 1 }],
+      },
+      script: JSON.stringify([[
+        startHat(),
+        { type: 'change_to_some_shape', params: [numberValue('1'), null], statements: [] },
+        { type: 'sound_something_with_block', params: [numberValue('1'), null], statements: [] },
+      ]]),
+    }],
+  };
+}
+
+for (const [label, numberValue] of NUMBER_VALUES) {
+  test(`모양·소리 순번(${label})은 문자열이 아니라 숫자로 되돌아온다`, () => {
+    const result = decompileProject(nthResourceProject(numberValue), []);
+    const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+
+    assert.match(fragment, /^ {2}costume = 1$/m);
+    assert.match(fragment, /^ {2}play sound 1$/m);
+    assert.doesNotMatch(fragment, /costume = "1"/);
+    assert.doesNotMatch(fragment, /play sound "1"/);
+  });
+
+  test(`순번(${label})으로 되돌린 코드도 다시 정상적으로 컴파일된다`, () => {
+    const result = decompileProject(nthResourceProject(numberValue), []);
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-decompile-nth-'));
+    const mainFile = path.join(dir, 'main.tess');
+    fs.writeFileSync(mainFile, result.source);
+    for (const asset of result.assets) {
+      const target = path.join(dir, asset.path);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, asset.data);
+    }
+
+    const recompiled = compileProject(fs.readFileSync(mainFile, 'utf-8'), { path: mainFile, assetDirs: [dir] });
+    assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
+
+    const thread = JSON.parse(recompiled.project.objects[0].script)[0];
+    const shape = thread.find((b) => b.type === 'change_to_some_shape');
+    assert.equal(shape.params[0].type, 'number');
+    assert.deepEqual(shape.params[0].params, ['1']);
+  });
+}
+
+// 다시 적으면 글자가 달라지는 숫자는 이름으로 찾을 때 어긋날 수 있어서 문자열로 둔다.
+test('"01" 처럼 다시 적으면 달라지는 값은 숫자로 바꾸지 않는다', () => {
+  const result = decompileProject(nthResourceProject(() => ({ type: 'text', params: ['01'] })), []);
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+
+  assert.match(fragment, /^ {2}costume = "01"$/m);
+});
+
+// ---------------------------------------------------------------------------
 //  coordinate_object 의 "모양 번호"(picture_index)/"모양 이름"(picture_name) —
 //  x/y/방향/이동방향/크기 옆에 있는 드롭다운 값인데, 예전엔 이 둘이 빠져 있어서
 //  costume/costume_number 를 쓴 스크립트가 `??("coordinate_object", ...)`

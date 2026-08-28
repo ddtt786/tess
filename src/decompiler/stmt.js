@@ -7,7 +7,7 @@
 //  진행한다 (하나 때문에 전체를 못 옮기면 안 되니까).
 // ============================================================================
 import { exprOf } from './expr.js';
-import { tessString } from './ident.js';
+import { tessString, tessNumber } from './ident.js';
 
 const REVERSE_STOP_TARGET = {
   thisThread: '', otherThread: 'other', thisOnly: 'me', other_objects: 'them', all: 'all',
@@ -260,10 +260,20 @@ export function colorExpr(value, ctx) {
 
 /** 값 블록(또는 원시값) 하나가 리터럴이면 그 문자열 값을, 계산되는 값이면 null 을 돌려준다 */
 function literalStringOf(value) {
-  if (typeof value === 'string') return value;
+  const raw = literalOf(value);
+  return typeof raw === 'string' ? raw : null;
+}
+
+/**
+ * The raw literal behind a value slot, or null when the slot is computed.
+ * Entry stores the same literal as a string or as a number depending on how it
+ * was entered — even inside a `text` block — so both come back.
+ */
+function literalOf(value) {
+  if (typeof value === 'string' || typeof value === 'number') return value;
   if (value && typeof value === 'object' && (value.type === 'number' || value.type === 'text')) {
     const raw = value.params?.[0];
-    if (typeof raw === 'string') return raw;
+    if (typeof raw === 'string' || typeof raw === 'number') return raw;
   }
   return null;
 }
@@ -277,18 +287,26 @@ function literalStringOf(value) {
  * 모든 id 가 새로 배정되면서(결정적이지만 원본과는 다른 id) 더 이상 아무 모양도
  * 가리키지 않게 되어 컴파일 에러가 난다 — 그래서 프로젝트에 실제로 있는 id 와
  * 맞는지 먼저 확인해서, 맞으면 get_pictures/get_sounds 와 똑같이 그 이름으로 옮긴다.
- * (숫자 그대로 넣는 것 — "n번째 모양으로 바꾸기" — 은 리터럴 id 와 안 겹치므로
- * literalStringOf 가 null 을 돌려주지 않는 한 그냥 보통 값(숫자)으로 옮겨진다.)
  */
 function resourceExpr(value, ctx, byId) {
-  const literal = literalStringOf(value);
+  const raw = literalOf(value);
+  const literal = raw === null ? null : String(raw);
   if (literal !== null && byId.has(literal)) {
     // 함수 안에서는 이름으로 바꾸지 않고 id 를 그대로 둔다. 그 모양·소리 선언에
     // `force id` 가 붙으므로 다시 컴파일해도 같은 id 가 나온다(index.js 참고).
     if (ctx.inFunction) return tessString(literal);
     return tessString(byId.get(literal).identifier);
   }
+  // Nth-resource index. Entry reads the slot as a string, so the index turns up
+  // as a `text` block or a bare value just as often as a `number` block;
+  // emitting the string form back compiles to a missing-resource error.
+  if (literal !== null && isExactNumber(literal)) return tessNumber(Number(literal));
   return exprOf(value, ctx);
+}
+
+/** True when re-printing the number yields the same characters ("1.0"/"01" do not). */
+function isExactNumber(literal) {
+  return literal !== '' && String(Number(literal)) === literal;
 }
 
 /**
