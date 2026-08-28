@@ -21,36 +21,26 @@ for (const [name, code] of Object.entries(KEY_CODES)) {
   if (!(String(code) in REVERSE_KEY_NAME)) REVERSE_KEY_NAME[String(code)] = name;
 }
 
-// 엔트리 기본 오브젝트(걷는 엔트리봇 등)의 모양과 소리는 작품 파일 안에 들어 있지
-// 않다. project.json 은 엔트리 실행기가 함께 배포하는 파일을
-// `./bower_components/entry-js/images/media/entrybot1.svg` 처럼 가리키기만 한다.
-// 모양 없이 만든 "새 오브젝트"가 쓰는 `images/_1x1.png` 도 같은 곳에 있으며,
-// 폴더 이름은 작품을 만든 엔트리 버전에 따라 entry-js 이거나 entryjs 이다.
-// 이 경로를 소스에 그대로 옮기면 가리키는 파일이 없으므로, 다시 컴파일한 작품에는
-// 모양이 비어 있게 된다. 그래서 설치된 entryjs(@entrylabs/entry, 실행기와 같은
-// 패키지)에서 실제 파일을 꺼내 다른 리소스와 똑같이 assets/ 아래에 담는다.
+// 엔트리 기본 오브젝트의 모양·소리는 작품 파일에 없고, 실행기가 함께 배포하는 파일을
+// 가리키기만 한다. 설치된 entryjs 에서 실제 파일을 꺼내 assets/ 에 담는다.
+// 폴더 이름은 엔트리 버전에 따라 entry-js 이거나 entryjs 다.
 const BUILTIN_ASSET = /(?:^|\/)bower_components\/[^/]+\/(images\/[^?#]+)$/;
 
-// 그 가운데 _1x1.png 는 모양 없이 만든 "새 오브젝트"에 엔트리가 넣어 두는 1×1 픽셀
-// 투명 그림이다. 파일에서 잰 1×1 은 실제 크기가 아니고 project.json 의 dimension
-// (예: 960×540)이 실제 크기이므로, 이 그림만은 되돌린 소스에 `size` 를 적어야 한다.
+// _1x1.png 는 모양 없는 "새 오브젝트"용 1×1 투명 그림이다. 파일에서 잰 1×1 이 실제
+// 크기가 아니라 project.json 의 dimension 이 실제 크기라, 이것만 `size` 를 적어 둔다.
 const BLANK_IMAGE = /(?:^|\/)images\/_1x1\.png$/;
 
 /** 엔트리 번들에 들어 있는 기본 리소스의 실제 바이트열. 못 찾으면 null */
 function builtinAssetBytes(fileurl, runtimeDir) {
   const match = BUILTIN_ASSET.exec(fileurl ?? '');
   if (!match || !runtimeDir) return null;
-  // 다른 사람이 만든 작품에서 온 경로이므로, 패키지 바깥을 가리키는 경로가 섞여
-  // 있으면 읽지 않는다.
+  // 남의 작품에서 온 경로라 패키지 바깥을 가리키면 읽지 않는다
   if (match[1].split('/').includes('..')) return null;
   const file = path.join(runtimeDir, match[1]);
   return fs.existsSync(file) && fs.statSync(file).isFile() ? fs.readFileSync(file) : null;
 }
 
-/**
- * 설치된 entryjs 를 작업 폴더에서 먼저 찾고, 없으면 tess 자신이 설치된 곳에서 찾는다.
- * 다른 폴더에서 `node .../tess/index.js decompile` 로 실행해도 기본 리소스를 꺼낼 수 있다.
- */
+/** entryjs 를 작업 폴더에서 먼저 찾고, 없으면 tess 가 설치된 곳에서 찾는다 */
 function findRuntimeDir() {
   return findLocalRuntime() ?? findLocalRuntime(path.dirname(fileURLToPath(import.meta.url)));
 }
@@ -112,9 +102,7 @@ export function decompileProject(project, entries) {
 // ---------------------------------------------------------------------------
 //  컨텍스트 준비 — id -> 이름 표들을 미리 다 만들어 둔다
 // ---------------------------------------------------------------------------
-// 첫 번째 매개변수에 모양·소리 id 가 문자열로 들어 있을 수 있는 블록들이다.
-// text/number 는 사람이 id 를 직접 적어 넣은 경우이고, get_pictures/get_sounds 는
-// 편집기 목록에서 고른 경우이다. 둘 다 함수 안에서는 id 를 그대로 남겨야 한다.
+// 첫 매개변수에 모양·소리 id 가 들어 있을 수 있는 블록들 (직접 적었거나 목록에서 골랐거나)
 const ID_HOLDING_BLOCKS = new Set(['text', 'number', 'get_pictures', 'get_sounds']);
 
 /** 블록 트리를 훑으면서, 프로젝트에 실제로 있는 모양·소리 id 와 같은 값을 ctx.forcedIds 에 모은다 */
@@ -130,13 +118,9 @@ function collectHardcodedIds(node, ctx) {
 }
 
 /**
- * 함수 정의 블록(function_create)의 머리 부분을 마디 목록으로 펼친다.
- *
- * 엔트리는 라벨과 매개변수 칸을 `params[1]` 로 이어 붙인 사슬로 저장한다. 라벨이
- * 중간에 끼어들 수도 있고(`스폰 (인수) 체력 (인수)`), 매개변수가 판단 칸
- * (function_field_boolean)일 수도 있다. 예전에는 맨 앞 라벨 뒤의
- * function_field_string 만 세다가 그런 마디를 만나면 멈춰서, 그 뒤의 매개변수를
- * 모두 잃어버렸다.
+ * 함수 정의 블록(function_create)의 머리를 마디 목록으로 펼친다.
+ * 라벨과 매개변수 칸이 `params[1]` 로 이어진 사슬이고, 라벨이 중간에 끼거나
+ * 매개변수가 판단 칸(function_field_boolean)일 수도 있다.
  *
  * @returns {Array<{kind:'label', text:string}|{kind:'param', blockType:string|null, boolean:boolean}>}
  */
@@ -290,32 +274,17 @@ function buildContext(project, entries) {
     ctx.functionsById.set(fn.id, { name: identifier, params, displayLabel: label });
   }
 
-  // 엔트리에서 함수는 전역이라 여러 오브젝트가 함께 부를 수 있지만, 함수 안에 적힌
-  // 모양·소리 값은 결국 특정 오브젝트 하나의 id 를 가리킨다. 편집기 목록에서 고른
-  // get_pictures/get_sounds 블록이든, "개인 함수"를 흉내 내려고 id 를 문자열로 적어
-  // 넣던 예전 방식이든 마찬가지다. 엔트리의 모양·소리 바꾸기 블록은 값을 1) id,
-  // 2) 이름, 3) 등록 순번 차례로 찾으므로 id 만 맞으면 어느 오브젝트가 불러도 그
-  // 모양·소리를 가리킨다.
-  //
-  // 오브젝트 자기 스크립트 안의 id 는 resourceExpr 가 그 오브젝트의 이름으로 안전하게
-  // 되돌린다. 하지만 함수 안에서는 그 이름이 함수를 부르는 다른 오브젝트에도 있다는
-  // 보장이 없다. 그래서 함수 안에서 찾은 id 는 이름으로 바꾸지 않고
-  // (resourceExpr 의 ctx.inFunction 분기), 대신 그 모양·소리 선언에 `force id` 를
-  // 붙여서 다시 컴파일해도 같은 id 가 나오게 한다(1.4절 참고).
+  // 함수는 전역이라 어느 오브젝트가 부를지 모르므로, 함수 안의 모양·소리 id 는 이름으로
+  // 바꾸지 않고 그대로 둔다. 대신 그 선언에 `force id` 를 붙여 다시 컴파일해도 같은
+  // id 가 나오게 한다 (SPEC-ADDENDUM.md 1.4절).
   for (const fn of project.functions ?? []) {
     try { collectHardcodedIds(JSON.parse(fn.content ?? '[]'), ctx); } catch { /* 못 읽으면 건너뛴다 */ }
   }
 
   // --- 리소스(모양 · 소리) 실제 파일 -----------------------------------------------
-  //
-  // 모양·소리 이름은 오브젝트마다 따로 붙으므로 서로 다른 오브젝트에 같은 이름
-  // ("새그림" 처럼 엔트리가 자동으로 붙여 주는 이름은 특히 자주 겹친다)이 있을 수
-  // 있다. 그 이름을 그대로 파일 이름으로 쓰면 나중에 저장한 파일이 앞의 파일을
-  // 덮어써서 모양 하나만 남는다. 그래서 두 가지로 나눈다.
-  //   1. 파일 이름을 `오브젝트이름_모양이름` 으로 만든다.
-  //   2. 장면이 여러 개면 assets/image/<장면이름>/ 처럼 장면별 폴더에 나눠 담는다.
-  //      조각 파일(objects/<장면이름>/...)을 나누는 기준과 같다.
-  // 그래도 경로가 겹치면 뒤에 번호를 붙여서 반드시 다른 파일이 되게 한다.
+  // 모양·소리 이름은 오브젝트마다 따로 붙어서 서로 겹칠 수 있다(특히 "새그림").
+  // 파일 이름은 `오브젝트이름_모양이름`, 장면이 여럿이면 장면별 폴더로 나누고,
+  // 그래도 겹치면 뒤에 번호를 붙인다.
   const assetTargets = new Map(); // fileurl -> 저장한 상대 경로
   const usedAssetPaths = new Set();
   const runtimeDir = findRuntimeDir();

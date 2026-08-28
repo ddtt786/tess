@@ -27,7 +27,7 @@ import { makeEntryBundle } from './src/compiler/bundle.js';
 import { serveProject } from './src/player/server.js';
 
 const USAGE = `사용법
-  node index.js check      <파일.tess>          문법 · 의미 검사
+  node index.js check      <파일.tess>          문법 · 의미 검사 (컴파일까지 해 본다)
   node index.js build      <파일.tess> [-o 출력] 엔트리 작품으로 컴파일
   node index.js run        <파일.tess>          컴파일해서 브라우저로 열기
   node index.js ast        <파일.tess>          AST 출력
@@ -75,10 +75,15 @@ function parseArgs(argv) {
   return { options, rest };
 }
 
-function runCheck(file) {
+/** build 와 똑같이 끝까지 컴파일해 보고 결과만 버린다. use 로 불러오는 파일까지 검사된다. */
+function runCheck(file, options = { assets: [] }) {
   const source = fs.readFileSync(file, 'utf-8');
-  const result = parse(source);
   const label = path.basename(file);
+  const assetDirs = options.assets?.length > 0
+    ? options.assets.map((dir) => path.resolve(dir))
+    : [path.dirname(path.resolve(file))];
+
+  const result = compileProject(source, { path: file, assetDirs, name: options.name });
   report(label, result.errors, '에러');
   report(label, result.warnings, '경고');
   if (result.ok) console.log(`${label}: OK`);
@@ -107,8 +112,7 @@ function runBuild(file, options) {
   report(label, result.warnings, '경고');
   if (!result.ok) {
     report(label, result.errors, '에러');
-    // --force 는 에러가 난 문장만 빼고 나머지를 그대로 내보낸다. 문법 에러 때문에
-    // 작품 자체가 만들어지지 않았으면(project 가 null) 내보낼 것이 없다.
+    // 문법 에러면 작품 자체가 없으므로(project 가 null) --force 로도 내보낼 게 없다
     if (!options.force || !result.project) return 1;
     console.error(`${label}: --force — 에러 ${result.errors.length}개를 무시하고 그대로 내보냅니다.`);
   }

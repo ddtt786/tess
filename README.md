@@ -9,9 +9,9 @@ Tess 로 뭘, 어떻게 쓰는지 알고 싶다면 **[SPEC.md](./SPEC.md)** (언
 
 ```bash
 pnpm install
-pnpm test                                              # 268개 테스트
+pnpm test                                              # 279개 테스트
 
-node index.js check examples/tour.tess                 # 문법 · 의미 검사
+node index.js check examples/tour.tess                 # 문법 · 의미 검사 (컴파일까지)
 node index.js build examples/all_blocks.tess -o build/blocks.ent
 node index.js run   examples/all_blocks.tess   # 컴파일해서 브라우저로 열기
 ```
@@ -49,6 +49,7 @@ all_blocks.tess -> build/blocks.ent
 | `src/compiler/comments.js` | Tess 주석 → 엔트리 블록 주석 |
 | `src/compiler/runtime.js` | 엔트리에 없는 동작을 대신할 함수 만들어 넣기 |
 | `src/player/` | `run` 이 띄우는 미리보기 서버와 실행 페이지 |
+| `src/player/debug-ui.js` | 디버그 패널 UI ([arrow-js](https://github.com/standardagents/arrow-js) 로 만든 브라우저 모듈) |
 | `src/decompiler/` | `decompile` — `.ent` → Tess 소스(기본적으로 오브젝트마다 `objects/이름.tess` 조각 파일 + `useobject`/`usetext`) |
 | `editors/vscode/` | VS Code 문법 강조 (설치법은 그 폴더의 README) |
 | `src/compiler/assets.js` | 모양·소리 파일 → 엔트리 리소스 경로, 그림 원본 크기 재기 |
@@ -382,6 +383,7 @@ all_blocks.tess -> http://127.0.0.1:41234/
 | `/<작품이름>.ent` | 내려받기용 묶음 |
 | `/temp/…` | 모양·소리 리소스 |
 | `/lib/…` | `@entrylabs/entry` 가 설치돼 있으면 그 파일들 |
+| `/debug-ui.js`, `/arrow/…` | 디버그 패널 UI 와 그것이 쓰는 arrow-js |
 
 엔트리 실행기(entryjs)는 서드파티 라이브러리가 많아 저장소에 담지 않고, **설치돼 있으면
 그것을, 없으면 CDN 을** 씁니다. 인터넷이 막힌 곳에서는 `pnpm add -D @entrylabs/entry` 로
@@ -398,6 +400,12 @@ playentry.org 에서 여는 방법을 안내합니다.
 | **자료** | 변수·리스트의 **지금 값**(실행 중이면 실시간), 신호(눌러서 바로 보내기), 함수(이름·인자 수·값 함수 여부) |
 | **오브젝트** | 장면·오브젝트 목록과 고른 오브젝트의 컴파일된 블록 트리 |
 | **오류** | 실행 중 난 오류. 블록을 만든 `.tess` 원본 줄·열까지 찾아서 알려 주고, 그 블록을 블록 트리에서 강조합니다 |
+
+패널 왼쪽 가장자리를 끌어서 **폭**을, 각 탭 안 섹션의 아래쪽 가장자리를 끌어서 **높이**를
+조절할 수 있습니다. UI 는 [arrow-js](https://github.com/standardagents/arrow-js) 로 만든
+브라우저 모듈(`src/player/debug-ui.js`)이고, 서버가 `/debug-ui.js` 와 `/arrow/…` 로 내보냅니다.
+arrow-js 는 `dist/index.mjs` 를 씁니다 — 같은 패키지의 `index.min.mjs` 는 1.0.6 기준
+목록 렌더가 깨져서(내부 함수를 글자로 찍습니다) 못 씁니다.
 
 `boost_mode` · `device == "mobile"` · `touchable` 은 엔트리 판단 블록이 브라우저에게 직접
 물어보는 값이라(각각 `Entry.options.useWebGL`, `Entry.Utils.getDeviceType()`,
@@ -523,6 +531,11 @@ Tess 이름으로 바꿔 둡니다. 숫자를 직접 적어 넣는 "n번째 모�
 
 ### 컴파일 에러
 
+`check` 는 **`build` 와 똑같이 끝까지 컴파일해 보고 결과만 버립니다.** 파싱만 해서는
+실제로 컴파일되는지 알 수 없기 때문입니다 — `use`·`useobject` 로 불러오는 파일은 펼쳐
+봐야 검사할 수 있고, "이 오브젝트에 없는 모양" 같은 문제는 블록으로 옮겨 보는 단계에서야
+드러납니다. 에러 위치는 그 코드가 실제로 있는 조각 파일 이름과 줄·열로 알려 줍니다.
+
 엔트리에 옮길 수 없는 코드는 조용히 넘어가지 않고 위치와 함께 알려 줍니다.
 
 ```
@@ -593,6 +606,7 @@ pnpm test
 | `test/power.test.js` | 거듭제곱·n제곱근이 내는 값을 `Math.pow` 와 비교 |
 | `test/player.test.js` | `run` 서버의 응답과 파일 경로 |
 | `test/player-debug.test.js` | 디버그 패널 — 탭 · 실행 제어 · 실행 환경 흉내내기 · 자료 보기 · XSS (jsdom) |
+| `test/cli.test.js` | `check` 가 컴파일 단계까지, 조각 파일 안까지 검사하는지 |
 | `test/highlight.test.js` | VS Code 문법 강조를 실제 토크나이저로 검사 |
 | `test/examples.test.js` | `examples/` 의 모든 `.tess` 가 에러 없이 통과 |
 

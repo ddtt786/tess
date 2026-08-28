@@ -207,6 +207,9 @@ importers:
 
   .:
     dependencies:
+      '@arrow-js/core':
+        specifier: ^1.0.6
+        version: 1.0.6
       ohm-js:
         specifier: ^17.5.0
         version: 17.5.0
@@ -228,6 +231,10 @@ importers:
         version: 9.3.2
 
 packages:
+
+  '@arrow-js/core@1.0.6':
+    resolution: {integrity: sha512-75f4N0iHtHTwgxf9XS8a1vtfGZZmCvqT0Ix+ScDLclNuR9Fqp2yOIK1u8vmN1BPsS4aRfMVTdSFSmgGCqkJSCg==}
+    engines: {node: '>=20.19.0 || >=22.12.0'}
 
   '@asamuzakjp/css-color@6.0.7':
     resolution: {integrity: sha512-vC/bk1Lz7Tn/EfU9/apOTBk80/8dyGyWMowPoV1tJ52muDGsDqt2HPT2klrFUiY60MQmQv9q8yIht15JnBgDGw==}
@@ -3431,6 +3438,8 @@ packages:
     resolution: {integrity: sha512-8HFIh676uyGYP6wP13R/j6OJ/1HwJ46snpvzE7aHAN3Ryqh2yX6Xox2B4CUmTwwOIzlG3Bs7ocsP5dZH/R1Qbg==}
 
 snapshots:
+
+  '@arrow-js/core@1.0.6': {}
 
   '@asamuzakjp/css-color@6.0.7':
     dependencies:

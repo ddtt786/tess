@@ -140,3 +140,58 @@ test('lib 바깥 파일은 주지 않는다', async (t) => {
     assert.equal(escaped.status, 404);
   });
 });
+
+test('엔트리 글꼴 CSS 를 하나씩 <link> 로 직접 붙인다', async () => {
+  // 묶음 파일 fonts_2023_10.css 는 @font-face 가 아니라 @import 스물두 줄이다.
+  // @import 는 그 CSS 를 받아 파싱한 뒤에야 다음 요청이 시작되므로 글꼴이 늦게
+  // 도착하고, 그 사이에 preloadTextFonts 가 글꼴을 찾지 못한 채 넘어간다.
+  await withServer({}, async (server) => {
+    const page = await (await fetch(server.url)).text();
+    const hrefs = [...page.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map((m) => m[1]);
+    const fontHrefs = hrefs.filter((href) => href.includes('/uploads/fonts/'));
+
+    assert.equal(fontHrefs.length, 22, fontHrefs.join('\n'));
+    for (const href of fontHrefs) {
+      assert.match(href, /^https:\/\/entry-cdn\.pstatic\.net\/uploads\/fonts\/[\w.]+\.css$/);
+    }
+    // 실제 글꼴이 아니라 @import 목록만 담긴 묶음 파일은 더 이상 쓰지 않는다
+    assert.ok(!fontHrefs.some((href) => href.includes('fonts_2023_10')), 'fonts_2023_10.css 는 빼야 한다');
+    for (const name of ['nanum_gothic', 'dunggeunmo_2023', 'd2coding_2023', 'SDShabang_2023']) {
+      assert.ok(fontHrefs.some((href) => href.endsWith('/' + name + '.css')), name + ' 이 빠졌다');
+    }
+  });
+});
+
+test('캔버스 그리기 해상도는 처음 한 번만 정하고, 그 뒤에는 CSS 크기만 바꾼다', async () => {
+  // width/height 속성을 바꾸면 그리던 내용이 지워지고 stage 변환도 어긋나므로,
+  // 창 크기가 바뀔 때는 CSS 크기만 건드려야 한다.
+  await withServer({}, async (server) => {
+    const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
+
+    assert.match(ui, /const setCanvasResolution = \(\) => \{/);
+    assert.match(ui, /if \(resolutionFixed\) return;/);
+    assert.match(ui, /resolutionFixed = true;/);
+
+    const layout = ui.slice(ui.indexOf('function layoutCanvas()'), ui.indexOf('window.addEventListener(\'resize\''));
+    assert.match(layout, /canvas\.style\.width/);
+    assert.match(layout, /canvas\.style\.height/);
+    assert.doesNotMatch(layout, /canvasEl\.width\s*=/);
+    assert.doesNotMatch(layout, /canvasEl\.height\s*=/);
+  });
+});
+
+test('디버그 UI 와 arrow-js 를 모듈로 내보낸다', async () => {
+  await withServer({}, async (server) => {
+    const page = await (await fetch(server.url)).text();
+    assert.match(page, /<script type="module" src="\/debug-ui\.js"><\/script>/);
+
+    const ui = await fetch(`${server.url}debug-ui.js`);
+    assert.equal(ui.status, 200);
+    const uiSource = await ui.text();
+    const arrowFile = uiSource.match(/from '\/arrow\/([^']+)'/)[1];
+    assert.equal((await fetch(`${server.url}arrow/${arrowFile}`)).status, 200);
+    // arrow 폴더 바깥은 주지 않는다
+    const escaped = await fetch(`${server.url}arrow/${encodeURIComponent('../../../package.json')}`);
+    assert.equal(escaped.status, 404);
+  });
+});

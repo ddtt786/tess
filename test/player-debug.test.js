@@ -1,27 +1,25 @@
-// 실행 페이지의 디버그 패널 검사.
-//
-// 이 패널은 브라우저에서만 살아 움직이는 코드라 그동안 자동 검사가 전혀 없었다.
-// 페이지에서 디버그 IIFE 만 떼어 내 jsdom 에 올리고, 엔트리 실행기 자리에는 가짜를
-// 세워서 탭 전환 · 실행 제어 · 실행 환경 흉내내기 · 자료 보기를 실제로 눌러 본다.
-// 특히 XSS: 이 패널이 보여 주는 이름은 전부 작품에서 온 값이고 작품은 남이 만든
-// .ent 를 되돌린 것일 수도 있으므로, 어떤 이름도 태그가 되어서는 안 된다.
+// 디버그 패널 UI(src/player/debug-ui.js)를 jsdom 에 올리고 가짜 엔트리 실행기로 눌러 본다.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { playerPage } from '../src/player/template.js';
+import { compileProject } from '../src/compiler/index.js';
 
-/** 페이지의 첫 번째 인라인 스크립트(디버그 패널)만 jsdom 에 올린다 */
-function mountDebugPanel(t) {
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const arrowDist = () => path.dirname(fileURLToPath(import.meta.resolve('@arrow-js/core')));
+
+/** 디버그 UI 모듈을 jsdom 에 올린다. import 는 떼고 arrow-js 를 직접 넣어 준다. */
+async function mountDebugPanel(t) {
   const html = playerPage({
     name: '치로', base: '/lib', summary: { scenes: 1, objects: 1, blocks: 1 }, entName: 'a.ent', reload: false,
   });
-  const debugScript = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)][0][1];
   const shell = html.slice(0, html.indexOf('<script')) + '</body></html>';
-
   const dom = new JSDOM(shell, { runScripts: 'outside-only', pretendToBeVisual: true });
   const { window } = dom;
-  // 디버그 패널이 상태를 계속 확인하려고 setInterval 을 걸어 두므로 꼭 닫아야 한다
-  t.after(() => window.close());
+  t.after(() => window.close()); // 상태를 확인하는 setInterval 이 돌고 있다
 
   const engine = {
     state: 'stop',
@@ -45,8 +43,27 @@ function mountDebugPanel(t) {
       getList: (id) => (id === 'l1' ? { getArray: () => [{ data: 'ㄱ' }, { data: 'ㄴ' }] } : null),
     },
   };
+  window.tessDebugSink = (fn) => { window.__sink = fn; };
+  window.tessReportError = (kind, error) => window.__sink({
+    kind: String(kind), message: String(error && error.message), stack: '', time: Date.now(),
+  });
+  window.fetch = () => Promise.resolve({ json: () => Promise.resolve({}) });
 
-  window.eval(debugScript);
+  // arrow-js 는 Node 쪽에서 import 되므로 전역 document 가 jsdom 것을 가리켜야 한다
+  const globals = ['document', 'Node', 'Element', 'HTMLElement', 'DocumentFragment',
+    'Text', 'Comment', 'NodeFilter', 'MutationObserver', 'requestAnimationFrame'];
+  const saved = globals.map((key) => [key, globalThis[key]]);
+  for (const key of globals) globalThis[key] = window[key];
+  t.after(() => { for (const [key, value] of saved) globalThis[key] = value; });
+
+  // 브라우저가 실제로 받는 arrow-js 파일을 그대로 쓴다. 패키지 기본 진입점을 쓰면
+  // 서버가 내보내는 파일과 달라져서, 그 파일만 깨져 있어도 테스트가 통과해 버린다.
+  const source = fs.readFileSync(path.join(root, 'src/player/debug-ui.js'), 'utf-8');
+  const arrowFile = source.match(/from '\/arrow\/([^']+)'/)[1];
+  const arrow = await import(path.join(arrowDist(), arrowFile));
+  window.reactive = arrow.reactive;
+  window.html = arrow.html;
+  window.eval(source.replace(/^import[^;]+;$/m, 'const { reactive, html } = window;'));
 
   const byId = (id) => window.document.getElementById(id);
   return {
@@ -61,11 +78,13 @@ function mountDebugPanel(t) {
     },
     tab: (name) => window.document.querySelector('.debug-tab[data-tab="' + name + '"]')
       .dispatchEvent(new window.MouseEvent('click')),
+    settle: () => new Promise((resolve) => setTimeout(resolve, 20)),
   };
 }
 
-test('디버그 패널은 탭으로 나뉘고, 한 번에 하나만 보인다', (t) => {
-  const ui = mountDebugPanel(t);
+test('디버그 패널은 탭으로 나뉘고, 한 번에 하나만 보인다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
   const tabs = [...ui.window.document.querySelectorAll('.debug-tab')];
   assert.deepEqual(tabs.map((button) => button.dataset.tab), ['run', 'data', 'objects', 'errors']);
 
@@ -74,14 +93,16 @@ test('디버그 패널은 탭으로 나뉘고, 한 번에 하나만 보인다', 
   assert.equal(ui.byId('tab-data').hidden, true);
 
   ui.tab('objects');
+  await ui.settle();
   assert.equal(ui.byId('tab-objects').hidden, false);
   assert.equal(ui.byId('tab-run').hidden, true);
   assert.equal(tabs.find((b) => b.dataset.tab === 'objects').getAttribute('aria-selected'), 'true');
   assert.equal(tabs.find((b) => b.dataset.tab === 'run').getAttribute('aria-selected'), 'false');
 });
 
-test('정지한 뒤에도 시작하기로 다시 실행할 수 있다', (t) => {
-  const ui = mountDebugPanel(t);
+test('정지한 뒤에도 시작하기로 다시 실행할 수 있다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
 
   ui.click('run-btn');
   assert.equal(ui.engine.state, 'run');
@@ -97,24 +118,31 @@ test('정지한 뒤에도 시작하기로 다시 실행할 수 있다', (t) => {
   assert.equal(ui.engine.state, 'run');
 });
 
-test('실행 상태에 따라 버튼과 안내 글이 바뀐다', (t) => {
-  const ui = mountDebugPanel(t);
+test('실행 상태에 따라 버튼과 안내 글이 바뀐다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+
+  const stateText = () => ui.window.document.querySelector('.debug-run-state').textContent;
 
   ui.click('stop-btn');
-  assert.match(ui.byId('run-state-text').textContent, /멈춰/);
+  await ui.settle();
+  assert.match(stateText(), /멈춰/);
   assert.equal(ui.byId('pause-btn').disabled, true); // 멈춰 있으면 일시정지할 게 없다
   assert.equal(ui.byId('run-btn').disabled, false);
 
   ui.click('run-btn');
-  assert.match(ui.byId('run-state-text').textContent, /실행 중/);
+  await ui.settle();
+  assert.match(stateText(), /실행 중/);
   assert.equal(ui.byId('run-btn').disabled, true);
 
   ui.click('pause-btn');
+  await ui.settle();
   assert.equal(ui.byId('pause-btn').textContent, '이어서 하기');
 });
 
-test('부스트 모드 · 기기 · 터치를 디버그 창에서 정한 값으로 바꿔치기한다', (t) => {
-  const ui = mountDebugPanel(t);
+test('부스트 모드 · 기기 · 터치를 디버그 창에서 정한 값으로 바꿔치기한다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
   ui.window.tessPatchEnvironmentBlocks();
   const askMobile = { getField: () => 'mobile' };
 
@@ -162,10 +190,12 @@ const dataProject = {
   }],
 };
 
-test('자료 탭에서 변수의 지금 값 · 신호 · 함수를 볼 수 있다', (t) => {
-  const ui = mountDebugPanel(t);
+test('자료 탭에서 변수의 지금 값 · 신호 · 함수를 볼 수 있다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
   ui.window.tessRenderProjectDebug(dataProject);
   ui.tab('data');
+  await ui.settle();
 
   const variables = ui.byId('var-list').textContent;
   assert.match(variables, /점수/);
@@ -180,18 +210,21 @@ test('자료 탭에서 변수의 지금 값 · 신호 · 함수를 볼 수 있�
   assert.match(functions, /1개 인자/);
 });
 
-test('자료 탭의 신호를 눌러서 바로 보낼 수 있다', (t) => {
-  const ui = mountDebugPanel(t);
+test('자료 탭의 신호를 눌러서 바로 보낼 수 있다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
   ui.window.tessRenderProjectDebug(dataProject);
   ui.tab('data');
+  await ui.settle();
 
   ui.byId('signal-list').querySelector('.debug-send-btn')
     .dispatchEvent(new ui.window.MouseEvent('click'));
   assert.deepEqual(ui.engine.fired, [['when_message_cast', 'm1']]);
 });
 
-test('작품 안의 이름은 어떤 것도 태그가 되지 않는다 (XSS)', (t) => {
-  const ui = mountDebugPanel(t);
+test('작품 안의 이름은 어떤 것도 태그가 되지 않는다 (XSS)', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
   ui.window.tessRenderProjectDebug({
     scenes: [{ id: 's1', name: '<img src=x onerror=window.PWNED=1>' }],
     objects: [{ id: 'o1', name: '<script>window.PWNED=1</script>', scene: 's1', script: '[]' }],
@@ -200,6 +233,7 @@ test('작품 안의 이름은 어떤 것도 태그가 되지 않는다 (XSS)', (
     functions: [],
   });
   ui.tab('data');
+  await ui.settle();
 
   // 작품 이름이 들어가는 영역만 본다 (실행 탭의 안내 글에는 우리가 쓴 <b> 가 있다)
   const areas = ['#tab-data', '#tab-objects'];
@@ -229,4 +263,99 @@ test('페이지에 넣는 값은 HTML 로도 스크립트로도 새어 나가지
     assert.doesNotMatch(body, /<\/script/i);
     assert.doesNotThrow(() => new Function(body)); // eslint-disable-line no-new-func
   }
+});
+
+test('탭 안의 섹션들은 마지막을 빼고 위아래로 크기를 조절할 수 있다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+
+  const sections = [...ui.byId('tab-run').querySelectorAll('.debug-section')];
+  assert.equal(sections.length, 2);
+  // 마지막 섹션은 남은 높이를 채우므로 손잡이가 없다
+  assert.equal(sections[0].querySelectorAll('.debug-vresize').length, 1);
+  assert.equal(sections[1].querySelectorAll('.debug-vresize').length, 0);
+  assert.match(sections[0].getAttribute('style'), /height:200px/);
+
+  const handle = sections[0].querySelector('.debug-vresize');
+  handle.dispatchEvent(new ui.window.MouseEvent('mousedown', { clientY: 100, bubbles: true }));
+  ui.window.dispatchEvent(new ui.window.MouseEvent('mousemove', { clientY: 160 }));
+  ui.window.dispatchEvent(new ui.window.MouseEvent('mouseup'));
+  await ui.settle();
+
+  // jsdom 은 실제 높이를 0 으로 재므로 끌어당긴 만큼(60px)이 그대로 높이가 된다
+  assert.match(sections[0].getAttribute('style'), /height:60px/);
+});
+
+test('패널 폭은 좌우로 조절할 수 있다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.innerWidth = 1200;
+
+  const handle = ui.byId('debug-resize-handle');
+  handle.dispatchEvent(new ui.window.MouseEvent('mousedown', { clientX: 800, bubbles: true }));
+  ui.window.dispatchEvent(new ui.window.MouseEvent('mousemove', { clientX: 700 }));
+  ui.window.dispatchEvent(new ui.window.MouseEvent('mouseup'));
+
+  assert.equal(ui.byId('debug-panel').style.width, '500px');
+});
+
+test('패널이 실제로 그려진다 (arrow-js 목록 렌더 회귀)', async (t) => {
+  // arrow-js 1.0.6 의 index.min.mjs 는 목록을 그리지 못하고 내부 함수를 글자로 찍는다.
+  // 브라우저가 받는 파일이 바뀌었을 때 이 테스트가 걸린다.
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  const panel = ui.byId('debug-panel');
+
+  assert.equal(panel.querySelectorAll('.debug-tab').length, 4);
+  assert.equal(panel.querySelectorAll('.debug-section').length, 8);
+  assert.deepEqual(
+    [...panel.querySelectorAll('.debug-section h3')].map((h) => h.textContent.trim()),
+    ['실행 제어', '실행 환경 흉내내기', '변수 · 리스트', '신호', '함수', '장면 · 오브젝트', '컴파일된 블록', '오류 로그'],
+  );
+
+  // 자바스크립트 소스가 화면에 글자로 새어 나오면 안 된다
+  const text = panel.textContent;
+  assert.doesNotMatch(text, /appendChild|=>\s*\{|function\s*\(/);
+  assert.match(text, /시작하기/);
+});
+
+test('실제 작품을 넣으면 네 탭이 모두 내용을 채운다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+
+  const file = path.join(root, 'examples/all_blocks.tess');
+  const { project } = compileProject(fs.readFileSync(file, 'utf-8'), { path: file });
+  ui.window.tessRenderProjectDebug(project);
+  await ui.settle();
+
+  const textOf = (id) => ui.byId(id).textContent.replace(/\s+/g, ' ');
+
+  ui.click('run-btn');
+  await ui.settle();
+  assert.match(textOf('tab-run'), /실행 중/);
+
+  ui.tab('data');
+  await ui.settle();
+  const data = textOf('tab-data');
+  assert.match(data, /점수/);            // 변수
+  assert.match(data, /전역 · 변수/);
+  assert.match(data, /기록 전역 · 리스트 \[3개\] \[1,2,3\]/); // 실행 전이라 초기값을 보여 준다
+  assert.match(data, /체력 주인공 · 변수 100/);
+  assert.match(data, /신호1/);
+  assert.match(data, /두배 … 값/);        // 라벨이 중간에 낀 함수 이름
+  assert.match(data, /값 함수/);
+
+  ui.tab('objects');
+  await ui.settle();
+  const objects = textOf('tab-objects');
+  assert.match(objects, /주인공/);
+  assert.match(objects, /when_run_button_click/);
+  assert.match(objects, /스크립트 1/);
+  assert.ok(ui.byId('block-tree').querySelectorAll('li').length > 20, '블록 트리가 펼쳐져야 한다');
+
+  ui.window.tessReportError('실행 오류', new Error('일부러 낸 오류'));
+  await ui.settle();
+  assert.match(textOf('tab-errors'), /일부러 낸 오류/);
+  // 오류가 나면 오류 탭으로 넘어간다
+  assert.equal(ui.window.document.querySelector('.debug-tab[aria-selected="true"]').dataset.tab, 'errors');
 });

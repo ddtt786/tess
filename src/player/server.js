@@ -7,6 +7,8 @@
 //    /<이름>.ent        내려받기용 묶음
 //    /temp/...         모양·소리 리소스
 //    /lib/...          @entrylabs/entry 가 설치돼 있으면 그 파일들
+//    /debug-ui.js      디버그 패널 UI (모듈)
+//    /arrow/...        디버그 패널 UI 가 쓰는 arrow-js
 //    /api/expansionBlock/tts/read.mp3   tts 읽어주기 — playentry.org 로 대신 요청해 준다
 // ============================================================================
 import fs from 'node:fs';
@@ -14,7 +16,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { playerPage } from './template.js';
+import { playerPage, DEBUG_UI_PATH, ARROW_PATH } from './template.js';
 
 // entryjs 의 tts 읽어주기(block_ai_utilize_tts.js)는 `${Entry.baseUrl}/api/expansionBlock/tts/read.mp3?...`
 // 로 브라우저에서 직접 요청한다. Entry.baseUrl 기본값은 location.origin(우리 서버)이라
@@ -28,6 +30,8 @@ const TTS_PROXY_PATH = '/api/expansionBlock/tts/read.mp3';
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
@@ -41,6 +45,19 @@ const MIME = {
 // 그 한도를 넘어서 jsDelivr 로는 아예 못 받아 온다(entry.min.js 조차 403). 같은 파일을
 // unpkg 는 문제없이 준다(같은 npm 레지스트리에서 직접 서빙하며 패키지 전체 크기 제한이 없다).
 const CDN = 'https://unpkg.com/@entrylabs/entry@4.0.22';
+
+const DEBUG_UI_FILE = fileURLToPath(new URL('./debug-ui.js', import.meta.url));
+
+// arrow-js 는 dist/index.mjs 를 그대로 쓴다. 같은 패키지의 index.min.mjs 는 1.0.6 기준
+// 목록 렌더가 깨져서(내부 함수를 글자로 찍는다) 못 쓴다.
+/** 디버그 패널이 쓰는 arrow-js 의 dist 폴더. 못 찾으면 null */
+export function findArrowDir() {
+  try {
+    return path.dirname(fileURLToPath(import.meta.resolve('@arrow-js/core')));
+  } catch {
+    return null;
+  }
+}
 
 /** 프로젝트에 entryjs 가 설치돼 있으면 그 폴더를 돌려준다 */
 export function findLocalRuntime(from = process.cwd()) {
@@ -64,6 +81,7 @@ export function serveProject({
   project, bundle, assets = [], name, port = 0, cwd = process.cwd(), reload = true, sourceMap = {},
 }) {
   const localRuntime = findLocalRuntime(cwd);
+  const arrowDir = findArrowDir();
   const base = localRuntime ? '/lib' : CDN;
   const entName = `${safeName(name)}.ent`;
 
@@ -111,6 +129,14 @@ export function serveProject({
     if (localRuntime && url.startsWith('/lib/')) {
       const target = path.join(localRuntime, url.slice('/lib/'.length));
       if (target.startsWith(localRuntime) && fs.existsSync(target)) return sendFile(response, target);
+    }
+
+    if (url === DEBUG_UI_PATH) return sendFile(response, DEBUG_UI_FILE);
+
+    // 디버그 패널 UI 가 import 하는 arrow-js
+    if (arrowDir && url.startsWith(ARROW_PATH)) {
+      const target = path.join(arrowDir, url.slice(ARROW_PATH.length));
+      if (target.startsWith(arrowDir) && fs.existsSync(target)) return sendFile(response, target);
     }
 
     return send(response, 404, '.html', '<h1>404</h1>');

@@ -82,13 +82,8 @@ export function isBooleanBlock(node) {
 }
 
 /**
- * 판단 자리에 들어갈 블록을 만든다.
- *
- * 엔트리의 판단 칸에는 판단 블록만 꽂을 수 있지만, Tess 에는 타입이 없어서 값이 올 수
- * 있다. 그런 자리는 다음과 같이 맞춰 준다.
- *  - `true`/`false` 리터럴은 엔트리의 참·거짓 블록이 된다.
- *  - 그 밖의 리터럴("살아있음", 1 …)은 참으로 본다. 문자열을 참으로 보는 오랜 관례를 따른다.
- *  - 변수나 매개변수처럼 실행해 봐야 아는 값은 `== "TRUE"` 비교로 감싼다.
+ * 판단 자리에 들어갈 블록. `true`/`false` 는 참·거짓 블록, 그 밖의 리터럴은 참,
+ * 실행해 봐야 아는 값은 `== "TRUE"` 비교로 감싼다.
  */
 export function compileBoolean(node, ctx) {
   if (node?.type === 'Boolean') return ctx.block(node.value ? 'True' : 'False', [null]);
@@ -101,11 +96,8 @@ export function compileBoolean(node, ctx) {
 }
 
 /**
- * 값 자리에 들어갈 블록을 만든다.
- *
- * 판단 블록이 값 자리에 오면(`이름 = (x > 3)` 처럼, 또는 판단을 받지 않는 함수에 넘길 때)
- * 엔트리의 `(<판단>의 값)` 블록으로 감싼다. 엔트리도 판단을 값 칸에 꽂을 때 이 블록을
- * 쓰며, 그 결과는 "TRUE"/"FALSE" 문자열이다.
+ * 값 자리에 들어갈 블록. 판단이 오면 엔트리의 `(<판단>의 값)` 으로 감싼다
+ * (결과는 "TRUE"/"FALSE" 문자열).
  */
 export function compileValue(node, ctx) {
   const compiled = compileAnyValue(node, ctx);

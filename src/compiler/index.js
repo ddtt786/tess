@@ -33,11 +33,8 @@ const BRUSH_DEFAULT_PROPERTIES = ['draw_color', 'fill_color', 'draw_width', 'dra
 /**
  * Tess 소스를 엔트리 프로젝트 객체로 컴파일한다.
  *
- * 에러가 하나라도 있으면 `ok: false` 이고 `project` 는 null 이다. `force: true` 를 주면
- * 에러가 있어도 거기까지 만든 작품을 그대로 돌려준다. 컴파일러는 에러를 만나도 그
- * 문장만 빼고 끝까지 진행하기 때문에(ctx.error 가 null 을 돌려주면 부르는 쪽이 그
- * 문장을 버린다), 나머지 부분만이라도 실행해 보고 싶을 때 쓸 수 있다. 대신 에러가 난
- * 문장은 통째로 빠지므로 그 부분은 동작하지 않는다. `ok` 는 그대로 false 이다.
+ * 에러가 있으면 `project` 는 null 이다. `force: true` 면 에러가 난 문장만 빠진 작품을
+ * 그대로 돌려준다 (`ok` 는 여전히 false).
  *
  * @param {string} source
  * @param {{path?: string, assetDirs?: string[], name?: string, readFile?: Function, force?: boolean}} [options]
@@ -443,12 +440,8 @@ function collectFunctionLocals(statements, scope, ctx, fn) {
 }
 
 /**
- * 함수 머리 부분(function_field_label 과 매개변수 칸의 사슬)을 만든다.
- *
- * 제자리에 있는 자동 이름(a, b, c …)은 라벨 없는 매개변수 칸이 되고, 그 밖의 이름은
- * 그 이름을 라벨로 단 매개변수 칸이 된다. 되돌리기가 읽는 규칙을 그대로 뒤집은 것이다
- * (src/function-params.js 참고). 그래서 `function 스폰(a, 체력)` 은 엔트리에서
- * `스폰 (인수) 체력 (인수)` 로 보이고, 그런 함수를 되돌린 소스도 원래 모양으로 돌아온다.
+ * 함수 머리(라벨과 매개변수 칸의 사슬)를 만든다. 자동 이름(a, b, c …)은 라벨 없이,
+ * 그 밖의 이름은 라벨을 달고 나간다 — 되돌리기의 반대다 (src/function-params.js).
  */
 function buildFunctionFields(fn, ctx) {
   let next = null;

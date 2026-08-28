@@ -60,13 +60,8 @@ function unshiftIndex(block, ctx, delta = 1) {
 }
 
 /**
- * 편집기 목록에서 고른 모양·소리(get_pictures/get_sounds)를 옮긴다.
- *
- * 평소에는 그 이름으로 옮기지만, 함수 안에서는 이름 대신 id 를 그대로 남긴다.
- * 엔트리에서 함수는 전역이라 어느 오브젝트가 부를지 알 수 없는데, 모양·소리 이름은
- * 오브젝트마다 다르기 때문이다. 그 id 를 가진 모양·소리 선언에는 `force id` 가
- * 붙으므로 다시 컴파일해도 같은 id 가 나온다
- * (src/decompiler/index.js 의 buildContext 주석 참고).
+ * 편집기 목록에서 고른 모양·소리를 옮긴다. 함수 안에서는 이름 대신 id 를 남긴다 —
+ * 함수는 전역이라 어느 오브젝트가 부를지 모르기 때문 (decompiler/index.js 참고).
  */
 function resourceRef(ctx, id, byId, nameOf) {
   if (ctx.inFunction && byId.has(id)) return tessString(id);
