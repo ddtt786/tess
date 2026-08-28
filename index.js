@@ -1,7 +1,7 @@
 // ============================================================================
-//  tess — 엔트리 작품으로 컴파일되는 텍스트 언어
+//  tess — text-based language that compiles to Entry projects.
 //
-//  라이브러리:  import { parse, compileProject } from 'tess'
+//  Library:  import { parse, compileProject } from 'tess'
 //  CLI:
 //    node index.js check examples/tour.tess
 //    node index.js build examples/all_blocks.tess -o build/blocks.ent
@@ -75,7 +75,7 @@ function parseArgs(argv) {
   return { options, rest };
 }
 
-/** build 와 똑같이 끝까지 컴파일해 보고 결과만 버린다. use 로 불러오는 파일까지 검사된다. */
+/** Compiles fully like build but discards the output; also checks files pulled in via `use`. */
 function runCheck(file, options = { assets: [] }) {
   const source = fs.readFileSync(file, 'utf-8');
   const label = path.basename(file);
@@ -112,7 +112,7 @@ function runBuild(file, options) {
   report(label, result.warnings, '경고');
   if (!result.ok) {
     report(label, result.errors, '에러');
-    // 문법 에러면 작품 자체가 없으므로(project 가 null) --force 로도 내보낼 게 없다
+    // A grammar error leaves no project (null), so --force has nothing to emit.
     if (!options.force || !result.project) return 1;
     console.error(`${label}: --force — 에러 ${result.errors.length}개를 무시하고 그대로 내보냅니다.`);
   }
@@ -137,7 +137,7 @@ function runBuild(file, options) {
   return 0;
 }
 
-/** 컴파일해서 브라우저에서 열어 본다 */
+/** Compiles and opens the result in a browser. */
 async function runProject(file, options) {
   const source = fs.readFileSync(file, 'utf-8');
   const label = path.basename(file);
@@ -176,16 +176,15 @@ async function runProject(file, options) {
 
   process.on('SIGINT', () => {
     stopWatching?.();
-    // 서버가 어떤 이유로든 안 닫히면(예: 소켓이 안 끊김) Ctrl+C 가 먹통이 된
-    // 것처럼 보이니, 잠깐 기다려도 안 끝나면 그냥 강제로 끝낸다.
+    // Force-exit if the server doesn't close in time (e.g. a lingering socket).
     const forceExit = setTimeout(() => process.exit(0), 2000);
     forceExit.unref();
     server.close().then(() => process.exit(0));
   });
-  return null; // 서버가 떠 있는 동안 프로세스를 유지한다
+  return null; // Keep the process alive while the server is running.
 }
 
-/** 소스와 리소스 폴더를 지켜보다가 바뀌면 다시 컴파일해서 서버에 반영한다 */
+/** Watches the source and asset directories and recompiles into the running server on change. */
 function watchAndReload(file, options, assetDirs, label, server) {
   const watchDirs = new Set([path.dirname(path.resolve(file)), ...assetDirs]);
   let timer = null;
@@ -221,7 +220,7 @@ function watchAndReload(file, options, assetDirs, label, server) {
         timer = setTimeout(rebuild, 150);
       }));
     } catch {
-      // 폴더를 지켜볼 수 없어도 (예: 없는 폴더) 조용히 넘어간다
+      // Ignore directories that can't be watched (e.g. missing).
     }
   }
   return () => {
@@ -230,7 +229,7 @@ function watchAndReload(file, options, assetDirs, label, server) {
   };
 }
 
-/** 웹 브라우저로 열기 (열 수 없으면 조용히 넘어간다) */
+/** Opens the URL in a web browser; fails silently if it can't. */
 function openBrowser(url) {
   const command = process.platform === 'darwin' ? 'open'
     : process.platform === 'win32' ? 'start'
@@ -240,7 +239,7 @@ function openBrowser(url) {
     child.on('error', () => {});
     child.unref();
   } catch {
-    // 브라우저를 못 열어도 주소를 찍어 뒀으니 괜찮다
+    // The URL was already printed, so a failed auto-open is not fatal.
   }
 }
 
@@ -250,7 +249,7 @@ function countBlocks(node) {
   return 1 + countBlocks(node.params ?? []) + countBlocks(node.statements ?? []);
 }
 
-/** 이미 있는 .ent(엔트리 작품)를 Tess 소스로 되돌린다 */
+/** Decompiles an existing .ent (Entry project) back into Tess source. */
 async function runDecompile(file, options) {
   const { decompileEnt } = await import('./src/decompiler/index.js');
   const label = path.basename(file);
@@ -294,7 +293,7 @@ async function runDecompile(file, options) {
       ? '  되돌린 소스가 다시 정상적으로 컴파일됩니다.'
       : `  참고: 되돌린 소스에 아직 컴파일 에러가 ${recheck.errors.length}개 있습니다 — node index.js check ${mainFile} 로 자세히 보세요.`);
   } catch {
-    // 다시 컴파일해 보는 건 참고용이라, 실패해도 결과물은 그대로 둔다
+    // The recheck is informational only; keep the output even if it fails.
   }
   return 0;
 }
@@ -314,8 +313,8 @@ async function main(argv) {
     process.exit(2);
   }
 
-  // .ent(엔트리 작품)를 decompile 이 아닌 명령에 잘못 넣거나, 반대로 .tess 를
-  // decompile 에 넣는 실수는 아리송한 파싱 에러 대신 바로 알려 준다.
+  // Flag a .ent passed to a non-decompile command (or .tess passed to decompile)
+  // immediately, instead of failing later with a confusing parse error.
   for (const file of files) {
     const ext = path.extname(file).toLowerCase();
     if (command !== 'decompile' && ext === '.ent') {

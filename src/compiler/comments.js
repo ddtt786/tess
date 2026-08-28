@@ -1,16 +1,15 @@
-// ============================================================================
-//  Tess 주석 -> 엔트리 주석
+// Tess comments -> Entry comments.
 //
-//  문법에서 주석은 공백으로 취급되어 AST 에 남지 않는다.
-//  그래서 원본 소스를 따로 훑어 주석 위치를 모으고, 소스 위치(loc)를 기준으로
-//  "바로 아래 문장" 또는 "같은 줄 문장" 에 붙인다.
+// The grammar treats comments as whitespace, so they never reach the AST.
+// This module rescans the raw source for comment positions and, using
+// node source locations (loc), attaches each comment to the statement
+// directly below it or on the same line.
 //
-//  엔트리는 주석을 블록의 comment 필드에 담는다.
-//    { x, y, width, height, value, readOnly, visible, display,
-//      movable, isOpened, deletable, type: 'comment' }
-// ============================================================================
+// Entry stores a comment as a block's comment field:
+//   { x, y, width, height, value, readOnly, visible, display,
+//     movable, isOpened, deletable, type: 'comment' }
 
-/** 주석이 붙을 수 있는 노드 (블록이 만들어지는 것들) */
+/** Node types a comment can attach to (ones that become blocks). */
 const ATTACHABLE = new Set([
   'Event',
   'If', 'Repeat', 'While', 'Until', 'Forever', 'Wait', 'Break', 'Skip', 'Restart', 'Return',
@@ -24,7 +23,7 @@ const ATTACHABLE = new Set([
   'VarDecl', 'ListDecl', 'Assign', 'ExpressionStatement',
 ]);
 
-/** 엔트리 주석 한 개 만들기 */
+/** Builds one Entry comment object. */
 export function makeComment(value) {
   return {
     x: 240,
@@ -43,8 +42,8 @@ export function makeComment(value) {
 }
 
 /**
- * 소스에서 주석을 찾는다. 문자열 안의 `#` 과 색상 리터럴(#ff0000)은 건너뛴다.
- * (문법의 comment 규칙과 같은 판단이다)
+ * Scans the source for comments, skipping `#` inside strings and color
+ * literals (#ff0000) — matching the grammar's comment rule.
  */
 export function scanComments(source) {
   const comments = [];
@@ -65,7 +64,7 @@ export function scanComments(source) {
 
     if (ch !== '#') continue;
 
-    // #rrggbb 는 색상 리터럴이지 주석이 아니다
+    // #rrggbb is a color literal, not a comment
     const body = source.slice(i + 1, i + 7);
     if (body.length === 6 && [...body].every(isHex) && !isWord(source[i + 7])) {
       i += 6;
@@ -81,11 +80,11 @@ export function scanComments(source) {
 }
 
 /**
- * AST 의 노드와 주석을 이어 준다.
+ * Links AST nodes to their comments.
  *
- * @param {object} ast     use 까지 펼친 Program
- * @param {Map<string,string>} sources  파일 -> 소스
- * @returns {Map<string,string>} `파일 시작오프셋` -> 주석 내용
+ * @param {object} ast     Program with `use` already expanded
+ * @param {Map<string,string>} sources  file -> source text
+ * @returns {Map<string,string>} `file startOffset` -> comment text
  */
 export function buildCommentMap(ast, sources) {
   const nodesByFile = new Map();
@@ -100,7 +99,7 @@ export function buildCommentMap(ast, sources) {
   return map;
 }
 
-/** 주석 찾아보기 열쇠 */
+/** Lookup key for a node's comment. */
 export function commentKey(node) {
   return `${node?.loc?.file ?? ''} ${node?.loc?.start ?? -1}`;
 }
@@ -128,7 +127,7 @@ function attachInFile(source, file, nodes, map) {
   const sorted = [...nodes].sort((a, b) => a.loc.start - b.loc.start);
   const remaining = [];
 
-  // 1) 같은 줄 뒤쪽에 붙은 주석: 그 줄의 문장에 붙인다
+  // 1) trailing same-line comments attach to that line's statement
   for (const comment of comments) {
     const line = lineOf(comment.start);
     const owner = lastWhere(
@@ -139,7 +138,7 @@ function attachInFile(source, file, nodes, map) {
     else remaining.push(comment);
   }
 
-  // 2) 문장 바로 위에 있는 주석 묶음: 아래 문장에 붙인다
+  // 2) a comment block directly above attaches to the statement below it
   for (let i = 0; i < remaining.length; i += 1) {
     const group = [remaining[i]];
     while (

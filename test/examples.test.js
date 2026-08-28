@@ -1,7 +1,7 @@
-// examples/ 아래의 .tess 파일 검사
-//  - use / useobject 로 불러와지는 조각 파일: 문법만 맞으면 된다
-//    (혼자 두면 다른 파일에 있는 전역 변수·함수를 모르고, object 로 감싸여 있지도 않다)
-//  - 그 밖의 파일(진입점): 에러도 경고도 없어야 한다
+// Tests the .tess files under examples/
+//  - fragments loaded via use / useobject: only need valid grammar
+//    (in isolation they don't know globals/functions from other files and aren't wrapped in object)
+//  - all other files (entry points): must have no errors or warnings
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -20,7 +20,7 @@ function tessFiles(dir) {
   });
 }
 
-/** AST 안의 use / useobject 경로를 절대 경로로 모은다 */
+/** Collects use / useobject paths from the AST as absolute paths. */
 function usedFiles(node, base, found = new Set()) {
   if (node === null || typeof node !== 'object') return found;
   if (Array.isArray(node)) {
@@ -55,7 +55,7 @@ for (const file of files) {
 
   if (fragments.has(file)) {
     test(`예제(조각): ${label}`, () => {
-      // 조각은 놓이는 자리에 따라 시작 규칙이 다르므로 하나라도 맞으면 된다
+      // a fragment's valid start rule depends on where it's placed; any one match is enough
       const ok = FRAGMENT_RULES.some((startRule) => parse(source, { startRule, validate: false }).ok);
       assert.ok(ok, `${label} 을(를) 어떤 자리의 조각으로도 읽을 수 없습니다.`);
     });

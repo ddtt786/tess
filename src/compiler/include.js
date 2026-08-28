@@ -1,13 +1,11 @@
-// ============================================================================
-//  `use "파일"` 해석
+// Resolves `use "file"`.
 //
-//  spec 3.3 은 use 를 "그 위치에 통째로 불러와 포함" 이라고 정의한다.
-//  그래서 파싱한 뒤 Use 노드를 불러온 파일의 AST 로 그대로 갈아끼운다.
-//  불러온 조각은 놓인 자리에 따라 시작 규칙이 달라진다.
-//    최상위   -> Program
-//    scene 안 -> SceneFragment
-//    object 안 -> ObjectFragment
-// ============================================================================
+// Per spec 3.3, use inlines the target file's whole contents at that
+// position: after parsing, each Use node is replaced with the loaded
+// file's AST. The parse start rule depends on where the Use sits:
+//   top level  -> Program
+//   in scene   -> SceneFragment
+//   in object  -> ObjectFragment
 import fs from 'node:fs';
 import path from 'node:path';
 import { parse } from '../parse.js';
@@ -70,7 +68,7 @@ export function loadProgram({ source, path: filePath = '<input>', readFile = def
     return output;
   };
 
-  // useobject / usetext: 불러온 조각을 오브젝트로 감싼다. 이름은 파일 이름.
+  // useobject / usetext: wraps the loaded fragment in an object named after the file.
   const expandUseObject = (item, file) => {
     const target = path.resolve(path.dirname(file), item.path);
     if (visiting.has(target)) {
@@ -120,7 +118,7 @@ function position(node) {
   return { line: node?.loc?.line ?? 0, column: 0, offset: node?.loc?.start ?? 0 };
 }
 
-/** 불러온 파일의 노드에 어느 파일에서 왔는지 표시해 둔다 (에러 위치 계산용) */
+/** Stamps each node with its source file, for error-location reporting. */
 function stampSource(node, file) {
   if (node === null || typeof node !== 'object') return;
   if (Array.isArray(node)) {

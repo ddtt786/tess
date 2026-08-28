@@ -1,13 +1,13 @@
 // ============================================================================
-//  Tess 시맨틱 검증
+//  Tess semantic validation.
 //
-//  문법만으로는 잡을 수 없는 spec 의 의미 규칙을 AST 위에서 검사한다.
+//  Checks spec rules on the AST that the grammar alone cannot enforce:
 //
-//   1) 글상자 전용 명령/속성을 일반 object 에서 사용 (spec 8.5)
-//   2) 함수 안에서 오브젝트 로컬 변수 참조     (spec 14.2)
-//   3) 함수 밖의 return
-//   4) 반복문 밖의 break / skip
-//   5) project 블록 중복 선언                  (spec 3.2)
+//   1) text-only commands/properties used on a plain object (spec 8.5)
+//   2) object-local variable referenced inside a function     (spec 14.2)
+//   3) return outside a function
+//   4) break / skip outside a loop
+//   5) duplicate project block                                (spec 3.2)
 // ============================================================================
 import {
   BUILTIN_FUNCTIONS,
@@ -19,7 +19,7 @@ import {
 
 const LOOP_TYPES = new Set(['Repeat', 'While', 'Until', 'Forever']);
 
-/** 오프셋을 사람이 읽는 줄/열로 변환 */
+/** Converts a source offset to a human-readable line/column. */
 export function lineAndColumn(source, offset) {
   let line = 1;
   let column = 1;
@@ -35,9 +35,9 @@ export function lineAndColumn(source, offset) {
 }
 
 /**
- * @param {object} program  ast() 로 만든 Program 노드
- * @param {string} source   원본 소스 (에러 위치 계산용)
- * @param {Map<string,string>} [sources] use 로 불러온 파일들의 소스
+ * @param {object} program  Program node produced by ast()
+ * @param {string} source   original source (for error position lookup)
+ * @param {Map<string,string>} [sources] sources of files pulled in via `use`
  * @returns {{errors: Array, warnings: Array}}
  */
 export function validate(program, source = '', sources = null) {
@@ -45,7 +45,7 @@ export function validate(program, source = '', sources = null) {
   const warnings = [];
 
   const report = (bucket, node, message) => {
-    // `use` 로 불러온 노드는 자기 파일 기준으로 위치를 계산해야 한다
+    // A node pulled in via `use` needs its position resolved against its own file.
     const file = node?.loc?.file;
     const text = (file && sources?.get(file)) ?? source;
     const { line, column } = lineAndColumn(text, node?.loc?.start ?? 0);
@@ -54,18 +54,18 @@ export function validate(program, source = '', sources = null) {
   const error = (node, message) => report(errors, node, message);
   const warn = (node, message) => report(warnings, node, message);
 
-  // --- 사전 수집 -----------------------------------------------------------
+  // --- pre-collection --------------------------------------------------------
   const globals = declaredNames(program.body);
   const knownFunctions = new Set(collectFunctionNames(program.body));
-  // `use` 로 다른 파일을 불러오는 프로그램은 이 파일만 봐서는 알 수 없는 이름이
-  // 생기므로, 이름 기반 경고는 끈다.
+  // A program that pulls in other files via `use` may reference names this
+  // file alone can't see, so name-based warnings are disabled in that case.
   const hasUse = containsUse(program);
 
   let projectCount = 0;
 
   for (const item of program.body) visitTopLevel(item);
 
-  // --- 방문자 ---------------------------------------------------------------
+  // --- visitors ----------------------------------------------------------
   function visitTopLevel(item) {
     switch (item.type) {
       case 'Project':
@@ -120,9 +120,9 @@ export function validate(program, source = '', sources = null) {
   }
 
   function visitFunction(fn, objectLocals) {
-    // spec 14.2: 함수는 자신의 매개변수 · 지역 변수 · 전역 변수만 볼 수 있다.
+    // spec 14.2: a function can only see its own params, locals, and globals.
     walkStatements(fn.body, {
-      isText: true, // 함수는 오브젝트 종류와 무관하므로 글상자 검사는 하지 않는다
+      isText: true, // Functions are independent of object kind, so skip text-only checks.
       inFunction: true,
       loopDepth: 0,
       scope: new Set([...globals, ...fn.params]),
@@ -184,7 +184,7 @@ export function validate(program, source = '', sources = null) {
         break;
     }
 
-    // 자식 문장 블록
+    // Child statement blocks.
     const blocks = childBlocks(statement);
     const innerCtx = LOOP_TYPES.has(statement.type)
       ? { ...ctx, loopDepth: ctx.loopDepth + 1 }
@@ -219,11 +219,11 @@ export function validate(program, source = '', sources = null) {
   function checkIdentifier(identifier, ctx) {
     const { name } = identifier;
     if (ctx.scope.has(name)) return;
-    // 상태 값 · 옵션 키워드 · 오브젝트 속성은 선언 없이 쓰는 이름이다.
+    // State values, option keywords, and object properties are used without declaration.
     if (STATE_VALUES.has(name) || OPTION_KEYWORDS.has(name)) return;
     if (OBJECT_PROPERTIES.has(name) || TEXT_ONLY_PROPERTIES.has(name)) return;
 
-    // spec 14.2: object 로컬 변수는 함수 안에서 참조할 수 없다.
+    // spec 14.2: an object-local variable can't be referenced inside a function.
     if (ctx.inFunction && ctx.objectLocals.has(name)) {
       error(
         identifier,
@@ -247,10 +247,10 @@ export function validate(program, source = '', sources = null) {
 }
 
 // ---------------------------------------------------------------------------
-//  헬퍼
+//  Helpers
 // ---------------------------------------------------------------------------
 
-/** 블록 목록에서 직접 선언된 var/list 이름 */
+/** var/list names declared directly in a block list. */
 function declaredNames(body) {
   const names = new Set();
   for (const member of body) {
@@ -270,7 +270,7 @@ function collectFunctionNames(body) {
   return names;
 }
 
-/** 문장이 품고 있는 하위 문장 블록의 키 이름 */
+/** Key names of the child statement blocks a statement holds. */
 function childBlocks(statement) {
   switch (statement.type) {
     case 'If':

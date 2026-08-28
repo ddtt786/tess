@@ -1,12 +1,12 @@
 // ============================================================================
-//  Tess 공개 API
+//  Tess public API.
 // ============================================================================
 import { grammar } from './grammar.js';
 import { semantics } from './ast.js';
 import { lineAndColumn, validate } from './validate.js';
 
 /**
- * Tess 소스를 파싱해서 AST 와 진단 결과를 돌려준다.
+ * Parses Tess source and returns the AST plus diagnostics.
  *
  * @param {string} source
  * @param {{validate?: boolean, startRule?: string}} [options]
@@ -35,7 +35,7 @@ export function parse(source, options = {}) {
   return { ok: errors.length === 0, ast, match, errors, warnings };
 }
 
-/** 파싱에 실패하면 예외를 던지고, 성공하면 AST 를 돌려준다. */
+/** Throws on a parse failure, otherwise returns the AST. */
 export function parseOrThrow(source, options = {}) {
   const result = parse(source, options);
   if (!result.ok) {
@@ -48,12 +48,12 @@ export function parseOrThrow(source, options = {}) {
   return result.ast;
 }
 
-/** 문법에 맞는 코드인지만 빠르게 확인한다. */
+/** Quickly checks whether the code matches the grammar, nothing more. */
 export function check(source) {
   return grammar.match(source).succeeded();
 }
 
-/** 파서가 어떤 판단을 내렸는지 단계별로 보여준다 (디버깅용). */
+/** Shows the parser's step-by-step decisions (for debugging). */
 export function trace(source, startRule) {
   return (startRule ? grammar.trace(source, startRule) : grammar.trace(source)).toString();
 }

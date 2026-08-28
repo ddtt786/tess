@@ -1,30 +1,30 @@
 // ============================================================================
-//  Tess 시맨틱: 파스 트리(CST) -> AST 변환
+//  Tess semantics: parse tree (CST) -> AST conversion.
 //
-//  문법(tess.ohm)은 "이 코드가 올바른가" 만 판단하고,
-//  "그래서 이게 무슨 뜻인가" 는 전부 이 파일이 담당한다.
+//  The grammar (tess.ohm) only decides whether code is well-formed; this
+//  file decides what it means.
 // ============================================================================
 import { grammar } from './grammar.js';
 
 const semantics = grammar.createSemantics();
 
-/** 노드가 소비한 입력 구간 */
+/** Input range consumed by a node. */
 const at = (node) => ({ start: node.source.startIdx, end: node.source.endIdx });
 
-/** 자식들을 모두 ast() 로 변환한 배열 */
+/** Converts all children to an array via ast(). */
 const list = (iterNode) => iterNode.children.map((c) => c.ast());
 
-/** ListOf<x, ","> 처럼 내장 리스트 규칙을 배열로 */
+/** Converts a built-in list rule, e.g. ListOf<x, ",">, to an array. */
 const items = (listNode) => listNode.asIteration().children.map((c) => c.ast());
 
-/** 선택적(?) 노드: 있으면 변환, 없으면 null */
+/** Optional (?) node: converts if present, else null. */
 const opt = (optNode) => optNode.child(0)?.ast() ?? null;
 
 const ESCAPES = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', v: '\v', 0: '\0' };
 
 semantics.addOperation('ast', {
   // ==========================================================================
-  //  프로그램 · 선언
+  //  Program · declarations
   // ==========================================================================
   Program(body) {
     return { type: 'Program', body: list(body), loc: at(this) };
@@ -63,8 +63,8 @@ semantics.addOperation('ast', {
   SceneDecl(_scene, name, _open, members, _end) {
     return { type: 'Scene', name: name.ast().value, body: list(members), loc: at(this) };
   },
-  // 오브젝트의 PropertyDecl_name 과 같은 모양(type: 'Property')으로 만들어서
-  // 컴파일러가 오브젝트 이름 처리와 똑같은 방식으로 다룰 수 있게 한다.
+  // Shaped like PropertyDecl_name (type: 'Property') so the compiler can
+  // handle it the same way as an object name.
   SceneNameDecl(_name, value) {
     return { type: 'Property', name: 'name', value: value.ast(), loc: at(this) };
   },
@@ -76,7 +76,7 @@ semantics.addOperation('ast', {
     return { type: 'Object', kind: 'text', name: name.ast().value, body: list(members), loc: at(this) };
   },
 
-  // --- 오브젝트 속성 --------------------------------------------------------
+  // --- Object properties -----------------------------------------------------
   PropertyDecl_defaultCostumeSized(_default, _costume, id, file, _size, width, height, forceIdOpt) {
     return costume(this, id, file, true, width, height, forceIdOpt);
   },
@@ -124,14 +124,14 @@ semantics.addOperation('ast', {
     return { type: 'Property', name: name.sourceString, value: value.ast(), loc: at(this) };
   },
 
-  // --- 함수 · 변수 · 리스트 --------------------------------------------------
+  // --- Functions · variables · lists ------------------------------------------
   FunctionDecl(_fn, name, _lp, params, _rp, _open, body, _end) {
     const declared = items(params);
     return {
       type: 'FunctionDecl',
       name: name.ast().name,
       params: declared.map((p) => p.name),
-      // `이름?` 으로 적은 매개변수 — 엔트리 함수의 판단 칸이 된다 (SPEC-ADDENDUM.md 4.6)
+      // A `name?` parameter becomes an Entry function's boolean input (SPEC-ADDENDUM.md 4.6).
       booleanParams: declared.filter((p) => p.boolean).map((p) => p.name),
       body: body.ast(),
       loc: at(this),
@@ -148,7 +148,7 @@ semantics.addOperation('ast', {
   },
 
   // ==========================================================================
-  //  이벤트
+  //  Events
   // ==========================================================================
   EventHandler_sceneStart(_when, _scene, _start, _open, body, _end) {
     return { type: 'Event', event: 'scene_start', body: body.ast(), loc: at(this) };
@@ -182,7 +182,7 @@ semantics.addOperation('ast', {
   },
 
   // ==========================================================================
-  //  제어 흐름
+  //  Control flow
   // ==========================================================================
   Block(statements) {
     return list(statements);
@@ -295,7 +295,7 @@ semantics.addOperation('ast', {
   },
 
   // ==========================================================================
-  //  신호 · 복제 · 장면
+  //  Signals · clones · scenes
   // ==========================================================================
   SignalStatement_send(_send, name) {
     return { type: 'Send', signal: name.ast(), wait: false, loc: at(this) };
@@ -332,7 +332,7 @@ semantics.addOperation('ast', {
   },
 
   // ==========================================================================
-  //  움직임
+  //  Movement
   // ==========================================================================
   MoveStatement_forwardAt(_forward, distance, _at, angle) {
     return { type: 'Forward', distance: distance.ast(), angle: angle.ast(), loc: at(this) };
@@ -379,7 +379,7 @@ semantics.addOperation('ast', {
   },
 
   // ==========================================================================
-  //  모양 · 대화
+  //  Looks · speech bubbles
   // ==========================================================================
   LooksStatement_showTarget(_show, _sameLine, target) {
     return { type: 'Show', target: target.ast(), loc: at(this) };
@@ -425,7 +425,7 @@ semantics.addOperation('ast', {
   },
 
   // ==========================================================================
-  //  글상자 · 붓 · 소리
+  //  Text box · pen · sound
   // ==========================================================================
   TextStatement_write(_write, value) {
     return { type: 'TextWrite', mode: 'write', value: value.ast(), loc: at(this) };
@@ -463,7 +463,7 @@ semantics.addOperation('ast', {
     return { type: 'PlayBgm', name: name.ast(), loc: at(this) };
   },
 
-  // --- TTS 읽어주기 (addendum) -----------------------------------------------
+  // --- TTS speech (addendum) --------------------------------------------------
   ReadStatement_readWait(_read, value, _and, _wait) {
     return { type: 'Read', value: value.ast(), wait: true, loc: at(this) };
   },
@@ -477,7 +477,7 @@ semantics.addOperation('ast', {
   },
 
   // ==========================================================================
-  //  자료
+  //  Data
   // ==========================================================================
   DataStatement_listAdd(_in, name, _add, value) {
     return { type: 'ListAdd', list: name.ast(), value: value.ast(), loc: at(this) };
@@ -510,7 +510,7 @@ semantics.addOperation('ast', {
   },
 
   // ==========================================================================
-  //  표현식
+  //  Expressions
   // ==========================================================================
   OrExpr_or(left, _op, right) {
     return { type: 'Binary', operator: 'or', left: left.ast(), right: right.ast(), loc: at(this) };
@@ -561,7 +561,7 @@ semantics.addOperation('ast', {
   },
 
   // ==========================================================================
-  //  리터럴 · 식별자
+  //  Literals · identifiers
   // ==========================================================================
   identifier(_name) {
     return { type: 'Identifier', name: this.sourceString, loc: at(this) };
@@ -596,7 +596,7 @@ semantics.addOperation('ast', {
   },
 
   // ==========================================================================
-  //  기본 동작
+  //  Default behavior
   // ==========================================================================
   _iter(...children) {
     return children.map((c) => c.ast());

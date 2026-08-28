@@ -1,8 +1,8 @@
 // ============================================================================
-//  tess.ohm 과 builtins.js 를 읽어 VS Code 문법 강조 파일을 만든다.
-//  (손으로 키워드를 옮겨 적지 않도록 — 언어가 바뀌면 다시 돌리면 된다)
+//  Generates the VS Code syntax highlighting grammar from tess.ohm and
+//  builtins.js, so keywords stay in sync without manual copying.
 //
-//  실행:  node editors/vscode/build-grammar.mjs
+//  Run:  node editors/vscode/build-grammar.mjs
 // ============================================================================
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,13 +12,13 @@ import { BUILTIN_FUNCTIONS, OPTION_KEYWORDS, STATE_VALUES, OBJECT_PROPERTIES, TE
 const here = path.dirname(fileURLToPath(import.meta.url));
 const grammarSource = fs.readFileSync(path.join(here, '..', '..', 'src', 'tess.ohm'), 'utf-8');
 
-/** tess.ohm 의 `이름 = "글자" ~identifierPart` 규칙에서 키워드를 모은다 */
+/** Collects keywords from tess.ohm's `name = "text" ~identifierPart` rules. */
 const keywords = new Set(
   [...grammarSource.matchAll(/^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*"([^"]+)"\s*~identifierPart/gm)]
     .map((match) => match[1]),
 );
 
-/** 낱말 경계 (Tess 식별자는 _ 와 한글도 쓴다) */
+/** Word boundary (Tess identifiers also allow `_` and Hangul). */
 const word = (list) => `(?<![A-Za-z0-9_])(?:${[...list].sort((a, b) => b.length - a.length).join('|')})(?![A-Za-z0-9_])`;
 
 const DECLARATION = ['project', 'scene', 'object', 'text', 'function', 'use', 'useobject', 'usetext', 'var', 'list'];
@@ -29,7 +29,7 @@ const OPERATOR_WORDS = ['and', 'or', 'not', 'in', 'at', 'to', 'from', 'for', 'up
 const CONSTANTS = ['true', 'false', 'transparent', 'next', 'back', 'front', 'all', 'this', 'me',
   'them', 'other', 'free', 'vertical', 'none', ...OPTION_KEYWORDS];
 
-// 위 갈래에 넣지 않은 나머지 키워드는 전부 "명령"으로 본다
+// Any keyword not claimed by a category above is treated as a "command".
 const claimed = new Set([...DECLARATION, ...CONTROL, ...EVENT, ...OPERATOR_WORDS, ...CONSTANTS]);
 const COMMANDS = [...keywords].filter((keyword) => !claimed.has(keyword));
 
@@ -43,7 +43,7 @@ const grammar = {
     { include: '#number' }, { include: '#declaration' }, { include: '#function-call' },
     { include: '#keyword' }, { include: '#operator' }, { include: '#identifier' }],
   repository: {
-    // `#` 은 주석이지만 `#ff0000` 은 색이다 (문법의 comment 규칙과 같은 판단)
+    // `#` starts a comment, but `#ff0000` is a color (mirrors the grammar's comment rule).
     comment: {
       name: 'comment.line.number-sign.tess',
       match: '#(?![0-9a-fA-F]{6}(?![0-9a-zA-Z_])).*$',
@@ -62,7 +62,7 @@ const grammar = {
       name: 'constant.numeric.tess',
       match: '(?<![A-Za-z0-9_])[0-9]+(\\.[0-9]+)?',
     },
-    // 선언 뒤에 오는 이름을 따로 칠한다
+    // Highlight the name following a declaration keyword separately.
     declaration: {
       patterns: [
         {

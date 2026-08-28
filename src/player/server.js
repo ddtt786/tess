@@ -1,15 +1,15 @@
 // ============================================================================
-//  `tess run` 이 띄우는 작은 정적 서버
+//  Small static server started by `tess run`.
 //
-//  주는 것
-//    /                 실행 페이지
-//    /project.json     컴파일한 작품
-//    /<이름>.ent        내려받기용 묶음
-//    /temp/...         모양·소리 리소스
-//    /lib/...          @entrylabs/entry 가 설치돼 있으면 그 파일들
-//    /debug-ui.js      디버그 패널 UI (모듈)
-//    /arrow/...        디버그 패널 UI 가 쓰는 arrow-js
-//    /api/expansionBlock/tts/read.mp3   tts 읽어주기 — playentry.org 로 대신 요청해 준다
+//  Serves:
+//    /                 player page
+//    /project.json     compiled project
+//    /<name>.ent       downloadable bundle
+//    /temp/...         costume/sound resources
+//    /lib/...          @entrylabs/entry files, if installed
+//    /debug-ui.js      debug panel UI (module)
+//    /arrow/...        arrow-js used by the debug panel UI
+//    /api/expansionBlock/tts/read.mp3   TTS speech, proxied to playentry.org
 // ============================================================================
 import fs from 'node:fs';
 import http from 'node:http';
@@ -18,13 +18,14 @@ import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { playerPage, DEBUG_UI_PATH, ARROW_PATH } from './template.js';
 
-// entryjs 의 tts 읽어주기(block_ai_utilize_tts.js)는 `${Entry.baseUrl}/api/expansionBlock/tts/read.mp3?...`
-// 로 브라우저에서 직접 요청한다. Entry.baseUrl 기본값은 location.origin(우리 서버)이라
-// 이 경로가 여기로 들어오는데, playentry.org 로 바로 요청하게 바꾸면(baseUrl 을 그렇게
-// 정하면) playentry.org 가 CORS 허용 헤더를 안 줘서 브라우저가 그냥 막아 버린다(서버
-// 쪽 요청은 CORS 대상이 아니다). 그래서 이 서버가 대신 playentry.org 로 요청해서
-// 그 응답(mp3)을 그대로 돌려준다 — 브라우저 입장에서는 항상 같은 origin(우리 서버)
-// 이라 CORS 문제가 없다.
+// entryjs's TTS block (block_ai_utilize_tts.js) requests
+// `${Entry.baseUrl}/api/expansionBlock/tts/read.mp3?...` directly from the
+// browser. Entry.baseUrl defaults to location.origin (this server), which
+// routes the request here; pointing it at playentry.org directly would hit
+// its missing CORS headers and get blocked by the browser. So this server
+// proxies the request to playentry.org server-side (not subject to CORS)
+// and streams the mp3 response back — the browser always sees the same
+// origin (this server), so there's no CORS issue.
 const TTS_PROXY_PATH = '/api/expansionBlock/tts/read.mp3';
 
 const MIME = {
@@ -40,17 +41,17 @@ const MIME = {
   '.ent': 'application/octet-stream',
 };
 
-// jsDelivr 는 npm 패키지 전체 크기가 150MB 를 넘으면 그 패키지의 어떤 파일이든 403 으로
-// 거부한다(`Package size exceeded the configured limit of 150 MB.`) — @entrylabs/entry 는
-// 그 한도를 넘어서 jsDelivr 로는 아예 못 받아 온다(entry.min.js 조차 403). 같은 파일을
-// unpkg 는 문제없이 준다(같은 npm 레지스트리에서 직접 서빙하며 패키지 전체 크기 제한이 없다).
+// jsDelivr rejects any file from an npm package with 403 once the package
+// exceeds 150MB total (`Package size exceeded the configured limit of 150 MB.`).
+// @entrylabs/entry exceeds that limit, so even entry.min.js 403s there.
+// unpkg serves the same file fine, with no such package-size cap.
 const CDN = 'https://unpkg.com/@entrylabs/entry@4.0.22';
 
 const DEBUG_UI_FILE = fileURLToPath(new URL('./debug-ui.js', import.meta.url));
 
-// arrow-js 는 dist/index.mjs 를 그대로 쓴다. 같은 패키지의 index.min.mjs 는 1.0.6 기준
-// 목록 렌더가 깨져서(내부 함수를 글자로 찍는다) 못 쓴다.
-/** 디버그 패널이 쓰는 arrow-js 의 dist 폴더. 못 찾으면 null */
+// Uses arrow-js's dist/index.mjs as-is. The package's index.min.mjs (as of
+// 1.0.6) breaks list rendering — it prints internal functions as text.
+/** The dist folder of the arrow-js used by the debug panel, or null if not found. */
 export function findArrowDir() {
   try {
     return path.dirname(fileURLToPath(import.meta.resolve('@arrow-js/core')));
@@ -59,7 +60,7 @@ export function findArrowDir() {
   }
 }
 
-/** 프로젝트에 entryjs 가 설치돼 있으면 그 폴더를 돌려준다 */
+/** Returns the entryjs directory if it's installed in the project, else null. */
 export function findLocalRuntime(from = process.cwd()) {
   let dir = path.resolve(from);
   for (;;) {
@@ -72,7 +73,7 @@ export function findLocalRuntime(from = process.cwd()) {
 }
 
 /**
- * 작품을 실행할 수 있는 서버를 띄운다.
+ * Starts a server that can run the project.
  *
  * @param {{project: object, bundle: Buffer, assets: Array, name: string, port?: number, reload?: boolean, sourceMap?: object}} options
  * @returns {Promise<{url: string, close: Function, runtime: string, update: Function}>}
@@ -88,7 +89,7 @@ export function serveProject({
   let currentProject = project;
   let currentBundle = bundle;
   let currentSourceMap = sourceMap;
-  // temp/... 경로 -> 실제 파일
+  // temp/... path -> actual file
   let assetFiles = new Map(assets.map((asset) => [`/${asset.target}`, asset.source]));
   const reloadClients = new Set();
 
@@ -133,7 +134,7 @@ export function serveProject({
 
     if (url === DEBUG_UI_PATH) return sendFile(response, DEBUG_UI_FILE);
 
-    // 디버그 패널 UI 가 import 하는 arrow-js
+    // arrow-js, imported by the debug panel UI.
     if (arrowDir && url.startsWith(ARROW_PATH)) {
       const target = path.join(arrowDir, url.slice(ARROW_PATH.length));
       if (target.startsWith(arrowDir) && fs.existsSync(target)) return sendFile(response, target);
@@ -149,17 +150,17 @@ export function serveProject({
       resolve({
         url: `http://127.0.0.1:${actual}/`,
         runtime: localRuntime ? `설치된 @entrylabs/entry (${localRuntime})` : `CDN (${CDN})`,
-        // /__reload 의 SSE 연결은 브라우저가 열려 있는 한 계속 붙어 있어서,
-        // 그냥 server.close() 만 부르면 콜백이 영영 안 불려 Ctrl+C 로도 못 끝난다
-        // (Node 는 켜져 있는 커넥션이 다 끝나야 close 콜백을 부른다). 그래서
-        // SSE 응답을 먼저 끝내고, 혹시 남은 커넥션까지 강제로 닫아 준다.
+        // The /__reload SSE connection stays open as long as the browser tab
+        // is open, so calling server.close() alone never fires its callback
+        // (Node waits for all open connections to end). End the SSE
+        // responses first, then force-close any remaining connections.
         close: () => {
           for (const client of reloadClients) client.end();
           reloadClients.clear();
           server.closeAllConnections?.();
           return new Promise((done) => server.close(done));
         },
-        /** 다시 컴파일한 작품으로 갈아 끼우고, 열려 있는 브라우저를 새로고침한다 */
+        /** Swaps in a freshly recompiled project and reloads any open browser tabs. */
         update({ project: nextProject, bundle: nextBundle, assets: nextAssets = [], sourceMap: nextSourceMap = {} }) {
           currentProject = nextProject;
           currentBundle = nextBundle;
@@ -172,7 +173,7 @@ export function serveProject({
   });
 }
 
-/** 브라우저에서 실행하다 난 panic 을 받아서 이 서버를 띄운 터미널에 그대로 찍는다 */
+/** Receives a browser-side runtime panic and prints it to the terminal running this server. */
 function receiveLog(request, response) {
   let body = '';
   request.on('data', (chunk) => {
@@ -186,13 +187,13 @@ function receiveLog(request, response) {
       console.error(`\n[${when}] 엔트리 실행 중 ${kind ?? '오류'}: ${message ?? '(메시지 없음)'}`);
       if (stack) console.error(stack);
     } catch {
-      // 로그 본문을 못 읽어도 서버는 계속 돈다
+      // The server keeps running even if the log body can't be parsed.
     }
     response.writeHead(204).end();
   });
 }
 
-/** tts 읽어주기 요청을 playentry.org 로 대신 보내고 mp3 응답을 그대로 돌려준다 (TTS_PROXY_PATH 주석 참고) */
+/** Proxies a TTS request to playentry.org and streams back its mp3 response (see the TTS_PROXY_PATH note above). */
 async function proxyTts(request, response) {
   const target = `https://playentry.org${request.url}`;
   try {

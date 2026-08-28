@@ -1,13 +1,11 @@
-// ============================================================================
-//  Tess -> 엔트리 프로젝트(project.json) 컴파일러
+// Tess -> Entry project (project.json) compiler.
 //
-//  단계
-//   1. use 해석 + 파싱          (include.js, parse.js)
-//   2. 시맨틱 검증               (validate.js)
-//   3. 심볼 수집 — 장면 · 오브젝트 · 변수 · 신호 · 함수
-//   4. 스크립트 컴파일           (statement.js, expression.js)
-//   5. 엔트리 프로젝트 조립
-// ============================================================================
+// Stages
+//   1. resolve use + parse         (include.js, parse.js)
+//   2. semantic validation         (validate.js)
+//   3. symbol collection — scenes, objects, variables, messages, functions
+//   4. script compilation          (statement.js, expression.js)
+//   5. Entry project assembly
 import path from 'node:path';
 import { Context } from './context.js';
 import { loadProgram } from './include.js';
@@ -20,21 +18,23 @@ import { validate } from '../validate.js';
 import { isAutoParamName } from '../function-params.js';
 
 const DEFAULT_SCENE_NAME = '장면 1';
-// 엔트리 글상자의 실제 기본 글씨체는 CSS font-family 이름 'Nanum Gothic'이다(entryjs
-// src/class/entity.js). 한글 이름 '나눔고딕'을 그대로 쓰면 그 이름의 @font-face 가
-// 없어서 브라우저가 아무 특징 없는 기본 글꼴로 대체해 버린다.
+// Entry's actual default text-box font is the CSS font-family name 'Nanum
+// Gothic' (entryjs src/class/entity.js). Using the Korean name '나눔고딕'
+// verbatim has no matching @font-face, so the browser falls back to a
+// generic default font instead.
 const DEFAULT_FONT = 'Nanum Gothic';
-// 붓 속성(draw_color 등)은 project.json 에 "기본값" 자리가 없다 — 엔트리는 오브젝트를
-// 만들 때마다 항상 빨간 붓(#ff0000, 두께 1)으로 시작한다(entryjs Entry.setBasicBrush).
-// 그래서 오브젝트 선언에 이 값들을 적으면, 컴파일러가 `when start` 스크립트를 만들어
-// 넣어서 그 값을 제일 먼저 정하게 한다.
+// project.json has no "default" slot for brush properties (draw_color
+// etc.) — Entry always starts a new object with a red brush (#ff0000,
+// thickness 1) (entryjs Entry.setBasicBrush). So when an object
+// declaration sets these values, the compiler synthesizes a `when start`
+// script that sets them first.
 const BRUSH_DEFAULT_PROPERTIES = ['draw_color', 'fill_color', 'draw_width', 'draw_alpha'];
 
 /**
- * Tess 소스를 엔트리 프로젝트 객체로 컴파일한다.
+ * Compiles Tess source into an Entry project object.
  *
- * 에러가 있으면 `project` 는 null 이다. `force: true` 면 에러가 난 문장만 빠진 작품을
- * 그대로 돌려준다 (`ok` 는 여전히 false).
+ * `project` is null if there are errors. With `force: true`, returns the
+ * project with only the failed statements omitted (`ok` is still false).
  *
  * @param {string} source
  * @param {{path?: string, assetDirs?: string[], name?: string, readFile?: Function, force?: boolean}} [options]
@@ -80,7 +80,7 @@ export function compileProject(source, options = {}) {
 }
 
 // ---------------------------------------------------------------------------
-//  1. 장면
+//  1. scenes
 // ---------------------------------------------------------------------------
 function collectScenes(program, ctx) {
   for (const item of program.body) {
@@ -89,14 +89,15 @@ function collectScenes(program, ctx) {
       ctx.error(item, `'${item.name}' 장면이 이미 있습니다.`);
       continue;
     }
-    // `scene "id":` 의 "id" 는 jump 등에서 쓰는 식별자다. 본문에 `name "..."` 이
-    // 있으면 컴파일된 작품에는 그 이름이 대신 찍힌다(오브젝트의 name 속성과 동일).
+    // The "id" in `scene "id":` is the identifier used by jump etc. A
+    // `name "..."` in the body overrides the display name in the compiled
+    // project instead (same as an object's name property).
     const scene = { id: ctx.newId(), name: sceneDisplayName(item, ctx) ?? item.name };
     ctx.scenes.push(scene);
     ctx.sceneByName.set(item.name, scene);
   }
 
-  // scene 없이 object 만 있는 파일도 컴파일할 수 있게 기본 장면을 만든다
+  // synthesizes a default scene so a file with only objects (no scene) can still compile
   const hasLooseObject = program.body.some((item) => item.type === 'Object');
   if (ctx.scenes.length === 0 || (hasLooseObject && ctx.scenes.length === 0)) {
     const scene = { id: ctx.newId(), name: DEFAULT_SCENE_NAME };
@@ -105,7 +106,7 @@ function collectScenes(program, ctx) {
   }
 }
 
-/** 장면 본문에 `name "..."` 이 있으면 그 문자열을, 없으면 null 을 돌려준다 */
+/** Returns the string from a `name "..."` in the scene body, or null if absent. */
 function sceneDisplayName(item, ctx) {
   let value = null;
   for (const member of item.body) {
@@ -120,7 +121,7 @@ function sceneDisplayName(item, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-//  2. 전역 변수 · 리스트
+//  2. global variables, lists
 // ---------------------------------------------------------------------------
 function collectGlobals(program, ctx) {
   for (const item of program.body) {
@@ -134,7 +135,7 @@ function collectGlobals(program, ctx) {
   }
 }
 
-/** var/list 선언 -> 엔트리 variables 항목 */
+/** var/list declaration -> Entry variables entry. */
 function makeVariable(node, ctx, objectId) {
   const base = {
     name: node.name,
@@ -168,12 +169,12 @@ function makeVariable(node, ctx, objectId) {
   return { ...base, value };
 }
 
-/** 선언 초기값으로 쓸 수 있는 상수인지 확인하고 원시값으로 바꾼다 */
+/** Confirms the node is a valid declaration initializer and converts it to a raw value. */
 function constantOf(node, ctx) {
   switch (node.type) {
     case 'Number': return node.value;
     case 'String': return node.value;
-    // 초기값도 대입할 때와 같은 글자를 쓴다. 엔트리에서 true 는 "TRUE" 이다(expression.js 참고).
+    // uses the same encoding as assignment: Entry's true is the string "TRUE" (see expression.js)
     case 'Boolean': return BOOLEAN_TEXT[String(node.value)];
     case 'Color': return node.value;
     case 'Transparent': return 'transparent';
@@ -186,7 +187,7 @@ function constantOf(node, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-//  3. 오브젝트
+//  3. objects
 // ---------------------------------------------------------------------------
 function collectObjects(program, ctx) {
   const register = (node, scene) => {
@@ -226,12 +227,13 @@ function collectObjects(program, ctx) {
 }
 
 /**
- * 모양/소리의 엔트리 id — `force id "..."` 를 안 적었으면 평소처럼 시드로 새로 뽑고,
- * 적었으면 그 문자열을 그대로 쓴다(addendum, SPEC-ADDENDUM.md 참고). `force id` 는
- * 예전에 함수 안에 특정 오브젝트의 모양·소리 id 를 그대로 박아 넣던 작품을 되돌릴 때,
- * 되돌리기가 그 id 를 다시 그대로 배정해 살리는 용도다 — 자동 생성 id 와 겹치면
- * project.json 안에서 서로 다른 리소스가 같은 id 를 갖게 되어 엔트리가 엉뚱한 것을
- * 가리키게 되므로, 이미 쓰인 id 와 겹치면 컴파일 에러로 막는다.
+ * Entry id for a costume/sound — without `force id "..."`, generated
+ * normally from the seed; with it, the given string is used verbatim (see
+ * SPEC-ADDENDUM.md). `force id` exists to re-assign the original id when
+ * decompiling a project whose functions hardcoded another object's
+ * costume/sound id. A collision with an already-used id would make two
+ * different resources share one id in project.json, pointing Entry at the
+ * wrong resource — so it's rejected as a compile error instead.
  */
 function resourceId(member, ctx) {
   if (!member.forceId) return ctx.newId();
@@ -279,7 +281,7 @@ function collectObjectMembers(object, ctx) {
     }
   }
 
-  // 이벤트 핸들러 안에서 처음 나오는 var/list 도 이 오브젝트의 변수로 등록한다
+  // also registers var/list first introduced inside an event handler as this object's variable
   for (const member of object.node.body) {
     if (member.type === 'Event') collectHandlerVariables(member.body, object, ctx);
   }
@@ -310,7 +312,7 @@ function collectHandlerVariables(statements, object, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-//  4. 함수
+//  4. functions
 // ---------------------------------------------------------------------------
 function collectFunctions(program, ctx) {
   const register = (node, owner) => {
@@ -326,7 +328,7 @@ function collectFunctions(program, ctx) {
       ctx.error(returns[0], '엔트리 함수는 중간에서 값을 돌려줄 수 없습니다. return 은 함수의 마지막 문장에만 쓸 수 있습니다.');
     }
 
-    // `이름?` 으로 적은 매개변수는 엔트리에서도 판단 칸이 된다 (SPEC-ADDENDUM.md 4.6)
+    // a parameter written `name?` also becomes a boolean slot in Entry (SPEC-ADDENDUM.md 4.6)
     const booleanParams = new Set(node.booleanParams ?? []);
     const fn = {
       id: ctx.newId(),
@@ -371,7 +373,7 @@ function findReturns(statements, found = []) {
 }
 
 // ---------------------------------------------------------------------------
-//  5. 신호
+//  5. messages
 // ---------------------------------------------------------------------------
 function collectMessages(node, ctx) {
   if (node === null || typeof node !== 'object') return;
@@ -387,11 +389,11 @@ function collectMessages(node, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-//  6. 함수 본문 컴파일
+//  6. function body compilation
 // ---------------------------------------------------------------------------
 function compileFunctions(ctx) {
   for (const fn of ctx.functions) {
-    if (fn.generated) continue; // 컴파일러가 이미 완성해 둔 런타임 함수
+    if (fn.generated) continue; // runtime function the compiler already built
     ctx.object = fn.owner ? ctx.objectByName.get(fn.owner) : null;
     ctx.locals = ctx.object?.locals ?? new Map();
     ctx.funcScope = {
@@ -400,7 +402,7 @@ function compileFunctions(ctx) {
       localVars: new Map(),
     };
 
-    // 함수 안에서 선언한 var 는 엔트리 함수의 지역 변수로
+    // var declared inside a function becomes an Entry function-local variable
     collectFunctionLocals(fn.node.body, ctx.funcScope, ctx, fn);
 
     const body = fn.isValue ? fn.node.body.slice(0, -1) : fn.node.body;
@@ -440,8 +442,9 @@ function collectFunctionLocals(statements, scope, ctx, fn) {
 }
 
 /**
- * 함수 머리(라벨과 매개변수 칸의 사슬)를 만든다. 자동 이름(a, b, c …)은 라벨 없이,
- * 그 밖의 이름은 라벨을 달고 나간다 — 되돌리기의 반대다 (src/function-params.js).
+ * Builds the function header (a chain of labels and parameter slots). An
+ * auto-generated name (a, b, c, ...) gets no label; any other name does —
+ * the reverse of what the decompiler does (src/function-params.js).
  */
 function buildFunctionFields(fn, ctx) {
   let next = null;
@@ -456,7 +459,7 @@ function buildFunctionFields(fn, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-//  7. 오브젝트 스크립트 컴파일
+//  7. object script compilation
 // ---------------------------------------------------------------------------
 function compileObjects(ctx) {
   for (const object of ctx.objects) {
@@ -509,9 +512,9 @@ function compileEvent(event, ctx) {
     }
 
     case 'key_up': {
-      // 엔트리에는 "키를 뗐을 때" 이벤트가 없어서 감시 스크립트로 바꾼다.
-      //   시작하기 -> 계속 반복: 키가 눌릴 때까지 기다림 -> 떼질 때까지 기다림 -> 본문
-      // (SPEC-ADDENDUM 4 에 적어 둔 정해진 변환이라 따로 알리지 않는다)
+      // Entry has no "key released" event, so this expands into a polling script:
+      //   start -> repeat forever: wait until pressed -> wait until released -> body
+      // (a fixed transformation documented in SPEC-ADDENDUM 4)
       const code = keyCodeOf(event.key);
       if (!code) return [ctx.error(event, `알 수 없는 키 이름 "${event.key}" 입니다.`)] && null;
       const pressed = () => ctx.block('is_press_some_key', [code, null]);
@@ -530,8 +533,9 @@ function compileEvent(event, ctx) {
 }
 
 /**
- * draw_color 등을 오브젝트 선언 맨 위에 썼으면, `when start` 스크립트를 만들어서
- * 그 값을 제일 먼저 정하게 한다 (BRUSH_DEFAULT_PROPERTIES 선언부 참고).
+ * When draw_color etc. are set at the top of an object declaration,
+ * synthesizes a `when start` script that sets them first (see the
+ * BRUSH_DEFAULT_PROPERTIES declaration).
  */
 function compileBrushDefaults(object, ctx) {
   const present = BRUSH_DEFAULT_PROPERTIES.filter((name) => object.properties.has(name));
@@ -549,7 +553,7 @@ function compileBrushDefaults(object, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-//  8. 프로젝트 조립
+//  8. project assembly
 // ---------------------------------------------------------------------------
 function assemble(program, ctx, options) {
   const projectDecl = program.body.find((item) => item.type === 'Project');
@@ -574,8 +578,8 @@ function assemble(program, ctx, options) {
     speed: fields.get('fps')?.value ?? 60,
     interface: { menuWidth: 280, canvasWidth: 480, object: objects[0]?.id ?? null },
     expansionBlocks: [],
-    // read / tts 문을 쓰면 엔트리가 '읽어주기(TTS)' 확장 블록을 실행할 수 있게 켠다
-    // (entryjs 는 project.aiUtilizeBlocks 에 이름이 있어야 Entry.AI_UTILIZE_BLOCK[type].init() 을 부른다)
+    // enables Entry's TTS (read-aloud) extension block if a read/tts statement is used
+    // (entryjs only calls Entry.AI_UTILIZE_BLOCK[type].init() for names listed in project.aiUtilizeBlocks)
     aiUtilizeBlocks: ctx.usesTts ? ['tts'] : [],
     hardwareLiteBlocks: [],
     externalModules: [],
@@ -676,9 +680,10 @@ function buildObject(object, ctx) {
       text,
       textAlign: align,
       lineBreak: boolean('line_break', false),
-      // 엔트리가 글상자를 새로 만들 때의 기본 배경은 흰색이다(entryjs src/class/object.js
-      // `json.bgColor = '#ffffff'`). 'transparent' 를 기본값으로 쓰면 검은 기본 글자색과
-      // 겹쳐 배경이 없는 화면에서는 글자가 거의 안 보이는 것처럼 보인다.
+      // Entry's default background for a new text box is white (entryjs
+      // src/class/object.js `json.bgColor = '#ffffff'`). Defaulting to
+      // 'transparent' would combine with the default black text color to
+      // make text nearly invisible on a background-less screen.
       bgColor: string('bg_color', '#ffffff'),
       underLine: boolean('text_underline', false),
       strike: boolean('text_strikethrough', false),
@@ -695,7 +700,7 @@ function buildObject(object, ctx) {
   return result;
 }
 
-/** 엔트리 프로젝트는 초시계와 대답 항목을 변수 목록에 함께 담는다 */
+/** Entry projects keep the stopwatch and answer entries in the variables list too. */
 function addSystemVariables(ctx) {
   ctx.variables.push({
     name: '초시계', id: ctx.newId(), visible: false, value: 0, variableType: 'timer',

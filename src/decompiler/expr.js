@@ -1,9 +1,9 @@
 // ============================================================================
-//  엔트리 값(value)/판단(boolean) 블록 -> Tess 표현식 문자열
+//  Entry value/boolean block -> Tess expression string.
 //
-//  src/compiler/expression.js 가 Tess 표현식을 엔트리 블록으로 바꾸는 정확한
-//  대응표를 그대로 뒤집어서 쓴다. 모르는 블록은 죽지 않고 `??("타입", ...)`
-//  형태의 자리표시자를 남기고 ctx.warnings 에 기록한다.
+//  Inverts the exact mapping src/compiler/expression.js uses to turn Tess
+//  expressions into Entry blocks. An unknown block doesn't fail the run —
+//  it leaves a `??("type", ...)` placeholder and logs to ctx.warnings.
 // ============================================================================
 import { KEY_CODES } from '../compiler/keycodes.js';
 import { tessNumber, tessString } from './ident.js';
@@ -16,10 +16,9 @@ const REVERSE_MATH = {
   sin: 'sin', cos: 'cos', tan: 'tan', asin_radian: 'asin', acos_radian: 'acos', atan_radian: 'atan',
   ln: 'ln', log: 'log10', floor: 'floor', ceil: 'ceil', round: 'round', abs: 'abs',
 };
-// coordinate_object 의 COORDINATE 드롭다운은 x/y/방향/이동방향/크기 말고도
-// "모양 번호"(picture_index)·"모양 이름"(picture_name) 을 갖고 있다(entryjs
-// block_calc.js) — 이 둘이 빠져 있으면 그 값을 쓴 블록이 통째로 옮겨지지 못하고
-// `??("coordinate_object", ...)` 자리표시자로 남는다(예전 버그).
+// coordinate_object's COORDINATE dropdown also includes picture_index and
+// picture_name alongside x/y/rotation/direction/size (entryjs block_calc.js);
+// omitting them leaves the block as a `??("coordinate_object", ...)` placeholder.
 const REVERSE_PROPERTY_COORD = {
   x: 'x', y: 'y', rotation: 'angle', direction: 'way', size: 'size',
   picture_name: 'costume', picture_index: 'costume_number',
@@ -40,7 +39,7 @@ for (const [name, code] of Object.entries(KEY_CODES)) {
   if (!(String(code) in REVERSE_KEY_CODE)) REVERSE_KEY_CODE[String(code)] = name;
 }
 
-/** 값 블록이 없을 때(빈 슬롯) 쓰는 기본값 */
+/** Default value used for a missing (empty-slot) value block. */
 const EMPTY = '0';
 
 function targetName(ctx, raw) {
@@ -50,7 +49,7 @@ function targetName(ctx, raw) {
   return object ? object.identifier : raw;
 }
 
-/** 리스트/문자열 인덱스: 엔트리(1부터) -> Tess(0부터) */
+/** List/string index: Entry (1-based) -> Tess (0-based). */
 function unshiftIndex(block, ctx, delta = 1) {
   if (block && block.type === 'number' && !Number.isNaN(Number(block.params?.[0]))) {
     return tessNumber(Number(block.params[0]) - delta);
@@ -60,8 +59,9 @@ function unshiftIndex(block, ctx, delta = 1) {
 }
 
 /**
- * 편집기 목록에서 고른 모양·소리를 옮긴다. 함수 안에서는 이름 대신 id 를 남긴다 —
- * 함수는 전역이라 어느 오브젝트가 부를지 모르기 때문 (decompiler/index.js 참고).
+ * Renders a costume/sound picked from the editor's list. Inside a function,
+ * leaves the id instead of a name, since a function is global and its
+ * caller object is unknown (see decompiler/index.js).
  */
 function resourceRef(ctx, id, byId, nameOf) {
   if (ctx.inFunction && byId.has(id)) return tessString(id);
@@ -74,7 +74,7 @@ function placeholder(ctx, block) {
   return `"[decompile: ${type}]"`;
 }
 
-/** 값 또는 판단 블록 하나를 Tess 표현식 문자열로 */
+/** Renders a single value or boolean block as a Tess expression string. */
 export function exprOf(block, ctx) {
   if (block === null || block === undefined) return EMPTY;
   if (typeof block === 'string') return tessString(block);
@@ -141,9 +141,9 @@ export function exprOf(block, ctx) {
     case 'boolean_not': return `not (${exprOf(at(1), ctx)})`;
     case 'True': return 'true';
     case 'False': return 'false';
-    // `(<판단>의 값)` 은 판단을 값 자리에 넣으려고 엔트리가 씌우는 블록이며
-    // "TRUE"/"FALSE" 를 돌려준다. Tess 에서는 판단을 값 자리에 그냥 쓰면 컴파일러가
-    // 다시 씌워 주므로(compileValue 참고), 껍데기를 벗기고 안쪽만 옮긴다.
+    // `get_boolean_value` is the wrapper Entry adds to place a boolean in a
+    // value slot. Tess re-adds this wrapper automatically (see compileValue),
+    // so strip it here and render only the inner expression.
     case 'get_boolean_value': return exprOf(at(0), ctx);
     case 'is_clicked': case 'is_object_clicked': case 'is_boost_mode':
     case 'is_touch_supported': case 'get_user_name': case 'get_nickname':
@@ -200,9 +200,9 @@ export function exprOf(block, ctx) {
     case 'get_pictures': return resourceRef(ctx, at(0), ctx.picturesById, ctx.pictureName);
     case 'get_sounds': return resourceRef(ctx, at(0), ctx.soundsById, ctx.soundName);
 
-    // 사용자 정의 함수 호출(값을 돌려주는 것) — func_<함수id>
+    // A value-returning user function call — func_<functionId>.
     default: {
-      // 함수 본문에서 매개변수를 가리키는 블록 — stringParam_xxxx / booleanParam_xxxx
+      // A block referencing a parameter inside a function body — stringParam_xxxx / booleanParam_xxxx.
       const paramName = ctx.funcParamName?.(block.type);
       if (paramName) return paramName;
 

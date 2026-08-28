@@ -5,10 +5,10 @@ import * as ohm from 'ohm-js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-/** Tess 언어의 Ohm 문법 소스 */
+/** Ohm grammar source for the Tess language. */
 export const grammarSource = fs.readFileSync(path.join(here, 'tess.ohm'), 'utf-8');
 
-/** Tess 언어의 Ohm Grammar 인스턴스 */
+/** Ohm Grammar instance for the Tess language. */
 export const grammar = ohm.grammar(grammarSource);
 
 export default grammar;

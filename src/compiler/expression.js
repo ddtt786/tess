@@ -1,16 +1,16 @@
 // ============================================================================
-//  Tess 표현식 -> 엔트리 값(value) 블록
+//  Tess expressions -> Entry value blocks
 //
-//  주의할 의미 차이
-//   - 리스트/문자열 인덱스: Tess 는 0부터, 엔트리는 1부터  -> +1 보정
-//   - index_of: 엔트리는 1부터(못 찾으면 0)               -> -1 보정
-//   - slice(s, a, b): Tess 는 [a, b), 엔트리 substring 은 1부터 양끝 포함
+//  Semantic differences to watch for:
+//   - list/string index: Tess is 0-based, Entry is 1-based -> +1 correction
+//   - index_of: Entry is 1-based (0 if not found)          -> -1 correction
+//   - slice(s, a, b): Tess uses [a, b); Entry substring is 1-based, inclusive on both ends
 // ============================================================================
 import { keyCodeOf } from './keycodes.js';
 import { requirePowerRefiner } from './runtime.js';
 import { OPTION_KEYWORDS, STATE_VALUES } from '../builtins.js';
 
-/** 결과가 엔트리 "판단(boolean)" 블록인 타입들 */
+/** Block types whose result is an Entry "boolean" block. */
 const BOOLEAN_TYPES = new Set([
   'True', 'False',
   'boolean_basic_operator', 'boolean_and_or', 'boolean_not',
@@ -19,13 +19,14 @@ const BOOLEAN_TYPES = new Set([
   'is_included_in_list',
 ]);
 
-// 계산할 필요 없이 값이 정해지는 리터럴들이다. 판단 자리에 오면 참으로 본다.
+// Literals whose value is known without evaluation; treated as truthy in boolean slots.
 const LITERAL_TYPES = new Set(['Number', 'String', 'Color', 'Transparent']);
 
 /**
- * Tess 의 true/false 를 엔트리 값으로 옮기면 "TRUE"/"FALSE" 라는 문자열이 된다.
- * 엔트리의 `(<판단>의 값)`(get_boolean_value) 블록이 그 글자를 돌려주기 때문이다.
- * 리터럴에서 왔든 비교식에서 왔든 항상 같은 글자가 나오도록 맞춘다.
+ * Tess true/false becomes the strings "TRUE"/"FALSE" when moved into an
+ * Entry value slot, since Entry's get_boolean_value block returns that
+ * literal string. Keeps the same string regardless of whether the value
+ * came from a literal or a comparison.
  */
 export const BOOLEAN_TEXT = { true: 'TRUE', false: 'FALSE' };
 
@@ -37,7 +38,7 @@ const COMPARE_OPERATORS = {
 
 const ARITHMETIC_OPERATORS = { '+': 'PLUS', '-': 'MINUS', '*': 'MULTI', '/': 'DIVIDE' };
 
-/** calc_operation 으로 바로 가는 수학 함수 */
+/** Math functions that map directly to calc_operation. */
 const MATH_OPERATIONS = {
   sin: 'sin', cos: 'cos', tan: 'tan',
   asin: 'asin_radian', acos: 'acos_radian', atan: 'atan_radian',
@@ -46,18 +47,17 @@ const MATH_OPERATIONS = {
 };
 
 /**
- * 오브젝트 정보 조회 함수 -> coordinate_object 의 COORDINATE 값.
- * 엔트리의 실제 coordinate_object 드롭다운은 x/y/방향/이동방향/크기 말고도
- * "모양 번호"(picture_index)·"모양 이름"(picture_name) 을 갖고 있다
- * (entryjs block_calc.js). costume/costume_number 로 다른 오브젝트의 모양도
- * 이름·번호로 읽을 수 있게 한다.
+ * Object-info query functions -> coordinate_object's COORDINATE value.
+ * Entry's coordinate_object dropdown also exposes picture_index/picture_name
+ * (entryjs block_calc.js) alongside x/y/direction/rotation/size; costume and
+ * costume_number read another object's shape by name or number.
  */
 const OBJECT_COORDINATES = {
   x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size',
   costume: 'picture_name', costume_number: 'picture_index',
 };
 
-/** 상태 값(괄호 없이 쓰는 읽기 전용 값) */
+/** State values (read-only, used without parentheses). */
 const STATE_BLOCKS = {
   mouse_down: 'is_clicked',
   clicked: 'is_object_clicked',
@@ -69,7 +69,7 @@ const STATE_BLOCKS = {
   answer: 'get_canvas_input_value',
 };
 
-/** 오브젝트 속성을 읽는 coordinate_object 의 COORDINATE 값 (자기 자신, 괄호 없이) */
+/** coordinate_object's COORDINATE value for reading own properties (no parentheses). */
 const PROPERTY_COORDINATES = {
   x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size',
   costume: 'picture_name', costume_number: 'picture_index',
@@ -77,13 +77,14 @@ const PROPERTY_COORDINATES = {
 
 export function isBooleanBlock(node) {
   if (!node || typeof node !== 'object') return false;
-  // 판단 매개변수(`이름?`)를 가리키는 블록은 함수마다 타입 이름이 다르므로 접두사로 가린다
+  // boolean parameter blocks (`name?`) have a per-function type name, so match by prefix
   return BOOLEAN_TYPES.has(node.type) || String(node.type).startsWith('booleanParam_');
 }
 
 /**
- * 판단 자리에 들어갈 블록. `true`/`false` 는 참·거짓 블록, 그 밖의 리터럴은 참,
- * 실행해 봐야 아는 값은 `== "TRUE"` 비교로 감싼다.
+ * A block for a boolean slot. `true`/`false` become True/False blocks, other
+ * literals are treated as truthy, and values only known at runtime are
+ * wrapped in an `== "TRUE"` comparison.
  */
 export function compileBoolean(node, ctx) {
   if (node?.type === 'Boolean') return ctx.block(node.value ? 'True' : 'False', [null]);
@@ -96,8 +97,8 @@ export function compileBoolean(node, ctx) {
 }
 
 /**
- * 값 자리에 들어갈 블록. 판단이 오면 엔트리의 `(<판단>의 값)` 으로 감싼다
- * (결과는 "TRUE"/"FALSE" 문자열).
+ * A block for a value slot. A boolean is wrapped in Entry's get_boolean_value
+ * (which yields the string "TRUE"/"FALSE").
  */
 export function compileValue(node, ctx) {
   const compiled = compileAnyValue(node, ctx);
@@ -106,8 +107,9 @@ export function compileValue(node, ctx) {
 }
 
 /**
- * 감싸기 전의 블록을 그대로 돌려준다. 판단 블록이 나올 수도 있다.
- * 값이냐 판단이냐에 따라 다른 블록을 쓰는 자리(`wait` 이 대표적이다)에서 직접 부른다.
+ * Returns the block unwrapped, which may be a boolean block. Called directly
+ * by slots that choose between a value block and a boolean block themselves
+ * (e.g. `wait`).
  */
 export function compileAnyValue(node, ctx) {
   if (!node) return null;
@@ -130,7 +132,7 @@ export function compileAnyValue(node, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-//  식별자
+//  Identifiers
 // ---------------------------------------------------------------------------
 function compileIdentifier(node, ctx) {
   const { name } = node;
@@ -139,7 +141,7 @@ function compileIdentifier(node, ctx) {
   if (found) {
     if (found.kind === 'param') {
       const type = ctx.funcScope.params.get(name);
-      // 판단 칸 매개변수 블록은 엔트리가 만든 원본에서도 빈 자리를 하나 갖는다
+      // boolean parameter blocks carry one empty slot even in Entry's own originals
       return ctx.block(type, type.startsWith('booleanParam_') ? [null] : []);
     }
     if (found.kind === 'funcLocal') return ctx.block('get_func_variable', [found.id, null]);
@@ -151,7 +153,7 @@ function compileIdentifier(node, ctx) {
 
   if (name === 'block_count') return ctx.block('get_block_count', ['all']);
   if (STATE_BLOCKS[name]) {
-    // 블록마다 파라미터 자리 개수가 다르다 (엔트리 블록 스키마 기준)
+    // parameter slot count varies per block (per Entry's block schema)
     const slots = { get_nickname: 0, get_user_name: 0, get_project_timer_value: 2 };
     const count = slots[STATE_BLOCKS[name]] ?? 1;
     return ctx.block(STATE_BLOCKS[name], new Array(count).fill(null));
@@ -170,7 +172,7 @@ function compileIdentifier(node, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-//  연산자
+//  Operators
 // ---------------------------------------------------------------------------
 function compileBinary(node, ctx) {
   const { operator } = node;
@@ -205,8 +207,8 @@ function compileBinary(node, ctx) {
 }
 
 /**
- * 상수만으로 이루어진 식이면 그 값을, 아니면 null 을 돌려준다.
- * (`x ** (1/3)` 처럼 지수를 계산해서 적을 수 있게 하기 위한 것)
+ * Evaluates the node if it's built entirely from constants, else returns null.
+ * Lets exponents be written as expressions, e.g. `x ** (1/3)`.
  */
 export function foldConstant(node) {
   if (!node) return null;
@@ -236,22 +238,24 @@ export function foldConstant(node) {
   }
 }
 
-/** 소수부를 몇 자리까지 이진 전개할지 (2^-20 ≈ 0.000001) */
+/** How many binary digits to expand the fractional part to (2^-20 ~= 0.000001). */
 const FRACTION_BITS = 20;
 
 /**
- * 엔트리에는 일반 거듭제곱 블록이 없다. 있는 것은 제곱(square)과 제곱근(root)뿐이다.
- * 그런데 이 둘만으로 모든 실수 지수를 만들 수 있다.
+ * Entry has no general exponentiation block, only square and root. Any real
+ * exponent can still be built from these two:
  *
- *   정수부  x^13 = ((x^2)^2 · x)^2 · x        (제곱과 곱셈으로, 자릿수만큼만)
- *   소수부  x^0.b1b2b3… = √(x^b1 · √(x^b2 · √(x^b3 · …)))
+ *   integer part     x^13 = ((x^2)^2 * x)^2 * x   (square and multiply, one step per digit)
+ *   fractional part  x^0.b1b2b3... = sqrt(x^b1 * sqrt(x^b2 * sqrt(x^b3 * ...)))
  *
- * 소수부 전개는 지수를 2배씩 하며 1이 넘는지 보는 이진 전개다.
- * 0.5, 0.25, 0.75 처럼 2의 거듭제곱으로 떨어지는 지수는 **정확히** 맞고,
- * 1/3 같은 무한소수는 20자리에서 끊어 사실상 같은 값(오차 10^-6 수준)이 된다.
+ * The fractional part is expanded as a binary fraction (doubling and
+ * checking against 1). Exponents that are exact powers of two (0.5, 0.25,
+ * 0.75, ...) come out exact; non-terminating ones like 1/3 are truncated at
+ * 20 bits, giving an effectively equal result (error around 1e-6).
  *
- * 반복 블록을 쓰지 않는 이유: 엔트리 반복은 한 번 돌 때마다 프레임을 넘긴다.
- * 값을 구하는 식이 여러 프레임에 걸치면 안 되므로 컴파일할 때 펼쳐 둔다.
+ * A loop block isn't used because Entry's repeat block yields a frame on
+ * every iteration; a value expression can't span multiple frames, so it's
+ * unrolled at compile time instead.
  */
 function compilePower(node, ctx) {
   const exponent = foldConstant(node.right);
@@ -265,8 +269,9 @@ function compilePower(node, ctx) {
 }
 
 /**
- * 밑(baseNode)의 exponent 제곱을 블록 트리로 만든다.
- * 지수에 따라 밑이 여러 번 들어가므로, 값이 매번 달라지는 random() 은 막는다.
+ * Builds a block tree for baseNode raised to exponent.
+ * The base may be inserted multiple times depending on the exponent, so a
+ * base containing random() (whose value would differ per insertion) is rejected.
  */
 export function buildPower(baseNode, exponent, node, ctx) {
   if (!Number.isFinite(exponent)) return ctx.error(node, '거듭제곱의 지수가 올바르지 않습니다.');
@@ -296,7 +301,7 @@ export function buildPower(baseNode, exponent, node, ctx) {
 
   let result = wholePart && fractionPart ? multiply(wholePart, fractionPart) : wholePart ?? fractionPart;
 
-  // 이진 전개가 딱 떨어지지 않았으면 남은 오차를 뉴턴 보정으로 지운다
+  // if the binary expansion isn't exact, correct the remaining error with Newton's method
   if (result && !exact) {
     const refiner = requirePowerRefiner(ctx);
     result = ctx.block(`func_${refiner.id}`, [result, base(), ctx.number(exponent)]);
@@ -313,7 +318,7 @@ export function buildPower(baseNode, exponent, node, ctx) {
   return result ?? ctx.number(1);
 }
 
-/** x^n 을 제곱과 곱셈으로. n 이 0이면 null(=1) */
+/** x^n via square and multiply. Returns null (meaning 1) when n is 0. */
 function integerPower(n, base, square, multiply) {
   if (n <= 0) return null;
   if (n === 1) return base();
@@ -322,7 +327,7 @@ function integerPower(n, base, square, multiply) {
   return n % 2 === 1 ? multiply(squared, base()) : squared;
 }
 
-/** 소수부를 이진 전개해서 √ 중첩으로. 남은 자리가 모두 0이면 null(=1) */
+/** Expands the fractional part as nested sqrt. Returns null (meaning 1) if all remaining bits are 0. */
 function fractionPower(bits, index, base, root, multiply) {
   if (index >= bits.length) return null;
   const rest = fractionPower(bits, index + 1, base, root, multiply);
@@ -332,8 +337,8 @@ function fractionPower(bits, index, base, root, multiply) {
 }
 
 /**
- * 0 <= fraction < 1 을 이진 소수로. 뒤쪽 0은 버린다.
- * 자릿수 안에서 딱 떨어졌으면 exact 가 true 다 (0.5, 0.25, 0.75 …).
+ * Converts 0 <= fraction < 1 to binary digits, dropping trailing zeros.
+ * `exact` is true when the fraction terminates within FRACTION_BITS (e.g. 0.5, 0.25, 0.75).
  */
 function fractionBits(fraction) {
   const bits = [];
@@ -351,7 +356,7 @@ function fractionBits(fraction) {
   return { bits, exact: rest === 0 };
 }
 
-/** 밑을 두 번 이상 쓰면 값이 달라지는 식인지 */
+/** Whether reusing this node's value would give a different result each time. */
 function containsRandom(node) {
   if (node === null || typeof node !== 'object') return false;
   if (Array.isArray(node)) return node.some(containsRandom);
@@ -362,7 +367,7 @@ function containsRandom(node) {
 function compileComparison(node, ctx) {
   const operator = COMPARE_OPERATORS[node.operator];
 
-  // type(x) == "number" -> 엔트리의 "~이 숫자인가?" 판단 블록
+  // type(x) == "number" -> Entry's "is this a number?" boolean block
   const typeCheck = matchTypeCheck(node);
   if (typeCheck) {
     const value = compileValue(typeCheck.value, ctx);
@@ -373,7 +378,7 @@ function compileComparison(node, ctx) {
     return node.operator === '==' ? check : ctx.block('boolean_not', [null, check, null]);
   }
 
-  // device == "mobile" -> "~ 기기인가?" 판단 블록
+  // device == "mobile" -> "is this device type?" boolean block
   const deviceCheck = matchDeviceCheck(node);
   if (deviceCheck) {
     if (!['desktop', 'tablet', 'mobile'].includes(deviceCheck)) {
@@ -412,16 +417,16 @@ function compileUnary(node, ctx) {
     const value = compileBoolean(node.argument, ctx);
     return value && ctx.block('boolean_not', [null, value, null]);
   }
-  // -x : 숫자 리터럴이면 그대로 접어버리고, 아니면 0 - x
+  // -x: fold directly if it's a number literal, otherwise compile as 0 - x
   if (node.argument.type === 'Number') return ctx.number(-node.argument.value);
   const value = compileValue(node.argument, ctx);
   return value && ctx.block('calc_basic', [ctx.number(0), 'MINUS', value]);
 }
 
 // ---------------------------------------------------------------------------
-//  인덱스 (리스트 · 문자열)
+//  Index (list / string)
 // ---------------------------------------------------------------------------
-/** Tess 인덱스(0부터) -> 엔트리 인덱스(1부터) */
+/** Tess index (0-based) -> Entry index (1-based). */
 export function shiftIndex(node, ctx, delta = 1) {
   if (node.type === 'Number') return ctx.number(node.value + delta);
   const value = compileValue(node, ctx);
@@ -441,9 +446,9 @@ function compileIndex(node, ctx) {
 }
 
 /**
- * 사용자 정의 함수에 넘길 인자들을 만든다.
- * `이름?` 으로 선언한 자리는 판단 칸이라 판단 블록만 꽂을 수 있으므로 compileBoolean 을
- * 쓰고, 나머지 자리는 값으로 맞춰 넣는다.
+ * Builds the arguments passed to a user-defined function. A parameter
+ * declared `name?` is a boolean slot, so it's compiled with compileBoolean;
+ * the rest are compiled as values.
  */
 export function compileCallArguments(fn, args, ctx) {
   return args.map((arg, index) => (fn.booleanParams?.has(fn.params[index])
@@ -451,7 +456,7 @@ export function compileCallArguments(fn, args, ctx) {
     : compileValue(arg, ctx)));
 }
 
-/** 식별자가 리스트를 가리키면 그 엔트리 변수 항목을 돌려준다 */
+/** Returns the Entry variable entry if the identifier refers to a list. */
 export function resolveList(node, ctx) {
   if (!node || node.type !== 'Identifier') return null;
   const found = ctx.lookupVariable(node.name);
@@ -460,7 +465,7 @@ export function resolveList(node, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-//  내장 함수 호출
+//  Built-in function calls
 // ---------------------------------------------------------------------------
 function compileCall(node, ctx) {
   const { callee, arguments: args } = node;
@@ -471,7 +476,7 @@ function compileCall(node, ctx) {
   };
   const value = (index) => compileValue(args[index], ctx);
 
-  // 사용자 정의 함수
+  // user-defined function
   const fn = ctx.functionByName.get(callee);
   if (fn) {
     if (!fn.isValue) {
@@ -494,7 +499,7 @@ function compileCall(node, ctx) {
 
   switch (callee) {
     case 'log2': {
-      // 엔트리에는 밑이 2인 로그가 없다 -> ln(x) / ln(2)
+      // Entry has no base-2 log block -> ln(x) / ln(2)
       if (!arity(1)) return null;
       const argument = value(0);
       if (!argument) return null;
@@ -513,7 +518,7 @@ function compileCall(node, ctx) {
     }
 
     case 'root': {
-      // n제곱근 = x ^ (1/n). 지수 규칙은 ** 와 같다.
+      // nth root = x ^ (1/n); follows the same exponent rules as **
       if (!arity(2)) return null;
       const degree = foldConstant(args[1]);
       if (degree === null || degree === 0) {
@@ -586,7 +591,7 @@ function compileCall(node, ctx) {
     }
 
     case 'slice': {
-      // Tess: [start, end) 0부터 / 엔트리 substring: 1부터 양끝 포함
+      // Tess: 0-based [start, end) / Entry substring: 1-based, inclusive on both ends
       if (!arity(3)) return null;
       const string = value(0);
       const start = shiftIndex(args[1], ctx, 1);
@@ -609,7 +614,7 @@ function compileCall(node, ctx) {
     }
 
     case 'index_of': {
-      // 엔트리는 1부터, 못 찾으면 0 -> 1을 빼면 Tess 의 0부터/-1 과 맞는다
+      // Entry is 1-based, 0 if not found -> subtracting 1 matches Tess's 0-based/-1 convention
       if (!arity(2)) return null;
       const string = value(0);
       const target = value(1);
@@ -687,8 +692,8 @@ function literalKeyCode(node, ctx, at) {
 }
 
 /**
- * 오브젝트를 가리키는 인자를 엔트리 id 로 바꾼다.
- * "mouse"/"wall" 같은 특수 대상은 옵션으로 허용한다.
+ * Converts an argument that names an object into an Entry id.
+ * Special targets like "mouse"/"wall" are allowed via options.
  */
 export function resolveTarget(node, ctx, options = {}) {
   if (!node || node.type !== 'String') {

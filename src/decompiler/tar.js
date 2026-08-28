@@ -1,16 +1,15 @@
 // ============================================================================
-//  .ent 묶음 읽기 — `tar` 패키지로
+//  Reads .ent archives using the `tar` package.
 //
-//  처음에는 의존성 없이 ustar 헤더를 직접 파싱했는데, playentry.org 가 실제로
-//  내보내는 파일 중에는 GNU longname/PAX 확장이나 그 밖의 변형을 쓰는 것도
-//  있어서 손으로 짠 파서가 깨지는 경우가 있었다. `tar` 는 이런 변형을 전부
-//  이해하는 검증된 패키지라 그걸 쓴다. gzip 압축 여부도 알아서 판단한다.
+//  Files exported by playentry.org may use GNU longname/PAX extensions and
+//  other variants beyond plain ustar, and gzip compression is optional; the
+//  `tar` package handles all of that.
 // ============================================================================
 import { Parser } from 'tar';
 
 /**
- * ustar/GNU/PAX 묶음(gzip 이든 아니든)을 { name, data } 목록으로 푼다.
- * 디렉터리 항목은 건너뛴다.
+ * Unpacks a ustar/GNU/PAX archive (gzip or not) into a { name, data } list.
+ * Directory entries are skipped.
  *
  * @param {Buffer} bytes
  * @returns {Promise<Array<{name: string, data: Buffer}>>}

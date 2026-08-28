@@ -1,10 +1,10 @@
 // ============================================================================
-//  .ent(엔트리 작품) -> Tess 소스로 되돌리기
+//  Decompiles a .ent (Entry project) back into Tess source.
 //
-//  src/compiler 가 하는 일의 정반대: project.json 의 블록 트리를 걸어 다니며
-//  Tess 소스 텍스트를 만든다. 모든 블록을 다 알지는 못하므로, 모르는 블록은
-//  `# [decompile] ...` 주석으로 남기고 계속 진행한다 — 하나 때문에 통째로
-//  실패하는 것보다, 사람이 나머지를 보고 그 부분만 손보는 편이 낫다.
+//  The inverse of src/compiler: walks project.json's block tree and emits
+//  Tess source text. Not every block is known; an unknown block is left as
+//  a `# [decompile] ...` comment rather than failing the whole conversion,
+//  so the rest can still be reviewed and fixed up by hand.
 // ============================================================================
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,32 +21,34 @@ for (const [name, code] of Object.entries(KEY_CODES)) {
   if (!(String(code) in REVERSE_KEY_NAME)) REVERSE_KEY_NAME[String(code)] = name;
 }
 
-// 엔트리 기본 오브젝트의 모양·소리는 작품 파일에 없고, 실행기가 함께 배포하는 파일을
-// 가리키기만 한다. 설치된 entryjs 에서 실제 파일을 꺼내 assets/ 에 담는다.
-// 폴더 이름은 엔트리 버전에 따라 entry-js 이거나 entryjs 다.
+// A built-in Entry object's costume/sound is not stored in the project file;
+// it just references a file shipped with the runtime. The actual bytes are
+// pulled from an installed entryjs into assets/. The folder is named
+// entry-js or entryjs depending on the Entry version.
 const BUILTIN_ASSET = /(?:^|\/)bower_components\/[^/]+\/(images\/[^?#]+)$/;
 
-// _1x1.png 는 모양 없는 "새 오브젝트"용 1×1 투명 그림이다. 파일에서 잰 1×1 이 실제
-// 크기가 아니라 project.json 의 dimension 이 실제 크기라, 이것만 `size` 를 적어 둔다.
+// _1x1.png is the 1x1 transparent placeholder image for a costume-less "new
+// object". Its measured size isn't the real size — project.json's
+// `dimension` is — so only this image gets an explicit `size`.
 const BLANK_IMAGE = /(?:^|\/)images\/_1x1\.png$/;
 
-/** 엔트리 번들에 들어 있는 기본 리소스의 실제 바이트열. 못 찾으면 null */
+/** Raw bytes of a built-in resource bundled with Entry, or null if not found. */
 function builtinAssetBytes(fileurl, runtimeDir) {
   const match = BUILTIN_ASSET.exec(fileurl ?? '');
   if (!match || !runtimeDir) return null;
-  // 남의 작품에서 온 경로라 패키지 바깥을 가리키면 읽지 않는다
+  // The path comes from someone else's project; don't read outside the package.
   if (match[1].split('/').includes('..')) return null;
   const file = path.join(runtimeDir, match[1]);
   return fs.existsSync(file) && fs.statSync(file).isFile() ? fs.readFileSync(file) : null;
 }
 
-/** entryjs 를 작업 폴더에서 먼저 찾고, 없으면 tess 가 설치된 곳에서 찾는다 */
+/** Looks for entryjs in the working directory first, then wherever tess is installed. */
 function findRuntimeDir() {
   return findLocalRuntime() ?? findLocalRuntime(path.dirname(fileURLToPath(import.meta.url)));
 }
 
 /**
- * .ent 파일 바이트열을 Tess 소스로 되돌린다.
+ * Decompiles the raw bytes of a .ent file into Tess source.
  * @returns {Promise<{source: string, warnings: string[], assets: Array<{path:string, data:Buffer}>, name: string}>}
  */
 export async function decompileEnt(bytes) {
@@ -63,8 +65,9 @@ export function decompileProject(project, entries) {
   const ctx = buildContext(project, entries);
 
   const lines = [];
-  // 선언 묶음과 그 뒤의 코드 사이는 두 줄을 띄운다. 선언은 파일 머리말에 가까워서,
-  // 한 줄만 띄우면 바로 아래의 project/scene 블록과 한 덩어리처럼 보인다.
+  // Two blank lines separate the declaration block from what follows —
+  // declarations read like a file header, and one blank line would make
+  // them look part of the same block as the project/scene declaration below.
   for (const varInfo of ctx.globalVars) lines.push(...declarationLine(varInfo));
   if (ctx.globalVars.length) lines.push('', '');
 
@@ -100,12 +103,12 @@ export function decompileProject(project, entries) {
 }
 
 // ---------------------------------------------------------------------------
-//  컨텍스트 준비 — id -> 이름 표들을 미리 다 만들어 둔다
+//  Context setup — builds all the id -> name lookup tables up front.
 // ---------------------------------------------------------------------------
-// 첫 매개변수에 모양·소리 id 가 들어 있을 수 있는 블록들 (직접 적었거나 목록에서 골랐거나)
+// Blocks whose first parameter may hold a costume/sound id (typed literally or picked from a list).
 const ID_HOLDING_BLOCKS = new Set(['text', 'number', 'get_pictures', 'get_sounds']);
 
-/** 블록 트리를 훑으면서, 프로젝트에 실제로 있는 모양·소리 id 와 같은 값을 ctx.forcedIds 에 모은다 */
+/** Walks the block tree, collecting values matching a real costume/sound id into ctx.forcedIds. */
 function collectHardcodedIds(node, ctx) {
   if (Array.isArray(node)) { node.forEach((child) => collectHardcodedIds(child, ctx)); return; }
   if (!node || typeof node !== 'object') return;
@@ -118,9 +121,10 @@ function collectHardcodedIds(node, ctx) {
 }
 
 /**
- * 함수 정의 블록(function_create)의 머리를 마디 목록으로 펼친다.
- * 라벨과 매개변수 칸이 `params[1]` 로 이어진 사슬이고, 라벨이 중간에 끼거나
- * 매개변수가 판단 칸(function_field_boolean)일 수도 있다.
+ * Flattens a function definition block's (function_create) header into a
+ * list of nodes. Labels and parameter slots form a chain linked through
+ * `params[1]`; a label may appear mid-chain, and a parameter slot may be a
+ * boolean field (function_field_boolean).
  *
  * @returns {Array<{kind:'label', text:string}|{kind:'param', blockType:string|null, boolean:boolean}>}
  */
@@ -137,7 +141,7 @@ function readFunctionFields(create) {
         boolean: node.type === 'function_field_boolean',
       });
     } else {
-      break; // 알 수 없는 마디가 나오면 거기까지만 읽는다
+      break; // Stop reading at the first unrecognized node.
     }
     node = node.params?.[1];
   }
@@ -145,7 +149,7 @@ function readFunctionFields(create) {
 }
 
 function buildContext(project, entries) {
-  const usedNames = new Set(); // 변수 · 함수 이름은 한 네임스페이스로 합쳐서 절대 안 겹치게 한다
+  const usedNames = new Set(); // Variable and function names share one namespace so they never collide.
   const entriesByPath = new Map(entries.map((e) => [e.name, e.data]));
 
   const ctx = {
@@ -160,14 +164,16 @@ function buildContext(project, entries) {
     picturesById: new Map(),
     soundsById: new Map(),
     collectedAssets: [],
-    // 장면이 하나뿐이면 objects/이름.tess 로 평평하게, 여러 개면 대부분의 프로젝트가
-    // 실제로 장면별로 오브젝트를 나눠 관리하므로 objects/장면이름/이름.tess 로 나눈다.
+    // A single scene is laid out flat as objects/name.tess; with multiple
+    // scenes, most projects genuinely organize objects per scene, so use
+    // objects/sceneName/name.tess instead.
     multiScene: (project.scenes ?? []).length > 1,
-    // 함수 안에 하드코딩된 채로 발견된, 진짜 모양·소리 id 들 (1.4절 참고).
-    // objectFragmentLines 가 이 id 를 가진 모양·소리 선언에 `force id "..."` 를 붙인다.
+    // Real costume/sound ids found hardcoded inside a function (see spec addendum 1.4).
+    // objectFragmentLines attaches `force id "..."` to the matching declaration.
     forcedIds: new Set(),
-    // eventLines/resourceExpr 가 "지금 함수 몸통을 옮기는 중인가" 를 보는 플래그 —
-    // 함수 안에서는 리터럴 id 를 이름으로 되짚지 않고 그대로 둔다(아래 forcedIds 주석 참고).
+    // Whether a function body is currently being rendered, checked by
+    // eventLines/resourceExpr — inside a function, a literal id is kept as
+    // is instead of being resolved to a name (see the forcedIds note above).
     inFunction: false,
     varName(id) {
       const info = ctx.varsById.get(id);
@@ -181,8 +187,8 @@ function buildContext(project, entries) {
       ctx.warnings.add(`함수 지역변수 id '${id}' 를 찾지 못했습니다.`);
       return `_missing_local_${id}`;
     },
-    // 함수 본문에서 매개변수를 가리키는 블록 타입(stringParam_xxxx / booleanParam_xxxx)
-    // -> 그 매개변수의 Tess 이름
+    // Maps a block type referencing a parameter inside a function body
+    // (stringParam_xxxx / booleanParam_xxxx) to that parameter's Tess name.
     funcParamsByBlockType: new Map(),
     funcParamName(blockType) {
       return ctx.funcParamsByBlockType.get(blockType) ?? null;
@@ -201,24 +207,25 @@ function buildContext(project, entries) {
     funcLocalsById: new Map(),
   };
 
-  // --- 신호 ------------------------------------------------------------------
+  // --- Signals -----------------------------------------------------------------
   for (const message of project.messages ?? []) ctx.messagesById.set(message.id, message.name);
 
-  // --- 장면 --------------------------------------------------------------------
+  // --- Scenes --------------------------------------------------------------------
   for (const scene of project.scenes ?? []) {
     const identifier = safeIdentifier(scene.name, usedNames, 'scene');
     ctx.scenesById.set(scene.id, { identifier, displayName: scene.name });
   }
 
-  // --- 오브젝트 ------------------------------------------------------------------
+  // --- Objects -------------------------------------------------------------------
   for (const object of project.objects ?? []) {
     const identifier = safeIdentifier(object.name, usedNames, 'object');
     ctx.objectsById.set(object.id, {
       identifier, displayName: object.name, kind: object.objectType, sceneId: object.scene,
     });
 
-    // 모양·소리 이름은 오브젝트 안에서만 겹치지 않으면 된다. 다른 오브젝트에도 같은
-    // 이름이 있을 수 있으므로, 리소스 파일을 저장할 때 쓸 오브젝트 정보를 같이 담아 둔다.
+    // Costume/sound names only need to be unique within their own object —
+    // another object can reuse the same name — so keep the owning object
+    // alongside for use when saving the resource file.
     const localUsed = new Set();
     for (const picture of object.sprite?.pictures ?? []) {
       const picId = safeIdentifier(picture.name, localUsed, 'costume');
@@ -230,7 +237,7 @@ function buildContext(project, entries) {
     }
   }
 
-  // --- 변수 · 리스트 (초시계·대답은 Tess 가 내장 키워드로 이미 제공한다) -----------
+  // --- Variables · lists (timer/answer are already built-in Tess keywords) -------
   for (const entry of project.variables ?? []) {
     if (entry.variableType === 'timer' || entry.variableType === 'answer') continue;
     const isList = entry.variableType === 'list';
@@ -245,14 +252,14 @@ function buildContext(project, entries) {
     }
   }
 
-  // --- 함수 --------------------------------------------------------------------
+  // --- Functions -----------------------------------------------------------------
   for (const fn of project.functions ?? []) {
     let fields = [];
     try {
       fields = readFunctionFields(JSON.parse(fn.content ?? '[]')?.[0]?.[0]);
-    } catch { /* 머리를 못 읽어도 id 로 대체해서 계속 진행한다 */ }
+    } catch { /* Fall back to the raw id if the header can't be read. */ }
 
-    // 맨 앞 라벨만 함수 이름이 된다 (src/function-params.js 참고)
+    // Only the leading label becomes the function name (see src/function-params.js).
     const label = fields[0]?.kind === 'label' ? fields[0].text : fn.id;
     const identifier = safeIdentifier(label, usedNames, 'func');
 
@@ -260,32 +267,35 @@ function buildContext(project, entries) {
     const paramNames = new Set();
     fields.forEach((field, index) => {
       if (field.kind !== 'param') return;
-      // 바로 앞에 함수 이름이 아닌 라벨이 있으면, 그 라벨이 이 매개변수의 이름이 된다
+      // A label immediately preceding this slot (other than the function
+      // name) becomes the parameter's name.
       const previous = index > 0 ? fields[index - 1] : null;
       const name = previous?.kind === 'label' && index > 1
         ? safeIdentifier(previous.text, paramNames, 'p')
         : safeIdentifier(autoParamName(params.length), paramNames, 'p');
-      // 판단 칸은 `이름?` 으로 적어야 다시 컴파일할 때도 판단 칸으로 남는다
+      // A boolean slot must be written as `name?` to stay boolean on recompile.
       params.push(field.boolean ? `${name}?` : name);
-      // 함수 본문에서 이 매개변수를 가리키는 블록(stringParam_xxxx)을 이름으로 되돌릴 때 쓴다
+      // Used to resolve a block referencing this parameter (stringParam_xxxx) back to its name.
       if (field.blockType) ctx.funcParamsByBlockType.set(field.blockType, name);
     });
 
     ctx.functionsById.set(fn.id, { name: identifier, params, displayLabel: label });
   }
 
-  // 함수는 전역이라 어느 오브젝트가 부를지 모르므로, 함수 안의 모양·소리 id 는 이름으로
-  // 바꾸지 않고 그대로 둔다. 대신 그 선언에 `force id` 를 붙여 다시 컴파일해도 같은
-  // id 가 나오게 한다 (SPEC-ADDENDUM.md 1.4절).
+  // A function is global in Entry, so its caller object is unknown; costume/
+  // sound ids inside it are left as ids instead of being resolved to names.
+  // Their declaration gets `force id` so recompiling still produces the
+  // same id (SPEC-ADDENDUM.md 1.4).
   for (const fn of project.functions ?? []) {
-    try { collectHardcodedIds(JSON.parse(fn.content ?? '[]'), ctx); } catch { /* 못 읽으면 건너뛴다 */ }
+    try { collectHardcodedIds(JSON.parse(fn.content ?? '[]'), ctx); } catch { /* Skip if unreadable. */ }
   }
 
-  // --- 리소스(모양 · 소리) 실제 파일 -----------------------------------------------
-  // 모양·소리 이름은 오브젝트마다 따로 붙어서 서로 겹칠 수 있다(특히 "새그림").
-  // 파일 이름은 `오브젝트이름_모양이름`, 장면이 여럿이면 장면별 폴더로 나누고,
-  // 그래도 겹치면 뒤에 번호를 붙인다.
-  const assetTargets = new Map(); // fileurl -> 저장한 상대 경로
+  // --- Resource (costume · sound) files -------------------------------------------
+  // Costume/sound names are scoped per object and can collide across objects
+  // (especially the default "new picture" name). Files are named
+  // `objectName_costumeName`, split into per-scene folders when there are
+  // multiple scenes, with a numeric suffix on any remaining collision.
+  const assetTargets = new Map(); // fileurl -> saved relative path
   const usedAssetPaths = new Set();
   const runtimeDir = findRuntimeDir();
 
@@ -299,7 +309,7 @@ function buildContext(project, entries) {
   const registerAsset = (info, kind, ext) => {
     const fileurl = info.source.fileurl;
     if (!fileurl) return null;
-    // 같은 파일을 여러 모양이 함께 쓰면 한 번만 저장하고 같은 경로를 돌려준다.
+    // Multiple costumes sharing the same file are saved once and reuse the same path.
     if (assetTargets.has(fileurl)) return assetTargets.get(fileurl);
     const data = entriesByPath.get(fileurl) ?? builtinAssetBytes(fileurl, runtimeDir);
     if (!data) return null;
@@ -343,8 +353,8 @@ function literalOf(value) {
   if (typeof value === 'number') return tessNumber(value);
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   const text = String(value ?? '');
-  // 엔트리에서 참·거짓을 값으로 쓰면 "TRUE"/"FALSE" 가 된다(compiler/expression.js 참고).
-  // 예전 작품에는 소문자로 적혀 있기도 하므로 둘 다 받아들인다.
+  // Entry stores a boolean value as "TRUE"/"FALSE" (see compiler/expression.js);
+  // older projects may use lowercase, so both forms are accepted.
   if (text === 'TRUE' || text === 'true') return 'true';
   if (text === 'FALSE' || text === 'false') return 'false';
   if (/^-?\d+(\.\d+)?$/.test(text)) return text;
@@ -352,7 +362,7 @@ function literalOf(value) {
 }
 
 // ---------------------------------------------------------------------------
-//  장면
+//  Scenes
 // ---------------------------------------------------------------------------
 function sceneLines(scene, project, ctx) {
   const info = ctx.scenesById.get(scene.id);
@@ -369,14 +379,15 @@ function sceneLines(scene, project, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-//  오브젝트 — 기본적으로 오브젝트 하나당 조각 파일 하나(objects/이름.tess)로 따로
-//  써 두고, main.tess 쪽에는 useobject/usetext 한 줄만 남긴다(SPEC-ADDENDUM.md 1.2절).
-//  손으로 짠 것처럼 오브젝트별로 파일이 나뉘어 있어야 나중에 사람이 고치기 편하기
-//  때문이다. 조각 파일은 `object "..." : ... end` 로 감싸지 않고 내용만 담는다 —
-//  useobject/usetext 가 불러오면서 파일 이름으로 감싸 준다.
-//  장면이 하나뿐인 작품은 objects/이름.tess 로 평평하게 두고, 장면이 여러 개면
-//  거의 모든 프로젝트가 실제로 장면별로 오브젝트를 관리하므로
-//  objects/장면이름/이름.tess 로 장면마다 폴더를 나눈다(ctx.multiScene).
+//  Objects — each object is written to its own fragment file
+//  (objects/name.tess), with only a `useobject`/`usetext` line left in
+//  main.tess (SPEC-ADDENDUM.md 1.2). This keeps the output editable like a
+//  hand-written project, split by object. A fragment holds only the body,
+//  not wrapped in `object "..." : ... end` — the useobject/usetext line
+//  supplies that wrapper on load. A single-scene project is laid out flat
+//  as objects/name.tess; with multiple scenes, files are split into
+//  per-scene folders as objects/sceneName/name.tess (ctx.multiScene), since
+//  most projects manage objects per scene in practice.
 // ---------------------------------------------------------------------------
 function useObjectLine(object, ctx, sceneIdentifier) {
   const info = ctx.objectsById.get(object.id);
@@ -388,7 +399,7 @@ function useObjectLine(object, ctx, sceneIdentifier) {
   return [`  ${isText ? 'usetext' : 'useobject'} ${tessString(relativePath)}`];
 }
 
-/** 조각 파일 하나의 내용 — `object`/`text` 로 감싸지 않은, 들여쓰기 0 부터 시작하는 줄들 */
+/** Contents of a single fragment file — unwrapped by `object`/`text`, indented at level 0. */
 function objectFragmentLines(object, ctx, isText) {
   const info = ctx.objectsById.get(object.id);
   const lines = [];
@@ -399,9 +410,10 @@ function objectFragmentLines(object, ctx, isText) {
     const picInfo = ctx.picturesById.get(picture.id);
     if (!picInfo) continue;
     const isDefault = object.selectedPictureId === picture.id;
-    // 크기는 적지 않는 것이 기본이다. 컴파일러가 그림 파일에서 크기를 직접 읽으므로,
-    // 적어 두면 그림을 바꿀 때마다 숫자까지 함께 고쳐야 한다. 파일이 없을 때와,
-    // 파일에서 잰 크기가 실제 크기가 아닌 1×1 빈 그림일 때만 적는다.
+    // Size is omitted by default, since the compiler reads it directly from
+    // the image file — writing it out would need updating whenever the
+    // image changes. It's written only when there's no file, or for the
+    // 1x1 blank image whose measured size isn't the real size.
     const sizePart = picInfo.relativePath && !picInfo.blankImage
       ? ''
       : ` size ${tessNumber(picture.dimension?.width ?? 100)} ${tessNumber(picture.dimension?.height ?? 100)}`;
@@ -426,7 +438,8 @@ function objectFragmentLines(object, ctx, isText) {
   if (object.lock) lines.push('lock true');
   if (object.entity?.visible === false) lines.push('visible false');
 
-  // 속성과 변수 선언 묶음, 그리고 그 뒤의 when 블록 사이도 main.tess 와 똑같이 두 줄 띄운다
+  // As in main.tess, leave two blank lines between the property/variable
+  // declaration block and the `when` blocks that follow.
   for (const varInfo of ctx.localVarsByObject.get(object.id) ?? []) {
     lines.push(...declarationLine(varInfo, 0));
   }
@@ -459,7 +472,7 @@ function objectPropertyLines(object, isText, indentLevel) {
     if (entity.fontSize) lines.push(`${pad}font_size = ${tessNumber(entity.fontSize)}`);
 
     const font = parseFont(entity.font);
-    // 컴파일러의 기본값(src/compiler/index.js buildObject)과 같을 때는 생략한다
+    // Omitted when it matches the compiler's default (src/compiler/index.js buildObject).
     if (font.family && font.family !== 'Nanum Gothic') lines.push(`${pad}font = ${tessString(font.family)}`);
     if (font.bold) lines.push(`${pad}text_bold = true`);
     if (font.italic) lines.push(`${pad}text_italic = true`);
@@ -476,7 +489,7 @@ function objectPropertyLines(object, isText, indentLevel) {
   return lines;
 }
 
-/** entity.font(`"bold italic 24px D2 Coding"` 형태)를 굵기·기울임·글씨체 이름으로 되짚는다 */
+/** Parses entity.font (e.g. `"bold italic 24px D2 Coding"`) into bold/italic/family. */
 function parseFont(font) {
   const tokens = String(font ?? '').trim().split(/\s+/);
   let bold = false;
@@ -489,14 +502,13 @@ function parseFont(font) {
 }
 
 // ---------------------------------------------------------------------------
-//  이벤트(hat 블록) -> when ... do
+//  Events (hat blocks) -> when ... do
 // ---------------------------------------------------------------------------
 function eventLines(thread, ctx, indentLevel) {
   if (!thread?.length) return [];
   const [hat, ...rest] = thread;
   const pad = '  '.repeat(indentLevel);
-  // 본문은 머리글(when ... do)보다 항상 한 단 더 들여쓴다. 조각 파일에서는 머리글이
-  // 0단이라, indentLevel 만큼만 들여쓰던 예전 코드는 본문을 전혀 들여쓰지 않았다.
+  // The body is always indented one level deeper than its `when ... do` header.
   const indentBody = (lines) => Array.from({ length: indentLevel + 1 }).reduce((acc) => indent(acc), lines);
 
   const keyUp = matchKeyUpPattern(hat, rest);
@@ -511,13 +523,12 @@ function eventLines(thread, ctx, indentLevel) {
     return [`${pad}${header} do`, ...body, `${pad}end`, ''];
   }
 
-  // 스레드 맨 앞이라고 다 이벤트(hat) 블록은 아니다 — 엔트리 워크스페이스에
-  // 그냥 빼놨을 뿐, 어디에도 연결 안 된 블록 뭉치도 똑같이 "스레드 하나"로
-  // 저장된다. 그런 건 실제로 실행된 적이 없으니(엔트리도 안 돌린다) 억지로
-  // when 으로 감싸 실행되게 만들지 않고, 내용만 주석으로 그대로 남겨서
-  // "연결 안 된 상태"를 그대로 지킨다.
+  // Not every leading block in a thread is an event (hat) block — a stray
+  // block group left disconnected in the Entry workspace is stored as its
+  // own "thread" too. Since Entry never executes it either, it's kept as a
+  // comment rather than being forced into a `when` wrapper that would run it.
   ctx.warnings.add(`연결되지 않은 블록 뭉치(맨 앞이 '${hat?.type}')를 원본처럼 실행되지 않게 주석으로 남겼습니다.`);
-  const raw = blocksToLines(thread, ctx); // 맨 앞도 그냥 평범한 블록으로 취급해서 통째로 옮긴다
+  const raw = blocksToLines(thread, ctx); // Treat the leading block as an ordinary block too.
   const commented = raw.map((line) => (line.trim() ? `${pad}# ${line}` : ''));
   return [
     `${pad}# [decompile] 아래는 엔트리 원본에서 어디에도 연결돼 있지 않던 블록입니다 (실행되지 않음):`,
@@ -545,7 +556,7 @@ function eventHeader(hat, ctx) {
   }
 }
 
-/** 컴파일러가 `when key X up` 을 펼쳐 만드는 감시 스크립트를 되짚어 알아본다 */
+/** Recognizes the watcher script the compiler expands `when key X up` into. */
 function matchKeyUpPattern(hat, rest) {
   if (hat?.type !== 'when_run_button_click') return null;
   if (rest.length !== 1 || rest[0]?.type !== 'repeat_inf') return null;

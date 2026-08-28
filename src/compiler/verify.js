@@ -1,9 +1,7 @@
-// ============================================================================
-//  엔트리 프로젝트 구조 검증기
+// Validates the structure of an Entry project.
 //
-//  컴파일 결과가 엔트리가 실제로 읽을 수 있는 모양인지 확인한다.
-//  (실제 엔트리 작품의 project.json 을 기준으로 규칙을 맞췄다.)
-// ============================================================================
+// Checks that the compiled output is shaped the way Entry can actually
+// read it. Rules are derived from real Entry projects' project.json.
 import { BLOCK_PARAM_COUNTS } from './block-params.js';
 
 const BLOCK_FIELDS = ['id', 'x', 'y', 'type', 'params', 'statements'];
@@ -12,7 +10,7 @@ const PROJECT_KEYS = [
   'objects', 'scenes', 'variables', 'messages', 'functions', 'speed', 'interface',
 ];
 
-/** 참조 무결성 규칙: 블록 타입 -> [파라미터 위치, 참조 종류] */
+/** Reference-integrity rules: block type -> [param index, reference kind]. */
 const REFERENCES = {
   get_variable: [[0, 'variable']],
   set_variable: [[0, 'variable']],
@@ -42,7 +40,7 @@ const REFERENCES = {
 
 /**
  * @param {object} project
- * @returns {string[]} 발견한 문제 목록 (비어 있으면 정상)
+ * @returns {string[]} list of found problems (empty if valid)
  */
 export function verifyEntryProject(project) {
   const problems = [];
@@ -63,8 +61,8 @@ export function verifyEntryProject(project) {
   }
   const objectIds = new Set(project.objects.map((object) => object.id));
 
-  // 블록 id 는 오브젝트(또는 함수) 안에서만 유일하면 된다.
-  // 실제 엔트리 작품도 오브젝트를 복제하면 블록 id 가 그대로 복사된다.
+  // Block ids only need to be unique within an object (or function) — real
+  // Entry projects reuse block ids verbatim when an object is duplicated.
   let blockIds = new Set();
 
   const checkBlock = (block, owner, path) => {
@@ -85,7 +83,7 @@ export function verifyEntryProject(project) {
     if (!Array.isArray(block.params)) add(`${path}: params 가 배열이 아닙니다.`);
     if (!Array.isArray(block.statements)) add(`${path}: statements 가 배열이 아닙니다.`);
 
-    // 엔트리가 저장하는 파라미터 자리 개수와 맞는지
+    // check against the param slot count Entry actually stores
     const expected = BLOCK_PARAM_COUNTS[block.type];
     if (expected !== undefined && block.params?.length !== expected) {
       add(`${path}: ${block.type} 의 params 가 ${block.params?.length}개입니다. (엔트리는 ${expected}개)`);
@@ -100,7 +98,7 @@ export function verifyEntryProject(project) {
       const value = block.params?.[index];
       if (value === null || value === undefined) continue;
       if (typeof value !== 'string') continue;
-      // 함수 안의 모양·소리는 호출한 오브젝트의 것이라 여기서 확인할 수 없다
+      // costumes/sounds inside a function belong to the calling object, unverifiable here
       if (!owner && (kind === 'picture' || kind === 'sound')) continue;
       const ok = {
         variable: () => variableIds.has(value),
@@ -184,7 +182,7 @@ export function verifyEntryProject(project) {
     }
     checkBlock(create, null, `함수 '${fn.id}'`);
 
-    // 본문에서 쓰는 매개변수 블록이 정의부에 선언되어 있는지
+    // check that param blocks used in the body are declared in the signature
     const declared = new Set();
     let field = create.params?.[0];
     while (field && typeof field === 'object') {

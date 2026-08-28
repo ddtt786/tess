@@ -1,12 +1,11 @@
-// ============================================================================
-//  엔트리 블록별 params 배열 길이표
+// Table of params array length per Entry block type.
 //
-//  출처: entryjs 의 블록 정의(src/playground/blocks/block_*.js)에 있는
-//        params 스키마와 def.params, 그리고 실제 엔트리 작품의 project.json.
-//        (셋이 다를 때는 가장 긴 값 = 엔트리가 실제로 저장하는 길이를 썼다)
+// Source: entryjs block definitions (src/playground/blocks/block_*.js) —
+// their params schema and def.params — cross-checked against real Entry
+// projects' project.json. Where the two disagree, uses the longer value
+// (what Entry actually stores).
 //
-//  컴파일러가 만든 블록이 이 길이와 맞는지 verify.js 가 확인한다.
-// ============================================================================
+// verify.js checks compiler-generated blocks against this table.
 export const BLOCK_PARAM_COUNTS = {
   _if: 2,
   add_effect_amount: 3,

@@ -1,8 +1,8 @@
 // ============================================================================
-//  VS Code 문법 강조 검사
+//  Tests VS Code syntax highlighting
 //
-//  editors/vscode 의 TextMate 문법을 실제 토크나이저(vscode-textmate)로 돌려서
-//  각 낱말이 의도한 갈래로 칠해지는지 확인한다.
+//  Runs editors/vscode's TextMate grammar through the real tokenizer
+//  (vscode-textmate) and checks each token gets the intended scope.
 // ============================================================================
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import onigurumaModule from 'vscode-oniguruma';
 import textmateModule from 'vscode-textmate';
 
-// 둘 다 CommonJS 로 나와서 default 로 들어온다
+// both are CommonJS modules, so they arrive as default exports
 const oniguruma = onigurumaModule;
 const textmate = textmateModule;
 
@@ -37,10 +37,10 @@ test.before(async () => {
       : null),
   });
   grammar = await registry.loadGrammar('source.tess');
-  assert.ok(grammar, '문법을 불러오지 못했습니다.');
+  assert.ok(grammar, 'failed to load grammar');
 });
 
-/** 한 줄을 토큰으로 쪼개서 [글자, 가장 안쪽 스코프] 목록으로 */
+/** Splits a line into tokens as [text, innermost scope] pairs. */
 function tokenize(line) {
   const { tokens } = grammar.tokenizeLine(line, textmate.INITIAL);
   return tokens.map((token) => [
@@ -49,10 +49,10 @@ function tokenize(line) {
   ]);
 }
 
-/** 그 낱말이 받은 스코프 */
+/** The scope assigned to a given word. */
 function scopeOf(line, word) {
   const found = tokenize(line).find(([text]) => text.trim() === word);
-  assert.ok(found, `'${word}' 를 줄에서 찾지 못했습니다: ${line}`);
+  assert.ok(found, `could not find '${word}' in line: ${line}`);
   return found[1];
 }
 
@@ -60,7 +60,7 @@ test('주석과 색상 리터럴을 구분한다', () => {
   assert.match(scopeOf('forward 10  # 앞으로', '# 앞으로'), /^comment\.line/);
   assert.match(scopeOf('draw_color = #ff0000', '#ff0000'), /^constant\.other\.color/);
   assert.match(scopeOf('font_color = #FFEE00', '#FFEE00'), /^constant\.other\.color/);
-  // 6자리가 아니면 주석이다
+  // anything other than 6 hex digits is treated as a comment
   assert.match(scopeOf('say "x"  #ff00', '#ff00'), /^comment\.line/);
 });
 
@@ -119,14 +119,14 @@ test('예제 파일 전체를 토큰으로 쪼갤 수 있다', () => {
     state = result.ruleStack;
     colored += result.tokens.filter((token) => token.scopes.length > 1).length;
   }
-  assert.ok(colored > 1000, `칠해진 토큰이 ${colored}개뿐입니다.`);
+  assert.ok(colored > 1000, `only ${colored} tokens were colored`);
 });
 
 test('문법 파일이 tess.ohm 과 맞춰져 있다', () => {
-  // build-grammar.mjs 를 다시 돌려도 결과가 같아야 한다
+  // re-running build-grammar.mjs must produce an identical result
   const before = fs.readFileSync(grammarPath, 'utf-8');
   const { execFileSync } = require('node:child_process');
   execFileSync(process.execPath, [path.join(root, 'editors', 'vscode', 'build-grammar.mjs')], { cwd: root });
   assert.equal(fs.readFileSync(grammarPath, 'utf-8'), before,
-    'editors/vscode/build-grammar.mjs 를 다시 돌리면 결과가 달라집니다. 문법 파일을 다시 만들어 커밋하세요.');
+    'editors/vscode/build-grammar.mjs produces a different result; regenerate and commit the grammar file.');
 });

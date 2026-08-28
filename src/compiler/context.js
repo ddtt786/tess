@@ -1,14 +1,12 @@
-// ============================================================================
-//  컴파일 컨텍스트
+// Compile context.
 //
-//  블록 생성, 심볼 테이블(오브젝트 · 장면 · 변수 · 신호 · 함수), 진단 수집을
-//  한 곳에서 관리한다.
-// ============================================================================
+// Central home for block creation, the symbol table (objects, scenes,
+// variables, messages, functions), and diagnostics collection.
 import { createIdFactory, seedFrom } from './ids.js';
 import { commentKey, makeComment } from './comments.js';
 import { lineAndColumn } from '../validate.js';
 
-/** 엔트리 블록 한 개의 기본 뼈대 */
+/** Base skeleton of one Entry block. */
 export function makeBlock(id, type, params = [], statements = []) {
   return {
     id,
@@ -38,39 +36,41 @@ export class Context {
     this.errors = [];
     this.warnings = [];
 
-    // 블록 id -> 그 블록을 만든 Tess 소스 위치. 실행 중 엔트리가 panic 나면
-    // 어느 블록인지(id)는 알 수 있어도 어느 줄인지는 모르니, 디버그 패널이
-    // 이 표를 찾아서 "블록 -> 소스 위치" 로 되짚어 보여줄 수 있게 모아 둔다.
+    // block id -> the Tess source location that created it. When Entry
+    // panics at runtime it reports only the block id, not the source line,
+    // so the debug panel looks up this table to map block -> source location.
     this.sourceMap = {};
-    this.currentNode = null; // 지금 컴파일 중인 문장의 AST 노드 (블록 위치 태깅용)
-    this.usesTts = false; // read / tts 문을 하나라도 쓰면 project.aiUtilizeBlocks 에 'tts' 를 넣는다
-    // costume/sound 선언의 `force id "..."` 로 고정해 둔 진짜 엔트리 id 들 (SPEC-ADDENDUM.md
-    // 1.4절). resolvePicture/resolveSound 가 "이 문자열이 이 오브젝트의 이름은 아니어도,
-    // 어딘가에 고정해 둔 진짜 id 인가" 를 볼 때 쓴다 — ctx.newId 가 만든 모든 id(장면·
-    // 오브젝트·변수·블록 id 전부 포함)를 그대로 쓰면, 코스튬 이름 오타가 우연히 무관한
-    // id 와 겹쳐서 조용히 잘못된 걸 가리키게 될 수 있어 따로 둔다.
+    this.currentNode = null; // AST node of the statement currently compiling (for block location tagging)
+    this.usesTts = false; // any read/tts statement adds 'tts' to project.aiUtilizeBlocks
+    // Real Entry ids pinned via `force id "..."` on costume/sound declarations
+    // (SPEC-ADDENDUM.md 1.4). resolvePicture/resolveSound check this set to
+    // tell "a string that isn't this object's own resource name, but is a
+    // pinned real id elsewhere" — kept separate from ctx.newId's output
+    // (which spans scene/object/variable/block ids too) so a typo in a
+    // costume name can't collide with an unrelated generated id and silently
+    // resolve to the wrong thing.
     this.forcedResourceIds = new Set();
 
-    // 심볼 테이블
+    // symbol table
     this.scenes = [];           // { id, name }
     this.sceneByName = new Map();
     this.objects = [];          // { id, name, kind, ... }
     this.objectByName = new Map();
-    this.variables = [];        // 엔트리 variables 항목
-    this.globals = new Map();   // name -> variable 항목
+    this.variables = [];        // Entry variables entries
+    this.globals = new Map();   // name -> variable entry
     this.messages = [];
     this.messageByName = new Map();
     this.functions = [];        // { id, name, node, params, isValue, owner }
     this.functionByName = new Map();
-    this.runtimeFunctions = new Map(); // 컴파일러가 만들어 넣는 함수 (scale_x/scale_y)
+    this.runtimeFunctions = new Map(); // compiler-synthesized functions (scale_x/scale_y)
 
-    // 현재 컴파일 중인 위치
-    this.object = null;         // 현재 오브젝트
-    this.locals = new Map();    // 오브젝트 로컬 변수 name -> 변수 항목
-    this.funcScope = null;      // 함수 안이면 { name, params:Set, localVars:Map }
+    // current compile position
+    this.object = null;         // current object
+    this.locals = new Map();    // object-local variable name -> variable entry
+    this.funcScope = null;      // inside a function: { name, params:Set, localVars:Map }
   }
 
-  // --- 진단 ---------------------------------------------------------------
+  // --- diagnostics ---------------------------------------------------------
   error(node, message) {
     this.#report(this.errors, node, message);
     return null;
@@ -89,14 +89,14 @@ export class Context {
     bucket.push({ line, column, file, offset, message });
   }
 
-  // --- 블록 만들기 ---------------------------------------------------------
+  // --- block creation --------------------------------------------------------
   block(type, params = [], statements = []) {
     const block = makeBlock(this.newId(), type, params, statements);
     this.#recordLocation(block);
     return block;
   }
 
-  /** 지금 만든 블록이 소스의 어디서 왔는지 sourceMap 에 남긴다 */
+  /** Records where the just-created block came from in the source, into sourceMap. */
   #recordLocation(block) {
     const node = this.currentNode;
     if (!node?.loc) return;
@@ -109,7 +109,7 @@ export class Context {
     };
   }
 
-  /** 소스에 달린 주석을 엔트리 블록 주석으로 옮긴다 */
+  /** Moves a source comment onto the corresponding Entry block. */
   applyComment(node, block) {
     if (!block) return block;
     const text = this.comments.get(commentKey(node));
@@ -117,27 +117,27 @@ export class Context {
     return block;
   }
 
-  /** 숫자 리터럴 블록 */
+  /** Number literal block. */
   number(value) {
     return this.block('number', [String(value)]);
   }
 
-  /** 문자열 리터럴 블록 */
+  /** String literal block. */
   text(value) {
     return this.block('text', [String(value)]);
   }
 
-  /** 각도 리터럴 블록 (회전 계열 블록 전용) */
+  /** Angle literal block (rotation-family blocks only). */
   angle(value) {
     return this.block('angle', [String(value)]);
   }
 
-  // --- 심볼 조회 -----------------------------------------------------------
-  /** 이름으로 변수/리스트 찾기: 함수 지역 -> 오브젝트 로컬 -> 전역 */
+  // --- symbol lookup -----------------------------------------------------------
+  /** Looks up a variable/list by name: function-local -> object-local -> global. */
   lookupVariable(name) {
     if (this.funcScope) {
       if (this.funcScope.params.has(name)) return { kind: 'param', name };
-      // 엔트리 함수 지역 변수는 이름이 아니라 `함수id_해시` 로 가리킨다
+      // Entry function-local variables are referenced by `funcId_hash`, not by name
       if (this.funcScope.localVars.has(name)) {
         return { kind: 'funcLocal', name, id: this.funcScope.localVars.get(name) };
       }
@@ -150,12 +150,12 @@ export class Context {
     return global ? { kind: 'variable', entry: global } : null;
   }
 
-  /** 오브젝트 이름 -> 엔트리 오브젝트 id */
+  /** Object name -> Entry object id. */
   objectId(name) {
     return this.objectByName.get(name)?.id ?? null;
   }
 
-  /** 신호 이름 -> 엔트리 메시지 id (없으면 만든다) */
+  /** Message name -> Entry message id, creating one if it doesn't exist. */
   messageId(name) {
     let message = this.messageByName.get(name);
     if (!message) {

@@ -1,20 +1,21 @@
 // ============================================================================
-//  엔트리 이름(무엇이든 될 수 있는 문자열) -> Tess 식별자(bareword)
+//  Entry name (an arbitrary string) -> Tess identifier (bareword).
 //
-//  엔트리 오브젝트/장면/변수/모양/소리 이름은 공백·괄호·이모지까지 뭐든 될 수
-//  있지만, Tess 식별자는 `identifierStart identifierPart*` (letter/'_' 로
-//  시작, 그 뒤로 letter/digit/'_') 만 허용한다. 그래서 이름은 항상 두 개로
-//  나뉜다 — 코드에서 가리킬 안전한 식별자, 그리고 컴파일된 작품에 실제로
-//  찍힐 원래 이름(name 속성으로 되돌려 놓는다).
+//  An Entry object/scene/variable/costume/sound name can contain spaces,
+//  brackets, emoji — anything. A Tess identifier only allows
+//  `identifierStart identifierPart*` (letter/'_' to start, then
+//  letter/digit/'_'). Names are therefore always split into a safe
+//  identifier to reference in code and the original name restored via a
+//  `name` property in the compiled output.
 // ============================================================================
 
-/** Ohm 의 `letter` 는 유니코드 Letter 카테고리 전부(한글 포함)를 허용한다 */
+/** Ohm's `letter` accepts the full Unicode Letter category (including Hangul). */
 const IDENT_START = /[\p{L}_]/u;
 const IDENT_PART = /[\p{L}\p{N}_]/u;
 
 /**
- * 임의의 문자열을 안전한 Tess 식별자로 만든다. 같은 네임스페이스(usedNames)
- * 안에서 겹치면 숫자를 붙여 구분한다.
+ * Turns an arbitrary string into a safe Tess identifier. Collisions within
+ * the same namespace (usedNames) are disambiguated with a numeric suffix.
  */
 export function safeIdentifier(raw, usedNames, fallback = 'item') {
   let cleaned = '';
@@ -35,7 +36,7 @@ export function safeIdentifier(raw, usedNames, fallback = 'item') {
   return candidate;
 }
 
-/** Tess 문자열 리터럴로 안전하게 넣는다 (따옴표 · 역슬래시 · 줄바꿈 이스케이프) */
+/** Safely encodes a value as a Tess string literal (escapes quotes, backslash, newlines). */
 export function tessString(value) {
   const escaped = String(value)
     .replaceAll('\\', '\\\\')
@@ -46,7 +47,7 @@ export function tessString(value) {
   return `"${escaped}"`;
 }
 
-/** 숫자를 Tess 소스에 그대로 적을 수 있는 형태로 */
+/** Formats a number so it can be written directly into Tess source. */
 export function tessNumber(value) {
   if (!Number.isFinite(value)) return '0';
   return String(value);

@@ -1,7 +1,8 @@
-// CLI 명령 검사.
+// Tests CLI commands.
 //
-// check 가 실제로 "컴파일되는지" 를 검사하는지 확인한다. 예전에는 parse 만 해서,
-// decompile 이 컴파일 에러 24개를 알려 준 파일을 check 는 OK 라고 답했다.
+// Verifies that `check` actually compiles the project rather than only
+// parsing it, since a parse-only check would pass files that decompile
+// reports dozens of compile errors for.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** `node index.js ...` 를 돌리고 종료 코드와 출력을 돌려준다 */
+/** Runs `node index.js ...` and returns its exit code and output. */
 function cli(...args) {
   try {
     const stdout = execFileSync('node', [path.join(root, 'index.js'), ...args], { encoding: 'utf-8' });
@@ -22,7 +23,7 @@ function cli(...args) {
   }
 }
 
-/** 파일 여러 개를 담은 임시 폴더를 만든다 */
+/** Creates a temp directory containing the given files. */
 function project(t, files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-cli-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -35,7 +36,7 @@ function project(t, files) {
 }
 
 test('check 는 문법만 맞으면 통과하는 코드도 컴파일 단계까지 검사한다', (t) => {
-  // 문법은 완벽하다. 하지만 이 오브젝트에는 "없는모양" 이라는 모양이 없다.
+  // grammar is valid, but this object has no costume named "없는모양"
   const dir = project(t, {
     'main.tess': `scene "s":
   object "주인공":
@@ -54,7 +55,7 @@ end`,
 });
 
 test('check 는 useobject 로 불러오는 조각 파일 안까지 검사한다', (t) => {
-  // 조각 파일은 펼쳐 봐야 검사할 수 있다. parse 만 해서는 아예 열어 보지도 않는다.
+  // fragment files can only be checked by expanding them; parse alone never opens them
   const dir = project(t, {
     'main.tess': 'scene "s":\n  useobject "objects/주인공.tess"\nend',
     'objects/주인공.tess': `default costume 기본 "a.png" size 10 10
@@ -66,7 +67,7 @@ end`,
 
   const result = cli('check', path.join(dir, 'main.tess'));
   assert.equal(result.code, 1);
-  // 에러 위치는 main.tess 가 아니라 진짜 그 코드가 있는 조각 파일로 알려 준다
+  // error location must point to the fragment file where the code actually lives, not main.tess
   assert.match(result.output, /주인공\.tess:\d+:\d+/);
   assert.match(result.output, /없는모양/);
 });

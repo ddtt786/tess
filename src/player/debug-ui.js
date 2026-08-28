@@ -1,4 +1,4 @@
-// 실행 페이지의 디버그 패널 UI. arrow-js 로 그리고, 서버가 /debug-ui.js 로 내보낸다.
+// Debug panel UI for the player page. Rendered with arrow-js, served by the server at /debug-ui.js.
 import { reactive, html } from '/arrow/index.mjs';
 
 const TABS = [
@@ -22,19 +22,19 @@ const state = reactive({
   variables: [],
   messages: [],
   functions: [],
-  // 섹션 높이. arrow 가 변화를 따라가려면 키가 미리 있어야 한다.
+  // Section heights. Keys must exist up front for arrow to track changes.
   heights: { 'run-control': 200, 'data-vars': 200, 'data-signals': 200, 'objects-tree': 200 },
-  tick: 0,        // 반응형 밖 데이터(블록 트리·변수 값)를 다시 그리게 하는 카운터
+  tick: 0,        // Counter that forces a re-render of data outside the reactive proxy (block tree, variable values)
 });
 
-// 반응형 프록시에 넣으면 느려지는 큰 데이터
+// Large data that would be slow to wrap in the reactive proxy.
 let project = null;
 const blockOwner = new Map();
 const blockById = new Map();
 let currentThreads = [];
 let highlighted = [];
 
-// --- 패널 열고 닫기 ---------------------------------------------------------
+// --- Panel open/close --------------------------------------------------------
 const panel = document.getElementById('debug-panel');
 
 const syncPanelWidth = () => {
@@ -52,13 +52,13 @@ const setOpen = (open, tab) => {
 const openPanel = (tab) => setOpen(true, tab);
 const closePanel = () => setOpen(false);
 
-// --- 실행 제어 --------------------------------------------------------------
+// --- Run controls --------------------------------------------------------------
 const engine = () => (window.Entry && Entry.engine) || null;
 const engineState = () => {
   const e = engine();
   if (!e || typeof e.isState !== 'function') return '';
   for (const s of ['run', 'pause', 'stop']) {
-    try { if (e.isState(s)) return s; } catch (error) { /* 다음 상태를 본다 */ }
+    try { if (e.isState(s)) return s; } catch (error) { /* Check the next state. */ }
   }
   return '';
 };
@@ -75,8 +75,9 @@ const doRun = () => control((e) => {
 const doPause = () => control((e) => e && e.togglePause());
 const doStop = () => control((e) => e && e.toggleStop());
 
-// --- 실행 환경 흉내내기 -------------------------------------------------------
-// 브라우저에 직접 묻는 판단 블록들이라, func 을 감싸 패널에서 고른 값을 돌려준다.
+// --- Simulated environment -----------------------------------------------------
+// These judgment blocks query the browser directly, so their func is
+// wrapped to return the value chosen in the panel instead.
 const choice = (value) => (value === '' ? null : value === 'true');
 
 window.tessPatchEnvironmentBlocks = function patchEnvironmentBlocks() {
@@ -100,14 +101,14 @@ window.tessPatchEnvironmentBlocks = function patchEnvironmentBlocks() {
   });
 };
 
-// --- 자료 -------------------------------------------------------------------
+// --- Data ------------------------------------------------------------------
 const preview = (value) => {
   if (value === null || value === undefined) return '(없음)';
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   return text.length > 80 ? text.slice(0, 80) + '…' : text;
 };
 
-/** 실행 중이면 지금 값을, 아니면 project.json 의 초기값을 돌려준다 */
+/** Returns the live value while running, else the initial value from project.json. */
 const liveValue = (entry) => {
   const container = window.Entry && Entry.variableContainer;
   try {
@@ -118,7 +119,7 @@ const liveValue = (entry) => {
     }
     const variable = container && container.getVariable && container.getVariable(entry.id);
     if (variable && typeof variable.getValue === 'function') return preview(variable.getValue());
-  } catch (error) { /* 실행기에서 못 읽으면 초기값을 보여 준다 */ }
+  } catch (error) { /* Fall back to the initial value if the runtime can't be read. */ }
   return preview(entry.value);
 };
 
@@ -128,7 +129,7 @@ const sendSignal = (id) => {
   }
 };
 
-/** 함수 머리 사슬에서 이름·인자 개수·종류를 읽는다 */
+/** Reads a function's name, parameter count, and kind from its header chain. */
 const describeFunction = (fn) => {
   let name = fn.id;
   let params = 0;
@@ -145,11 +146,11 @@ const describeFunction = (fn) => {
       node = node.params[1];
     }
     if (labels.length) name = labels.join(' … ');
-  } catch (error) { /* 못 읽으면 id 를 보여 준다 */ }
+  } catch (error) { /* Fall back to showing the id if unreadable. */ }
   return { id: fn.id, name, params, kind };
 };
 
-// --- 블록 트리 --------------------------------------------------------------
+// --- Block tree --------------------------------------------------------------
 const blockLabel = (block) => {
   const params = (block.params || [])
     .filter((p) => p !== null && p !== undefined && typeof p !== 'object')
@@ -188,7 +189,7 @@ const showObject = (object) => {
   state.tick += 1;
 };
 
-// --- 섹션 (위아래 크기 조절) ---------------------------------------------------
+// --- Sections (vertical resize) -------------------------------------------------
 const startVerticalResize = (event, id) => {
   const section = event.currentTarget.closest('.debug-section');
   const startY = event.clientY;
@@ -206,7 +207,7 @@ const startVerticalResize = (event, id) => {
   window.addEventListener('mouseup', up);
 };
 
-/** 마지막을 뺀 섹션마다 아래쪽에 높이 조절 손잡이를 붙인다 */
+/** Adds a resize handle to the bottom of every section except the last. */
 const sections = (list) => list.map((section, index) => {
   const last = index === list.length - 1;
   const height = () => (last ? '' : 'height:' + (state.heights[section.id] ?? DEFAULT_SECTION_HEIGHT) + 'px');
@@ -222,7 +223,7 @@ const sections = (list) => list.map((section, index) => {
 
 const empty = (text) => html`<p class="debug-empty">${text}</p>`;
 
-// --- 탭 내용 ----------------------------------------------------------------
+// --- Tab content ----------------------------------------------------------------
 const runTab = () => sections([
   {
     id: 'run-control',
@@ -366,7 +367,7 @@ const errorsTab = () => sections([
 
 const TAB_BODY = { run: runTab, data: dataTab, objects: objectsTab, errors: errorsTab };
 
-// --- 패널 폭 조절 -------------------------------------------------------------
+// --- Panel width resize -------------------------------------------------------------
 const startHorizontalResize = (event) => {
   event.preventDefault();
   document.body.style.userSelect = 'none';
@@ -385,7 +386,7 @@ const startHorizontalResize = (event) => {
   window.addEventListener('mouseup', up);
 };
 
-// --- 패널 전체 ---------------------------------------------------------------
+// --- Panel root ---------------------------------------------------------------
 html`
   <div id="debug-resize-handle" title="드래그해서 크기 조절" @mousedown="${startHorizontalResize}"></div>
   <div class="debug-header">
@@ -406,7 +407,7 @@ html`
       hidden="${() => state.tab !== tab.id}">${TAB_BODY[tab.id]()}</div>`.key(tab.id))}
 `(panel);
 
-// --- 바깥에서 부르는 것들 -------------------------------------------------------
+// --- Externally-called entry points -------------------------------------------------
 const toggleBtn = document.getElementById('debug-toggle');
 const badge = document.getElementById('debug-badge');
 toggleBtn.addEventListener('click', () => (state.open ? closePanel() : openPanel()));
@@ -458,12 +459,12 @@ window.tessRenderProjectDebug = function renderProjectDebug(loaded) {
   state.functions = (project.functions || []).map(describeFunction);
 
   for (const object of project.objects) {
-    try { indexBlocks(JSON.parse(object.script), object); } catch (e) { /* 블록을 못 읽어도 목록은 보여준다 */ }
+    try { indexBlocks(JSON.parse(object.script), object); } catch (e) { /* Still show the list if blocks can't be parsed. */ }
   }
   if (project.objects.length > 0) showObject(project.objects[0]);
 };
 
-/** 이 블록과 그 안에 값으로 꽂힌 블록들의 id. 실제 원인이 자식 쪽일 수 있다. */
+/** Ids of this block and any value blocks plugged into it — the real cause may be a child block. */
 window.tessCollectParamIds = function collectParamIds(node, out) {
   out = out || [];
   if (!node || typeof node !== 'object' || !node.id) return out;
@@ -489,7 +490,7 @@ window.tessHighlightBlock = function highlightBlock(blockId) {
   });
 };
 
-/** value_of_index_from_list 의 "can not insert value to array" 를 리스트 이름·길이가 담긴 메시지로 바꾼다 */
+/** Rewrites value_of_index_from_list's "can not insert value to array" into a message with the list's name and length. */
 window.tessDescribeListIndexError = function describeListIndexError(reportedBlockId, err) {
   if (!err || err.message !== 'can not insert value to array') return null;
   const find = (node) => {
@@ -531,10 +532,10 @@ window.tessDescribeListIndexError = function describeListIndexError(reportedBloc
   }
 };
 
-// --- 캔버스 배치 ------------------------------------------------------------
+// --- Canvas layout ------------------------------------------------------------
 let resolutionFixed = false;
 
-/** 그리기 해상도는 처음 한 번만 정한다. 바꿀 때마다 캔버스가 지워지고 화면이 깜빡인다. */
+/** Sets the drawing resolution only once — changing it clears the canvas and flashes the screen. */
 const setCanvasResolution = () => {
   if (resolutionFixed) return;
   try {
@@ -555,17 +556,17 @@ const setCanvasResolution = () => {
     stage.canvas.scaleY = bufferW / 480;
     Entry.requestUpdate = true;
     resolutionFixed = true;
-  } catch (e) { /* 실패하면 엔트리 기본 해상도를 쓴다 */ }
+  } catch (e) { /* Fall back to Entry's default resolution on failure. */ }
 };
 
-/** 남은 공간에 16:9 로 꽉 차도록 캔버스의 CSS 크기만 맞춘다 */
+/** Fits the canvas's CSS size to fill the remaining space at 16:9, without touching its resolution. */
 window.tessLayoutCanvas = function layoutCanvas() {
   const workspace = document.getElementById('workspace');
   const canvas = document.getElementById('entryCanvas');
   if (!workspace || !canvas) return;
   const engineBar = document.querySelector('.entryEngine');
   const engineHeight = engineBar ? engineBar.getBoundingClientRect().height : 0;
-  // clientWidth 는 padding(디버그 패널 자리)을 포함하므로 그만큼 뺀다
+  // clientWidth includes padding (reserved for the debug panel), so that amount is subtracted.
   const panelWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--debug-panel-width')) || 0;
   const availW = workspace.clientWidth - panelWidth;
   const availH = Math.max(workspace.clientHeight - engineHeight, 60);

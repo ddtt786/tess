@@ -1,25 +1,26 @@
 // ============================================================================
-//  컴파일한 작품을 브라우저에서 열어 보기 위한 페이지
+//  The page used to view a compiled project in a browser.
 //
-//  엔트리 실행기(entryjs)는 서드파티 라이브러리가 많아서 통째로 담지 않고
-//  다음 순서로 찾는다.
-//    1. 프로젝트에 설치된 node_modules/@entrylabs/entry  (오프라인)
-//    2. unpkg CDN                                          (기본, server.js 의 CDN 상수)
-//  @entrylabs/entry 자체는 jsDelivr 로는 못 받는다 — 패키지 전체 크기가 jsDelivr 의
-//  150MB 한도를 넘어서 entry.min.js 조차 403 으로 막힌다(server.js CDN 상수 주석 참고).
-//  나머지 서드파티 라이브러리(THIRD_PARTY_SCRIPTS)는 각각 크기가 작아 jsDelivr 로도 잘 받아진다.
-//  둘 다 못 쓰면 페이지가 그 사실을 알려 주고, 작품 파일을 내려받아
-//  playentry.org 에서 여는 길을 안내한다.
+//  entryjs has a lot of third-party dependencies, so instead of bundling
+//  them, this looks for them in order:
+//    1. node_modules/@entrylabs/entry installed in the project (offline)
+//    2. unpkg CDN                       (default, see the CDN constant in server.js)
+//  @entrylabs/entry itself can't be fetched from jsDelivr — the package
+//  exceeds jsDelivr's 150MB size limit, so even entry.min.js gets a 403
+//  (see the CDN constant note in server.js). The other third-party
+//  libraries (THIRD_PARTY_SCRIPTS) are each small enough for jsDelivr.
+//  If neither source works, the page reports that and points to
+//  downloading the project file and opening it on playentry.org instead.
 //
-//  entry.min.js 는 그 자체로 완결된 파일이 아니라, 아래 서드파티 라이브러리들이
-//  전역 변수(createjs, _, EntryTool, EntryVideoLegacy, React, ...)로 먼저
-//  준비돼 있어야 한다 (entryjs 의 webpack externals 설정과 동일).
-//  이 라이브러리들이 없으면 entry.min.js 를 불러오는 도중 조용히 실패해서
-//  `Entry.init` 이 함수가 아니게 되고, 결국 "엔트리를 불러오지 못했습니다"
-//  화면만 뜨게 된다 — 이게 이 파일에서 고친 로딩 오류의 원인이었다.
+//  entry.min.js is not self-contained: it expects the third-party
+//  libraries below to already be present as globals (createjs, _,
+//  EntryTool, EntryVideoLegacy, React, ...), matching entryjs's webpack
+//  externals config. Without them, loading entry.min.js fails silently,
+//  `Entry.init` ends up undefined, and only the "failed to load" fallback
+//  screen renders.
 // ============================================================================
 
-/** entry.min.js 가 실행되기 전에 전역으로 준비돼 있어야 하는 서드파티 라이브러리 */
+/** Third-party libraries that must be globally available before entry.min.js runs. */
 export const THIRD_PARTY_SCRIPTS = [
   'https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js',
   'https://cdn.jsdelivr.net/npm/createjs@1.0.1/builds/1.0.0/createjs.min.js',
@@ -34,16 +35,19 @@ export const THIRD_PARTY_SCRIPTS = [
 
 export const THIRD_PARTY_STYLE = 'https://cdn.jsdelivr.net/npm/@entrylabs/tool@2.0.9/dist/entry-tool.css';
 
-// 엔트리가 쓰는 한글 글꼴(나눔고딕코딩·둥근모꼴·잘난체 …)의 @font-face 정의.
-// entryjs 자체에는 없고 playentry.org 페이지가 따로 붙이는 스타일이라, 우리 플레이어도
-// 이 CSS 를 불러오지 않으면 `font = "DungGeunMo"` 같은 글씨체가 전부 기본 글꼴로
-// 대체돼 보인다(플레이어 자체는 로컬이라도, 이 CSS 와 그 안의 폰트 파일은 엔트리의
-// 공개 CDN 이라 인터넷이 되면 그대로 받아 쓸 수 있다). 실제 목록은
-// https://playentry.org 페이지가 불러오는 https://entry-cdn.pstatic.net/uploads/fonts/fonts_2023_10.css 에서 확인했다.
+// @font-face definitions for the Korean fonts Entry uses (Nanum Gothic
+// Coding, DungGeunMo, Jalnan, etc.). entryjs itself doesn't ship this CSS —
+// it's added separately by the playentry.org page — so without loading it
+// here, a font like `font = "DungGeunMo"` falls back to the default font
+// (the player itself is local, but this CSS and its font files are served
+// from Entry's public CDN and load fine given internet access). The list
+// was taken from https://entry-cdn.pstatic.net/uploads/fonts/fonts_2023_10.css,
+// which the playentry.org page loads.
 const ENTRY_FONTS_BASE = 'https://entry-cdn.pstatic.net/uploads/fonts';
 
-// 글꼴 CSS 를 하나씩 직접 건다. 묶음 파일 fonts_2023_10.css 는 @import 목록이라
-// 글꼴 정의가 한 번 더 왕복한 뒤에야 도착해서, 첫 프레임이 대체 글꼴로 그려진다.
+// Font stylesheets are linked individually. The bundled fonts_2023_10.css
+// is a list of @import rules, adding an extra round trip before font
+// definitions arrive, so the first frame renders with a fallback font.
 export const ENTRY_FONT_STYLES = [
   'nanum_gothic', 'jejuhallasan_2023', 'kopubbatang_2023', 'nanumgothiccoding_2023',
   'nanummyeongjo_2023', 'nanumpenscript_2023', 'designhouse_2023', 'dunggeunmo_2023',
@@ -53,7 +57,7 @@ export const ENTRY_FONT_STYLES = [
   'maruburi_2023', 'd2coding_2023',
 ].map((name) => `${ENTRY_FONTS_BASE}/${name}.css`);
 
-/** entryjs 가 필요로 하는 파일들 (엔트리 공식 문서의 순서 그대로) */
+/** Files entryjs requires, in the order given by Entry's official docs. */
 export const RUNTIME_FILES = [
   'extern/util/filbert.js',
   'extern/util/CanvasInput.js',
@@ -67,7 +71,7 @@ export const RUNTIME_FILES = [
 
 export const RUNTIME_STYLE = 'dist/entry.css';
 
-// 디버그 패널 UI 와 그것이 쓰는 arrow-js. 둘 다 ESM 이라 서버가 따로 내보낸다.
+// The debug panel UI and the arrow-js it uses. Both are ESM, served separately.
 export const DEBUG_UI_PATH = '/debug-ui.js';
 export const ARROW_PATH = '/arrow/';
 
@@ -76,8 +80,9 @@ const escapeHtml = (text) => String(text)
   .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 
 /**
- * 값을 `<script>` 안에 넣어도 되는 JS 리터럴로 바꾼다.
- * 스크립트 안에서는 HTML 이스케이프가 통하지 않고, 문자열 속 `</script` 가 스크립트를 끊는다.
+ * Encodes a value as a JS literal safe to embed inside a `<script>` tag.
+ * HTML escaping doesn't apply inside a script, and `</script` in a string
+ * would otherwise close the tag early.
  */
 const jsValue = (value) => JSON.stringify(value ?? null)
   .replaceAll('<', '\\u003c').replaceAll('>', '\\u003e').replaceAll('&', '\\u0026')
@@ -85,16 +90,18 @@ const jsValue = (value) => JSON.stringify(value ?? null)
 
 /**
  * @param {{name: string, base: string, summary: object, entName: string, reload?: boolean}} options
- *   base 는 entryjs 파일들을 가져올 곳 (`/lib` 또는 CDN 주소)
- *   reload 가 true 면 서버가 다시 컴파일할 때마다 페이지를 자동으로 새로고침한다
+ *   base is where entryjs files are fetched from (`/lib` or the CDN URL)
+ *   when reload is true, the page auto-reloads each time the server recompiles
  */
 export function playerPage({ name, base, summary, entName, reload = true }) {
-  // crossorigin="anonymous" 가 없으면, 실행 중 이 스크립트들(cross-origin CDN 이면)
-  // 안에서 던진 오류는 브라우저가 보안상 진짜 메시지·스택을 숨기고 그냥 "Script error."
-  // 라고만 알려준다 — 디버그 패널에 그렇게 뜨면 원인을 전혀 알 수 없다. jsDelivr·unpkg
-  // 모두 access-control-allow-origin: * 를 보내므로 이 속성을 붙여도 로딩엔 문제없고
-  // (같은 origin 인 /lib 로컬 파일에는 애초에 영향이 없다), 진짜 오류 메시지가 보인다.
-  // 값을 끼워 넣는 자리는 모두 escapeHtml(속성·본문) 또는 jsValue(`<script>` 안)를 거친다.
+  // Without crossorigin="anonymous", an error thrown inside these scripts
+  // (when cross-origin, i.e. CDN) is reported by the browser only as the
+  // generic "Script error." with no real message or stack — useless in the
+  // debug panel. Both jsDelivr and unpkg send
+  // access-control-allow-origin: *, so this attribute doesn't break loading
+  // (and has no effect on same-origin /lib files), while surfacing the real
+  // error message. Every interpolated value below goes through
+  // escapeHtml (attributes/body) or jsValue (inside `<script>`).
   const libBase = escapeHtml(base);
   const thirdPartyScripts = THIRD_PARTY_SCRIPTS
     .map((url) => `<script src="${escapeHtml(url)}" crossorigin="anonymous"></script>`)
@@ -124,8 +131,9 @@ ${fontStyles}
     display: flex; flex-direction: column; overflow: hidden;
   }
   @media (prefers-color-scheme: dark) { body { background: #16181d; color: #e8eaee; } }
-  /* 디버그 패널이 열려 있는 만큼 헤더·작업 공간을 오른쪽에서 밀어내서,
-     패널이 항상 옆에 나란히 붙고 내용을 가리지 않게 한다 (JS 가 값을 채운다). */
+  /* Pushes the header/workspace in from the right by the open debug panel's
+     width, so the panel sits alongside the content instead of covering it
+     (JS fills in the value). */
   :root { --debug-panel-width: 0px; }
   header {
     display: flex; align-items: baseline; gap: 12px; padding: 12px 18px; border-bottom: 1px solid #0002;
@@ -135,21 +143,23 @@ ${fontStyles}
   header .summary { font-size: 13px; opacity: .7; }
   header .reload-status { font-size: 12px; opacity: .55; }
   header a { margin-left: auto; font-size: 13px; }
-  /* entry.css 의 .entry.minimize 는 원래 playentry.org 자체의 "화면 구석에 접힌 미리보기"
-     UI 용으로 만들어져 있어서 max-height: 56.25vw, padding-top: calc(100vh + 48px),
-     height: 100% 을 그냥 박아 넣는다. 그대로 두면 실행기 화면이 페이지 저 아래
-     (뷰포트 밖)로 밀려나거나, 헤더 높이를 빼지 않은 100% 높이 때문에 아래쪽이 잘린다.
-     #workspace 는 id 선택자라 .entry(.minimize) 클래스 선택자보다 우선하므로
-     여기서 그 값들을 되돌리고, 남은 세로 공간을 flex 로 정확히 채운다. */
+  /* entry.css's .entry.minimize was designed for playentry.org's own
+     collapsed-corner preview UI, so it hardcodes
+     max-height: 56.25vw, padding-top: calc(100vh + 48px), height: 100%.
+     Left as is, the player would be pushed off-viewport or clipped, since
+     that 100% height doesn't account for the header. #workspace, an id
+     selector, outranks the .entry(.minimize) class selectors, so these
+     values are reset here and the remaining vertical space is filled with flex. */
   #workspace {
     flex: 1 1 auto; min-height: 0; height: auto; padding-top: 0; max-height: none;
     box-sizing: border-box; padding-right: var(--debug-panel-width);
     transition: padding-right .15s ease-out;
   }
-  /* .entryCanvasWorkspace 는 minimize 모드용으로 268px 짜리 고정 폭을 박아 넣는다
-     (뷰포트·컨테이너 크기와 무관한 값이라 늘 똑같이 작게 뜬다). entryCanvas 는
-     id 선택자라 그 268px 를 이긴다. 실제 표시 크기는 window.tessLayoutCanvas 가
-     남은 가로·세로 공간에 맞춰 픽셀 단위로 직접 계산해 채운다 (letterbox). */
+  /* .entryCanvasWorkspace hardcodes a fixed 268px width for minimize mode
+     (independent of viewport/container size, so it always renders small).
+     #entryCanvas, an id selector, overrides that 268px. The actual display
+     size is computed in pixels by window.tessLayoutCanvas to fill the
+     remaining space (letterboxed). */
   #entryCanvas { display: block; margin: 0 auto; }
   #fallback { display: none; max-width: 640px; margin: 40px auto; padding: 24px 28px; border-radius: 12px;
               background: #fff; box-shadow: 0 1px 3px #0002; line-height: 1.7; }
@@ -186,7 +196,7 @@ ${fontStyles}
     overflow: auto; flex: 0 0 auto; box-sizing: border-box;
   }
   .debug-section-last { flex: 1 1 auto; min-height: 120px; }
-  /* 섹션 아래쪽 가장자리를 끌어서 높이를 조절한다 */
+  /* Drag the section's bottom edge to resize its height. */
   .debug-vresize {
     position: absolute; left: 0; right: 0; bottom: 0; height: 7px; cursor: row-resize;
   }
@@ -211,10 +221,10 @@ ${fontStyles}
   .block-highlight > .block-type { background: #e5484d; color: #fff; padding: 1px 5px; border-radius: 4px; }
   .block-highlight-child > .block-type { background: #e5484d33; padding: 1px 5px; border-radius: 4px; }
 
-  /* 정지하기와 일시정지가 붙어 있어 잘못 누르기 쉬우므로 사이를 벌린다 */
+  /* Adds a gap between Stop and Pause, which sit close enough to mis-click. */
   .entryEngineMinimize .entryStopButtonMinimize { margin-right: 20px; }
 
-  /* --- 디버그 패널: 탭 --- */
+  /* --- Debug panel: tabs --- */
   .debug-tabs { display: flex; flex: none; border-bottom: 1px solid #0002; padding: 0 8px; gap: 2px; }
   .debug-tab {
     border: none; background: none; color: inherit; cursor: pointer;
@@ -227,7 +237,7 @@ ${fontStyles}
   .debug-panelbody[hidden] { display: none; }
 
 
-  /* --- 실행 탭 --- */
+  /* --- Run tab --- */
   .debug-run-state { font-size: 13px; margin: 0 0 10px; }
   .debug-run-state .dot {
     display: inline-block; width: 8px; height: 8px; border-radius: 50%;
@@ -249,7 +259,7 @@ ${fontStyles}
   .debug-field select option { color: initial; }
   .debug-note { font-size: 12px; opacity: .55; margin: 8px 0 0; line-height: 1.6; }
 
-  /* --- 자료 탭 --- */
+  /* --- Data tab --- */
   .debug-rows { list-style: none; margin: 0; padding: 0; font-size: 13px; }
   .debug-rows li { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; border-bottom: 1px solid #0001; }
   .debug-rows .key { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
@@ -263,12 +273,14 @@ ${fontStyles}
     border: 1px solid #0003; background: none; color: inherit; cursor: pointer;
   }
   .debug-send-btn:hover { background: #4f80ff22; }
-  /* 브라우저는 사용자가 페이지와 아직 상호작용하지 않았으면 소리 재생을 조용히 막는다
-     (자동재생 정책 — createjs 가 쓰는 AudioContext 도 예외가 아니다). 실행하기를 페이지가
-     뜨자마자 스스로 누르면, 그 시점엔 아직 클릭 한 번 없었으니 when start 에서 바로
-     나오는 배경음악 같은 소리가 막혀 버린다(그러다 사용자가 아무 데나 한 번 누르면 그제서야
-     풀려서 "좀 있다가 하면 되는" 것처럼 보인다). 그래서 실제로 실행하기 전에 이 화면을
-     띄워 눌러 달라고 해서, 그 클릭 자체를 소리가 필요로 하는 "사용자 상호작용"으로 쓴다. */
+  /* Browsers silently block audio playback until the user has interacted
+     with the page (the autoplay policy — createjs's AudioContext is no
+     exception). If the player started running on its own as soon as the
+     page loaded, no click would have happened yet, so a "when start" sound
+     like background music would stay blocked (until the user happens to
+     click something, making it seem to "just work eventually"). This
+     screen is shown before the project actually starts, so that click
+     itself counts as the "user interaction" audio requires. */
   #start-gate {
     position: fixed; inset: 0; z-index: 900;
     display: flex; align-items: center; justify-content: center;
@@ -317,7 +329,7 @@ ${fontStyles}
 
 
 <script>
-// 디버그 UI 는 모듈이라 defer 로 늦게 뜬다. 그 전에 나는 로딩 오류를 여기서 모아 둔다.
+// The debug UI is a module and loads late (deferred); errors before it's ready are queued here.
 (function () {
   const pending = [];
   let sink = null;
@@ -341,7 +353,7 @@ ${fontStyles}
     }).catch(() => {});
   };
 
-  // createjs 가 소리를 미리 불러올 때 종종 던지지만 실제 재생에는 아무 문제가 없는 잡음이다.
+  // Noise createjs often throws while preloading sounds; it doesn't affect actual playback.
   const benign = (message) => /setPlaybackResource is not a function/.test(message ?? '');
 
   window.addEventListener('error', (event) => {
@@ -356,12 +368,12 @@ ${fontStyles}
 
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event.reason;
-    if (reason && reason.tessAlreadyReported) return; // stopProjectWithToast 가 이미 보고했다
+    if (reason && reason.tessAlreadyReported) return; // Already reported by stopProjectWithToast.
     if (benign(reason && reason.message)) return;
     window.tessReportError('처리되지 않은 Promise 거부', reason instanceof Error ? reason : new Error(String(reason)));
   });
 
-  // 디버그 UI 가 올라오기 전에 불릴 수 있어서 빈 함수로 채워 둔다.
+  // Filled with no-ops since these may be called before the debug UI loads.
   window.tessLayoutCanvas = () => {};
   window.tessHighlightBlock = () => {};
   window.tessRenderProjectDebug = () => {};
@@ -375,21 +387,22 @@ ${thirdPartyScripts}
 </script>
 <script>
 (function () {
-  // 브라우저의 자동재생 정책 때문에, 사용자가 이 페이지와 아직 한 번도 진짜로
-  // 상호작용(클릭·키·터치)하지 않았으면 AudioContext 는 'suspended' 로 시작해서
-  // 소리가 하나도 안 들린다. createjs(SoundJS) 는 이걸 직접 깨우는 코드
-  // (WebAudioPlugin.playEmptySound, 무음 버퍼를 만들어 그 안에서 바로 start() 호출)
-  // 를 갖고 있지만 "ontouchstart" in window 일 때만 문서 클릭에 걸어 둔다
-  // (createjs.js 안 _unlock 메서드) — 즉 터치 기기(모바일)에서만 자동으로 풀리고,
-  // 데스크톱 브라우저에서는 아무도 이걸 불러 주지 않는다. start-gate(위 화면의
-  // "클릭하거나 아무 키나 눌러서 시작")를 눌러도 AudioContext 를 실제로 깨우는
-  // 코드가 아무 데도 없으면 그 클릭은 그냥 화면만 넘길 뿐 소리는 여전히 막혀
-  // 있다가, 나중에 우연히(예: 브라우저 자체의 미디어 참여도 판단으로) 풀리는
-  // 것처럼 보일 뿐이다 — 그래서 desktop 에서도 똑같이 직접 걸어서 확실하게 푼다.
+  // Due to the browser autoplay policy, AudioContext starts 'suspended' —
+  // and no sound plays — until the user has genuinely interacted with the
+  // page (click/key/touch). createjs (SoundJS) has its own unlock code
+  // (WebAudioPlugin.playEmptySound: create a silent buffer and start() it
+  // immediately), but only wires it to a document click when
+  // "ontouchstart" in window (createjs.js's _unlock method) — meaning it
+  // self-unlocks only on touch devices, never on desktop. Clicking the
+  // start-gate overlay counts as an interaction, but if nothing actually
+  // wakes AudioContext, that click just dismisses the overlay while audio
+  // stays blocked, appearing to unlock later only by chance (e.g. the
+  // browser's own media-engagement heuristics). So this wires the same
+  // unlock explicitly on desktop too.
   const unlock = () => {
     try {
       const ctx = window.createjs && createjs.WebAudioPlugin && createjs.WebAudioPlugin.context;
-      if (!ctx) return; // 아직 안 만들어졌으면 다음 상호작용 때 다시 시도한다
+      if (!ctx) return; // Not created yet; retry on the next interaction.
       if (ctx.state !== 'running') {
         const source = ctx.createBufferSource();
         source.buffer = ctx.createBuffer(1, 1, 22050);
@@ -398,7 +411,7 @@ ${thirdPartyScripts}
         ctx.resume && ctx.resume();
       }
       if (ctx.state === 'running') detach();
-    } catch (e) { /* 실패해도 다음 상호작용 때 다시 시도한다 */ }
+    } catch (e) { /* Retry on the next interaction if this fails. */ }
   };
   const events = ['mousedown', 'click', 'touchstart', 'keydown'];
   const detach = () => events.forEach((type) => document.removeEventListener(type, unlock, true));
@@ -422,15 +435,17 @@ ${runtimeScripts}
   }
 
   // ------------------------------------------------------------------
-  // 엔트리는 블록 실행 중 오류가 나면 자기 자신의 토스트로
-  // "빨간색으로 표시된 블록을 확인해 주세요." 를 띄우고(Entry.Utils.stopProjectWithToast),
-  // workspace 모드에서만 뜻이 있는 블록 강조를 시도한다 — 우리 minimize 뷰어에서는
-  // 그 팝업이 오히려 방해만 된다. 여기서 그 함수를 완전히 갈아 끼워서:
-  //   1) 엔트리 자체 팝업은 절대 띄우지 않고
-  //   2) 어떤 종류의 Runtime Error 인지(IncompatibleError/OfflineError/일반)에 따라
-  //      우리 디버그 패널 오류 로그로 대신 띄우고
-  //   3) 소스맵(/sourcemap.json)으로 그 블록을 만든 .tess 원본 위치까지 찾아서
-  //      메시지에 붙이고, 디버그 패널에서 그 블록을 바로 강조해 보여준다.
+  // On a block runtime error, Entry shows its own toast ("check the block
+  // highlighted in red") and tries to highlight the block
+  // (Entry.Utils.stopProjectWithToast) — meaningful only in workspace mode,
+  // where it's just noise in this minimize viewer. This function is
+  // replaced entirely so that it:
+  //   1) never shows Entry's own popup,
+  //   2) routes the error to this debug panel's error log instead, based
+  //      on the Runtime Error kind (IncompatibleError/OfflineError/generic),
+  //   3) resolves the block's original .tess source location via the
+  //      source map (/sourcemap.json), appends it to the message, and
+  //      highlights that block directly in the debug panel.
   // ------------------------------------------------------------------
   const interceptRuntimeErrors = (sourceMap) => {
     if (Entry.toast) {
@@ -438,11 +453,12 @@ ${runtimeScripts}
         const text = Array.isArray(message) ? message.join(' ') : String(message ?? '');
         window.tessReportError(String(title || '알림'), new Error(text));
       };
-      // Entry.toast.warning 은 진짜 오류가 아니라 엔트리 자체의 안내성 팝업이다 — 예를
-      // 들어 리스트가 5000개를 넘으면(listVariable.js _showListFullWarning) 자동으로
-      // 잘라내면서 "리스트에는 최대 5000개까지 넣을 수 있습니다" 를 띄운다. workspace
-      // 모드에서나 뜻이 있는 팝업이고, 우리 minimize 뷰어에서는 화면을 가리기만 하니
-      // 그냥 띄우지 않는다(진짜 오류는 위 alert/아래 stopProjectWithToast 로 계속 잡힌다).
+      // Entry.toast.warning isn't a real error — it's Entry's own advisory
+      // popup, e.g. auto-truncating a list past 5000 items
+      // (listVariable.js _showListFullWarning) with a "max 5000 items"
+      // notice. Meaningful only in workspace mode; in this minimize viewer
+      // it just covers the screen, so it's suppressed (a real error is
+      // still caught by alert above / stopProjectWithToast below).
       Entry.toast.warning = function () {};
     }
     if (!Entry.Utils) return;
@@ -455,7 +471,7 @@ ${runtimeScripts}
       try {
         const code = block && typeof block.getCode === 'function' && block.getCode();
         if (code && code.object) objectName = code.object.name || code.object.id || '';
-      } catch (e) { /* 오브젝트 이름을 못 찾아도 계속 진행한다 */ }
+      } catch (e) { /* Continue without an object name if it can't be found. */ }
 
       const loc = (blockId && sourceMap[blockId]) || null;
       const where = loc
@@ -478,16 +494,16 @@ ${runtimeScripts}
         if (Entry.engine && Entry.engine.isState && Entry.engine.isState('run') && Entry.engine.toggleStop) {
           await Entry.engine.toggleStop();
         }
-      } catch (e) { /* 멈추기 실패해도 아래에서 계속 오류를 던져 원래 흐름을 지킨다 */ }
+      } catch (e) { /* Ignore a failed stop; the error is still thrown below to preserve the original flow. */ }
 
-      throw error; // entryjs 실행기가 이 스레드를 끝내는 데 필요한 신호라 그대로 던진다
+      throw error; // Rethrown as-is: the entryjs runtime needs this to terminate the thread.
     };
   };
 
   // ------------------------------------------------------------------
-  // 캔버스는 글꼴이 늦게 도착해도 다시 그려 주지 않으므로, 실행 전에 작품이 쓰는 글꼴을
-  // 미리 받아 둔다. 글꼴 CSS 가 도착하기 전에는 document.fonts 에 그 글꼴이 없어서
-  // load() 가 헛돌기 때문에, CSS 를 먼저 기다린다.
+  // The canvas doesn't repaint when a font arrives late, so the project's
+  // fonts are preloaded before it runs. document.fonts.load() is a no-op
+  // until the font CSS has arrived, so that CSS is awaited first.
   const waitForFontStyles = () => {
     const links = [...document.querySelectorAll('link[rel="stylesheet"]')]
       .filter((link) => link.href.includes('/uploads/fonts/') && !link.sheet);
@@ -497,7 +513,7 @@ ${runtimeScripts}
         link.addEventListener('load', resolve, { once: true });
         link.addEventListener('error', resolve, { once: true });
       }))),
-      // CDN 이 막힌 곳에서도 실행은 시작되어야 하므로 마냥 기다리지는 않는다
+      // The project should still run when the CDN is unreachable, so this doesn't wait forever.
       new Promise((resolve) => setTimeout(resolve, 5000)),
     ]);
   };
@@ -514,11 +530,12 @@ ${runtimeScripts}
     await document.fonts.ready.catch(() => {});
   };
 
-  // start-gate 오버레이(위 CSS 주석 참고)를 눌러야 실행을 시작한다 — 그 클릭/키 입력
-  // 자체가 브라우저의 자동재생 정책이 요구하는 "사용자 상호작용"이 되어, when start 에서
-  // 바로 나오는 소리도 처음부터 정상적으로 들리게 한다. 정작 gate 자체는 여기서 지우지
-  // 않는다 — waitForSoundsLoaded 가 끝날 때까지 화면에 남겨 둬야(아래) mp3 가 아직
-  // 로딩 중인데도 실행이 이미 시작된 것처럼 보이는 일이 없다.
+  // The project only starts once the start-gate overlay (see the CSS note
+  // above) is dismissed — that click/keypress is the "user interaction"
+  // the autoplay policy requires, so a "when start" sound plays correctly
+  // from the start. The gate itself isn't removed here — it stays visible
+  // until waitForSoundsLoaded finishes (below), so the project doesn't
+  // appear to have started while its mp3s are still loading.
   const waitForStartGate = () => new Promise((resolve) => {
     const gate = document.getElementById('start-gate');
     if (!gate) { resolve(); return; }
@@ -532,15 +549,16 @@ ${runtimeScripts}
     gate.focus();
   });
 
-  // Entry.loadProject 는 project.objects 를 훑으면서 소리 파일마다 Entry.initSound 를
-  // 불러 Entry.soundQueue(공유 PreloadJS 큐)에 로딩을 등록만 해 두고 기다리지는
-  // 않는다(entryjs util/init.js) — 그래서 실행하기(toggleRun)가 곧바로 이어지면,
-  // 아직 데이터가 도착하지 않은 소리를 재생하는 블록이 "재생은 됐지만 소리는 안 나는"
-  // 상태가 된다(재생 자체는 성공한 것처럼 보여도 재생할 데이터가 없다). Entry.soundQueue
-  // 는 등록된 소리가 전부 도착하면 'soundLoaded' 이벤트를 스스로 쏘므로(같은 파일의
-  // loadCallback), 그걸 기다렸다가 실행한다. entryjs 자신도 소리 하나당 3초가 지나면
-  // 포기하고 넘어가므로(Entry.initSound 의 setTimeout), 우리도 그와 비슷하게 여유를
-  // 주고 그래도 안 끝나면 (예: 파일이 404 라서 영영 안 끝나면) 무한정 기다리지 않는다.
+  // Entry.loadProject walks project.objects and calls Entry.initSound for
+  // each sound file, which only registers it on Entry.soundQueue (a shared
+  // PreloadJS queue) without waiting for it (entryjs util/init.js). So if
+  // toggleRun follows immediately, a block that plays a sound whose data
+  // hasn't arrived "succeeds" but produces no audio. Entry.soundQueue
+  // fires its own 'soundLoaded' event once every registered sound has
+  // arrived (see loadCallback in the same file), so that event is awaited
+  // before running. entryjs itself gives up on a sound after 3 seconds
+  // (the setTimeout in Entry.initSound), so a similar grace period is used
+  // here too, without waiting forever if it never resolves (e.g. a 404).
   const waitForSoundsLoaded = () => new Promise((resolve) => {
     const queue = window.Entry && Entry.soundQueue;
     if (!queue || queue.loadComplete || !queue.urls || queue.urls.size === 0) { resolve(); return; }
@@ -565,33 +583,39 @@ ${runtimeScripts}
     Entry.init(document.getElementById('workspace'), {
       type: 'minimize',
       libDir: ${jsValue(base)},
-      // baseUrl 은 일부러 안 정한다 — entryjs 기본값이 location.origin(util/init.js
-      // setDefaultPathsFromOptions)이라 tts 읽어주기(block_ai_utilize_tts.js) 같은
-      // 'AI 활용' 블록이 우리 서버(/api/expansionBlock/tts/read.mp3)로 요청을 보내는데,
-      // 이 서버가 그 경로를 playentry.org 로 그대로 대신 요청해 돌려준다(아래 참고).
-      // baseUrl 을 여기서 playentry.org 로 바로 바꾸면 더 간단해 보이지만, 브라우저가
-      // 다른 origin(playentry.org)으로 직접 요청을 보내는 순간 그쪽 서버가 CORS 허용
-      // 헤더를 안 주기 때문에 그냥 막힌다 — 그래서 꼭 우리 서버를 거쳐야 한다.
-      // 엔트리 기본 이미지 (entryDir) 는 서버 응답을 필요로 하지 않는 로컬/CDN 정적
-      // 파일이라 이 문제가 없다.
-      // entryjs 는 기본값으로 mediaFilePath 를 \`\${libDir}/@entrylabs/entry/images/\` 로 만든다
-      // (util/init.js setDefaultPathsFromOptions, entryDir 기본값 '/@entrylabs/entry') — 즉
-      // libDir 밑에 '@entrylabs/entry' 폴더가 한 번 더 있다고 가정한다. 그런데 우리 base 는
-      // ('/lib' 든 CDN 이든) 이미 그 패키지 폴더 자체를 가리키므로, 그대로 두면
-      // '.../lib/@entrylabs/entry/images/...' 처럼 경로가 겹쳐 자를(회전 손잡이, 좌표계,
-      // 크기 조절 손잡이 등) 엔트리 자체 기본 이미지가 전부 404 난다. entryDir 를 빈 문자열로
-      // 줘서 mediaFilePath 가 우리 base 와 같은 규칙(밑에 바로 images/)을 쓰게 맞춘다.
+      // baseUrl is deliberately left unset — entryjs defaults it to
+      // location.origin (util/init.js setDefaultPathsFromOptions), so an
+      // 'AI' block like TTS speech (block_ai_utilize_tts.js) requests
+      // /api/expansionBlock/tts/read.mp3 on this server, which proxies
+      // that path to playentry.org and returns the response (see the note
+      // above). Pointing baseUrl straight at playentry.org would seem
+      // simpler, but the browser's direct cross-origin request would just
+      // be blocked by playentry.org's missing CORS headers — routing
+      // through this server is required. Entry's built-in images
+      // (entryDir) are static local/CDN files needing no server response,
+      // so they're unaffected.
+      // entryjs defaults mediaFilePath to \`\${libDir}/@entrylabs/entry/images/\`
+      // (util/init.js setDefaultPathsFromOptions, entryDir defaults to
+      // '/@entrylabs/entry') — i.e. it assumes another '@entrylabs/entry'
+      // folder sits below libDir. But this app's base ('/lib' or the CDN)
+      // already points at that package folder itself, so left as is the
+      // path would double up as '.../lib/@entrylabs/entry/images/...' and
+      // Entry's own built-in images (rotate handle, coordinate grid, resize
+      // handle, etc.) would all 404. Setting entryDir to an empty string
+      // makes mediaFilePath follow the same convention as this app's base
+      // (images/ directly underneath).
       entryDir: '',
       fonts: [],
     });
-    // Entry.init 은 그 안에서 매번 Entry.toast = new Entry.Toast() 를 새로 만든다
-    // (entryjs util/init.js). interceptRuntimeErrors 가 Entry.init 보다 먼저 실행되면
-    // 아직 없거나(첫 실행) 곧 버려질 예전 Entry.toast 를 고치는 셈이라 아무 효과가
-    // 없다 — 그래서 반드시 Entry.init 이 끝난 다음, 이제부터 계속 쓰일 진짜 Entry.toast
-    // 가 만들어진 뒤에 걸어야 한다.
+    // Entry.init creates a fresh Entry.toast = new Entry.Toast() every time
+    // it runs (entryjs util/init.js). Calling interceptRuntimeErrors before
+    // Entry.init would patch a toast that either doesn't exist yet (first
+    // run) or is about to be discarded — so it must run only after
+    // Entry.init, once the real Entry.toast that stays in use exists.
     interceptRuntimeErrors(sourceMap);
-    // 부스트 모드·기기·터치 판단 블록을 디버그 패널이 정한 값으로 바꿔 둔다.
-    // Entry.init 이 블록 정의(Entry.block)를 채운 뒤에 불러야 한다.
+    // Overrides the boost-mode/device/touch judgment blocks with values set
+    // by the debug panel. Must run after Entry.init has populated the
+    // block definitions (Entry.block).
     window.tessPatchEnvironmentBlocks();
     Entry.loadProject(project);
     requestAnimationFrame(() => window.tessLayoutCanvas());
@@ -599,9 +623,9 @@ ${runtimeScripts}
     const gate = document.getElementById('start-gate');
     const gateCard = document.getElementById('start-gate-card');
     const soundsReady = waitForSoundsLoaded();
-    // 클릭은 이미 받았지만(오디오 잠금 해제엔 그걸로 충분하다) 소리 데이터가 아직
-    // 안 왔으면, 실행하기 전까지 게이트를 안내 문구로 바꿔 그대로 띄워 둔다 — 그냥
-    // 사라져 버리면 "실행은 됐는데 왜 소리가 하나도 안 나지" 하고 헷갈리게 된다.
+    // The click already unlocked audio, but if sound data hasn't arrived yet,
+    // keep the gate visible with a loading message instead of removing it —
+    // otherwise playback starts silently with no explanation.
     if (gateCard && window.Entry?.soundQueue?.urls?.size > 0 && !Entry.soundQueue.loadComplete) {
       gateCard.textContent = '소리를 불러오는 중…';
     }

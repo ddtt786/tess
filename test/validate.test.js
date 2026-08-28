@@ -1,4 +1,4 @@
-// 문법만으로는 잡을 수 없는 spec 의 의미 규칙을 검사한다.
+// Tests semantic rules from the spec that grammar alone can't catch.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parse } from '../src/parse.js';

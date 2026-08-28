@@ -1,10 +1,10 @@
 // ============================================================================
-//  엔트리 문장(statement) 블록 -> Tess 소스 줄
+//  Entry statement block -> Tess source lines.
 //
-//  src/compiler/statement.js 의 정확한 대응표를 뒤집는다. 한 스레드(블록
-//  이어붙임)를 받아서 들여쓰기 없는 텍스트 줄 배열을 돌려준다 — 호출한 쪽이
-//  `indent()` 로 필요한 만큼 들여쓴다. 모르는 블록은 주석으로 남기고 계속
-//  진행한다 (하나 때문에 전체를 못 옮기면 안 되니까).
+//  Inverts the exact mapping in src/compiler/statement.js. Takes a thread
+//  (a chain of blocks) and returns unindented text lines; the caller
+//  applies indentation via `indent()`. An unknown block is left as a
+//  comment rather than aborting the whole conversion.
 // ============================================================================
 import { exprOf } from './expr.js';
 import { tessString } from './ident.js';
@@ -16,7 +16,7 @@ const REVERSE_EFFECT = { color: 'effect_color', brightness: 'effect_brightness',
 const REVERSE_TEXT_EFFECT = {
   fontBold: 'text_bold', fontItalic: 'text_italic', underLine: 'text_underline', strike: 'text_strikethrough',
 };
-// set_tts_property 의 코드값 -> src/compiler/statement.js 의 TTS_SPEAKERS/TTS_LEVELS 별명으로
+// Maps set_tts_property code values back to the TTS_SPEAKERS/TTS_LEVELS aliases in src/compiler/statement.js.
 const REVERSE_TTS_SPEAKER = {
   kyuri: 'female', jinho: 'male', hana: 'kind', dinna: 'sweet', brown: 'echo',
   minions: 'mischievous', sally: 'dainty', nsabina: 'nsabina', nmammon: 'nmammon',
@@ -27,7 +27,7 @@ export function indent(lines) {
   return lines.map((line) => (line === '' ? line : `  ${line}`));
 }
 
-/** 스레드(블록 배열) 하나를 Tess 소스 줄들로 */
+/** Renders a single thread (block array) as Tess source lines. */
 export function blocksToLines(blocks, ctx) {
   const lines = [];
   for (const block of blocks ?? []) lines.push(...statementLines(block, ctx));
@@ -61,13 +61,14 @@ function statementLines(block, ctx) {
   const e = (i) => exprOf(at(i), ctx);
 
   switch (block.type) {
-    // --- 이벤트 hat 블록은 흐름을 만드는 쪽(events.js)이 처리한다.
-    //     스레드 본문 안에서 다시 나올 일은 없지만, 방어적으로 건너뛴다.
+    // --- Event (hat) blocks are handled by the caller that builds flow
+    //     (events.js). They shouldn't reappear inside a thread body, but
+    //     skip them defensively.
     case 'when_run_button_click': case 'when_scene_start': case 'when_some_key_pressed':
     case 'when_object_click': case 'when_message_cast': case 'when_clone_start':
       return [];
 
-    // --- 제어 흐름 ---------------------------------------------------------
+    // --- Control flow --------------------------------------------------------
     case '_if': return [`if ${e(0)}:`, ...branch(block, 0, ctx), 'end'];
     case 'if_else':
       return [`if ${e(0)}:`, ...branch(block, 0, ctx), 'else:', ...branch(block, 1, ctx), 'end'];
@@ -87,7 +88,7 @@ function statementLines(block, ctx) {
       return [target === undefined ? unsupported(ctx, block)[0] : `stop${target ? ` ${target}` : ''}`];
     }
 
-    // --- 신호 · 복제 · 장면 -------------------------------------------------
+    // --- Signals · clones · scenes ---------------------------------------
     case 'message_cast': case 'message_cast_wait': {
       const name = ctx.messageName(at(0));
       return [`${block.type === 'message_cast_wait' ? 'call' : 'send'} ${tessString(name)}`];
@@ -104,7 +105,7 @@ function statementLines(block, ctx) {
     }
     case 'start_neighbor_scene': return [`jump ${at(0) === 'next' ? 'next' : 'back'}`];
 
-    // --- 움직임 -------------------------------------------------------------
+    // --- Movement --------------------------------------------------------------
     case 'move_direction': return [`forward ${e(0)}`];
     case 'move_to_angle': return [`forward ${e(1)} at ${e(0)}`];
     case 'bounce_wall': return ['bounce'];
@@ -113,7 +114,7 @@ function statementLines(block, ctx) {
     case 'move_y': return [`y += ${e(0)}`];
     case 'locate': {
       const target = at(0);
-      return [target === 'self' ? '# go self (엔트리 원본이 자기 자신으로 이동)'
+      return [target === 'self' ? '# go self (original Entry block targeted itself)'
         : `go ${tessString(ctx.objectsById.get(target)?.identifier ?? target)}`];
     }
     case 'locate_object_time': {
@@ -132,7 +133,7 @@ function statementLines(block, ctx) {
     case 'direction_absolute': return [`way = ${e(0)}`];
     case 'see_angle_object': return [`look ${tessString(ctx.objectsById.get(at(0))?.identifier ?? at(0))}`];
 
-    // --- 모양 · 대화 ---------------------------------------------------------
+    // --- Looks · speech bubbles ------------------------------------------------
     case 'show': return ['show'];
     case 'hide': return ['hide'];
     case 'show_variable': return [`show ${ctx.varName(at(0))}`];
@@ -145,7 +146,7 @@ function statementLines(block, ctx) {
     case 'change_to_some_shape': return [`costume = ${resourceExpr(at(0), ctx, ctx.picturesById)}`];
     case 'dialog': return [`${at(1) === 'think' ? 'think' : 'say'} ${e(0)}`];
     case 'dialog_time': return [`${at(2) === 'think' ? 'think' : 'say'} ${e(0)} for ${e(1)}`];
-    case 'flip_y': return ['flip x']; // 엔트리 flip_x/flip_y 는 이름이 뒤집혀 있다
+    case 'flip_y': return ['flip x']; // Entry's flip_x/flip_y block names are swapped.
     case 'flip_x': return ['flip y'];
     case 'change_object_index': return [at(0) === 'FRONT' ? 'order front' : 'order back'];
     case 'reset_scale_size': return ['reset size'];
@@ -157,7 +158,7 @@ function statementLines(block, ctx) {
     case 'erase_all_effects': return ['clear effects'];
     case 'remove_dialog': return ['clear bubble'];
 
-    // --- 글상자 -------------------------------------------------------------
+    // --- Text box ----------------------------------------------------------
     case 'text_write': return [`write ${e(0)}`];
     case 'text_append': return [`append ${e(0)}`];
     case 'text_prepend': return [`prepend ${e(0)}`];
@@ -170,7 +171,7 @@ function statementLines(block, ctx) {
       return name ? [`${name} = ${at(1) === 'on' ? 'true' : 'false'}`] : unsupported(ctx, block);
     }
 
-    // --- 붓 -----------------------------------------------------------------
+    // --- Pen ---------------------------------------------------------------
     case 'start_drawing': return ['start draw'];
     case 'stop_drawing': return ['stop draw'];
     case 'start_fill': return ['start fill'];
@@ -185,13 +186,13 @@ function statementLines(block, ctx) {
     case 'set_brush_tranparency': return [`draw_alpha = ${e(0)}`];
     case 'change_brush_transparency': return [`draw_alpha += ${e(0)}`];
 
-    // --- 초시계 ---------------------------------------------------------------
+    // --- Timer ---------------------------------------------------------------
     case 'choose_project_timer_action': {
       const action = { START: 'start timer', STOP: 'stop timer', RESET: 'reset timer' }[at(1)];
       return action ? [action] : unsupported(ctx, block);
     }
 
-    // --- 소리 ---------------------------------------------------------------
+    // --- Sound ---------------------------------------------------------------
     case 'sound_something_with_block': return [`play sound ${resourceExpr(at(0), ctx, ctx.soundsById)}`];
     case 'sound_something_wait_with_block': return [`play sound ${resourceExpr(at(0), ctx, ctx.soundsById)} and wait`];
     case 'sound_something_second_with_block': return [`play sound ${resourceExpr(at(0), ctx, ctx.soundsById)} for ${e(1)}`];
@@ -206,23 +207,24 @@ function statementLines(block, ctx) {
     case 'sound_speed_set': return [`sound_speed = ${e(0)}`];
     case 'sound_speed_change': return [`sound_speed += ${e(0)}`];
 
-    // --- TTS 읽어주기 (addendum) ---------------------------------------------
+    // --- TTS speech (addendum) --------------------------------------------------
     case 'read_text': return [`read ${e(0)}`];
     case 'read_text_wait_with_block': return [`read ${e(0)} and wait`];
     case 'set_tts_property': {
-      // 속도·음높이는 코드값 그대로 옮긴다(같은 코드값이라도 뜻이 반대라 별명이 헷갈린다 — 9 참고)
+      // Speed/pitch are passed through as raw code values (an alias here would be
+      // ambiguous since the same code means the opposite thing for speed vs. pitch).
       return [`tts voice ${tessString(REVERSE_TTS_SPEAKER[at(0)] ?? at(0))} `
         + `speed ${tessString(String(at(1)))} pitch ${tessString(String(at(2)))}`];
     }
 
-    // --- 자료 -----------------------------------------------------------------
+    // --- Data --------------------------------------------------------------------
     case 'ask_and_wait': return [`ask ${e(0)}`];
     case 'add_value_to_list': return [`in ${ctx.varName(at(1))} add ${e(0)}`];
     case 'insert_value_to_list': return [`in ${ctx.varName(at(1))} insert ${e(0)} at ${unshift(at(2), ctx)}`];
     case 'remove_value_from_list': return [`remove ${ctx.varName(at(1))}[${unshift(at(0), ctx)}]`];
     case 'change_value_list_index': return [`${ctx.varName(at(0))}[${unshift(at(1), ctx)}] = ${e(2)}`];
 
-    // --- 변수 ---------------------------------------------------------------
+    // --- Variables -----------------------------------------------------------
     case 'set_variable': return [`${ctx.varName(at(0))} = ${e(1)}`];
     case 'change_variable': return [`${ctx.varName(at(0))} += ${e(1)}`];
     case 'set_func_variable': return [`${ctx.funcLocalName(at(0))} = ${e(1)}`];
@@ -240,13 +242,12 @@ function unshift(indexBlock, ctx) {
 }
 
 /**
- * 색 값 파라미터는 엔트리가 '#RRGGBB' 를 그냥 문자열로 담아 두기도 하고(정적 엔티티
- * 값), `{type:'number', params:['#RRGGBB']}` 처럼 편집기의 색 선택 필드가 만드는 값
- * 블록으로 감싸 두기도 한다(실제 프로젝트에서 흔한 형태 — set_color 등의 VALUE 필드가
- * `Block, accept:'string'` 이라 편집기가 리터럴 값도 값 블록으로 저장한다). 이 감싸진
- * 형태를 처리하지 않으면 `String(그블록객체)` 가 그대로 "[object Object]" 라는 문자열
- * 리터럴로 남아 버린다(예전 버그). 리터럴이 아니라 변수·계산식처럼 진짜 계산되는
- * 값이면 ctx 를 받아 exprOf 로 제대로 된 Tess 표현식으로 옮긴다.
+ * A color parameter may be a plain '#RRGGBB' string (a static entity value)
+ * or, since a VALUE field like set_color's declares `Block, accept:'string'`,
+ * wrapped in a value block such as `{type:'number', params:['#RRGGBB']}`.
+ * Both forms must be unwrapped, or the color would render as the literal
+ * string "[object Object]". A non-literal value (a variable or expression)
+ * is passed to exprOf via ctx for proper Tess expression rendering.
  */
 export function colorExpr(value, ctx) {
   const literal = literalStringOf(value);
@@ -258,7 +259,7 @@ export function colorExpr(value, ctx) {
   return ctx ? exprOf(value, ctx) : tessString(String(value ?? ''));
 }
 
-/** 값 블록(또는 원시값) 하나가 리터럴이면 그 문자열 값을, 계산되는 값이면 null 을 돌려준다 */
+/** Returns the string value of a value block (or primitive) if it's a literal, else null. */
 function literalStringOf(value) {
   if (typeof value === 'string') return value;
   if (value && typeof value === 'object' && (value.type === 'number' || value.type === 'text')) {
@@ -269,22 +270,23 @@ function literalStringOf(value) {
 }
 
 /**
- * 모양/소리 값 자리 — 편집기에서 고른 게 아니라(그러면 get_pictures/get_sounds 블록),
- * 그 모양·소리의 진짜 엔트리 id 를 문자열로 직접 박아 넣는 트릭일 수도 있다. 엔트리는
- * "OO 모양으로 바꾸기"/"소리 OO 재생하기" 값을 1) id 2) 이름 3) 등록 순번 순으로 맞춰서
- * 찾기 때문에, id 를 그대로 넣어도 실제로 그 모양·소리로 바뀐다 — 실제 엔트리 사용자들이
- * 흔히 쓰는 방법이다. 그 id 를 문자열 그대로 옮기면, 되돌린 소스를 다시 컴파일할 때
- * 모든 id 가 새로 배정되면서(결정적이지만 원본과는 다른 id) 더 이상 아무 모양도
- * 가리키지 않게 되어 컴파일 에러가 난다 — 그래서 프로젝트에 실제로 있는 id 와
- * 맞는지 먼저 확인해서, 맞으면 get_pictures/get_sounds 와 똑같이 그 이름으로 옮긴다.
- * (숫자 그대로 넣는 것 — "n번째 모양으로 바꾸기" — 은 리터럴 id 와 안 겹치므로
- * literalStringOf 가 null 을 돌려주지 않는 한 그냥 보통 값(숫자)으로 옮겨진다.)
+ * A costume/sound value slot may hold a get_pictures/get_sounds block, or,
+ * as a common editor trick, the resource's raw Entry id typed directly as a
+ * string literal — Entry resolves such values by id, then name, then
+ * registration order, so a raw id string still resolves to the intended
+ * resource. Recompiling this raw id verbatim would fail, since ids are
+ * reassigned deterministically on rebuild and the old id would no longer
+ * match anything. So a literal is first checked against ids actually
+ * present in the project and, if it matches, rendered by name like
+ * get_pictures/get_sounds. (A plain index, e.g. "switch to costume #n",
+ * doesn't collide with a literal id and passes through as a normal number.)
  */
 function resourceExpr(value, ctx, byId) {
   const literal = literalStringOf(value);
   if (literal !== null && byId.has(literal)) {
-    // 함수 안에서는 이름으로 바꾸지 않고 id 를 그대로 둔다. 그 모양·소리 선언에
-    // `force id` 가 붙으므로 다시 컴파일해도 같은 id 가 나온다(index.js 참고).
+    // Inside a function, keep the id rather than renaming it. Its costume/sound
+    // declaration carries `force id`, so recompiling still produces the same id
+    // (see index.js).
     if (ctx.inFunction) return tessString(literal);
     return tessString(byId.get(literal).identifier);
   }
@@ -292,18 +294,20 @@ function resourceExpr(value, ctx, byId) {
 }
 
 /**
- * project.functions[i].content 의 최상위 블록(function_create[_value])을
- * `function 이름(a, b): ... end` 선언으로 바꾼다. 오브젝트 스크립트 안이
- * 아니라 함수 목록을 훑을 때 index.js 가 직접 부른다 — 함수 정의는 언제나
- * 이 자리에만 있고, 이름·매개변수 이름은 이미 ctx.functionsById 에 있다.
+ * Turns the top-level block (function_create[_value]) of
+ * project.functions[i].content into a `function name(a, b): ... end`
+ * declaration. Called directly by index.js while iterating the function
+ * list, not from within an object script — function definitions live only
+ * there, and their name/param names are already in ctx.functionsById.
  */
 export function functionDeclarationLines(fn, createBlock, ctx) {
   const p = createBlock.params ?? [];
   const isValue = createBlock.type === 'function_create_value';
-  // 함수 안에서는 리터럴 모양·소리 id 를 이름으로 되짚지 않는다(resourceExpr) — 함수는
-  // 엔트리에서 전역이라 여러 오브젝트가 같이 부를 수 있는데, id 로 하드코딩된 값을
-  // "이 오브젝트의 이 이름" 으로 바꿔 버리면 다른 오브젝트가 불렀을 때 어긋난다
-  // (index.js buildContext 의 forcedIds 주석 참고).
+  // Costume/sound ids are not resolved to names inside a function body
+  // (resourceExpr) — a function is global in Entry and may be called by
+  // multiple objects, so renaming a hardcoded id to "this object's name"
+  // would be wrong for any other caller (see the forcedIds note in
+  // index.js's buildContext).
   const previousInFunction = ctx.inFunction;
   ctx.inFunction = true;
   const body = indent(blocksToLines(createBlock.statements?.[0] ?? [], ctx));

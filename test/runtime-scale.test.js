@@ -1,19 +1,19 @@
 // ============================================================================
-//  컴파일러가 만들어 넣는 "가로/세로 비율 정하기" 함수가 실제로 맞게 계산하는지
-//  엔트리의 크기 규칙을 그대로 흉내 내어 확인한다.
+//  Verifies the compiler-generated "set scale ratio" function against a
+//  faithful simulation of Entry's own sizing rules.
 //
-//  엔트리 entity 규칙 (entryjs src/class/entity.js)
-//    크기      = (원본가로 × |가로배율| + 원본세로 × |세로배율|) / 2
-//    setSize   = 두 배율에 max(1, 값)/크기 를 곱한다
-//    setXSize  = 가로 배율에만 곱한다
-//    setYSize  = 세로 배율에만 곱한다
-//    resetSize = 시작 배율로 되돌린다
+//  Entry entity rules (entryjs src/class/entity.js)
+//    size      = (originalWidth * |scaleX| + originalHeight * |scaleY|) / 2
+//    setSize   = multiplies both scales by max(1, value)/size
+//    setXSize  = multiplies scaleX only
+//    setYSize  = multiplies scaleY only
+//    resetSize = restores the initial scale
 // ============================================================================
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compileProject } from '../src/compiler/index.js';
 
-/** 엔트리 오브젝트 하나를 흉내 낸다 */
+/** Simulates a single Entry object. */
 function makeEntity({ width, height, originX, originY, scaleX = originX, scaleY = originY }) {
   return {
     width, height, originX, originY, scaleX, scaleY,
@@ -38,7 +38,7 @@ function makeEntity({ width, height, originX, originY, scaleX = originX, scaleY 
   };
 }
 
-/** 엔트리 블록을 실행하는 아주 작은 인터프리터 (이 함수가 쓰는 블록만) */
+/** Minimal interpreter for Entry blocks, covering only what this function uses. */
 function evaluate(block, entity, params, locals) {
   if (block === null || typeof block !== 'object') return Number(block);
   switch (block.type) {
@@ -85,7 +85,7 @@ function execute(blocks, entity, params, locals = {}) {
   return locals;
 }
 
-/** `scale_x = 값` 이 부르는 함수와 그 인자를 뽑아 온다 */
+/** Extracts the function called by `scale_x = value` and its arguments. */
 function scaleSetter(property, ratio) {
   const source = `scene "s":
   object "o":
@@ -102,7 +102,7 @@ end`;
   const fn = project.functions.find((f) => `func_${f.id}` === call.type);
   const create = JSON.parse(fn.content)[0][0];
 
-  // 함수의 매개변수 블록 타입 -> 호출할 때 넘긴 값
+  // function parameter block type -> value passed at the call site
   const names = [];
   let field = create.params[0].params[1];
   while (field) {
@@ -113,7 +113,7 @@ end`;
   return { body: create.statements[0], params, label: create.params[0].params[0] };
 }
 
-/** 시작 배율이 originX/originY 인 오브젝트에서 비율을 정해 본다 */
+/** Sets a scale ratio on an object whose initial scale is originX/originY. */
 function apply(property, ratio, entity) {
   const { body, params } = scaleSetter(property, ratio);
   execute(body, entity, params);
@@ -126,7 +126,7 @@ const close = (actual, expected, label) => assert.ok(
 );
 
 test('가로 비율을 정하면 가로만 목표 값이 되고 세로는 그대로다', () => {
-  // 원본 200×100, 시작 배율 100%, 지금은 가로 50% · 세로 200%
+  // original 200x100, initial scale 100%, currently 50% wide, 200% tall
   const entity = makeEntity({ width: 200, height: 100, originX: 1, originY: 1, scaleX: 0.5, scaleY: 2 });
   apply('scale_x', 25, entity);
   close(entity.scaleX, 0.25, '가로 배율');
@@ -141,7 +141,7 @@ test('세로 비율을 정하면 세로만 목표 값이 되고 가로는 그대
 });
 
 test('시작 배율이 100%가 아니어도 원본 기준으로 맞춘다', () => {
-  // 오브젝트가 scale_x = 150 으로 선언된 경우 (entity.scaleX = 1.5)
+  // object declared with scale_x = 150 (entity.scaleX = 1.5)
   const source = `scene "s":
   object "o":
     costume 기본 "a.png" size 200 100
@@ -154,7 +154,7 @@ test('시작 배율이 100%가 아니어도 원본 기준으로 맞춘다', () =
 end`;
   const { project } = compileProject(source, { path: 'x.tess' });
   const call = JSON.parse(project.objects[0].script)[0][1];
-  // 원래 배율(1.5)이 두 번째 인자로 넘어간다
+  // the original scale (1.5) is passed as the second argument
   assert.equal(Number(call.params[1].params[0]), 1.5);
 
   const fn = project.functions.find((f) => `func_${f.id}` === call.type);

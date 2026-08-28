@@ -1,11 +1,11 @@
-// imageSize (모양 파일 원본 크기 읽기) 검사 — 특히 SVG.
+// Tests imageSize (reads original dimensions from asset files), especially SVG.
 //
-// 엔트리는 project.json 의 dimension 값을 그대로 믿고 렌더링 크기를 정한다
-// (entryjs entity.js `setImage`: `this.setWidth(dimension.width)`) — 실제로 로드한
-// 이미지 픽셀 크기를 다시 재서 쓰지 않는다. SVG 는 PNG/GIF/JPEG 처럼 매직 바이트
-// 헤더가 없어서 크기를 못 읽으면 makeAsset 이 100x100 으로 대체하는데, 디컴파일한
-// 소스처럼 scale_x/scale_y 가 SVG 의 진짜 크기(예: 무대를 덮는 800x490 배경) 기준으로
-// 정해져 있으면 100x100 기준으로 다시 스케일된 결과가 원래보다 훨씬 작게 나온다.
+// Entry trusts project.json's dimension value as-is for render size
+// (entryjs entity.js `setImage`: `this.setWidth(dimension.width)`) rather than
+// re-measuring the loaded image's pixel size. SVG has no magic-byte header like
+// PNG/GIF/JPEG, so when the size can't be read, makeAsset falls back to 100x100.
+// If scale_x/scale_y were set relative to the SVG's real size (e.g. an 800x490
+// background), rescaling against a 100x100 fallback shrinks the result badly.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -54,21 +54,21 @@ test('크기를 전혀 알 수 없는 SVG 는 null 을 돌려준다 (makeAsset �
 
 test('실제로 디컴파일한 배경 SVG(새그림1.svg, 800x490)에서도 정확히 읽힌다', () => {
   const file = path.join(root, 'temp/dd_tess/assets/image/새그림1.svg');
-  if (!fs.existsSync(file)) return; // temp/ 는 예제 자산이라 없어도 이 테스트만 건너뛴다
+  if (!fs.existsSync(file)) return; // temp/ holds example assets; skip if not present
   const bytes = fs.readFileSync(file);
   assert.deepEqual(imageSize(bytes), { width: 800, height: 490 });
 });
 
 // ---------------------------------------------------------------------------
-//  audioDuration (소리 재생 길이 읽기)
+//  Tests audioDuration (reads playback length from audio files)
 //
-//  엔트리는 소리 길이도 project.json 의 duration 을 그대로 믿는다. 컴파일러가 이 값을
-//  못 구하면 전부 1초로 굳는데, 그렇다고 코드에 `for 1.3` 을 늘 적게 하면 소리 파일을
-//  바꿀 때마다 사람이 숫자까지 고쳐야 한다 — 그래서 헤더를 읽어 직접 잰다.
-//  (실제 작품 310개 소리를 ffprobe 와 맞춰 확인했다.)
+//  Entry also trusts project.json's duration for sound length. If the compiler
+//  can't determine it, it defaults to 1 second, which would force every `play
+//  sound` call to redundantly declare `for 1.3`. Instead, duration is read
+//  directly from the file header.
 // ---------------------------------------------------------------------------
 
-/** 재생 길이 2.5초짜리 최소 WAV — 초당 byteRate 바이트 */
+/** Minimal WAV fixture with a 2.5s playback length, byteRate bytes/sec. */
 function wavFixture(seconds, byteRate = 88200) {
   const dataSize = Math.round(seconds * byteRate);
   const header = Buffer.alloc(44);
@@ -76,11 +76,11 @@ function wavFixture(seconds, byteRate = 88200) {
   header.writeUInt32LE(36 + dataSize, 4);
   header.write('WAVE', 8, 'latin1');
   header.write('fmt ', 12, 'latin1');
-  header.writeUInt32LE(16, 16);            // fmt 청크 크기
+  header.writeUInt32LE(16, 16);            // fmt chunk size
   header.writeUInt16LE(1, 20);             // PCM
-  header.writeUInt16LE(2, 22);             // 채널
-  header.writeUInt32LE(44100, 24);         // 표본율
-  header.writeUInt32LE(byteRate, 28);      // 초당 바이트
+  header.writeUInt16LE(2, 22);             // channels
+  header.writeUInt32LE(44100, 24);         // sample rate
+  header.writeUInt32LE(byteRate, 28);      // bytes per second
   header.writeUInt16LE(4, 32);
   header.writeUInt16LE(16, 34);
   header.write('data', 36, 'latin1');
@@ -88,13 +88,13 @@ function wavFixture(seconds, byteRate = 88200) {
   return Buffer.concat([header, Buffer.alloc(dataSize)]);
 }
 
-/** MPEG1 Layer III · 44.1kHz · 128kbps 스테레오 프레임 하나 (417 바이트) */
+/** One MPEG1 Layer III, 44.1kHz, 128kbps stereo frame (417 bytes). */
 function mp3Frame() {
   const frame = Buffer.alloc(417);
   frame[0] = 0xff;
-  frame[1] = 0xfb; // MPEG1, Layer III, CRC 없음
-  frame[2] = 0x90; // 128kbps, 44.1kHz, 패딩 없음
-  frame[3] = 0x00; // 스테레오
+  frame[1] = 0xfb; // MPEG1, Layer III, no CRC
+  frame[2] = 0x90; // 128kbps, 44.1kHz, no padding
+  frame[3] = 0x00; // stereo
   return frame;
 }
 
@@ -104,7 +104,7 @@ test('WAV 는 fmt 의 초당 바이트로 data 청크를 나눈다', () => {
 });
 
 test('MP3 는 고정 비트레이트면 파일 크기로 잰다', () => {
-  // 128kbps 프레임 100개 = 41700 바이트 -> 2.6초
+  // 100 frames at 128kbps = 41700 bytes -> 2.6s
   const bytes = Buffer.concat(Array.from({ length: 100 }, mp3Frame));
   assert.equal(audioDuration(bytes, '.mp3'), 2.6);
 });
@@ -121,11 +121,11 @@ test('MP3 앞의 ID3v2 태그와 뒤의 ID3v1 태그는 길이에서 뺀다', ()
 });
 
 test('MP3 에 Xing/Info 표가 있으면 프레임 수로 잰다 (VBR)', () => {
-  // 프레임 수만 믿어야 한다 — 파일 크기로 재면 비트레이트가 들쭉날쭉해 틀린다
+  // Must trust frame count; file size is unreliable since VBR bitrate varies
   const first = mp3Frame();
-  first.write('Info', 36, 'latin1');       // MPEG1 스테레오는 헤더 뒤 36바이트
-  first.writeUInt32BE(0x01, 40);           // 프레임 수 칸이 있다
-  first.writeUInt32BE(200, 44);            // 200 프레임 -> 200 * 1152 / 44100 = 5.2초
+  first.write('Info', 36, 'latin1');       // MPEG1 stereo header is 36 bytes
+  first.writeUInt32BE(0x01, 40);           // frame count field present
+  first.writeUInt32BE(200, 44);            // 200 frames -> 200 * 1152 / 44100 = 5.2s
   const bytes = Buffer.concat([first, Buffer.alloc(999999)]);
   assert.equal(audioDuration(bytes, '.mp3'), 5.2);
 });
@@ -154,7 +154,7 @@ end`;
   assert.deepEqual(result.warnings, [], result.warnings.map((w) => w.message).join('\n'));
   assert.equal(result.project.objects[0].sprite.sounds[0].duration, 2.5);
 
-  // 코드에 적어 둔 값이 있으면 그 값이 우선이다 (파일을 아직 안 넣었을 때를 위해서)
+  // An explicit duration in source overrides the measured one (for when the file isn't added yet)
   const declared = compileProject(source.replace('"click.wav"', '"click.wav" for 9'), { path: main, assetDirs: [dir] });
   assert.equal(declared.project.objects[0].sprite.sounds[0].duration, 9);
 

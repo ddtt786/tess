@@ -1,9 +1,7 @@
-// ============================================================================
-//  Tess 문장 -> 엔트리 블록
+// Tess statements -> Entry blocks.
 //
-//  Tess 문장 하나가 엔트리 블록 여러 개가 되기도 한다.
-//  (예: `move 20 20` 은 엔트리에 대응 블록이 없어서 move_x + move_y 로 펼친다)
-// ============================================================================
+// One Tess statement can expand into multiple Entry blocks — e.g. `move 20
+// 20` has no matching Entry block, so it expands to move_x + move_y.
 import {
   compileAnyValue, compileBoolean, compileCallArguments, compileValue,
   isBooleanBlock, resolveList, resolveTarget, shiftIndex,
@@ -11,11 +9,11 @@ import {
 import { requireScaleSetter } from './runtime.js';
 
 const STOP_TARGETS = {
-  this: 'thisThread',      // 현재 스크립트만
-  other: 'otherThread',    // 이 오브젝트의 다른 스크립트
-  me: 'thisOnly',          // 이 오브젝트의 모든 스크립트
-  them: 'other_objects',   // 다른 모든 오브젝트
-  all: 'all',              // 프로젝트 전체
+  this: 'thisThread',      // this script only
+  other: 'otherThread',    // this object's other scripts
+  me: 'thisOnly',          // all of this object's scripts
+  them: 'other_objects',   // every other object
+  all: 'all',              // the whole project
 };
 
 const EFFECTS = {
@@ -31,9 +29,9 @@ const TEXT_EFFECTS = {
   text_strikethrough: 'strike',
 };
 
-// TTS(읽어주기) 목소리 · 속도 · 음높이 — 엔트리 `set_tts_property` 의 드롭다운 값 그대로다
-// (entryjs `src/playground/blocks/block_ai_utilize_tts.js`). 원래 코드값도 그대로 받고,
-// 사람이 읽기 좋은 영어 별명도 같이 받는다.
+// TTS voice / speed / pitch — mirrors Entry's `set_tts_property` dropdown
+// values (entryjs `src/playground/blocks/block_ai_utilize_tts.js`). Accepts
+// both the raw code values and human-readable English aliases.
 const TTS_SPEAKERS = {
   kyuri: 'kyuri', female: 'kyuri',
   jinho: 'jinho', male: 'jinho',
@@ -47,7 +45,7 @@ const TTS_SPEAKERS = {
   nmeow: 'nmeow', kitty: 'nmeow',
   nwoof: 'nwoof', doggy: 'nwoof',
 };
-// speed 는 느릴수록 +, pitch 는 낮을수록 + — 엔트리 코드값을 그대로 따른다
+// speed is more positive when slower, pitch is more positive when lower — matches Entry's code values
 const TTS_LEVELS = {
   veryslow: '5', verylow: '5',
   slow: '3', low: '3',
@@ -57,7 +55,7 @@ const TTS_LEVELS = {
   '5': '5', '3': '3', '0': '0', '-3': '-3', '-5': '-5',
 };
 
-/** 값을 읽어올 수 있는 오브젝트 속성 (복합 대입을 풀 때 쓴다) */
+/** Object properties readable as a value (used when expanding compound assignment). */
 const READABLE_PROPERTIES = { x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size' };
 
 export function compileStatements(statements, ctx) {
@@ -67,11 +65,11 @@ export function compileStatements(statements, ctx) {
 }
 
 export function compileStatement(node, ctx) {
-  // 이 문장을 컴파일하는 동안 만들어지는 모든 블록(중첩된 값·조건 블록 포함)에
-  // 이 문장의 소스 위치를 붙인다 — 실행 중 panic 났을 때 되짚어 보려고.
+  // tags every block created while compiling this statement (including
+  // nested value/condition blocks) with its source location, for runtime panic lookups
   const previousNode = ctx.currentNode;
   ctx.currentNode = node;
-  // 하위 컴파일이 실패하면 null 이 올라올 수 있으므로 항상 배열로 맞춰 준다
+  // a failed nested compile can bubble up null, so normalize to an array
   const blocks = compile(node, ctx) ?? [];
   ctx.currentNode = previousNode;
   ctx.applyComment(node, blocks[0]);
@@ -82,7 +80,7 @@ function compile(node, ctx) {
   const one = (block) => (block ? [block] : []);
 
   switch (node.type) {
-    // --- 제어 흐름 ---------------------------------------------------------
+    // --- control flow ---------------------------------------------------------
     case 'If': {
       const test = compileBoolean(node.test, ctx);
       if (!test) return [];
@@ -104,7 +102,7 @@ function compile(node, ctx) {
       return one(ctx.block('repeat_inf', [null, null], [compileStatements(node.body, ctx)]));
 
     case 'While': case 'Until': {
-      // `while true:` 는 엔트리의 "계속 반복하기" 로 바꾸는 게 자연스럽다
+      // `while true:` naturally maps to Entry's "repeat forever"
       if (node.type === 'While' && node.test.type === 'Boolean' && node.test.value === true) {
         return one(ctx.block('repeat_inf', [null, null], [compileStatements(node.body, ctx)]));
       }
@@ -114,8 +112,8 @@ function compile(node, ctx) {
     }
 
     case 'Wait': {
-      // 값이면 "n초 기다리기", 판단이면 "~까지 기다리기" 가 된다. 어느 쪽인지 알아야
-      // 하므로 get_boolean_value 로 감싸기 전의 블록을 본다.
+      // a value becomes "wait N seconds", a boolean becomes "wait until";
+      // inspects the block before it's wrapped in get_boolean_value to tell which
       const value = compileAnyValue(node.value, ctx);
       if (!value) return [];
       return one(isBooleanBlock(value)
@@ -131,7 +129,7 @@ function compile(node, ctx) {
     case 'Return':
       return [ctx.error(node, 'return 은 함수의 마지막 문장에서만 쓸 수 있습니다.')].filter(Boolean);
 
-    // --- 신호 · 복제 · 장면 -------------------------------------------------
+    // --- signals, clones, scenes -------------------------------------------------
     case 'Send': {
       if (node.signal.type !== 'String') {
         return [ctx.error(node, '신호 이름은 "게임 시작" 처럼 문자열로 직접 적어야 합니다.')].filter(Boolean);
@@ -159,7 +157,7 @@ function compile(node, ctx) {
       return one(ctx.block('start_scene', [scene.id, null]));
     }
 
-    // --- 움직임 -------------------------------------------------------------
+    // --- movement -------------------------------------------------------------
     case 'Forward': {
       const distance = compileValue(node.distance, ctx);
       if (!distance) return [];
@@ -178,7 +176,7 @@ function compile(node, ctx) {
         const duration = compileValue(node.duration, ctx);
         return duration && one(ctx.block('move_xy_time', [duration, x, y, null]));
       }
-      // 엔트리에는 x·y 를 한 번에 상대 이동하는 블록이 없다 -> 두 블록으로 펼친다
+      // Entry has no single block for a combined relative x/y move -> expand to two blocks
       return [ctx.block('move_x', [x, null]), ctx.block('move_y', [y, null])];
     }
 
@@ -217,7 +215,7 @@ function compile(node, ctx) {
       return target && one(ctx.block('see_angle_object', [target, null]));
     }
 
-    // --- 모양 · 대화 ---------------------------------------------------------
+    // --- costume, dialog ---------------------------------------------------------
     case 'Show': case 'Hide': return compileVisibility(node, ctx);
 
     case 'CostumeStep':
@@ -232,7 +230,7 @@ function compile(node, ctx) {
       return duration && one(ctx.block('dialog_time', [message, duration, mode, null]));
     }
 
-    // 엔트리의 flip_x 는 상하, flip_y 는 좌우 뒤집기다 (이름이 반대다)
+    // Entry's flip_x flips vertically and flip_y flips horizontally — the names are swapped
     case 'Flip': return one(ctx.block(node.axis === 'x' ? 'flip_y' : 'flip_x', [null]));
 
     case 'Order':
@@ -241,26 +239,26 @@ function compile(node, ctx) {
     case 'ResetSize': return one(ctx.block('reset_scale_size', [null]));
     case 'Clear': return compileClear(node, ctx);
 
-    // --- 글상자 -------------------------------------------------------------
+    // --- text box -------------------------------------------------------------
     case 'TextWrite': {
       const value = compileValue(node.value, ctx);
       const types = { write: 'text_write', append: 'text_append', prepend: 'text_prepend' };
       return value && one(ctx.block(types[node.mode], [value, null]));
     }
 
-    // --- 붓 -----------------------------------------------------------------
+    // --- brush -----------------------------------------------------------------
     case 'StartDraw': return one(ctx.block('start_drawing', [null]));
     case 'StopDraw': return one(ctx.block('stop_drawing', [null]));
     case 'StartFill': return one(ctx.block('start_fill', [null]));
     case 'StopFill': return one(ctx.block('stop_fill', [null]));
     case 'Stamp': return one(ctx.block('brush_stamp', [null]));
 
-    // --- 초시계 -------------------------------------------------------------
+    // --- stopwatch -------------------------------------------------------------
     case 'StartTimer': return one(timerAction('START', ctx));
     case 'StopTimer': return one(timerAction('STOP', ctx));
     case 'ResetTimer': return one(timerAction('RESET', ctx));
 
-    // --- 소리 ---------------------------------------------------------------
+    // --- sound ---------------------------------------------------------------
     case 'PlaySound': return compilePlaySound(node, ctx);
     case 'PlayBgm': {
       const sound = resolveSound(node.name, ctx);
@@ -270,7 +268,7 @@ function compile(node, ctx) {
     case 'StopSound':
       return one(ctx.block('sound_silent_all', [node.target === 'this' ? 'thisOnly' : 'all', null]));
 
-    // --- TTS 읽어주기 (addendum) ---------------------------------------------
+    // --- TTS read-aloud (addendum) ---------------------------------------------
     case 'Read': {
       const message = compileValue(node.value, ctx);
       if (!message) return [];
@@ -287,7 +285,7 @@ function compile(node, ctx) {
       return one(ctx.block('set_tts_property', [speaker, speed, pitch, null]));
     }
 
-    // --- 자료 ---------------------------------------------------------------
+    // --- data ---------------------------------------------------------------
     case 'Ask': {
       const question = compileValue(node.question, ctx);
       return question && one(ctx.block('ask_and_wait', [question, null]));
@@ -323,13 +321,13 @@ function compile(node, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-//  보조 컴파일러
+//  helper compilers
 // ---------------------------------------------------------------------------
 function timerAction(action, ctx) {
   return ctx.block('choose_project_timer_action', [null, action, null, null]);
 }
 
-/** 회전 계열 블록은 각도 리터럴 블록(angle)을 쓴다 */
+/** Rotation-family blocks use the angle literal block. */
 function compileAngle(node, ctx) {
   if (node.type === 'Number') return ctx.angle(node.value);
   if (node.type === 'Unary' && node.operator === '-' && node.argument.type === 'Number') {
@@ -393,30 +391,31 @@ function compilePlaySound(node, ctx) {
 }
 
 /**
- * 소리 이름 -> get_sounds 블록.
+ * Sound name -> get_sounds block.
  *
- * 문자열 리터럴이면 오타를 바로 잡아 줄 수 있게 이 오브젝트에 등록된 소리인지
- * 확인하고 get_sounds 로 감싼다. 그 밖의 값(변수 등으로 계산한 값)이면 컴파일
- * 시점에는 확인할 수 없으니 그대로 흘려보낸다 — 엔트리의 소리 재생 블록은
- * 실행할 때 그 값을 1) 소리 id, 2) 소리 이름, 3) 순번 순으로 찾기 때문에,
- * 그 값이 실행 시점에 이 오브젝트의 소리 이름과 같기만 하면 정상 동작한다.
+ * A string literal is checked against this object's registered sounds
+ * (to catch typos) and wrapped in get_sounds. Any other value (e.g. a
+ * variable) can't be checked at compile time, so it's passed through
+ * unchanged — Entry's sound-playing blocks resolve a value by 1) sound id,
+ * 2) sound name, 3) index at runtime, so it works as long as the runtime
+ * value matches this object's sound name.
  */
 function resolveSound(node, ctx) {
   if (node.type === 'String') {
     const sound = ctx.object?.sounds.get(node.value);
     if (sound) return ctx.block('get_sounds', [sound.id]);
-    // 이 오브젝트 소리 이름은 아니지만, force id 로 어딘가에 고정해 둔 진짜 엔트리
-    // id 와 정확히 같으면(1.4절 참고) 그대로 흘려보낸다 — 엔트리는 값을 1) id 2) 이름
-    // 3) 순번 순으로 찾으므로, 그 id 만 맞으면 어느 오브젝트가 불러도 그 소리를 그대로
-    // 가리킨다(예전에 함수 안에 특정 오브젝트의 소리 id 를 그대로 박아 넣던 관습을
-    // 되돌릴 때 쓴다).
+    // not this object's own sound name, but passed through if it exactly
+    // matches a real Entry id pinned elsewhere via force id (see spec-addendum
+    // 1.4) — Entry resolves by 1) id 2) name 3) index, so a matching id
+    // points to the same sound regardless of which object calls it (used to
+    // preserve legacy code that hardcoded another object's sound id inside a function)
     if (ctx.forcedResourceIds.has(node.value)) return node.value;
     return ctx.error(node, `'${node.value}' 소리가 이 오브젝트에 없습니다. sound ${node.value} "파일명" 으로 먼저 등록하세요.`);
   }
   return compileValue(node, ctx);
 }
 
-/** 모양 이름 -> get_pictures 블록 (계산된 값은 resolveSound 와 같은 이유로 그대로 흘려보낸다) */
+/** Costume name -> get_pictures block (a computed value passes through, same reasoning as resolveSound). */
 function resolvePicture(node, ctx) {
   if (node.type === 'String') {
     const picture = ctx.object?.pictures.get(node.value);
@@ -433,14 +432,14 @@ function requireList(node, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-//  선언 · 대입
+//  declaration, assignment
 // ---------------------------------------------------------------------------
 function compileDeclaration(node, ctx) {
-  // 선언 자체는 미리 수집해 두었고, 여기서는 초기값 대입만 만든다.
+  // the declaration itself was already collected earlier; this only builds the initial assignment
   if (node.type === 'ListDecl') {
     const found = ctx.lookupVariable(node.name);
     if (found?.kind !== 'variable') return [];
-    return []; // 리스트 초기값은 변수 항목의 array 로 들어간다
+    return []; // a list's initial value goes into the variable entry's array field
   }
   return compileAssign({
     type: 'Assign',
@@ -503,7 +502,7 @@ function compileListElementAssign(node, ctx) {
   return combined ? [ctx.block('change_value_list_index', [list.id, index, combined, null])] : [];
 }
 
-/** `대상 op= 값` 을 `대상 op 값` 표현식으로 푼다 */
+/** Expands `target op= value` into a `target op value` expression. */
 function combine(current, operator, valueNode, ctx) {
   const value = compileValue(valueNode, ctx);
   if (!value) return null;
@@ -522,7 +521,7 @@ function combine(current, operator, valueNode, ctx) {
   return ctx.error(valueNode, `연산자 '${operator}' 를 엔트리 블록으로 바꿀 수 없습니다.`);
 }
 
-/** 오브젝트 속성 대입 */
+/** Object property assignment. */
 function compilePropertyAssign(node, name, ctx) {
   const { operator } = node;
   const relative = operator === '+=' || operator === '-=';
@@ -568,8 +567,8 @@ function compilePropertyAssign(node, name, ctx) {
       if (operator !== '=') {
         return [ctx.error(node, `${name} 에는 = 과 +=, -= 만 쓸 수 있습니다.`)].filter(Boolean);
       }
-      // 엔트리에는 한 축의 비율을 "정하는" 블록이 없다.
-      // 컴파일러가 만들어 넣는 함수가 지금 크기를 재서 목표 비율로 맞춘다.
+      // Entry has no block that "sets" a single axis's ratio directly.
+      // A compiler-synthesized function measures the current size and hits the target ratio.
       if (ctx.funcScope) {
         return [ctx.error(node, `${name} 을(를) 정하는 일은 함수 안에서 할 수 없습니다. 오브젝트마다 시작 배율이 다르기 때문입니다.`)].filter(Boolean);
       }
@@ -613,7 +612,7 @@ function compilePropertyAssign(node, name, ctx) {
     case 'sound_volume': return simple('sound_volume_set', 'sound_volume_change');
     case 'sound_speed': return simple('sound_speed_set', 'sound_speed_change');
 
-    // --- 글상자 -------------------------------------------------------------
+    // --- text box -------------------------------------------------------------
     case 'text_content': {
       if (operator !== '=') return [ctx.error(node, 'text_content 는 = 로만 바꿀 수 있습니다. 이어 붙이려면 append 를 쓰세요.')].filter(Boolean);
       const compiled = value();
@@ -645,7 +644,7 @@ function compilePropertyAssign(node, name, ctx) {
   }
 }
 
-/** 오브젝트가 시작할 때의 가로/세로 배율 (엔트리의 "원래 크기로 되돌리기" 가 돌아가는 값) */
+/** Object's starting width/height scale (what Entry's "reset to original size" reverts to). */
 function originScale(name, ctx) {
   const properties = ctx.object?.properties;
   const read = (key) => {
@@ -655,7 +654,7 @@ function originScale(name, ctx) {
   return (read(name) ?? read('size') ?? 100) / 100;
 }
 
-/** 값을 읽어서 계산한 뒤 다시 넣는 방식으로 복합 대입을 푼다 */
+/** Expands compound assignment by reading, computing, and writing back the value. */
 function readModifyWrite(name, setType, node, ctx) {
   const coordinate = READABLE_PROPERTIES[name];
   if (!coordinate) {
@@ -666,7 +665,7 @@ function readModifyWrite(name, setType, node, ctx) {
   return combined ? [ctx.block(setType, [combined, null])] : [];
 }
 
-/** tts 문의 voice/speed/pitch 값을 엔트리 코드값으로 바꾼다 (SPEC-ADDENDUM.md 5 참고) */
+/** Converts a tts statement's voice/speed/pitch value to Entry's code value (see SPEC-ADDENDUM.md 5). */
 function ttsOption(table, node, label, ctx) {
   if (node.type !== 'String') return ctx.error(node, `tts ${label}은(는) 문자열로 적어야 합니다.`);
   const key = node.value.trim().toLowerCase();
@@ -686,15 +685,17 @@ function compileColor(node, ctx) {
 }
 
 /**
- * set_color/set_fill_color/text_change_font_color/text_change_bg_color 네 블록은
- * 모두 값이 '#' 로 시작하지 않으면 무조건 '#' 를 붙인다(entryjs block_brush.js·block_text.js
- * func 안의 `if (color.indexOf('#') !== 0) color = '#' + color`). 그래서 'transparent' 를
- * 넘기면 실제로는 "#transparent" 라는 잘못된 색이 되어 버리는데, 이 잘못된 값을 다시
- * hex2rgb 가 '#000000'(검정)으로 되돌리거나(붓) 브라우저가 잘못된 CSS 색을 그냥 무시하며
- * 이전 색(대개 검정에 가까운 값)을 그대로 두거나(글상자) 한다 — 결과적으로 실행 중에는
- * 이 네 속성을 이 블록만으로는 절대 transparent 로 만들 수 없다(엔트리 자체의 한계).
- * 반면 오브젝트/글상자 선언 맨 위에 적는 정적 속성은 이 블록을 거치지 않고 엔트리
- * project.json 의 엔티티 값으로 바로 들어가므로 문제없이 동작한다.
+ * set_color/set_fill_color/text_change_font_color/text_change_bg_color all
+ * force-prepend '#' to any value that doesn't already start with it
+ * (entryjs block_brush.js / block_text.js func: `if (color.indexOf('#') !==
+ * 0) color = '#' + color`). Passing 'transparent' therefore becomes the
+ * invalid color "#transparent", which hex2rgb then reduces to '#000000'
+ * black (brush) or which the browser silently ignores, leaving the prior
+ * color — usually near-black (text box). So these four properties can
+ * never actually be set to transparent through this block at runtime —
+ * an Entry limitation. Static properties declared at the top of an
+ * object/text-box declaration bypass this block entirely and write
+ * directly into the Entry project.json entity value, so those work fine.
  */
 function rejectRuntimeTransparent(name, node, ctx) {
   return ctx.error(
@@ -707,7 +708,7 @@ function rejectRuntimeTransparent(name, node, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-//  함수 호출 문장
+//  function call statements
 // ---------------------------------------------------------------------------
 function compileCallStatement(node, ctx) {
   const call = node.expression;
@@ -723,6 +724,6 @@ function compileCallStatement(node, ctx) {
   }
   const params = compileCallArguments(fn, call.arguments, ctx);
   if (params.some((param) => param === null)) return [];
-  // 값을 돌려주지 않는 함수 블록은 끝에 아이콘 자리(null)가 하나 더 붙는다
+  // a void function block has one extra icon slot (null) appended
   return [ctx.block(`func_${fn.id}`, [...params, null])];
 }

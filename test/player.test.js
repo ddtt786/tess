@@ -1,4 +1,4 @@
-// `tess run` 이 띄우는 미리보기 서버 검사
+// Tests the preview server started by `tess run`
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -49,25 +49,26 @@ test('작품과 실행 페이지를 내보낸다', async () => {
 });
 
 test('실행하기 전에 글상자 폰트를 먼저 내려받는다', async () => {
-  // 커스텀 폰트(나눔고딕 · DungGeunMo ...)는 @font-face 로 "선언"만 돼 있고 실제 파일은
-  // 처음 쓰일 때 늦게 도착한다. 캔버스는 폰트가 늦게 와도 알아서 다시 그려주지 않으므로,
-  // 시작하자마자 보이는 글상자가 대체 글꼴로 굳어 버리지 않으려면 Entry.loadProject/
-  // toggleRun 으로 블록을 실행하기 '전에' 그 프로젝트가 쓰는 폰트를 전부 미리 내려받아
-  // 둬야 한다 — 이 순서가 페이지 스크립트에 실제로 지켜지는지를 검사한다.
+  // Custom fonts (Nanum Gothic, DungGeunMo, ...) are only declared via @font-face;
+  // the actual file arrives late, on first use. Canvas text does not repaint
+  // automatically once a font arrives late, so any text box visible at startup
+  // would stay stuck on a fallback font. Fonts used by the project must be
+  // preloaded before Entry.loadProject/toggleRun executes any blocks — this
+  // test verifies the page script actually preserves that order.
   await withServer({}, async (server) => {
     const page = await (await fetch(server.url)).text();
 
     const preloadCall = page.indexOf('preloadTextFonts(project)');
     const loadProjectCall = page.indexOf('Entry.loadProject(project)');
-    assert.notEqual(preloadCall, -1, '폰트를 미리 불러오는 코드가 있어야 한다');
+    assert.notEqual(preloadCall, -1, 'must preload fonts');
     assert.notEqual(loadProjectCall, -1);
     assert.ok(
       preloadCall < loadProjectCall,
-      '폰트를 먼저 불러온 다음에 Entry.loadProject 를 불러야 한다',
+      'must preload fonts before calling Entry.loadProject',
     );
 
-    // preloadTextFonts 자체는 document.fonts.load 로 실제 다운로드를 트리거해야 한다
-    // (그냥 CSS 를 <link> 로 붙이기만 해서는 폰트가 실제로 쓰이기 전까진 안 받아진다).
+    // preloadTextFonts itself must trigger an actual download via document.fonts.load
+    // (just attaching a <link> CSS tag doesn't fetch the font until it's actually used).
     assert.match(page, /document\.fonts\.load/);
     assert.match(page, /document\.fonts\.ready/);
   });
@@ -96,12 +97,13 @@ test('설치된 entryjs 가 없으면 CDN 을 가리킨다', async () => {
   await withServer({ cwd: os.tmpdir() }, async (server) => {
     assert.match(server.runtime, /^CDN/);
     const page = await (await fetch(server.url)).text();
-    // @entrylabs/entry 본체는 unpkg 에서 받는다 — jsDelivr 는 이 패키지 전체 크기가
-    // 150MB 한도를 넘어 entry.min.js 조차 403 으로 막는다(server.js CDN 상수 주석 참고).
+    // @entrylabs/entry itself is fetched from unpkg — jsDelivr blocks even
+    // entry.min.js with 403 because this package exceeds its 150MB limit
+    // (see the CDN constant comment in server.js).
     assert.match(page, /unpkg\.com\/@entrylabs\/entry/);
-    // 나머지 서드파티 라이브러리(jquery, createjs, @entrylabs/tool ...)는 jsDelivr 에서 받는다
+    // remaining third-party libraries (jquery, createjs, @entrylabs/tool, ...) come from jsDelivr
     assert.match(page, /cdn\.jsdelivr\.net/);
-    // 못 불러왔을 때 안내가 페이지에 들어 있다
+    // page includes a fallback message for when loading fails
     assert.match(page, /엔트리 실행기를 불러오지 못했습니다/);
     assert.match(page, /playentry\.org/);
   });
@@ -142,9 +144,9 @@ test('lib 바깥 파일은 주지 않는다', async (t) => {
 });
 
 test('엔트리 글꼴 CSS 를 하나씩 <link> 로 직접 붙인다', async () => {
-  // 묶음 파일 fonts_2023_10.css 는 @font-face 가 아니라 @import 스물두 줄이다.
-  // @import 는 그 CSS 를 받아 파싱한 뒤에야 다음 요청이 시작되므로 글꼴이 늦게
-  // 도착하고, 그 사이에 preloadTextFonts 가 글꼴을 찾지 못한 채 넘어간다.
+  // The bundled fonts_2023_10.css file is 22 lines of @import, not @font-face.
+  // @import blocks the next request until that CSS is fetched and parsed, so
+  // fonts arrive late — and preloadTextFonts finds nothing to preload in the meantime.
   await withServer({}, async (server) => {
     const page = await (await fetch(server.url)).text();
     const hrefs = [...page.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map((m) => m[1]);
@@ -154,17 +156,17 @@ test('엔트리 글꼴 CSS 를 하나씩 <link> 로 직접 붙인다', async () 
     for (const href of fontHrefs) {
       assert.match(href, /^https:\/\/entry-cdn\.pstatic\.net\/uploads\/fonts\/[\w.]+\.css$/);
     }
-    // 실제 글꼴이 아니라 @import 목록만 담긴 묶음 파일은 더 이상 쓰지 않는다
-    assert.ok(!fontHrefs.some((href) => href.includes('fonts_2023_10')), 'fonts_2023_10.css 는 빼야 한다');
+    // the bundled file (a list of @import statements, not an actual font) must not be used
+    assert.ok(!fontHrefs.some((href) => href.includes('fonts_2023_10')), 'fonts_2023_10.css must be excluded');
     for (const name of ['nanum_gothic', 'dunggeunmo_2023', 'd2coding_2023', 'SDShabang_2023']) {
-      assert.ok(fontHrefs.some((href) => href.endsWith('/' + name + '.css')), name + ' 이 빠졌다');
+      assert.ok(fontHrefs.some((href) => href.endsWith('/' + name + '.css')), name + ' is missing');
     }
   });
 });
 
 test('캔버스 그리기 해상도는 처음 한 번만 정하고, 그 뒤에는 CSS 크기만 바꾼다', async () => {
-  // width/height 속성을 바꾸면 그리던 내용이 지워지고 stage 변환도 어긋나므로,
-  // 창 크기가 바뀔 때는 CSS 크기만 건드려야 한다.
+  // Changing the width/height attributes clears the drawing surface and desyncs
+  // the stage transform, so a window resize must only touch the CSS size.
   await withServer({}, async (server) => {
     const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
 
@@ -190,7 +192,7 @@ test('디버그 UI 와 arrow-js 를 모듈로 내보낸다', async () => {
     const uiSource = await ui.text();
     const arrowFile = uiSource.match(/from '\/arrow\/([^']+)'/)[1];
     assert.equal((await fetch(`${server.url}arrow/${arrowFile}`)).status, 200);
-    // arrow 폴더 바깥은 주지 않는다
+    // must not serve files outside the arrow folder
     const escaped = await fetch(`${server.url}arrow/${encodeURIComponent('../../../package.json')}`);
     assert.equal(escaped.status, 404);
   });

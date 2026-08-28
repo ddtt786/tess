@@ -1,9 +1,7 @@
-// ============================================================================
-//  모양(그림) · 소리 리소스
+// Costume (image) and sound resources.
 //
-//  엔트리는 리소스를 temp/<앞2자>/<다음2자>/image|sound/<파일명>.<확장자> 에 담고,
-//  project.json 의 fileurl 이 그 경로를 가리킨다.
-// ============================================================================
+// Entry stores resources at temp/<first2>/<next2>/image|sound/<filename>.<ext>,
+// and project.json's fileurl points at that path.
 import fs from 'node:fs';
 import path from 'node:path';
 import { seedFrom } from './ids.js';
@@ -14,7 +12,7 @@ const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const IMAGE_TYPES = { '.png': 'png', '.jpg': 'jpg', '.jpeg': 'jpg', '.gif': 'gif', '.svg': 'svg', '.bmp': 'bmp' };
 const SOUND_TYPES = new Set(['.mp3', '.wav', '.ogg', '.m4a']);
 
-/** 엔트리 리소스 파일명(32자)을 내용/경로에서 결정적으로 만든다 */
+/** Deterministically derives a 32-char Entry resource filename from a key. */
 export function assetFilename(key) {
   let state = seedFrom(key) || 1;
   let name = '';
@@ -29,7 +27,7 @@ export function fileUrlFor(kind, filename, ext) {
   return `temp/${filename.slice(0, 2)}/${filename.slice(2, 4)}/${kind}/${filename}${ext}`;
 }
 
-/** PNG · JPEG · GIF · SVG 에서 원본 크기를 읽는다. 못 읽으면 null */
+/** Reads intrinsic size from PNG, JPEG, GIF, or SVG data; null if unreadable. */
 export function imageSize(buffer) {
   if (buffer.length >= 24 && buffer.readUInt32BE(0) === 0x89504e47) {
     return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
@@ -54,16 +52,17 @@ export function imageSize(buffer) {
 }
 
 /**
- * SVG 는 매직 바이트가 없는 XML 텍스트라 PNG/GIF/JPEG 처럼 헤더를 읽을 수 없다.
- * 그렇다고 크기를 못 읽으면(예전엔 그랬다) makeAsset 이 무조건 100x100 으로 대체하는데,
- * 엔트리는 project.json 의 dimension 값을 그대로 믿고 렌더링 크기를 정한다(entryjs
- * entity.js setImage: `this.setWidth(dimension.width)`) — 실제로 로드한 이미지 픽셀 크기를
- * 다시 재서 쓰지 않는다. 그래서 SVG 원본이 100x100 이 아닌데(예: 무대 전체를 덮는 배경
- * 그림) scale_x/scale_y 가 그 원본 크기 기준으로 정해져 있으면(디컴파일한 소스가 그렇다),
- * 100x100 을 기준으로 다시 스케일된 결과가 원래 크기보다 훨씬 작게 나온다 — 예를 들어
- * 원본이 800x490 인데 100x100 으로 잘못 알면, scale_x 61% 로 정확히 488px(무대 폭에 맞춘 값)가
- * 나와야 할 것이 61px 밖에 안 되는 식이다. `width`/`height` 속성을 우선 쓰고, 없으면
- * `viewBox` 의 폭·높이를 쓴다(브라우저가 SVG 고유 크기를 정하는 순서와 같다).
+ * SVG has no magic bytes, so its size can't be read from a header like
+ * PNG/GIF/JPEG. If unreadable, makeAsset falls back to 100x100, but Entry
+ * trusts project.json's dimension value verbatim for render size (entryjs
+ * entity.js setImage: `this.setWidth(dimension.width)`) rather than
+ * re-measuring the loaded image's pixel size. So when a non-square SVG's
+ * scale_x/scale_y were set relative to its true size (as in decompiled
+ * source), a wrong 100x100 fallback scales the render far smaller than
+ * intended — e.g. an 800x490 original misread as 100x100 renders scale_x
+ * 61% as 61px instead of the intended 488px. Prefers the `width`/`height`
+ * attributes, falling back to `viewBox`, matching how browsers derive an
+ * SVG's intrinsic size.
  */
 function svgSize(buffer) {
   const text = buffer.toString('utf-8');
@@ -73,7 +72,7 @@ function svgSize(buffer) {
   const length = (attr) => {
     const raw = tag.match(new RegExp(`\\b${attr}\\s*=\\s*["']([^"']+)["']`, 'i'))?.[1]?.trim();
     if (!raw) return null;
-    const match = raw.match(/^([\d.]+)(px)?$/i); // % 나 다른 단위는 픽셀 크기를 못 정하니 무시한다
+    const match = raw.match(/^([\d.]+)(px)?$/i); // ignore % or other units — can't resolve to pixels
     const value = match && Number(match[1]);
     return Number.isFinite(value) && value > 0 ? value : null;
   };
@@ -93,11 +92,12 @@ function svgSize(buffer) {
 }
 
 /**
- * 선언된 파일을 실제로 찾아보고 엔트리 리소스 항목을 만든다.
+ * Resolves a declared file and builds the Entry resource entry.
  *
- * 파일을 찾으면 그림 크기와 소리 길이를 파일에서 직접 잰다. 엔트리는 project.json 의
- * 값을 그대로 믿어서, 못 구하면 100×100 · 1초로 굳는다. `size W H`/`for N` 이 우선이다.
- * 파일도 없고 적어 두지도 않았을 때만 경고한다.
+ * When the file is found, measures image size / sound duration directly
+ * from it. Entry trusts project.json's values verbatim, so an unmeasurable
+ * asset falls back to 100x100 / 1s. Explicit `size W H` / `for N` take
+ * priority. Warns only when the file is missing and nothing was declared.
  */
 export function makeAsset(kind, { id, file, name, width, height, duration }, ctx, node) {
   const ext = path.extname(file).toLowerCase();
@@ -143,7 +143,7 @@ export function makeAsset(kind, { id, file, name, width, height, duration }, ctx
   return asset;
 }
 
-/** 소스 파일 옆(또는 --assets 로 지정한 곳)에서 리소스를 찾는다 */
+/** Looks for the resource next to the source file, or under --assets dirs. */
 function findAsset(file, ctx) {
   for (const dir of ctx.options.assetDirs ?? []) {
     const candidate = path.resolve(dir, file);

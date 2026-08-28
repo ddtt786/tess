@@ -1,9 +1,9 @@
-// 파스 트리가 어떤 AST 로 바뀌는지 — 특히 연산자 우선순위와 결합 방향을 확인한다.
+// Tests how the parse tree becomes an AST, especially operator precedence and associativity.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { expr, stmt } from './helpers.js';
 
-/** AST 를 비교하기 쉬운 S-식 문자열로 */
+/** Renders an AST node as an S-expression string for easy comparison. */
 function sexp(node) {
   switch (node.type) {
     case 'Binary': return `(${node.operator} ${sexp(node.left)} ${sexp(node.right)})`;
@@ -24,20 +24,20 @@ function sexp(node) {
 const shape = (source, expected) =>
   test(`표현식: ${source}`, () => assert.equal(sexp(expr(source)), expected));
 
-// --- 산술 우선순위 ------------------------------------------------------------
+// --- arithmetic precedence ----------------------------------------------------
 shape('1 + 2 * 3', '(+ 1 (* 2 3))');
 shape('1 * 2 + 3', '(+ (* 1 2) 3)');
 shape('(1 + 2) * 3', '(* (+ 1 2) 3)');
-shape('10 - 2 - 3', '(- (- 10 2) 3)');        // 좌결합
-shape('100 / 5 / 2', '(/ (/ 100 5) 2)');      // 좌결합
+shape('10 - 2 - 3', '(- (- 10 2) 3)');        // left-associative
+shape('100 / 5 / 2', '(/ (/ 100 5) 2)');      // left-associative
 shape('10 // 3 * 2', '(* (// 10 3) 2)');
 shape('10 % 3 + 1', '(+ (% 10 3) 1)');
-shape('2 ** 3 ** 2', '(** 2 (** 3 2))');      // 우결합
-shape('2 * 3 ** 2', '(* 2 (** 3 2))');        // ** 가 * 보다 강함
+shape('2 ** 3 ** 2', '(** 2 (** 3 2))');      // right-associative
+shape('2 * 3 ** 2', '(* 2 (** 3 2))');        // ** binds tighter than *
 shape('-2 ** 2', '(** (- 2) 2)');
 shape('-x + 1', '(+ (- x) 1)');
 
-// --- 비교 · 논리 우선순위 ------------------------------------------------------
+// --- comparison / logical precedence -------------------------------------------
 shape('hp > 0 and not dead', '(and (> hp 0) (not dead))');
 shape('a or b and c', '(or a (and b c))');
 shape('a and b or c', '(or (and a b) c)');
@@ -48,7 +48,7 @@ shape('score <= 100', '(<= score 100)');
 shape('item != "potion"', '(!= item "potion")');
 shape('a + 1 == b * 2', '(== (+ a 1) (* b 2))');
 
-// --- 호출 · 인덱스 · 리터럴 ----------------------------------------------------
+// --- call / index / literal -----------------------------------------------------
 shape('random(1, 10)', '(random 1 10)');
 shape('random_color()', '(random_color)');
 shape('join(uppercase("a"), b)', '(join (uppercase "a") b)');
@@ -68,7 +68,7 @@ test('색상 리터럴은 소문자로 정규화한다', () => {
   assert.deepEqual(expr('#AbCdEf'), { type: 'Color', value: '#abcdef' });
 });
 
-// --- 문장 AST ------------------------------------------------------------------
+// --- statement AST ---------------------------------------------------------------
 test('say ... for ...', () => {
   assert.deepEqual(stmt('say "반갑습니다!" for 2'), {
     type: 'Say',
