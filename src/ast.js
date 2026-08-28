@@ -63,6 +63,11 @@ semantics.addOperation('ast', {
   SceneDecl(_scene, name, _open, members, _end) {
     return { type: 'Scene', name: name.ast().value, body: list(members), loc: at(this) };
   },
+  // 오브젝트의 PropertyDecl_name 과 같은 모양(type: 'Property')으로 만들어서
+  // 컴파일러가 오브젝트 이름 처리와 똑같은 방식으로 다룰 수 있게 한다.
+  SceneNameDecl(_name, value) {
+    return { type: 'Property', name: 'name', value: value.ast(), loc: at(this) };
+  },
 
   ObjectDecl(_object, name, _open, members, _end) {
     return { type: 'Object', kind: 'object', name: name.ast().value, body: list(members), loc: at(this) };
@@ -72,32 +77,39 @@ semantics.addOperation('ast', {
   },
 
   // --- 오브젝트 속성 --------------------------------------------------------
-  PropertyDecl_defaultCostumeSized(_default, _costume, id, file, _size, width, height) {
-    return costume(this, id, file, true, width, height);
+  PropertyDecl_defaultCostumeSized(_default, _costume, id, file, _size, width, height, forceIdOpt) {
+    return costume(this, id, file, true, width, height, forceIdOpt);
   },
-  PropertyDecl_defaultCostume(_default, _costume, id, file) {
-    return costume(this, id, file, true, null, null);
+  PropertyDecl_defaultCostume(_default, _costume, id, file, forceIdOpt) {
+    return costume(this, id, file, true, null, null, forceIdOpt);
   },
-  PropertyDecl_costumeSized(_costume, id, file, _size, width, height) {
-    return costume(this, id, file, false, width, height);
+  PropertyDecl_costumeSized(_costume, id, file, _size, width, height, forceIdOpt) {
+    return costume(this, id, file, false, width, height, forceIdOpt);
   },
-  PropertyDecl_costume(_costume, id, file) {
-    return costume(this, id, file, false, null, null);
+  PropertyDecl_costume(_costume, id, file, forceIdOpt) {
+    return costume(this, id, file, false, null, null, forceIdOpt);
   },
   PropertyDecl_rotation(_rotation, method) {
     return { type: 'Property', name: 'rotation', value: { type: 'Keyword', name: method.sourceString }, loc: at(this) };
   },
-  PropertyDecl_soundLength(_sound, id, file, _for, duration) {
+  PropertyDecl_soundLength(_sound, id, file, _for, duration, forceIdOpt) {
     return {
       type: 'Sound',
       id: id.ast().name,
       file: file.ast().value,
       duration: duration.ast().value,
+      forceId: forceIdOpt.ast()[0] ?? null,
       loc: at(this),
     };
   },
-  PropertyDecl_sound(_sound, id, file) {
-    return { type: 'Sound', id: id.ast().name, file: file.ast().value, duration: null, loc: at(this) };
+  PropertyDecl_sound(_sound, id, file, forceIdOpt) {
+    return {
+      type: 'Sound', id: id.ast().name, file: file.ast().value, duration: null,
+      forceId: forceIdOpt.ast()[0] ?? null, loc: at(this),
+    };
+  },
+  ForceId(_force, _id, value) {
+    return value.ast().value;
   },
   PropertyDecl_name(_name, value) {
     return { type: 'Property', name: 'name', value: value.ast(), loc: at(this) };
@@ -114,13 +126,19 @@ semantics.addOperation('ast', {
 
   // --- 함수 · 변수 · 리스트 --------------------------------------------------
   FunctionDecl(_fn, name, _lp, params, _rp, _open, body, _end) {
+    const declared = items(params);
     return {
       type: 'FunctionDecl',
       name: name.ast().name,
-      params: items(params).map((p) => p.name),
+      params: declared.map((p) => p.name),
+      // `이름?` 으로 적은 매개변수 — 엔트리 함수의 판단 칸이 된다 (SPEC-ADDENDUM.md 4.6)
+      booleanParams: declared.filter((p) => p.boolean).map((p) => p.name),
       body: body.ast(),
       loc: at(this),
     };
+  },
+  FunctionParam(name, question) {
+    return { name: name.ast().name, boolean: question.numChildren > 0 };
   },
   VarDecl(_var, name, _eq, value) {
     return { type: 'VarDecl', name: name.ast().name, value: value.ast(), loc: at(this) };
@@ -445,6 +463,19 @@ semantics.addOperation('ast', {
     return { type: 'PlayBgm', name: name.ast(), loc: at(this) };
   },
 
+  // --- TTS 읽어주기 (addendum) -----------------------------------------------
+  ReadStatement_readWait(_read, value, _and, _wait) {
+    return { type: 'Read', value: value.ast(), wait: true, loc: at(this) };
+  },
+  ReadStatement_read(_read, value) {
+    return { type: 'Read', value: value.ast(), wait: false, loc: at(this) };
+  },
+  TtsStatement(_tts, _voice, voice, _speed, speed, _pitch, pitch) {
+    return {
+      type: 'TtsSetting', voice: voice.ast(), speed: speed.ast(), pitch: pitch.ast(), loc: at(this),
+    };
+  },
+
   // ==========================================================================
   //  자료
   // ==========================================================================
@@ -575,7 +606,7 @@ semantics.addOperation('ast', {
   },
 });
 
-function costume(node, id, file, isDefault, width, height) {
+function costume(node, id, file, isDefault, width, height, forceIdOpt) {
   return {
     type: 'Costume',
     id: id.ast().name,
@@ -583,6 +614,7 @@ function costume(node, id, file, isDefault, width, height) {
     isDefault,
     width: width ? width.ast().value : null,
     height: height ? height.ast().value : null,
+    forceId: forceIdOpt ? forceIdOpt.ast()[0] ?? null : null,
     loc: at(node),
   };
 }

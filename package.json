@@ -24,6 +24,14 @@
   },
   "type": "module",
   "dependencies": {
-    "ohm-js": "^17.5.0"
+    "@arrow-js/core": "^1.0.6",
+    "ohm-js": "^17.5.0",
+    "tar": "^7.5.22"
+  },
+  "devDependencies": {
+    "@entrylabs/entry": "^4.0.22",
+    "jsdom": "^30.0.1",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
   }
 }

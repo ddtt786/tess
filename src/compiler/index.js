@@ -13,20 +13,32 @@ import { Context } from './context.js';
 import { loadProgram } from './include.js';
 import { buildCommentMap } from './comments.js';
 import { makeAsset } from './assets.js';
-import { compileStatements } from './statement.js';
-import { compileValue } from './expression.js';
+import { compileStatements, compileStatement } from './statement.js';
+import { compileValue, BOOLEAN_TEXT } from './expression.js';
 import { keyCodeOf } from './keycodes.js';
 import { validate } from '../validate.js';
+import { isAutoParamName } from '../function-params.js';
 
 const DEFAULT_SCENE_NAME = '장면 1';
-const DEFAULT_FONT = '나눔고딕';
+// 엔트리 글상자의 실제 기본 글씨체는 CSS font-family 이름 'Nanum Gothic'이다(entryjs
+// src/class/entity.js). 한글 이름 '나눔고딕'을 그대로 쓰면 그 이름의 @font-face 가
+// 없어서 브라우저가 아무 특징 없는 기본 글꼴로 대체해 버린다.
+const DEFAULT_FONT = 'Nanum Gothic';
+// 붓 속성(draw_color 등)은 project.json 에 "기본값" 자리가 없다 — 엔트리는 오브젝트를
+// 만들 때마다 항상 빨간 붓(#ff0000, 두께 1)으로 시작한다(entryjs Entry.setBasicBrush).
+// 그래서 오브젝트 선언에 이 값들을 적으면, 컴파일러가 `when start` 스크립트를 만들어
+// 넣어서 그 값을 제일 먼저 정하게 한다.
+const BRUSH_DEFAULT_PROPERTIES = ['draw_color', 'fill_color', 'draw_width', 'draw_alpha'];
 
 /**
  * Tess 소스를 엔트리 프로젝트 객체로 컴파일한다.
  *
+ * 에러가 있으면 `project` 는 null 이다. `force: true` 면 에러가 난 문장만 빠진 작품을
+ * 그대로 돌려준다 (`ok` 는 여전히 false).
+ *
  * @param {string} source
- * @param {{path?: string, assetDirs?: string[], name?: string, readFile?: Function}} [options]
- * @returns {{ok: boolean, project: object|null, errors: Array, warnings: Array, assets: Array}}
+ * @param {{path?: string, assetDirs?: string[], name?: string, readFile?: Function, force?: boolean}} [options]
+ * @returns {{ok: boolean, project: object|null, errors: Array, warnings: Array, assets: Array, sourceMap: object}}
  */
 export function compileProject(source, options = {}) {
   const filePath = options.path ?? '<input>';
@@ -56,12 +68,14 @@ export function compileProject(source, options = {}) {
   compileObjects(ctx);
 
   const project = assemble(program, ctx, options);
+  const ok = ctx.errors.length === 0;
   return {
-    ok: ctx.errors.length === 0,
-    project: ctx.errors.length === 0 ? project : null,
+    ok,
+    project: ok || options.force ? project : null,
     errors: ctx.errors,
     warnings: ctx.warnings,
     assets: ctx.assetFiles,
+    sourceMap: ctx.sourceMap,
   };
 }
 
@@ -75,7 +89,9 @@ function collectScenes(program, ctx) {
       ctx.error(item, `'${item.name}' 장면이 이미 있습니다.`);
       continue;
     }
-    const scene = { id: ctx.newId(), name: item.name };
+    // `scene "id":` 의 "id" 는 jump 등에서 쓰는 식별자다. 본문에 `name "..."` 이
+    // 있으면 컴파일된 작품에는 그 이름이 대신 찍힌다(오브젝트의 name 속성과 동일).
+    const scene = { id: ctx.newId(), name: sceneDisplayName(item, ctx) ?? item.name };
     ctx.scenes.push(scene);
     ctx.sceneByName.set(item.name, scene);
   }
@@ -87,6 +103,20 @@ function collectScenes(program, ctx) {
     ctx.scenes.unshift(scene);
     ctx.sceneByName.set(scene.name, scene);
   }
+}
+
+/** 장면 본문에 `name "..."` 이 있으면 그 문자열을, 없으면 null 을 돌려준다 */
+function sceneDisplayName(item, ctx) {
+  let value = null;
+  for (const member of item.body) {
+    if (member.type === 'Property' && member.name === 'name') value = member.value;
+  }
+  if (value === null) return null;
+  if (value.type !== 'String') {
+    ctx.error(value, `장면 이름(name)에는 문자열만 쓸 수 있습니다.`);
+    return null;
+  }
+  return value.value;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,7 +173,8 @@ function constantOf(node, ctx) {
   switch (node.type) {
     case 'Number': return node.value;
     case 'String': return node.value;
-    case 'Boolean': return String(node.value);
+    // 초기값도 대입할 때와 같은 글자를 쓴다. 엔트리에서 true 는 "TRUE" 이다(expression.js 참고).
+    case 'Boolean': return BOOLEAN_TEXT[String(node.value)];
     case 'Color': return node.value;
     case 'Transparent': return 'transparent';
     case 'Unary':
@@ -194,6 +225,24 @@ function collectObjects(program, ctx) {
   for (const object of ctx.objects) collectObjectMembers(object, ctx);
 }
 
+/**
+ * 모양/소리의 엔트리 id — `force id "..."` 를 안 적었으면 평소처럼 시드로 새로 뽑고,
+ * 적었으면 그 문자열을 그대로 쓴다(addendum, SPEC-ADDENDUM.md 참고). `force id` 는
+ * 예전에 함수 안에 특정 오브젝트의 모양·소리 id 를 그대로 박아 넣던 작품을 되돌릴 때,
+ * 되돌리기가 그 id 를 다시 그대로 배정해 살리는 용도다 — 자동 생성 id 와 겹치면
+ * project.json 안에서 서로 다른 리소스가 같은 id 를 갖게 되어 엔트리가 엉뚱한 것을
+ * 가리키게 되므로, 이미 쓰인 id 와 겹치면 컴파일 에러로 막는다.
+ */
+function resourceId(member, ctx) {
+  if (!member.forceId) return ctx.newId();
+  if (ctx.newId.has(member.forceId)) {
+    return ctx.error(member, `force id "${member.forceId}" 는 이미 다른 모양·소리·오브젝트가 쓰고 있습니다.`);
+  }
+  ctx.newId.reserve(member.forceId);
+  ctx.forcedResourceIds.add(member.forceId);
+  return member.forceId;
+}
+
 function collectObjectMembers(object, ctx) {
   ctx.object = object;
 
@@ -201,7 +250,7 @@ function collectObjectMembers(object, ctx) {
     switch (member.type) {
       case 'Costume': {
         const asset = makeAsset('image', {
-          id: ctx.newId(), file: member.file, name: member.id,
+          id: resourceId(member, ctx), file: member.file, name: member.id,
           width: member.width, height: member.height,
         }, ctx, member);
         object.pictures.set(member.id, asset);
@@ -210,7 +259,7 @@ function collectObjectMembers(object, ctx) {
       }
       case 'Sound': {
         const asset = makeAsset('sound', {
-          id: ctx.newId(), file: member.file, name: member.id, duration: member.duration,
+          id: resourceId(member, ctx), file: member.file, name: member.id, duration: member.duration,
         }, ctx, member);
         object.sounds.set(member.id, asset);
         break;
@@ -277,13 +326,19 @@ function collectFunctions(program, ctx) {
       ctx.error(returns[0], '엔트리 함수는 중간에서 값을 돌려줄 수 없습니다. return 은 함수의 마지막 문장에만 쓸 수 있습니다.');
     }
 
+    // `이름?` 으로 적은 매개변수는 엔트리에서도 판단 칸이 된다 (SPEC-ADDENDUM.md 4.6)
+    const booleanParams = new Set(node.booleanParams ?? []);
     const fn = {
       id: ctx.newId(),
       name: node.name,
       node,
       owner,
       params: node.params,
-      paramTypes: new Map(node.params.map((param) => [param, `stringParam_${ctx.newId()}`])),
+      booleanParams,
+      paramTypes: new Map(node.params.map((param) => [
+        param,
+        `${booleanParams.has(param) ? 'booleanParam' : 'stringParam'}_${ctx.newId()}`,
+      ])),
       isValue: isTailReturn,
       localVariables: [],
     };
@@ -384,12 +439,18 @@ function collectFunctionLocals(statements, scope, ctx, fn) {
   }
 }
 
-/** function_field_label -> function_field_string 사슬 만들기 */
+/**
+ * 함수 머리(라벨과 매개변수 칸의 사슬)를 만든다. 자동 이름(a, b, c …)은 라벨 없이,
+ * 그 밖의 이름은 라벨을 달고 나간다 — 되돌리기의 반대다 (src/function-params.js).
+ */
 function buildFunctionFields(fn, ctx) {
   let next = null;
   for (let i = fn.params.length - 1; i >= 0; i -= 1) {
-    const paramType = fn.paramTypes.get(fn.params[i]);
-    next = ctx.block('function_field_string', [ctx.block(paramType, []), next]);
+    const name = fn.params[i];
+    next = fn.booleanParams?.has(name)
+      ? ctx.block('function_field_boolean', [ctx.block(fn.paramTypes.get(name), [null]), next])
+      : ctx.block('function_field_string', [ctx.block(fn.paramTypes.get(name), []), next]);
+    if (!isAutoParamName(name, i)) next = ctx.block('function_field_label', [name, next]);
   }
   return ctx.block('function_field_label', [fn.name, next]);
 }
@@ -404,6 +465,13 @@ function compileObjects(ctx) {
     ctx.funcScope = null;
 
     let row = 0;
+    const defaults = compileBrushDefaults(object, ctx);
+    if (defaults) {
+      defaults[0].x = 50;
+      defaults[0].y = 30;
+      row += 1;
+      object.script.push(defaults);
+    }
     for (const member of object.node.body) {
       if (member.type !== 'Event') continue;
       const thread = compileEvent(member, ctx);
@@ -443,7 +511,7 @@ function compileEvent(event, ctx) {
     case 'key_up': {
       // 엔트리에는 "키를 뗐을 때" 이벤트가 없어서 감시 스크립트로 바꾼다.
       //   시작하기 -> 계속 반복: 키가 눌릴 때까지 기다림 -> 떼질 때까지 기다림 -> 본문
-      // (SPEC-ADDENDUM 6.1 에 적어 둔 정해진 변환이라 따로 알리지 않는다)
+      // (SPEC-ADDENDUM 4 에 적어 둔 정해진 변환이라 따로 알리지 않는다)
       const code = keyCodeOf(event.key);
       if (!code) return [ctx.error(event, `알 수 없는 키 이름 "${event.key}" 입니다.`)] && null;
       const pressed = () => ctx.block('is_press_some_key', [code, null]);
@@ -459,6 +527,25 @@ function compileEvent(event, ctx) {
       ctx.error(event, `'${event.event}' 이벤트는 엔트리 블록으로 바꿀 수 없습니다.`);
       return null;
   }
+}
+
+/**
+ * draw_color 등을 오브젝트 선언 맨 위에 썼으면, `when start` 스크립트를 만들어서
+ * 그 값을 제일 먼저 정하게 한다 (BRUSH_DEFAULT_PROPERTIES 선언부 참고).
+ */
+function compileBrushDefaults(object, ctx) {
+  const present = BRUSH_DEFAULT_PROPERTIES.filter((name) => object.properties.has(name));
+  if (present.length === 0) return null;
+
+  const blocks = [ctx.block('when_run_button_click', [null])];
+  for (const name of present) {
+    const value = object.properties.get(name);
+    const assign = {
+      type: 'Assign', operator: '=', target: { type: 'Identifier', name, loc: value.loc }, value, loc: value.loc,
+    };
+    blocks.push(...compileStatement(assign, ctx));
+  }
+  return blocks;
 }
 
 // ---------------------------------------------------------------------------
@@ -487,7 +574,9 @@ function assemble(program, ctx, options) {
     speed: fields.get('fps')?.value ?? 60,
     interface: { menuWidth: 280, canvasWidth: 480, object: objects[0]?.id ?? null },
     expansionBlocks: [],
-    aiUtilizeBlocks: [],
+    // read / tts 문을 쓰면 엔트리가 '읽어주기(TTS)' 확장 블록을 실행할 수 있게 켠다
+    // (entryjs 는 project.aiUtilizeBlocks 에 이름이 있어야 Entry.AI_UTILIZE_BLOCK[type].init() 을 부른다)
+    aiUtilizeBlocks: ctx.usesTts ? ['tts'] : [],
     hardwareLiteBlocks: [],
     externalModules: [],
     externalModulesLite: [],
@@ -587,7 +676,10 @@ function buildObject(object, ctx) {
       text,
       textAlign: align,
       lineBreak: boolean('line_break', false),
-      bgColor: string('bg_color', 'transparent'),
+      // 엔트리가 글상자를 새로 만들 때의 기본 배경은 흰색이다(entryjs src/class/object.js
+      // `json.bgColor = '#ffffff'`). 'transparent' 를 기본값으로 쓰면 검은 기본 글자색과
+      // 겹쳐 배경이 없는 화면에서는 글자가 거의 안 보이는 것처럼 보인다.
+      bgColor: string('bg_color', '#ffffff'),
       underLine: boolean('text_underline', false),
       strike: boolean('text_strikethrough', false),
       fontSize,

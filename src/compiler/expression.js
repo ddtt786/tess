@@ -7,15 +7,27 @@
 //   - slice(s, a, b): Tess 는 [a, b), 엔트리 substring 은 1부터 양끝 포함
 // ============================================================================
 import { keyCodeOf } from './keycodes.js';
+import { requirePowerRefiner } from './runtime.js';
 import { OPTION_KEYWORDS, STATE_VALUES } from '../builtins.js';
 
 /** 결과가 엔트리 "판단(boolean)" 블록인 타입들 */
 const BOOLEAN_TYPES = new Set([
+  'True', 'False',
   'boolean_basic_operator', 'boolean_and_or', 'boolean_not',
   'is_clicked', 'is_object_clicked', 'is_press_some_key', 'reach_something',
   'is_type', 'is_boost_mode', 'is_current_device_type', 'is_touch_supported',
   'is_included_in_list',
 ]);
+
+// 계산할 필요 없이 값이 정해지는 리터럴들이다. 판단 자리에 오면 참으로 본다.
+const LITERAL_TYPES = new Set(['Number', 'String', 'Color', 'Transparent']);
+
+/**
+ * Tess 의 true/false 를 엔트리 값으로 옮기면 "TRUE"/"FALSE" 라는 문자열이 된다.
+ * 엔트리의 `(<판단>의 값)`(get_boolean_value) 블록이 그 글자를 돌려주기 때문이다.
+ * 리터럴에서 왔든 비교식에서 왔든 항상 같은 글자가 나오도록 맞춘다.
+ */
+export const BOOLEAN_TEXT = { true: 'TRUE', false: 'FALSE' };
 
 const COMPARE_OPERATORS = {
   '==': 'EQUAL', '!=': 'NOT_EQUAL',
@@ -33,8 +45,17 @@ const MATH_OPERATIONS = {
   floor: 'floor', ceil: 'ceil', round: 'round', abs: 'abs',
 };
 
-/** 오브젝트 정보 조회 함수 -> coordinate_object 의 COORDINATE 값 */
-const OBJECT_COORDINATES = { x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size' };
+/**
+ * 오브젝트 정보 조회 함수 -> coordinate_object 의 COORDINATE 값.
+ * 엔트리의 실제 coordinate_object 드롭다운은 x/y/방향/이동방향/크기 말고도
+ * "모양 번호"(picture_index)·"모양 이름"(picture_name) 을 갖고 있다
+ * (entryjs block_calc.js). costume/costume_number 로 다른 오브젝트의 모양도
+ * 이름·번호로 읽을 수 있게 한다.
+ */
+const OBJECT_COORDINATES = {
+  x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size',
+  costume: 'picture_name', costume_number: 'picture_index',
+};
 
 /** 상태 값(괄호 없이 쓰는 읽기 전용 값) */
 const STATE_BLOCKS = {
@@ -48,30 +69,52 @@ const STATE_BLOCKS = {
   answer: 'get_canvas_input_value',
 };
 
-/** 오브젝트 속성을 읽는 coordinate_object 의 COORDINATE 값 */
+/** 오브젝트 속성을 읽는 coordinate_object 의 COORDINATE 값 (자기 자신, 괄호 없이) */
 const PROPERTY_COORDINATES = {
-  x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size', costume: 'picture_name',
+  x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size',
+  costume: 'picture_name', costume_number: 'picture_index',
 };
 
 export function isBooleanBlock(node) {
-  return Boolean(node) && typeof node === 'object' && BOOLEAN_TYPES.has(node.type);
+  if (!node || typeof node !== 'object') return false;
+  // 판단 매개변수(`이름?`)를 가리키는 블록은 함수마다 타입 이름이 다르므로 접두사로 가린다
+  return BOOLEAN_TYPES.has(node.type) || String(node.type).startsWith('booleanParam_');
 }
 
-/** 판단 자리에 들어갈 블록. 값 블록이면 `== "true"` 로 감싼다. */
+/**
+ * 판단 자리에 들어갈 블록. `true`/`false` 는 참·거짓 블록, 그 밖의 리터럴은 참,
+ * 실행해 봐야 아는 값은 `== "TRUE"` 비교로 감싼다.
+ */
 export function compileBoolean(node, ctx) {
-  const compiled = compileValue(node, ctx);
+  if (node?.type === 'Boolean') return ctx.block(node.value ? 'True' : 'False', [null]);
+  if (LITERAL_TYPES.has(node?.type)) return ctx.block('True', [null]);
+
+  const compiled = compileAnyValue(node, ctx);
   if (compiled === null) return null;
   if (isBooleanBlock(compiled)) return compiled;
-  return ctx.block('boolean_basic_operator', [compiled, 'EQUAL', ctx.text('true')]);
+  return ctx.block('boolean_basic_operator', [compiled, 'EQUAL', ctx.text(BOOLEAN_TEXT.true)]);
 }
 
-/** 값 자리에 들어갈 블록 */
+/**
+ * 값 자리에 들어갈 블록. 판단이 오면 엔트리의 `(<판단>의 값)` 으로 감싼다
+ * (결과는 "TRUE"/"FALSE" 문자열).
+ */
 export function compileValue(node, ctx) {
+  const compiled = compileAnyValue(node, ctx);
+  if (compiled === null) return null;
+  return isBooleanBlock(compiled) ? ctx.block('get_boolean_value', [compiled]) : compiled;
+}
+
+/**
+ * 감싸기 전의 블록을 그대로 돌려준다. 판단 블록이 나올 수도 있다.
+ * 값이냐 판단이냐에 따라 다른 블록을 쓰는 자리(`wait` 이 대표적이다)에서 직접 부른다.
+ */
+export function compileAnyValue(node, ctx) {
   if (!node) return null;
   switch (node.type) {
     case 'Number': return ctx.number(node.value);
     case 'String': return ctx.text(node.value);
-    case 'Boolean': return ctx.text(String(node.value));
+    case 'Boolean': return ctx.block(node.value ? 'True' : 'False', [null]);
     case 'Color': return ctx.text(node.value);
     case 'Transparent': return ctx.text('transparent');
     case 'Identifier': return compileIdentifier(node, ctx);
@@ -94,7 +137,11 @@ function compileIdentifier(node, ctx) {
 
   const found = ctx.lookupVariable(name);
   if (found) {
-    if (found.kind === 'param') return ctx.block(ctx.funcScope.params.get(name), []);
+    if (found.kind === 'param') {
+      const type = ctx.funcScope.params.get(name);
+      // 판단 칸 매개변수 블록은 엔트리가 만든 원본에서도 빈 자리를 하나 갖는다
+      return ctx.block(type, type.startsWith('booleanParam_') ? [null] : []);
+    }
     if (found.kind === 'funcLocal') return ctx.block('get_func_variable', [found.id, null]);
     if (found.entry.variableType === 'list') {
       return ctx.error(node, `리스트 '${name}' 은(는) 값으로 바로 쓸 수 없습니다. ${name}[i] 처럼 항목을 지정하세요.`);
@@ -158,33 +205,158 @@ function compileBinary(node, ctx) {
 }
 
 /**
- * 엔트리에는 일반 거듭제곱 블록이 없다.
- *  - ** 2      -> 제곱(square)
- *  - ** 0.5    -> 제곱근(root)
- *  - ** 정수 n -> 곱셈 n번으로 펼치기
+ * 상수만으로 이루어진 식이면 그 값을, 아니면 null 을 돌려준다.
+ * (`x ** (1/3)` 처럼 지수를 계산해서 적을 수 있게 하기 위한 것)
+ */
+export function foldConstant(node) {
+  if (!node) return null;
+  switch (node.type) {
+    case 'Number': return node.value;
+    case 'Unary': {
+      if (node.operator !== '-') return null;
+      const value = foldConstant(node.argument);
+      return value === null ? null : -value;
+    }
+    case 'Binary': {
+      const left = foldConstant(node.left);
+      const right = foldConstant(node.right);
+      if (left === null || right === null) return null;
+      switch (node.operator) {
+        case '+': return left + right;
+        case '-': return left - right;
+        case '*': return left * right;
+        case '/': return right === 0 ? null : left / right;
+        case '%': return right === 0 ? null : left % right;
+        case '//': return right === 0 ? null : Math.floor(left / right);
+        case '**': return left ** right;
+        default: return null;
+      }
+    }
+    default: return null;
+  }
+}
+
+/** 소수부를 몇 자리까지 이진 전개할지 (2^-20 ≈ 0.000001) */
+const FRACTION_BITS = 20;
+
+/**
+ * 엔트리에는 일반 거듭제곱 블록이 없다. 있는 것은 제곱(square)과 제곱근(root)뿐이다.
+ * 그런데 이 둘만으로 모든 실수 지수를 만들 수 있다.
+ *
+ *   정수부  x^13 = ((x^2)^2 · x)^2 · x        (제곱과 곱셈으로, 자릿수만큼만)
+ *   소수부  x^0.b1b2b3… = √(x^b1 · √(x^b2 · √(x^b3 · …)))
+ *
+ * 소수부 전개는 지수를 2배씩 하며 1이 넘는지 보는 이진 전개다.
+ * 0.5, 0.25, 0.75 처럼 2의 거듭제곱으로 떨어지는 지수는 **정확히** 맞고,
+ * 1/3 같은 무한소수는 20자리에서 끊어 사실상 같은 값(오차 10^-6 수준)이 된다.
+ *
+ * 반복 블록을 쓰지 않는 이유: 엔트리 반복은 한 번 돌 때마다 프레임을 넘긴다.
+ * 값을 구하는 식이 여러 프레임에 걸치면 안 되므로 컴파일할 때 펼쳐 둔다.
  */
 function compilePower(node, ctx) {
-  const exponent = node.right;
-  const base = compileValue(node.left, ctx);
-  if (!base) return null;
+  const exponent = foldConstant(node.right);
+  if (exponent === null) {
+    return ctx.error(
+      node,
+      '거듭제곱의 지수는 숫자로 정해져 있어야 합니다. (엔트리에는 거듭제곱 블록이 없어서 컴파일할 때 펼쳐 넣습니다)',
+    );
+  }
+  return buildPower(node.left, exponent, node, ctx);
+}
 
-  if (exponent.type === 'Number') {
-    if (exponent.value === 2) return ctx.block('calc_operation', [null, base, null, 'square']);
-    if (exponent.value === 0.5) return ctx.block('calc_operation', [null, base, null, 'root']);
-    if (Number.isInteger(exponent.value) && exponent.value >= 1 && exponent.value <= 8) {
-      let result = base;
-      for (let i = 1; i < exponent.value; i += 1) {
-        result = ctx.block('calc_basic', [result, 'MULTI', compileValue(node.left, ctx)]);
-      }
-      return result;
-    }
-    if (exponent.value === 1) return base;
+/**
+ * 밑(baseNode)의 exponent 제곱을 블록 트리로 만든다.
+ * 지수에 따라 밑이 여러 번 들어가므로, 값이 매번 달라지는 random() 은 막는다.
+ */
+export function buildPower(baseNode, exponent, node, ctx) {
+  if (!Number.isFinite(exponent)) return ctx.error(node, '거듭제곱의 지수가 올바르지 않습니다.');
+  if (exponent === 0) return ctx.number(1);
+
+  if (exponent < 0) {
+    const positive = buildPower(baseNode, -exponent, node, ctx);
+    return positive && ctx.block('calc_basic', [ctx.number(1), 'DIVIDE', positive]);
   }
 
-  return ctx.error(
-    node,
-    '엔트리에는 일반 거듭제곱 블록이 없습니다. ** 뒤에는 2(제곱), 0.5(제곱근), 또는 1~8 사이 정수만 쓸 수 있습니다.',
-  );
+  let uses = 0;
+  let failed = false;
+  const base = () => {
+    uses += 1;
+    const compiled = compileValue(baseNode, ctx);
+    if (!compiled) failed = true;
+    return compiled;
+  };
+  const square = (value) => ctx.block('calc_operation', [null, value, null, 'square']);
+  const root = (value) => ctx.block('calc_operation', [null, value, null, 'root']);
+  const multiply = (left, right) => ctx.block('calc_basic', [left, 'MULTI', right]);
+
+  const whole = Math.floor(exponent);
+  const { bits, exact } = fractionBits(exponent - whole);
+  const wholePart = integerPower(whole, base, square, multiply);
+  const fractionPart = fractionPower(bits, 0, base, root, multiply);
+
+  let result = wholePart && fractionPart ? multiply(wholePart, fractionPart) : wholePart ?? fractionPart;
+
+  // 이진 전개가 딱 떨어지지 않았으면 남은 오차를 뉴턴 보정으로 지운다
+  if (result && !exact) {
+    const refiner = requirePowerRefiner(ctx);
+    result = ctx.block(`func_${refiner.id}`, [result, base(), ctx.number(exponent)]);
+  }
+
+  if (failed) return null;
+  if (uses > 1 && containsRandom(baseNode)) {
+    return ctx.error(
+      node,
+      '이 지수는 밑을 여러 번 써야 해서 random() 이 들어간 값에는 쓸 수 없습니다. 변수에 먼저 담아 두고 쓰세요.',
+    );
+  }
+
+  return result ?? ctx.number(1);
+}
+
+/** x^n 을 제곱과 곱셈으로. n 이 0이면 null(=1) */
+function integerPower(n, base, square, multiply) {
+  if (n <= 0) return null;
+  if (n === 1) return base();
+  const half = integerPower(Math.floor(n / 2), base, square, multiply);
+  const squared = square(half);
+  return n % 2 === 1 ? multiply(squared, base()) : squared;
+}
+
+/** 소수부를 이진 전개해서 √ 중첩으로. 남은 자리가 모두 0이면 null(=1) */
+function fractionPower(bits, index, base, root, multiply) {
+  if (index >= bits.length) return null;
+  const rest = fractionPower(bits, index + 1, base, root, multiply);
+  let inner = rest;
+  if (bits[index] === 1) inner = rest ? multiply(base(), rest) : base();
+  return inner ? root(inner) : null;
+}
+
+/**
+ * 0 <= fraction < 1 을 이진 소수로. 뒤쪽 0은 버린다.
+ * 자릿수 안에서 딱 떨어졌으면 exact 가 true 다 (0.5, 0.25, 0.75 …).
+ */
+function fractionBits(fraction) {
+  const bits = [];
+  let rest = fraction;
+  while (bits.length < FRACTION_BITS && rest > 0) {
+    rest *= 2;
+    if (rest >= 1) {
+      bits.push(1);
+      rest -= 1;
+    } else {
+      bits.push(0);
+    }
+  }
+  while (bits.length > 0 && bits[bits.length - 1] === 0) bits.pop();
+  return { bits, exact: rest === 0 };
+}
+
+/** 밑을 두 번 이상 쓰면 값이 달라지는 식인지 */
+function containsRandom(node) {
+  if (node === null || typeof node !== 'object') return false;
+  if (Array.isArray(node)) return node.some(containsRandom);
+  if (node.type === 'Call' && (node.callee === 'random' || node.callee === 'random_color')) return true;
+  return Object.entries(node).some(([key, value]) => key !== 'loc' && containsRandom(value));
 }
 
 function compileComparison(node, ctx) {
@@ -268,6 +440,17 @@ function compileIndex(node, ctx) {
   return target && ctx.block('char_at', [null, target, null, index, null]);
 }
 
+/**
+ * 사용자 정의 함수에 넘길 인자들을 만든다.
+ * `이름?` 으로 선언한 자리는 판단 칸이라 판단 블록만 꽂을 수 있으므로 compileBoolean 을
+ * 쓰고, 나머지 자리는 값으로 맞춰 넣는다.
+ */
+export function compileCallArguments(fn, args, ctx) {
+  return args.map((arg, index) => (fn.booleanParams?.has(fn.params[index])
+    ? compileBoolean(arg, ctx)
+    : compileValue(arg, ctx)));
+}
+
 /** 식별자가 리스트를 가리키면 그 엔트리 변수 항목을 돌려준다 */
 export function resolveList(node, ctx) {
   if (!node || node.type !== 'Identifier') return null;
@@ -298,7 +481,7 @@ function compileCall(node, ctx) {
       ctx.error(node, `함수 '${callee}' 는 인자가 ${fn.params.length}개여야 합니다.`);
       return null;
     }
-    const params = args.map((arg) => compileValue(arg, ctx));
+    const params = compileCallArguments(fn, args, ctx);
     if (params.some((p) => p === null)) return null;
     return ctx.block(`func_${fn.id}`, params);
   }
@@ -329,6 +512,16 @@ function compileCall(node, ctx) {
       return from && to && ctx.block('calc_rand', [null, from, null, to, null]);
     }
 
+    case 'root': {
+      // n제곱근 = x ^ (1/n). 지수 규칙은 ** 와 같다.
+      if (!arity(2)) return null;
+      const degree = foldConstant(args[1]);
+      if (degree === null || degree === 0) {
+        return ctx.error(node, 'root(값, n) 의 n 은 0이 아닌 숫자로 정해져 있어야 합니다.');
+      }
+      return buildPower(args[0], 1 / degree, node, ctx);
+    }
+
     case 'key_down': {
       if (!arity(1)) return null;
       const code = literalKeyCode(args[0], ctx, node);
@@ -350,7 +543,8 @@ function compileCall(node, ctx) {
       return target && ctx.block('distance_something', [null, target, null]);
     }
 
-    case 'x': case 'y': case 'angle': case 'way': case 'size': {
+    case 'x': case 'y': case 'angle': case 'way': case 'size':
+    case 'costume': case 'costume_number': {
       if (!arity(1)) return null;
       const coordinate = OBJECT_COORDINATES[callee];
       if (args[0].type === 'String' && args[0].value === 'mouse') {

@@ -127,3 +127,71 @@ export function requireScaleSetter(property, ctx) {
   ctx.runtimeFunctions.set(property, fn);
   return fn;
 }
+
+
+// ---------------------------------------------------------------------------
+//  거듭제곱 다듬기
+// ---------------------------------------------------------------------------
+
+/**
+ * 무한소수 지수(예: 1/3)는 이진 전개를 어디선가 끊어야 해서 아주 작은 오차가 남는다.
+ * 엔트리에 있는 자연로그(ln)로 뉴턴 보정을 한 번 하면 그 오차가 제곱으로 줄어
+ * 사실상 정확한 값이 된다.
+ *
+ *   y ≈ x^p 일 때   y ← y × (1 + p·ln x − ln y)
+ *
+ *   y = x^p(1+ε) 이면 ln y = p·ln x + ln(1+ε) ≈ p·ln x + ε − ε²/2 이므로
+ *   보정 뒤 오차는 ε²/2 가 된다. 10^-6 이던 오차가 10^-13 수준이 된다.
+ *
+ * 어림값을 두 번 써야 하는데, 식을 그대로 복사하면 블록이 두 배가 된다.
+ * 그래서 매개변수로 받는 함수로 만들어 어림값 블록 하나만 넘긴다.
+ */
+export function requirePowerRefiner(ctx) {
+  const existing = ctx.runtimeFunctions.get('power');
+  if (existing) return existing;
+
+  const id = ctx.newId();
+  const params = ['어림값', '밑', '지수'];
+  const paramTypes = new Map(params.map((name) => [name, `stringParam_${ctx.newId()}`]));
+  const param = (name) => ctx.block(paramTypes.get(name), []);
+  const calc = (left, operator, right) => ctx.block('calc_basic', [left, operator, right]);
+  const ln = (value) => ctx.block('calc_operation', [null, value, null, 'ln']);
+
+  //  어림값 × (1 + 지수 × ln(밑) − ln(어림값))
+  const refined = calc(
+    param('어림값'),
+    'MULTI',
+    calc(
+      calc(ctx.number(1), 'PLUS', calc(param('지수'), 'MULTI', ln(param('밑')))),
+      'MINUS',
+      ln(param('어림값')),
+    ),
+  );
+
+  const field = ctx.block('function_field_label', [
+    '[Tess] 거듭제곱 다듬기',
+    params.reduceRight(
+      (next, name) => ctx.block('function_field_string', [ctx.block(paramTypes.get(name), []), next]),
+      null,
+    ),
+  ]);
+
+  const create = ctx.block('function_create_value', [field, null, null, refined], [[]]);
+  create.x = 50;
+  create.y = 30;
+
+  const fn = {
+    id,
+    name: '[Tess] 거듭제곱 다듬기',
+    generated: true,
+    type: 'value',
+    params,
+    paramTypes,
+    isValue: true,
+    localVariables: [],
+    content: [[create]],
+  };
+  ctx.functions.push(fn);
+  ctx.runtimeFunctions.set('power', fn);
+  return fn;
+}

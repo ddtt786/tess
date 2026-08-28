@@ -19,6 +19,7 @@ scene "main":
     scale_y = 100
 
     when start do
+      say high_scores[1] # wow!
       forever:
         if mouse_down:
           forward 5
@@ -30,6 +31,17 @@ scene "main":
     when key "space" up do
       forward 10
       global_score += 1
+      jump "power"
+    end
+  end
+end
+
+scene "power":
+  object "bat":
+    costume idle "cat_idle.png"
+    
+    when scene start do
+      say "you win!"
     end
   end
 end

@@ -1,0 +1,157 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Tess",
+  "scopeName": "source.tess",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#string"
+    },
+    {
+      "include": "#color"
+    },
+    {
+      "include": "#number"
+    },
+    {
+      "include": "#declaration"
+    },
+    {
+      "include": "#function-call"
+    },
+    {
+      "include": "#keyword"
+    },
+    {
+      "include": "#operator"
+    },
+    {
+      "include": "#identifier"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.number-sign.tess",
+      "match": "#(?![0-9a-fA-F]{6}(?![0-9a-zA-Z_])).*$"
+    },
+    "string": {
+      "name": "string.quoted.double.tess",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.tess",
+          "match": "\\\\(u[0-9a-fA-F]{4}|.)"
+        }
+      ]
+    },
+    "color": {
+      "name": "constant.other.color.tess",
+      "match": "#[0-9a-fA-F]{6}(?![0-9a-zA-Z_])"
+    },
+    "number": {
+      "name": "constant.numeric.tess",
+      "match": "(?<![A-Za-z0-9_])[0-9]+(\\.[0-9]+)?"
+    },
+    "declaration": {
+      "patterns": [
+        {
+          "match": "((?<![A-Za-z0-9_])(?:function)(?![A-Za-z0-9_]))\\s+([A-Za-z_\\p{L}][A-Za-z0-9_\\p{L}]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.tess"
+            },
+            "2": {
+              "name": "entity.name.function.tess"
+            }
+          }
+        },
+        {
+          "match": "((?<![A-Za-z0-9_])(?:list|var)(?![A-Za-z0-9_]))\\s+([A-Za-z_\\p{L}][A-Za-z0-9_\\p{L}]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.tess"
+            },
+            "2": {
+              "name": "variable.other.tess"
+            }
+          }
+        },
+        {
+          "name": "keyword.declaration.tess",
+          "match": "(?<![A-Za-z0-9_])(?:useobject|function|project|usetext|object|scene|text|list|use|var)(?![A-Za-z0-9_])"
+        }
+      ]
+    },
+    "function-call": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.tess",
+          "match": "(?<![A-Za-z0-9_])(?:costume_number|text_content|random_color|block_count|uppercase|lowercase|key_down|touching|distance|index_of|contains|from_hex|costume|replace|reverse|random|length|to_hex|log10|floor|round|angle|slice|count|type|asin|acos|atan|log2|ceil|root|size|join|sin|cos|tan|abs|way|now|ln|x|y)(?![A-Za-z0-9_])(?=\\s*\\()"
+        },
+        {
+          "match": "([A-Za-z_\\p{L}][A-Za-z0-9_\\p{L}]*)(?=\\s*\\()",
+          "captures": {
+            "1": {
+              "name": "entity.name.function.tess"
+            }
+          }
+        }
+      ]
+    },
+    "keyword": {
+      "patterns": [
+        {
+          "name": "constant.language.tess",
+          "match": "(?<![A-Za-z0-9_])(?:transparent|vertical|false|front|other|green|true|next|back|this|them|free|none|blue|all|red|me)(?![A-Za-z0-9_])"
+        },
+        {
+          "name": "variable.language.tess",
+          "match": "(?<![A-Za-z0-9_])(?:costume_number|block_count|mouse_down|boost_mode|touchable|nickname|clicked|user_id|device|answer|timer)(?![A-Za-z0-9_])"
+        },
+        {
+          "name": "keyword.control.tess",
+          "match": "(?<![A-Za-z0-9_])(?:forever|restart|repeat|return|while|until|break|else|then|wait|skip|stop|end|if|do)(?![A-Za-z0-9_])"
+        },
+        {
+          "name": "keyword.control.event.tess",
+          "match": "(?<![A-Za-z0-9_])(?:cloned|signal|click|stage|start|when|key)(?![A-Za-z0-9_])"
+        },
+        {
+          "name": "keyword.other.command.tess",
+          "match": "(?<![A-Za-z0-9_])(?:description|rotation|costume|default|effects|forward|prepend|visible|append|bounce|bubble|clones|insert|remove|clear|clone|force|order|pitch|reset|sound|speed|stamp|steer|think|timer|title|voice|write|call|draw|fill|flip|hide|jump|kill|lock|look|move|name|play|prev|read|send|show|size|turn|add|ask|bgm|del|fps|say|tts|go|id|x|y)(?![A-Za-z0-9_])"
+        },
+        {
+          "name": "support.variable.property.tess",
+          "match": "(?<![A-Za-z0-9_])(?:text_strikethrough|effect_brightness|text_underline|effect_color|effect_alpha|sound_volume|text_content|sound_speed|text_italic|draw_color|draw_width|draw_alpha|fill_color|font_color|text_align|line_break|font_size|text_bold|rotation|bg_color|scale_x|scale_y|costume|angle|size|font|way|x|y)(?![A-Za-z0-9_])"
+        }
+      ]
+    },
+    "operator": {
+      "patterns": [
+        {
+          "name": "keyword.operator.assignment.tess",
+          "match": "\\*\\*=|[+\\-*/%]=|=(?!=)"
+        },
+        {
+          "name": "keyword.operator.comparison.tess",
+          "match": "==|!=|>=|<=|>|<"
+        },
+        {
+          "name": "keyword.operator.arithmetic.tess",
+          "match": "\\*\\*|//|[+\\-*/%]"
+        },
+        {
+          "name": "keyword.operator.word.tess",
+          "match": "(?<![A-Za-z0-9_])(?:from|and|not|for|or|in|at|to|up)(?![A-Za-z0-9_])"
+        }
+      ]
+    },
+    "identifier": {
+      "name": "variable.other.tess",
+      "match": "[A-Za-z_\\p{L}][A-Za-z0-9_\\p{L}]*"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "tess-lang",
+  "displayName": "Tess",
+  "description": "Tess 언어 문법 강조 (엔트리 작품으로 컴파일되는 텍스트 언어)",
+  "version": "1.0.0",
+  "publisher": "tess",
+  "license": "ISC",
+  "engines": { "vscode": "^1.60.0" },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "tess",
+        "aliases": ["Tess", "tess"],
+        "extensions": [".tess"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "tess",
+        "scopeName": "source.tess",
+        "path": "./syntaxes/tess.tmLanguage.json"
+      }
+    ]
+  }
+}
