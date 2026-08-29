@@ -30,6 +30,20 @@ const BUILTIN_ASSET = /(?:^|\/)bower_components\/[^/]+\/(images\/[^?#]+)$/;
 // 크기가 아니라 project.json 의 dimension 이 실제 크기라, 이것만 `size` 를 적어 둔다.
 const BLANK_IMAGE = /(?:^|\/)images\/_1x1\.png$/;
 
+/**
+ * Path of the PNG entry entry.js captured for an SVG costume, or null.
+ *
+ * The vector paint editor accepts images larger than its canvas and lets the
+ * user move them into place. It captures that framing into a sibling PNG on
+ * save but re-centres the SVG itself, so the SVG no longer matches either the
+ * saved picture or the `dimension` the work renders at.
+ */
+function capturedPngFor(fileurl, entriesByPath) {
+  if (!/\.svg$/i.test(fileurl ?? '')) return null;
+  const png = `${fileurl.slice(0, -4)}.png`;
+  return entriesByPath.has(png) ? png : null;
+}
+
 /** 엔트리 번들에 들어 있는 기본 리소스의 실제 바이트열. 못 찾으면 null */
 function builtinAssetBytes(fileurl, runtimeDir) {
   const match = BUILTIN_ASSET.exec(fileurl ?? '');
@@ -185,6 +199,8 @@ function buildContext(project, entries, options = {}) {
     allSizes: options.sizes === true,
     // Fold a literal list/string index into one number instead of writing `(3 - 1)`.
     foldIndex: options.foldIndex === true,
+    // Keep SVG costumes as SVG instead of taking the PNG entry captured on save.
+    keepSvg: options.keepSvg === true,
     varsById: new Map(),
     globalVars: [],
     localVarsByObject: new Map(),
@@ -355,8 +371,7 @@ function buildContext(project, entries, options = {}) {
     return candidate;
   };
 
-  const registerAsset = (info, kind, ext) => {
-    const fileurl = info.source.fileurl;
+  const registerAsset = (info, kind, ext, fileurl = info.source.fileurl) => {
     if (!fileurl) return null;
     // 같은 파일을 여러 모양이 함께 쓰면 한 번만 저장하고 같은 경로를 돌려준다.
     if (assetTargets.has(fileurl)) return assetTargets.get(fileurl);
@@ -376,8 +391,11 @@ function buildContext(project, entries, options = {}) {
 
   for (const [, info] of ctx.picturesById) {
     const pic = info.source;
-    const ext = pic.imageType ? `.${pic.imageType}` : path.extname(pic.fileurl || '') || '.png';
-    info.relativePath = registerAsset(info, 'image', ext);
+    const png = ctx.keepSvg ? null : capturedPngFor(pic.fileurl, entriesByPath);
+    const ext = png
+      ? '.png'
+      : (pic.imageType ? `.${pic.imageType}` : path.extname(pic.fileurl || '') || '.png');
+    info.relativePath = registerAsset(info, 'image', ext, png ?? pic.fileurl);
     info.blankImage = BLANK_IMAGE.test(pic.fileurl ?? '');
   }
   for (const [, info] of ctx.soundsById) {

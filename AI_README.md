@@ -482,6 +482,42 @@ arrow-js 는 `dist/index.mjs` 를 씁니다 — 같은 패키지의 `index.min.m
 만든 `.ent` 를 되돌린 것일 수도 있습니다. 그래서 이 UI 는 `innerHTML` 을 아예 쓰지 않고
 `textContent` 로만 글자를 넣습니다 (`test/player-debug.test.js` 가 jsdom 으로 확인합니다).
 
+#### 캔버스 좌표계 — 640×360 가정과 그 여파
+
+엔트리는 캔버스를 **`width=640 height=360` 으로 만들고**(`util/init.js`), 무대 컨테이너를
+`x=320, y=180, scale=640/480` 으로 놓습니다(`class/stage.js` `initStage`). 즉 무대 좌표
+(−240…240, −135…135)는 컨테이너 변환이 처리하지만, **일부 UI 는 그 변환을 거치지 않고
+캔버스 픽셀에 직접 그립니다.** 우리는 큰 화면에서 선명하게 보이도록
+`setCanvasResolution` 이 그리기 버퍼를 960~1920px 로 키우므로, 그 두 갈래가 어긋납니다.
+
+**물어보기 입력창.** `Entry.stage.showInputField` 는 `CanvasInput` 을
+`x:15, y:275, width:520, height:24, padding:13, borderWidth:2, fontSize:20` 으로 만들고,
+`CanvasInput.render` 는 그것을 `_ctx.drawImage(_renderCanvas, _x, _y)` 로 캔버스에 **원본
+픽셀 그대로** 붙입니다. 버퍼가 1920 이면 640 기준으로 그린 입력창이 화면의 27% 자리에
+1/3 크기로 남습니다 — 왼쪽 위 구석에 작게 뜨는 증상이 이것입니다. `scaleInputFieldToBuffer`
+가 `showInputField` 를 감싸서 길이·위치를 전부 `버퍼폭/640` 배로 키웁니다. 배율이 하나뿐
+이므로 캔버스 안에서 차지하는 **비율**은 640 기준일 때와 같고, 따라서
+
+- 무대 컨테이너에 붙는 확인 단추(`inputSubmitButton`, `x=190, y=71.5`)는 컨테이너 좌표라
+  손댈 필요 없이 그대로 오른쪽 끝에 붙고,
+- 입력창 판정(`CanvasInput._overInput` 의 `x∈[−226,183], y∈[−110,−73]`)은 무대 좌표로
+  박혀 있으므로 그대로 맞습니다.
+
+`width`·`height`·`padding`·`borderWidth` setter 만 `_calcWH`/`_updateCanvasWH` 를 다시
+부르므로 길이를 먼저 맞추고 `x`/`y` 를 마지막에 넣습니다. setter 들은 `render()` 를 돌려
+주는데 그 `render()` 는 아무것도 반환하지 않으므로(콜백 안에서 `return self` 합니다) 체이닝은
+쓸 수 없습니다.
+
+**마우스 좌표.** 엔트리는 마우스 위치를 `Entry.stage.getBoundRect()` 로 잰 캔버스 사각형에
+대고 `x = 480*(l/width − 0.5)`, `y = −270*(c/height − 0.5)` 로 환산합니다. 그런데 그
+사각형은 `_boundRect` 에 캐시되고 **`Entry.windowResized` 때만** 다시 잽니다. 디버그 패널을
+열면 `--debug-panel-width` 가 `#workspace` 의 `padding-right` 를 밀어 캔버스가 옮겨 가는데,
+창 크기는 그대로라 엔트리는 옛날 사각형을 계속 씁니다 — 실제 마우스와 작품이 읽는 좌표가
+어긋나는 원인입니다. `refreshBoundRect` 가 `updateBoundRect()` 를 직접 불러서 맞춥니다.
+부르는 곳은 세 군데입니다: `tessLayoutCanvas` 끝(크기를 바꾼 직후), `#workspace` 의
+`padding-right` `transitionend`(패널은 0.15s 동안 밀려나므로 그때가 최종 위치), 그리고
+400ms 주기 타이머(그 밖의 이유로 배치가 움직인 경우).
+
 ### 엔트리 작품을 Tess 로 되돌리기 — `decompile`
 
 ```
@@ -526,6 +562,27 @@ temp/rider_tess/
 
 그래도 경로가 겹치면 뒤에 번호를 붙여서(`..._2.png`) 반드시 다른 파일이 되게 합니다.
 같은 파일을 여러 모양이 함께 쓰면 한 번만 저장하고 모두 그 경로를 가리킵니다.
+
+**SVG 모양은 엔트리가 함께 저장해 둔 PNG 로 가져옵니다** (`--keep-svg` 로 끕니다).
+엔트리 벡터 그림판은 그림판 크기를 넘는 이미지도 모양으로 받아 주고, 사용자는 그것을
+옮겨서 화면에 맞춰 놓고 저장합니다. 엔트리는 그때 화면을 **PNG 로 캡처해 두지만 SVG 는
+저장한 뒤 다시 가운데로 옮겨 버려서**, 맞춰 놓은 위치가 SVG 에는 남지 않습니다. 그래서
+`.ent` 안의 `image/<이름>.svg` 옆에는 늘 같은 이름의 `.png` 가 함께 들어 있고, 둘의 내용이
+다릅니다 — 되돌릴 때 그 PNG 를 대신 씁니다(`capturedPngFor`).
+
+`examples/ent/image.ent` 가 그 예입니다. 모양의 `dimension` 은 960×540 인데 SVG 는
+`viewBox="0 0 1100 670"` 이고 그 안의 `<image>` 가 `x=139.8 y=129.2` 로 밀려 있습니다.
+SVG 를 그대로 쓰면 두 가지가 함께 어긋납니다.
+
+1. 컴파일러는 그림 파일에서 크기를 직접 재므로(`assets.js` `svgSize`) `dimension` 이
+   1100×670 이 되고, 되돌린 `scale_x 51%` 가 그 위에 곱해져 무대 밖으로 넘칩니다.
+2. `<image>` 가 밀려 있어서 화면 왼쪽·위가 비고 그림이 오른쪽 아래로 쏠립니다.
+
+PNG(960×540)는 저장 당시 화면 그대로라 두 문제가 같이 없어집니다. 엔트리 기본 오브젝트의
+SVG(`bower_components/…/images/…`)는 `.ent` 안이 아니라 실행기 번들에서 꺼내 오고 캡처
+PNG 도 없으므로 그대로 둡니다 — 그림판을 거친 적이 없어 어긋날 일도 없습니다. PNG 는
+`dimension` 해상도로 굳은 래스터라 크게 확대하면 SVG 보다 흐릿해집니다. 그것이 문제일 때
+`--keep-svg` 를 씁니다.
 
 ```tess
 # main.tess

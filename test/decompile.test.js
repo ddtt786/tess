@@ -1188,3 +1188,55 @@ test('경로가 그래도 겹치면 뒤에 번호를 붙인다', () => {
   assert.equal(images.length, 2);
   assert.equal(new Set(images).size, 2, images.join(', '));
 });
+
+// --- 벡터 모양은 엔트리가 저장할 때 남긴 PNG 로 가져온다 ---------------------------
+//
+// 엔트리 벡터 그림판은 그림판 크기를 넘는 이미지도 모양으로 받아 주고, 사용자가 그것을
+// 옮겨서 맞춰 놓으면 저장할 때 그 화면을 PNG 로 캡처해 둔다. 그런데 SVG 쪽은 저장한
+// 뒤 다시 가운데로 옮겨 버려서, 맞춰 놓은 위치가 SVG 에는 남지 않는다.
+
+/** SVG 모양 하나짜리 project. `withPng` 면 엔트리가 같이 저장한 PNG 도 있는 것으로 친다 */
+function svgPictureProject() {
+  const project = minimalProject(1);
+  project.objects[0].sprite.pictures = [{
+    id: 'pic1',
+    name: '배경',
+    filename: 'aaaa',
+    imageType: 'svg',
+    fileurl: 'temp/aa/aa/image/aaaa.svg',
+    dimension: { width: 960, height: 540 },
+  }];
+  project.objects[0].selectedPictureId = 'pic1';
+  return project;
+}
+
+const svgEntries = (withPng) => [
+  { name: 'temp/aa/aa/image/aaaa.svg', data: Buffer.from('<svg viewBox="0 0 1100 670"></svg>') },
+  ...(withPng ? [{ name: 'temp/aa/aa/image/aaaa.png', data: Buffer.from('가운데로 안 옮겨진 그림') }] : []),
+];
+
+test('SVG 모양은 기본적으로 엔트리가 함께 저장한 PNG 로 가져온다', () => {
+  const result = decompileProject(svgPictureProject(), svgEntries(true));
+
+  const images = result.assets.filter((a) => a.path.startsWith('assets/image/'));
+  assert.deepEqual(images.map((a) => a.path), ['assets/image/주인공_배경.png']);
+  assert.equal(images[0].data.toString('utf-8'), '가운데로 안 옮겨진 그림');
+
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  assert.match(fragment, /default costume 배경 "assets\/image\/주인공_배경\.png"/);
+});
+
+test('--keep-svg 를 주면 SVG 를 그대로 가져온다', () => {
+  const result = decompileProject(svgPictureProject(), svgEntries(true), { keepSvg: true });
+
+  const images = result.assets.filter((a) => a.path.startsWith('assets/image/'));
+  assert.deepEqual(images.map((a) => a.path), ['assets/image/주인공_배경.svg']);
+  assert.match(images[0].data.toString('utf-8'), /<svg/);
+});
+
+test('함께 저장한 PNG 가 없으면 SVG 를 그대로 가져온다', () => {
+  const result = decompileProject(svgPictureProject(), svgEntries(false));
+
+  const images = result.assets.filter((a) => a.path.startsWith('assets/image/'));
+  assert.deepEqual(images.map((a) => a.path), ['assets/image/주인공_배경.svg']);
+});

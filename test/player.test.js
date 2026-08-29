@@ -180,6 +180,40 @@ test('캔버스 그리기 해상도는 처음 한 번만 정하고, 그 뒤에�
   });
 });
 
+test('물어보기 입력창을 캔버스 해상도에 맞춰 키운다', async () => {
+  // 엔트리는 입력창을 캔버스 픽셀 좌표에 그대로 그린다(640x360 기준). 우리 캔버스는
+  // 그보다 크므로, 그 배율만큼 같이 키우지 않으면 왼쪽 위에 작게 그려진다.
+  await withServer({}, async (server) => {
+    const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
+
+    assert.match(ui, /const ENTRY_BUFFER_WIDTH = 640;/);
+    const scale = ui.slice(ui.indexOf('const scaleInputFieldToBuffer'), ui.indexOf('const setCanvasResolution'));
+    assert.match(scale, /stage\.showInputField = /);
+    for (const name of ['fontSize', 'borderWidth', 'borderRadius', 'padding', 'width', 'height', 'x', 'y']) {
+      assert.ok(scale.includes(`'${name}'`), `${name} 도 같이 키워야 한다`);
+    }
+    // 길이를 먼저 맞춘 뒤 위치를 옮겨야 마지막 setter 가 다시 그린다
+    assert.ok(scale.indexOf("'width'") < scale.indexOf("'x'"));
+    assert.ok(ui.includes('scaleInputFieldToBuffer(bufferW);'));
+  });
+});
+
+test('무대 배치가 바뀌면 엔트리가 캐시한 캔버스 위치를 새로 잰다', async () => {
+  // 엔트리는 창 크기가 바뀔 때만 _boundRect 를 다시 재므로, 디버그 패널이 무대를
+  // 밀어내면 마우스 좌표 블록이 옛날 위치로 계산한다.
+  await withServer({}, async (server) => {
+    const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
+
+    assert.match(ui, /const refreshBoundRect = \(\) => \{/);
+    assert.match(ui, /stage\.updateBoundRect\(\)/);
+
+    const layout = ui.slice(ui.indexOf('function layoutCanvas()'), ui.indexOf('window.addEventListener(\'resize\''));
+    assert.match(layout, /refreshBoundRect\(\);/);
+    // 패널이 열릴 때 무대는 CSS 전환으로 옆으로 밀리므로 끝난 뒤 한 번 더 잰다
+    assert.match(ui, /propertyName === 'padding-right'/);
+  });
+});
+
 test('디버그 UI 와 arrow-js 를 모듈로 내보낸다', async () => {
   await withServer({}, async (server) => {
     const page = await (await fetch(server.url)).text();

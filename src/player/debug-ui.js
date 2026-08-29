@@ -1079,6 +1079,36 @@ window.tessDescribeListIndexError = function describeListIndexError(reportedBloc
 // --- 캔버스 배치 ------------------------------------------------------------
 let resolutionFixed = false;
 
+// Buffer size every hard-coded pixel offset inside entryjs assumes.
+const ENTRY_BUFFER_WIDTH = 640;
+
+/**
+ * Rescales the ask() input box to the canvas buffer we actually use.
+ * Entry draws it onto the canvas at raw pixel offsets (x 15, y 275, width 520)
+ * that assume a 640x360 buffer, so a bigger buffer leaves it small in the
+ * top-left corner. The stage-local submit button and the hit test both stay in
+ * entry coordinates, so scaling every length by the same ratio lines them up.
+ */
+const scaleInputFieldToBuffer = (bufferW) => {
+  const stage = window.Entry && Entry.stage;
+  const ratio = bufferW / ENTRY_BUFFER_WIDTH;
+  if (!stage || typeof stage.showInputField !== 'function' || ratio === 1) return;
+  const showInputField = stage.showInputField;
+  stage.showInputField = function tessShowInputField(...args) {
+    showInputField.apply(this, args);
+    const field = this.inputField;
+    if (!field || field.tessScaled || typeof field.width !== 'function') return;
+    field.tessScaled = true;
+    // These setters return undefined, so they cannot be chained. Lengths that
+    // feed outerW/outerH go before the position so the last call redraws.
+    for (const name of ['fontSize', 'borderWidth', 'borderRadius', 'padding',
+      'width', 'height', 'x', 'y']) {
+      field[name](field[name]() * ratio);
+    }
+    Entry.requestUpdateTwice = true;
+  };
+};
+
 /** 그리기 해상도는 처음 한 번만 정한다. 바꿀 때마다 캔버스가 지워지고 화면이 깜빡인다. */
 const setCanvasResolution = () => {
   if (resolutionFixed) return;
@@ -1098,9 +1128,20 @@ const setCanvasResolution = () => {
     stage.canvas.y = bufferH / 2;
     stage.canvas.scaleX = bufferW / 480;
     stage.canvas.scaleY = bufferW / 480;
+    scaleInputFieldToBuffer(bufferW);
     Entry.requestUpdate = true;
     resolutionFixed = true;
   } catch (e) { /* 실패하면 엔트리 기본 해상도를 쓴다 */ }
+};
+
+/**
+ * Entry caches the canvas client rect and only refreshes it on window resize,
+ * so mouse coordinate blocks read stale positions after the debug panel moves
+ * or resizes the stage.
+ */
+const refreshBoundRect = () => {
+  const stage = window.Entry && Entry.stage;
+  if (stage && typeof stage.updateBoundRect === 'function') stage.updateBoundRect();
 };
 
 /** 남은 공간에 16:9 로 꽉 차도록 캔버스의 CSS 크기만 맞춘다 */
@@ -1119,11 +1160,19 @@ window.tessLayoutCanvas = function layoutCanvas() {
   canvas.style.width = targetW + 'px';
   canvas.style.height = Math.floor((targetW * 9) / 16) + 'px';
   setCanvasResolution();
+  refreshBoundRect();
 };
 window.addEventListener('resize', () => window.tessLayoutCanvas());
+
+// Opening the panel slides the stage sideways over a CSS transition, so its
+// final position is only known once that transition ends.
+document.getElementById('workspace')?.addEventListener('transitionend', (event) => {
+  if (event.propertyName === 'padding-right') refreshBoundRect();
+});
 
 setInterval(() => {
   state.runState = engineState();
   if (state.open && (state.tab === 'data' || state.tab === 'objects')) state.tick += 1;
   if (window.Entry && window.tessWatchStagePicks) window.tessWatchStagePicks();
+  refreshBoundRect();
 }, 400);
