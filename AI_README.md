@@ -500,6 +500,20 @@ arrow-js 는 `dist/index.mjs` 를 씁니다 — 같은 패키지의 `index.min.m
 박혀 있는 픽셀 값(물어보기 입력창의 `x:15, y:275` 등)이 전부 그대로 맞습니다. 그래서
 부스트 모드에서는 `scaleInputFieldToBuffer` 도 필요 없습니다.
 
+**해상도를 올릴 때는 클릭 판정도 같이 맞춰야 합니다.** PIXI 의 `InteractionManager` 는
+`setTargetElement(view, resolution)` 때 받은 해상도를 **자기 것으로 따로 들고 있고**,
+나중에 `renderer.resolution` 이 바뀌어도 따라오지 않습니다. 판정은
+
+```js
+point.x = (clientX - rect.left) * (view.width / rect.width) / this.resolution;
+```
+
+이라서, `view.width` 만 1920 이 되고 `this.resolution` 이 1 로 남으면 좌표가 무대 공간
+(0…640)이 아니라 버퍼 공간(0…1920)으로 나옵니다 — 마우스 좌표 표시는
+`Entry.stage.getBoundRect()` 로 따로 계산하므로 멀쩡한데, **클릭·터치만 배율만큼 왼쪽 위를
+눌러야 맞는** 모양이 됩니다(`touch.ent` 로 재현). 그래서 해상도를 올린 직후
+`renderer.plugins.interaction.resolution` 도 같은 값으로 맞춥니다.
+
 **2. 기본 그림은 반드시 같은 origin 이어야 합니다.** entryjs 는 기본 그림을
 `crossOrigin` 없이 `new Image()` 로 받아서 `PIXI.Texture.from` 에 넘깁니다
 (`GEHelper.newSpriteWithCallback`). 이미지가 다른 origin 에서 왔으면 WebGL 은 그것을

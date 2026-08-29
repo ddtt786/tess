@@ -1143,6 +1143,11 @@ const setCanvasResolution = () => {
     if (renderer && typeof renderer.resize === 'function' && typeof renderer.resolution === 'number') {
       renderer.resolution = bufferW / ENTRY_BUFFER_WIDTH;
       renderer.resize(ENTRY_BUFFER_WIDTH, ENTRY_BUFFER_HEIGHT);
+      // The interaction plugin keeps its own copy, taken once in setTargetElement,
+      // and divides the raw buffer offset by it (mapPositionToPoint). Left at 1 it
+      // reports hits at <resolution> times the real distance from the top-left.
+      const interaction = renderer.plugins && renderer.plugins.interaction;
+      if (interaction) interaction.resolution = renderer.resolution;
     } else {
       const bufferH = Math.round((bufferW * 9) / 16);
       canvasEl.width = bufferW;

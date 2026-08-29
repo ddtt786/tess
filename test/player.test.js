@@ -277,6 +277,19 @@ test('부스트 모드에서는 캔버스 버퍼 대신 렌더러 해상도를 �
   });
 });
 
+test('부스트 모드에서 클릭 판정도 올린 해상도를 따라간다', async () => {
+  // PIXI 의 InteractionManager 는 setTargetElement 때 받은 해상도를 따로 들고 있다가
+  // 캔버스 버퍼 좌표를 그 값으로 나눈다(mapPositionToPoint). 렌더러만 올리면 판정은
+  // 1 로 남아서, 좌표 표시는 멀쩡한데 실제보다 배율만큼 왼쪽 위를 눌러야 맞는다.
+  await withServer({}, async (server) => {
+    const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
+    const fn = ui.slice(ui.indexOf('const setCanvasResolution'), ui.indexOf('const refreshBoundRect'));
+    assert.match(fn, /interaction\.resolution = renderer\.resolution;/);
+    assert.ok(fn.indexOf('renderer.resolution =') < fn.indexOf('interaction.resolution ='),
+      '렌더러 해상도를 정한 다음에 판정 해상도를 맞춰야 한다');
+  });
+});
+
 test('디버그 패널의 부스트 모드 흉내내기는 그대로 남는다', async () => {
   // --boost 로 켠 상태에서 끈 경우를(그 반대도) 테스트할 수 있어야 하므로, 블록이
   // 돌려주는 값을 바꾸는 흉내내기는 실제 렌더러와 따로 논다.
