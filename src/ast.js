@@ -431,6 +431,12 @@ semantics.addOperation('ast', {
   LooksStatement_orderBack(_order, _back) {
     return { type: 'Order', to: 'back', loc: at(this) };
   },
+  LooksStatement_orderFirst(_order, _back) {
+    return { type: 'Order', to: 'first', loc: at(this) };
+  },
+  LooksStatement_orderLast(_order, _back) {
+    return { type: 'Order', to: 'last', loc: at(this) };
+  },
 
   // ==========================================================================
   //  글상자 · 붓 · 소리

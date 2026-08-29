@@ -307,6 +307,8 @@ Tess {
     | flip y                    -- flipY
     | order front               -- orderFront
     | order back                -- orderBack
+    | order first                -- orderFirst
+    | order last                -- orderLast
 
   // --- 8.5 글상자 제어 -------------------------------------------------------
   TextStatement

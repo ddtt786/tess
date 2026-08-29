@@ -7,6 +7,7 @@
 문법 자체의 구조와 그 안에 쓰인 PEG 기법들을 다룬다.
 
 목차
+
 1. [파이프라인에서 문법의 위치](#1-파이프라인에서-문법의-위치)
 2. [표기 규약](#2-표기-규약)
 3. [규칙 전체 구조](#3-규칙-전체-구조)
@@ -47,9 +48,9 @@ grammar.match(source)                                              src/validate.
 
 파일 맨 위 주석에 적힌 규약 두 가지가 문법 전체를 관통한다.
 
-| 규약 | 의미 |
-|---|---|
-| **대문자로 시작하는 규칙** (`Program`, `Statement`, `Expr` …) | **구문 규칙**(syntactic rule). 규칙 적용 사이의 공백·줄바꿈·주석을 Ohm이 자동으로 건너뛴다. |
+| 규약                                                               | 의미                                                                                                                           |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| **대문자로 시작하는 규칙** (`Program`, `Statement`, `Expr` …)      | **구문 규칙**(syntactic rule). 규칙 적용 사이의 공백·줄바꿈·주석을 Ohm이 자동으로 건너뛴다.                                    |
 | **소문자로 시작하는 규칙** (`identifier`, `stringLiteral`, `if` …) | **어휘 규칙**(lexical rule). 공백을 자동으로 건너뛰지 않는다 — 키워드·리터럴·연산자처럼 "붙어 있어야 의미가 있는" 토큰에 쓴다. |
 
 이 구분 덕분에 `Statement`류 규칙 안에서는 토큰 사이 공백을 신경 쓰지 않고 그냥
@@ -93,23 +94,23 @@ ObjectFragment = ObjectMember*  // object/text 안에 use 로 끼워 넣을 때
 
 ## 4. 1부 — 프로그램의 뼈대
 
-| 규칙 | 정의 | 설명 |
-|---|---|---|
-| `UseDecl` | `use stringLiteral` | 파일 통째로 포함 |
-| `UseObjectDecl` | `useobject S` `--object` \| `usetext S` `--text` | 불러온 파일을 오브젝트/글상자 하나로 감싼다. 이름은 파일 이름이 된다 |
-| `ProjectDecl` | `project blockOpen ProjectField* end_` | `project: title "..." description "..." fps 60 end` |
-| `ProjectField` | `title S` \| `description S` \| `fps N` | 세 필드 각각 `--title`/`--description`/`--fps` 케이스 |
-| `SceneDecl` | `scene S blockOpen SceneMember* end_` | 장면 하나 |
-| `SceneMember` | `ObjectDecl \| TextDecl \| UseObjectDecl \| UseDecl` | 장면 안에 올 수 있는 것 |
-| `ObjectDecl` / `TextDecl` | `object\|text S blockOpen ObjectMember* end_` | 오브젝트/글상자 선언. 문법 규칙은 거의 동일하고 키워드만 다르다 |
-| `ObjectMember` | `PropertyDecl \| VarDecl \| ListDecl \| FunctionDecl \| EventHandler \| UseDecl` | 오브젝트 본문에 올 수 있는 것 |
-| `PropertyDecl` | 아래 표 참고 | 오브젝트 속성 한 줄 |
-| `propertyName` | `"scale_x" \| "scale_y" \| ... ` (긴 이름 먼저) | `이름 = 값` 형태 속성의 키 |
-| `rotateMethod` | `free \| vertical \| none` | 회전 방식 |
-| `FunctionDecl` | `function id "(" ListOf<FunctionParam, ","> ")" blockOpen Block end_` | 함수 선언. 매개변수는 콤마로 나열 |
-| `FunctionParam` | `identifier "?"?` | 매개변수 하나. 뒤의 `?` 는 "엔트리에서도 판단 칸" (SPEC-ADDENDUM.md 4.6) |
-| `VarDecl` | `var id "=" ~"=" Expr` | 변수 선언(대입 연산자 `==`와 헷갈리지 않게 `~"="`로 막음) |
-| `ListDecl` | `list id "=" ~"=" ListLiteral` | 리스트 선언. 초기값은 반드시 `[...]` 리터럴 |
+| 규칙                      | 정의                                                                             | 설명                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `UseDecl`                 | `use stringLiteral`                                                              | 파일 통째로 포함                                                         |
+| `UseObjectDecl`           | `useobject S` `--object` \| `usetext S` `--text`                                 | 불러온 파일을 오브젝트/글상자 하나로 감싼다. 이름은 파일 이름이 된다     |
+| `ProjectDecl`             | `project blockOpen ProjectField* end_`                                           | `project: title "..." description "..." fps 60 end`                      |
+| `ProjectField`            | `title S` \| `description S` \| `fps N`                                          | 세 필드 각각 `--title`/`--description`/`--fps` 케이스                    |
+| `SceneDecl`               | `scene S blockOpen SceneMember* end_`                                            | 장면 하나                                                                |
+| `SceneMember`             | `ObjectDecl \| TextDecl \| UseObjectDecl \| UseDecl`                             | 장면 안에 올 수 있는 것                                                  |
+| `ObjectDecl` / `TextDecl` | `object\|text S blockOpen ObjectMember* end_`                                    | 오브젝트/글상자 선언. 문법 규칙은 거의 동일하고 키워드만 다르다          |
+| `ObjectMember`            | `PropertyDecl \| VarDecl \| ListDecl \| FunctionDecl \| EventHandler \| UseDecl` | 오브젝트 본문에 올 수 있는 것                                            |
+| `PropertyDecl`            | 아래 표 참고                                                                     | 오브젝트 속성 한 줄                                                      |
+| `propertyName`            | `"scale_x" \| "scale_y" \| ... ` (긴 이름 먼저)                                  | `이름 = 값` 형태 속성의 키                                               |
+| `rotateMethod`            | `free \| vertical \| none`                                                       | 회전 방식                                                                |
+| `FunctionDecl`            | `function id "(" ListOf<FunctionParam, ","> ")" blockOpen Block end_`            | 함수 선언. 매개변수는 콤마로 나열                                        |
+| `FunctionParam`           | `identifier "?"?`                                                                | 매개변수 하나. 뒤의 `?` 는 "엔트리에서도 판단 칸" (SPEC-ADDENDUM.md 4.6) |
+| `VarDecl`                 | `var id "=" ~"=" Expr`                                                           | 변수 선언(대입 연산자 `==`와 헷갈리지 않게 `~"="`로 막음)                |
+| `ListDecl`                | `list id "=" ~"=" ListLiteral`                                                   | 리스트 선언. 초기값은 반드시 `[...]` 리터럴                              |
 
 `PropertyDecl`의 케이스는 **선언 순서가 그대로 우선순위**다 (PEG의 순서 있는
 선택은 처음 성공하는 대안을 채택하므로, 더 긴/더 구체적인 형태를 먼저 둬야
@@ -158,16 +159,16 @@ PropertyDecl
 `when` 으로 시작해서 `blockOpen Block end_`로 몸통을 감싸는 동일한 모양이고,
 `when` 다음에 오는 키워드 조합만 다르다.
 
-| 케이스 | 문법 | 대응하는 엔트리 이벤트 |
-|---|---|---|
-| `-- sceneStart` | `when scene start` | 장면이 시작될 때 |
-| `-- start` | `when start` | (오브젝트) 시작하기 버튼을 클릭했을 때 |
-| `-- keyUp` | `when key "space" up` | 키를 뗐을 때 |
-| `-- key` | `when key "space"` | 키를 눌렀을 때 |
+| 케이스                              | 문법                    | 대응하는 엔트리 이벤트                    |
+| ----------------------------------- | ----------------------- | ----------------------------------------- |
+| `-- sceneStart`                     | `when scene start`      | 장면이 시작될 때                          |
+| `-- start`                          | `when start`            | (오브젝트) 시작하기 버튼을 클릭했을 때    |
+| `-- keyUp`                          | `when key "space" up`   | 키를 뗐을 때                              |
+| `-- key`                            | `when key "space"`      | 키를 눌렀을 때                            |
 | `-- stageClickUp` / `-- stageClick` | `when stage click [up]` | 마우스 클릭을 뗐을 때 / 클릭했을 때(무대) |
-| `-- clickUp` / `-- click` | `when click [up]` | 클릭을 뗐을 때 / 클릭했을 때(오브젝트) |
-| `-- signal` | `when signal "이름"` | 신호를 받았을 때 |
-| `-- cloned` | `when cloned` | 복제본이 처음 생성됐을 때 |
+| `-- clickUp` / `-- click`           | `when click [up]`       | 클릭을 뗐을 때 / 클릭했을 때(오브젝트)    |
+| `-- signal`                         | `when signal "이름"`    | 신호를 받았을 때                          |
+| `-- cloned`                         | `when cloned`           | 복제본이 처음 생성됐을 때                 |
 
 `up`이 붙은 형태(뗐을 때)를 붙지 않은 형태보다 먼저 시도하는 순서 자체는
 `StopStatement`류처럼 필수는 아니지만("클릭했을 때"와 "클릭을 뗐을 때"는
@@ -202,25 +203,25 @@ Statement
 
 ### 6.1 조건·반복 (spec 5.1–5.2)
 
-| 규칙 | 형태 |
-|---|---|
-| `IfStatement` | `if E blockOpen Block [else blockOpen Block] end_` (`--ifElse` / `--if`) |
-| `RepeatStatement` | `repeat E blockOpen Block end_` |
-| `WhileStatement` | `while E blockOpen Block end_` |
-| `UntilStatement` | `until E blockOpen Block end_` |
-| `ForeverStatement` | `forever blockOpen Block end_` |
+| 규칙               | 형태                                                                     |
+| ------------------ | ------------------------------------------------------------------------ |
+| `IfStatement`      | `if E blockOpen Block [else blockOpen Block] end_` (`--ifElse` / `--if`) |
+| `RepeatStatement`  | `repeat E blockOpen Block end_`                                          |
+| `WhileStatement`   | `while E blockOpen Block end_`                                           |
+| `UntilStatement`   | `until E blockOpen Block end_`                                           |
+| `ForeverStatement` | `forever blockOpen Block end_`                                           |
 
 ### 6.2 흐름 제어 (spec 5.3)
 
-| 규칙 | 형태 |
-|---|---|
-| `WaitStatement` | `wait E` |
-| `FlowStatement` | `break` \| `skip` \| `restart` |
-| `ReturnStatement` | `return E` |
-| `StopStatement` | 아래 참고 |
-| `StartStatement` | `start draw\|fill\|timer` |
-| `ResetStatement` | `reset size\|timer` |
-| `ClearStatement` | `clear effects\|bubble\|draw\|text` |
+| 규칙              | 형태                                |
+| ----------------- | ----------------------------------- |
+| `WaitStatement`   | `wait E`                            |
+| `FlowStatement`   | `break` \| `skip` \| `restart`      |
+| `ReturnStatement` | `return E`                          |
+| `StopStatement`   | 아래 참고                           |
+| `StartStatement`  | `start draw\|fill\|timer`           |
+| `ResetStatement`  | `reset size\|timer`                 |
+| `ClearStatement`  | `clear effects\|bubble\|draw\|text` |
 
 `StopStatement`는 `stop` 뒤에 오는 키워드에 따라 뜻이 완전히 달라지는
 대표적인 예다. **인자가 있는 형태를 전부 먼저 시도하고, 아무 인자도 없는
@@ -244,12 +245,12 @@ StopStatement
 
 ### 6.3 신호·복제·장면 전환 (spec 7)
 
-| 규칙 | 형태 |
-|---|---|
+| 규칙              | 형태                                                           |
+| ----------------- | -------------------------------------------------------------- |
 | `SignalStatement` | `send E`(신호만 보냄) \| `call E`(신호를 보내고 응답을 기다림) |
-| `CloneStatement` | `clone #sameLine E` \| `clone`(자기 자신 복제) |
-| `DeleteStatement` | `del clones` \| `del clone` \| `kill` |
-| `JumpStatement` | `jump next` \| `jump back` \| `jump E`(장면 이름) |
+| `CloneStatement`  | `clone #sameLine E` \| `clone`(자기 자신 복제)                 |
+| `DeleteStatement` | `del clones` \| `del clone` \| `kill`                          |
+| `JumpStatement`   | `jump next` \| `jump back` \| `jump E`(장면 이름)              |
 
 `CloneStatement`의 `#sameLine`은 인자 없는 `clone` 다음 줄이 식별자로
 시작할 때 그 식별자를 인자로 삼켜버리는 걸 막는다 — [9장](#9-peg-특이-기법-모음)에서
@@ -290,7 +291,7 @@ LooksStatement
   | say E for E -- sayFor | say E -- say
   | think E for E -- thinkFor | think E -- think
   | flip x -- flipX | flip y -- flipY
-  | order front -- orderFront | order back -- orderBack
+  | order front -- orderFront | order back -- orderBack | order first -- orderFirst | order last -- orderLast
 
 TextStatement = write E -- write | append E -- append | prepend E -- prepend
 PenStatement  = stamp
@@ -356,17 +357,17 @@ UnaryExpr   = "-" UnaryExpr -- neg | PrimaryExpr
 PosExpr     = UnaryExpr                    // 공백 나열 인자 전용, 이항 연산 없음
 ```
 
-| 우선순위(낮음→높음) | 연산자 | 결합 방향 | 규칙 |
-|---|---|---|---|
-| 1 | `or` | 왼쪽 | `OrExpr` |
-| 2 | `and` | 왼쪽 | `AndExpr` |
-| 3 | `not`(단항) | — | `NotExpr` |
-| 4 | `== != <= >= < >` | 왼쪽 | `CompareExpr` |
-| 5 | `+ -`(이항) | 왼쪽 | `AddExpr` |
-| 6 | `// * / %` | 왼쪽 | `MulExpr` |
-| 7 | `**` | **오른쪽** | `PowExpr` |
-| 8 | `-`(단항 음수) | — | `UnaryExpr` |
-| 9 | 괄호·호출·인덱스·리터럴·식별자 | — | `PrimaryExpr` |
+| 우선순위(낮음→높음) | 연산자                         | 결합 방향  | 규칙          |
+| ------------------- | ------------------------------ | ---------- | ------------- |
+| 1                   | `or`                           | 왼쪽       | `OrExpr`      |
+| 2                   | `and`                          | 왼쪽       | `AndExpr`     |
+| 3                   | `not`(단항)                    | —          | `NotExpr`     |
+| 4                   | `== != <= >= < >`              | 왼쪽       | `CompareExpr` |
+| 5                   | `+ -`(이항)                    | 왼쪽       | `AddExpr`     |
+| 6                   | `// * / %`                     | 왼쪽       | `MulExpr`     |
+| 7                   | `**`                           | **오른쪽** | `PowExpr`     |
+| 8                   | `-`(단항 음수)                 | —          | `UnaryExpr`   |
+| 9                   | 괄호·호출·인덱스·리터럴·식별자 | —          | `PrimaryExpr` |
 
 `PowExpr`만 왼쪽이 아니라 **오른쪽 자식을 재귀**시켜서(`UnaryExpr "**" PowExpr`)
 `2 ** 3 ** 2 == 2 ** (3 ** 2)`가 되도록 우결합을 만든다. 나머지는 전부
@@ -422,14 +423,14 @@ sameLine = ~(spacesNoNL lineTerminator)
 
 ### 8.2 리터럴
 
-| 규칙 | 정의 | 비고 |
-|---|---|---|
-| `numberLiteral` | `digit+ "." digit+ --decimal` \| `digit+ --integer` | `(a number)`로 실패 메시지에 쓸 설명을 붙여 둠 |
-| `stringLiteral` | `"\"" stringChar* "\""` | |
-| `stringChar` | 유니코드 이스케이프(`\uXXXX`) \| 백슬래시 이스케이프 \| 그 외 문자 | `"`, `\`, 줄바꿈은 이스케이프 없이 못 씀 |
-| `booleanLiteral` | `true \| false` | |
-| `colorLiteral` | `"#" colorBody` | `(a color)` |
-| `colorBody` | `hexDigit hexDigit hexDigit hexDigit hexDigit hexDigit ~identifierPart` | 정확히 6자리(Ohm 문법에는 `{n}` 반복 구문이 없어서 그대로 여섯 번 나열한다), 뒤에 식별자 글자가 이어지면 안 됨 |
+| 규칙             | 정의                                                                    | 비고                                                                                                           |
+| ---------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `numberLiteral`  | `digit+ "." digit+ --decimal` \| `digit+ --integer`                     | `(a number)`로 실패 메시지에 쓸 설명을 붙여 둠                                                                 |
+| `stringLiteral`  | `"\"" stringChar* "\""`                                                 |                                                                                                                |
+| `stringChar`     | 유니코드 이스케이프(`\uXXXX`) \| 백슬래시 이스케이프 \| 그 외 문자      | `"`, `\`, 줄바꿈은 이스케이프 없이 못 씀                                                                       |
+| `booleanLiteral` | `true \| false`                                                         |                                                                                                                |
+| `colorLiteral`   | `"#" colorBody`                                                         | `(a color)`                                                                                                    |
+| `colorBody`      | `hexDigit hexDigit hexDigit hexDigit hexDigit hexDigit ~identifierPart` | 정확히 6자리(Ohm 문법에는 `{n}` 반복 구문이 없어서 그대로 여섯 번 나열한다), 뒤에 식별자 글자가 이어지면 안 됨 |
 
 ### 8.3 식별자
 
@@ -517,13 +518,13 @@ PEG의 `|`는 정규식의 `|`와 달리 **처음 성공하는 대안을 그 자
 
 ### 9.2 부정 lookahead(`~`)로 모호성 해소
 
-| 위치 | 코드 | 막는 것 |
-|---|---|---|
-| 주석 | `"#" ~colorBody` | 색상 리터럴 `#ff0000`을 주석으로 오인 |
-| 대입/비교 | `"=" ~"="`, `"+" ~"="`, `"*" ~"*"` 등 | `=`+`=`(즉 `==`), 복합 대입, `**`를 이항 연산자 하나로 오인 |
-| 키워드 경계 | `"forward" ~identifierPart` (전체 키워드 공통) | `forward`를 `for`+`ward`로 오인 |
-| 식별자 | `~keyword identifierName` | 예약어를 식별자로 오인 |
-| 색상 본문 | `hexDigit`을 여섯 번 나열 `~identifierPart` | `#ff0000abc`처럼 뒤에 글자가 더 붙는 잘못된 색상 |
+| 위치        | 코드                                           | 막는 것                                                     |
+| ----------- | ---------------------------------------------- | ----------------------------------------------------------- |
+| 주석        | `"#" ~colorBody`                               | 색상 리터럴 `#ff0000`을 주석으로 오인                       |
+| 대입/비교   | `"=" ~"="`, `"+" ~"="`, `"*" ~"*"` 등          | `=`+`=`(즉 `==`), 복합 대입, `**`를 이항 연산자 하나로 오인 |
+| 키워드 경계 | `"forward" ~identifierPart` (전체 키워드 공통) | `forward`를 `for`+`ward`로 오인                             |
+| 식별자      | `~keyword identifierName`                      | 예약어를 식별자로 오인                                      |
+| 색상 본문   | `hexDigit`을 여섯 번 나열 `~identifierPart`    | `#ff0000abc`처럼 뒤에 글자가 더 붙는 잘못된 색상            |
 
 ### 9.3 `#sameLine` — 줄 경계를 넘지 않는 가드
 
@@ -573,57 +574,57 @@ say "숨었다"
 바꾼다. 규칙 이름과 만들어지는 AST `type`은 대부분 이렇게 대응한다
 (전체는 `src/ast.js` 참고, 아래는 발췌).
 
-| 문법 규칙 | AST `type` |
-|---|---|
-| `Program` | `Program` |
-| `UseDecl` | `Use` |
-| `UseObjectDecl_object` / `_text` | `UseObject` (`kind: 'object'\|'text'`) |
-| `ProjectDecl` / `ProjectField_*` | `Project` / `ProjectField` |
-| `SceneDecl` | `Scene` |
-| `ObjectDecl` / `TextDecl` | `Object` (`kind: 'object'\|'text'`) |
-| `PropertyDecl_*costume*` | `Costume` |
-| `PropertyDecl_soundLength` / `_sound` | `Sound` |
-| `PropertyDecl_name` / `_visible` / `_lock` / `_rotation` / `_assign` | `Property` |
-| `PropertyDecl_boxSize` | `BoxSize` (`width`, `height` — 글상자 전용) |
-| `PropertyDecl_center` | `Center` (`x`, `y` — 오브젝트 전용) |
-| `FunctionDecl` | `FunctionDecl` |
-| `VarDecl` / `ListDecl` | `VarDecl` / `ListDecl` |
-| `EventHandler_*` | `Event` (`event: 'start'\|'key'\|'signal'\|...`) |
-| `IfStatement_if` / `_ifElse` | `If` |
-| `RepeatStatement` / `WhileStatement` / `UntilStatement` / `ForeverStatement` | `Repeat` / `While` / `Until` / `Forever` |
-| `WaitStatement` | `Wait` |
-| `FlowStatement_break` / `_skip` / `_restart` | `Break` / `Skip` / `Restart` |
-| `ReturnStatement` | `Return` |
-| `StopStatement_*` | `Stop` / `StopSound` / `StopDraw` / `StopFill` / `StopBgm` / `StopTimer` |
-| `StartStatement_*` | `StartDraw` / `StartFill` / `StartTimer` |
-| `ResetStatement_*` | `ResetSize` / `ResetTimer` |
-| `ClearStatement_*` | `Clear` |
-| `SignalStatement_send` / `_call` | `Send` (`wait: false\|true`) |
-| `CloneStatement_*` | `Clone` |
-| `DeleteStatement_*` | `DeleteClones` / `DeleteClone` |
-| `JumpStatement_*` | `Jump` |
-| `MoveStatement_*` | `Forward` / `Bounce` / `Move` / `Go` |
-| `RotateStatement_*` | `Turn` / `Steer` / `Look` |
-| `LooksStatement_*` | `Show` / `Hide` / `CostumeStep` / `Say` / `Think` / `Flip` / `Order` |
-| `TextStatement_*` | `TextWrite` (`mode: 'write'\|'append'\|'prepend'`) |
-| `PenStatement` | `Stamp` |
-| `SoundStatement_*` | `PlaySound` / `PlayBgm` |
-| `DataStatement_*` | `ListAdd` / `ListInsert` / `ListRemove` / `Ask` |
-| `AssignStatement` | `Assign` |
-| `LValue_index` | `Index` |
-| `CallStatement` | `ExpressionStatement` |
-| `OrExpr_or` / `AndExpr_and` / `CompareExpr_*` / `AddExpr_*` / `MulExpr_*` / `PowExpr_pow` | `Binary` (`operator` 필드로 구분) |
-| `NotExpr_not` / `UnaryExpr_neg` | `Unary` |
-| `PrimaryExpr_paren` | (감싼 표현식을 그대로 반환, 별도 노드 없음) |
-| `PrimaryExpr_transparent` | `Transparent` |
-| `CallExpr` | `Call` |
-| `IndexExpr` | `Index` |
-| `ListLiteral` | `ListLiteral` |
-| `identifier` | `Identifier` |
-| `numberLiteral_*` | `Number` |
-| `stringLiteral` | `String` |
-| `booleanLiteral` | `Boolean` |
-| `colorLiteral` | `Color` |
+| 문법 규칙                                                                                 | AST `type`                                                               |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `Program`                                                                                 | `Program`                                                                |
+| `UseDecl`                                                                                 | `Use`                                                                    |
+| `UseObjectDecl_object` / `_text`                                                          | `UseObject` (`kind: 'object'\|'text'`)                                   |
+| `ProjectDecl` / `ProjectField_*`                                                          | `Project` / `ProjectField`                                               |
+| `SceneDecl`                                                                               | `Scene`                                                                  |
+| `ObjectDecl` / `TextDecl`                                                                 | `Object` (`kind: 'object'\|'text'`)                                      |
+| `PropertyDecl_*costume*`                                                                  | `Costume`                                                                |
+| `PropertyDecl_soundLength` / `_sound`                                                     | `Sound`                                                                  |
+| `PropertyDecl_name` / `_visible` / `_lock` / `_rotation` / `_assign`                      | `Property`                                                               |
+| `PropertyDecl_boxSize`                                                                    | `BoxSize` (`width`, `height` — 글상자 전용)                              |
+| `PropertyDecl_center`                                                                     | `Center` (`x`, `y` — 오브젝트 전용)                                      |
+| `FunctionDecl`                                                                            | `FunctionDecl`                                                           |
+| `VarDecl` / `ListDecl`                                                                    | `VarDecl` / `ListDecl`                                                   |
+| `EventHandler_*`                                                                          | `Event` (`event: 'start'\|'key'\|'signal'\|...`)                         |
+| `IfStatement_if` / `_ifElse`                                                              | `If`                                                                     |
+| `RepeatStatement` / `WhileStatement` / `UntilStatement` / `ForeverStatement`              | `Repeat` / `While` / `Until` / `Forever`                                 |
+| `WaitStatement`                                                                           | `Wait`                                                                   |
+| `FlowStatement_break` / `_skip` / `_restart`                                              | `Break` / `Skip` / `Restart`                                             |
+| `ReturnStatement`                                                                         | `Return`                                                                 |
+| `StopStatement_*`                                                                         | `Stop` / `StopSound` / `StopDraw` / `StopFill` / `StopBgm` / `StopTimer` |
+| `StartStatement_*`                                                                        | `StartDraw` / `StartFill` / `StartTimer`                                 |
+| `ResetStatement_*`                                                                        | `ResetSize` / `ResetTimer`                                               |
+| `ClearStatement_*`                                                                        | `Clear`                                                                  |
+| `SignalStatement_send` / `_call`                                                          | `Send` (`wait: false\|true`)                                             |
+| `CloneStatement_*`                                                                        | `Clone`                                                                  |
+| `DeleteStatement_*`                                                                       | `DeleteClones` / `DeleteClone`                                           |
+| `JumpStatement_*`                                                                         | `Jump`                                                                   |
+| `MoveStatement_*`                                                                         | `Forward` / `Bounce` / `Move` / `Go`                                     |
+| `RotateStatement_*`                                                                       | `Turn` / `Steer` / `Look`                                                |
+| `LooksStatement_*`                                                                        | `Show` / `Hide` / `CostumeStep` / `Say` / `Think` / `Flip` / `Order`     |
+| `TextStatement_*`                                                                         | `TextWrite` (`mode: 'write'\|'append'\|'prepend'`)                       |
+| `PenStatement`                                                                            | `Stamp`                                                                  |
+| `SoundStatement_*`                                                                        | `PlaySound` / `PlayBgm`                                                  |
+| `DataStatement_*`                                                                         | `ListAdd` / `ListInsert` / `ListRemove` / `Ask`                          |
+| `AssignStatement`                                                                         | `Assign`                                                                 |
+| `LValue_index`                                                                            | `Index`                                                                  |
+| `CallStatement`                                                                           | `ExpressionStatement`                                                    |
+| `OrExpr_or` / `AndExpr_and` / `CompareExpr_*` / `AddExpr_*` / `MulExpr_*` / `PowExpr_pow` | `Binary` (`operator` 필드로 구분)                                        |
+| `NotExpr_not` / `UnaryExpr_neg`                                                           | `Unary`                                                                  |
+| `PrimaryExpr_paren`                                                                       | (감싼 표현식을 그대로 반환, 별도 노드 없음)                              |
+| `PrimaryExpr_transparent`                                                                 | `Transparent`                                                            |
+| `CallExpr`                                                                                | `Call`                                                                   |
+| `IndexExpr`                                                                               | `Index`                                                                  |
+| `ListLiteral`                                                                             | `ListLiteral`                                                            |
+| `identifier`                                                                              | `Identifier`                                                             |
+| `numberLiteral_*`                                                                         | `Number`                                                                 |
+| `stringLiteral`                                                                           | `String`                                                                 |
+| `booleanLiteral`                                                                          | `Boolean`                                                                |
+| `colorLiteral`                                                                            | `Color`                                                                  |
 
 모든 AST 노드는 `loc: { start, end }` (Ohm의 `node.source.startIdx/endIdx`,
 `src/ast.js`의 `at()`)를 갖는다. 이 오프셋은 `src/validate.js`의
@@ -643,12 +644,13 @@ node index.js ast   <파일.tess>     # AST 를 JSON 으로 출력
 라이브러리로 쓸 때:
 
 ```js
-import { grammar, check, trace, parse } from './index.js';
+import { grammar, check, trace, parse } from "./index.js";
 
-grammar.match(source).succeeded();   // 문법 검사만, 가장 빠름
-check(source);                       // 위와 동일 (src/parse.js 의 헬퍼)
-trace(source);                       // Ohm 트레이서 — 어떤 규칙이 어디서 실패했는지 단계별로 보여줌
-parse(source);                       // { ok, ast, errors, warnings } — 문법 + 의미 검사
+grammar.match(source).succeeded(); // 문법 검사만, 가장 빠름
+check(source); // 위와 동일 (src/parse.js 의 헬퍼)
+trace(source); // Ohm 트레이서 — 어떤 규칙이 어디서 실패했는지 단계별로 보여줌
+parse(source); // Ohm 트레이서 — 어떤 규칙이 어디서 실패했는지 단계별로 보여줌
+parse(source); // { ok, ast, errors, warnings } — 문법 + 의미 검사
 ```
 
 문법만 따로 테스트하는 건 `test/grammar.test.js`, AST 변환은

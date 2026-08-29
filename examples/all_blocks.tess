@@ -89,8 +89,10 @@ scene "무대":
       clear effects
       flip x
       flip y
+      order first
       order front
       order back
+      order last
       say "안녕"
       say "안녕" for 2
       think "음..."

@@ -105,7 +105,7 @@
       "patterns": [
         {
           "name": "constant.language.tess",
-          "match": "(?<![A-Za-z0-9_])(?:transparent|vertical|false|front|other|green|true|next|back|this|them|free|none|blue|all|red|me)(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_])(?:transparent|vertical|false|front|last|first|other|green|true|next|back|this|them|free|none|blue|all|red|me)(?![A-Za-z0-9_])"
         },
         {
           "name": "variable.language.tess",
