@@ -229,3 +229,63 @@ test('디버그 UI 와 arrow-js 를 모듈로 내보낸다', async () => {
     assert.equal(escaped.status, 404);
   });
 });
+
+// --- 부스트 모드 --------------------------------------------------------------
+
+test('run --boost 는 엔트리를 부스트 모드(WebGL 렌더러)로 띄운다', async () => {
+  // 부스트 모드는 엔트리 만들기 화면에서는 못 켜지만, 실행기 자체는 Entry.init 의
+  // useWebGL 하나로 그 모드로 돈다(GEHelper.INIT).
+  await withServer({ boost: true }, async (server) => {
+    assert.match(await (await fetch(server.url)).text(), /useWebGL: true/);
+  });
+  await withServer({}, async (server) => {
+    assert.match(await (await fetch(server.url)).text(), /useWebGL: false/);
+  });
+});
+
+test('부스트 모드는 실행기가 CDN 이어도 기본 그림을 같은 origin 으로 내보낸다', async () => {
+  // entryjs 는 기본 그림을 crossOrigin 없이 new Image() 로 받는다
+  // (GEHelper.newSpriteWithCallback). WebGL 은 그런 그림을 텍스처로 못 올려서
+  // texImage2D 가 SecurityError 로 막히고, 그 프레임이 통째로 안 그려진다.
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-boost-'));
+  try {
+    await withServer({ cwd, boost: true }, async (server) => {
+      const page = await (await fetch(server.url)).text();
+      assert.match(page, /libDir: "\/lib"/);
+      // 스크립트는 그대로 CDN 에서 받는다 — 텍스처가 아니라 막힐 일이 없다
+      assert.match(page, /src="https:\/\/unpkg\.com\/@entrylabs\/entry@[\d.]+\/dist\/entry\.min\.js"/);
+    });
+    // 부스트가 아니면 예전처럼 기본 그림도 CDN 에서 바로 받는다
+    await withServer({ cwd }, async (server) => {
+      assert.match(await (await fetch(server.url)).text(), /libDir: "https:\/\/unpkg\.com\//);
+    });
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('부스트 모드에서는 캔버스 버퍼 대신 렌더러 해상도를 올린다', async () => {
+  // PIXI 가 캔버스를 갖고 있어서, 몰래 canvasEl.width 를 바꾸면 화면 한 구석에만 그린다.
+  // 해상도를 올리면 무대는 엔트리의 640x360 좌표계에 그대로 남는다.
+  await withServer({}, async (server) => {
+    const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
+    const fn = ui.slice(ui.indexOf('const setCanvasResolution'), ui.indexOf('const refreshBoundRect'));
+    assert.match(fn, /renderer\.resolution = bufferW \/ ENTRY_BUFFER_WIDTH;/);
+    assert.match(fn, /renderer\.resize\(ENTRY_BUFFER_WIDTH, ENTRY_BUFFER_HEIGHT\)/);
+    const pixiBranch = fn.slice(fn.indexOf('if (renderer'), fn.indexOf('} else {'));
+    assert.doesNotMatch(pixiBranch, /canvasEl\.(width|height)\s*=/);
+  });
+});
+
+test('디버그 패널의 부스트 모드 흉내내기는 그대로 남는다', async () => {
+  // --boost 로 켠 상태에서 끈 경우를(그 반대도) 테스트할 수 있어야 하므로, 블록이
+  // 돌려주는 값을 바꾸는 흉내내기는 실제 렌더러와 따로 논다.
+  await withServer({}, async (server) => {
+    const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
+    assert.match(ui, /wrap\('is_boost_mode', \(\) => choice\(state\.env\.boost\)\)/);
+    assert.match(ui, /id="env-boost"/);
+    // 실제 렌더러는 패널에 표시만 한다 (arrow 가 따라가려면 반응형 상태여야 한다)
+    assert.match(ui, /realBoost: false,/);
+    assert.match(ui, /state\.realBoost = Boolean\(Entry\.options && Entry\.options\.useWebGL\)/);
+  });
+});

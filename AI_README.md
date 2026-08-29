@@ -478,6 +478,38 @@ arrow-js 는 `dist/index.mjs` 를 씁니다 — 같은 패키지의 `index.min.m
 디버그 패널은 그 블록들을 감싸서 여기서 고른 값을 대신 돌려주게 합니다 — 브라우저를
 바꾸지 않고도 모바일에서만 도는 분기를 확인할 수 있습니다.
 
+#### 진짜 부스트 모드 — `run --boost`
+
+부스트 모드는 엔트리 **만들기 화면에서는 못 켜지만**, 실행기 자체는 `Entry.init` 의
+`useWebGL` 옵션 하나로 그 모드로 돕니다(`GEHelper.INIT` → PIXI 렌더러, 아니면 createjs).
+우리는 실행기를 통째로 불러오므로 그 옵션을 그냥 켜 주면 됩니다.
+
+**패널의 '부스트 모드' 흉내내기는 그대로 남습니다.** 둘은 서로 다른 것을 정합니다 —
+`--boost` 는 **실제로 쓰는 렌더러**를, 패널은 **`boost_mode` 블록이 돌려주는 값**을
+정합니다. 부스트로 띄운 채 안 켠 것처럼(또는 그 반대로) 도는 분기를 봐야 할 때가 있어서
+따로 둡니다. 패널은 실제 렌더러를 `state.realBoost` 로 함께 보여 줍니다(반응형 상태에
+담아 둬야 arrow 가 따라옵니다 — 값을 그때그때 읽는 함수는 반응형 값을 안 건드려서 처음
+한 번만 평가되고 굳습니다).
+
+부스트 모드가 되면 두 가지가 함께 달라집니다.
+
+**1. 캔버스는 PIXI 것이 됩니다.** `setCanvasResolution` 이 하던 대로
+`canvasEl.width` 를 바꾸면 PIXI 는 그 사실을 몰라서(뷰포트·투영은 그대로) 화면 한 구석에만
+그립니다. 대신 `renderer.resolution` 을 올리고 `resize(640, 360)` 을 부릅니다 — 그리기
+버퍼는 똑같이 커지지만 무대는 엔트리의 640×360 좌표계에 그대로 남으므로, entryjs 안에
+박혀 있는 픽셀 값(물어보기 입력창의 `x:15, y:275` 등)이 전부 그대로 맞습니다. 그래서
+부스트 모드에서는 `scaleInputFieldToBuffer` 도 필요 없습니다.
+
+**2. 기본 그림은 반드시 같은 origin 이어야 합니다.** entryjs 는 기본 그림을
+`crossOrigin` 없이 `new Image()` 로 받아서 `PIXI.Texture.from` 에 넘깁니다
+(`GEHelper.newSpriteWithCallback`). 이미지가 다른 origin 에서 왔으면 WebGL 은 그것을
+텍스처로 못 올리고 `texImage2D` 가 `SecurityError` 로 막히는데, 그 예외가 렌더 도중에
+나므로 **그 프레임이 통째로 안 그려집니다**(확인 단추 하나 때문에 화면 전체가 멈춘 것처럼
+보입니다). playentry.org 에서는 기본 그림도 같은 origin 이라 이 문제가 안 납니다. 그래서
+부스트 모드에서는 `libDir` 을 늘 `/lib` 로 주고, 설치된 entryjs 가 없으면 서버가 그 경로를
+CDN 으로 대신 받아 우리 origin 으로 내보냅니다(`proxyRuntimeFile`). `<script>` 는 텍스처가
+아니므로 그대로 CDN 에서 받습니다.
+
 패널이 보여 주는 이름(오브젝트·장면·변수·신호)은 전부 작품에서 온 값이고, 작품은 남이
 만든 `.ent` 를 되돌린 것일 수도 있습니다. 그래서 이 UI 는 `innerHTML` 을 아예 쓰지 않고
 `textContent` 로만 글자를 넣습니다 (`test/player-debug.test.js` 가 jsdom 으로 확인합니다).

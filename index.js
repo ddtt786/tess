@@ -51,6 +51,11 @@ const USAGE = `사용법
   --port <번호>      run 이 쓸 포트 (기본값: 2013, 쓰이고 있으면 비어 있는 포트)
   --no-open          run 할 때 브라우저를 자동으로 열지 않는다
   --no-reload        run 할 때 소스가 바뀌어도 자동으로 새로고침하지 않는다
+  --boost            run 을 부스트 모드(WebGL 렌더러)로 띄운다. 엔트리 만들기 화면
+                     에서는 켤 수 없지만 실행기 자체는 이 모드로 돌 수 있다. 디버그
+                     패널의 '부스트 모드' 는 그대로 남는다 — 켜고 끈 두 경우를
+                     따로 흉내내 볼 수 있어야 하기 때문이다. build 에는 없는 옵션
+                     이다 (컴파일한 작품은 실행하는 쪽이 정한다)
   --force            컴파일 에러가 있어도 build/run 을 끝까지 밀어붙인다. 에러가 난
                      문장은 빠진 채로 나오니, 남은 부분만 확인하고 싶을 때만 쓰세요
                      (문법 에러는 작품을 만들 수조차 없어서 --force 도 소용없습니다)
@@ -89,6 +94,7 @@ function parseArgs(argv) {
     else if (arg === "--port") options.port = Number(argv[++i]);
     else if (arg === "--no-open") options.noOpen = true;
     else if (arg === "--no-reload") options.noReload = true;
+    else if (arg === "--boost") options.boost = true;
     else if (arg === "--warnings") options.warnings = true;
     else if (arg === "--sizes") options.sizes = true;
     else if (arg === "--keep-svg") options.keepSvg = true;
@@ -218,10 +224,12 @@ async function runProject(file, options) {
     cwd: path.dirname(path.resolve(file)),
     reload,
     sourceMap: result.sourceMap,
+    boost: options.boost,
   });
 
   console.log(`${label} -> ${server.url}`);
   console.log(`  실행기: ${server.runtime}`);
+  if (options.boost) console.log("  부스트 모드: 켜짐 (WebGL 렌더러)");
   console.log(
     `  자동 새로고침: ${reload ? "켜짐 (--no-reload 로 끌 수 있습니다)" : "꺼짐"}`,
   );

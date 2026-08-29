@@ -22,6 +22,8 @@ const state = reactive({
   errors: [],
   runState: '',
   env: { boost: '', device: '', touch: '' },
+  // 실행기가 실제로 도는 렌더러 (run --boost). 흉내내기 값과 달리 못 바꾼다.
+  realBoost: false,
   scenes: [],
   currentId: '',
   currentName: '',
@@ -95,9 +97,13 @@ const doStop = () => control((e) => e && e.toggleStop());
 // 브라우저에 직접 묻는 판단 블록들이라, func 을 감싸 패널에서 고른 값을 돌려준다.
 const choice = (value) => (value === '' ? null : value === 'true');
 
+/** Renderer entry actually runs on — what "실제 값 그대로" resolves to for boost mode. */
+const realBoostLabel = () => (state.realBoost ? '켜짐 (WebGL)' : '꺼짐 (2D)');
+
 window.tessPatchEnvironmentBlocks = function patchEnvironmentBlocks() {
   const blocks = window.Entry && Entry.block;
   if (!blocks) return;
+  state.realBoost = Boolean(Entry.options && Entry.options.useWebGL);
   const wrap = (type, forced) => {
     const spec = blocks[type];
     if (!spec || typeof spec.func !== 'function' || spec.tessWrapped) return;
@@ -615,6 +621,9 @@ const runTab = () => sections([
           <option value="false">꺼짐 (거짓)</option>
         </select>
       </div>
+      <p class="debug-note">지금 실행기는 부스트 모드 ${() => realBoostLabel()} 입니다
+        (<code>run --boost</code> 로 정합니다). 위에서 고른 값은 '부스트 모드인가?' 블록이
+        돌려주는 값만 바꾸고, 실제로 쓰는 렌더러는 그대로입니다.</p>
       <div class="debug-field">
         <label for="env-device">기기 종류</label>
         <select id="env-device" @change="${(e) => { state.env.device = e.target.value; }}">
@@ -1081,6 +1090,14 @@ let resolutionFixed = false;
 
 // Buffer size every hard-coded pixel offset inside entryjs assumes.
 const ENTRY_BUFFER_WIDTH = 640;
+const ENTRY_BUFFER_HEIGHT = 360;
+
+/** Drawing buffer width to aim for: the widest the stage is ever shown at. */
+const wantedBufferWidth = () => {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const wanted = Math.max(window.screen?.width || window.innerWidth, window.innerWidth) * dpr;
+  return Math.round(Math.min(Math.max(wanted, 960), 1920));
+};
 
 /**
  * Rescales the ask() input box to the canvas buffer we actually use.
@@ -1117,18 +1134,25 @@ const setCanvasResolution = () => {
     const canvasEl = stage && stage.canvas && stage.canvas.canvas;
     if (!canvasEl) return;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const wanted = Math.max(window.screen?.width || window.innerWidth, window.innerWidth) * dpr;
-    const bufferW = Math.round(Math.min(Math.max(wanted, 960), 1920));
-    const bufferH = Math.round((bufferW * 9) / 16);
-
-    canvasEl.width = bufferW;
-    canvasEl.height = bufferH;
-    stage.canvas.x = bufferW / 2;
-    stage.canvas.y = bufferH / 2;
-    stage.canvas.scaleX = bufferW / 480;
-    stage.canvas.scaleY = bufferW / 480;
-    scaleInputFieldToBuffer(bufferW);
+    const bufferW = wantedBufferWidth();
+    // Boost mode draws through PIXI, which owns the canvas: writing to
+    // canvasEl.width behind its back would leave it rendering into one corner.
+    // Raising the renderer resolution instead keeps the stage in entry's
+    // 640x360 space, so every hard-coded offset in entryjs still lands right.
+    const renderer = stage._app && stage._app.renderer;
+    if (renderer && typeof renderer.resize === 'function' && typeof renderer.resolution === 'number') {
+      renderer.resolution = bufferW / ENTRY_BUFFER_WIDTH;
+      renderer.resize(ENTRY_BUFFER_WIDTH, ENTRY_BUFFER_HEIGHT);
+    } else {
+      const bufferH = Math.round((bufferW * 9) / 16);
+      canvasEl.width = bufferW;
+      canvasEl.height = bufferH;
+      stage.canvas.x = bufferW / 2;
+      stage.canvas.y = bufferH / 2;
+      stage.canvas.scaleX = bufferW / 480;
+      stage.canvas.scaleY = bufferW / 480;
+      scaleInputFieldToBuffer(bufferW);
+    }
     Entry.requestUpdate = true;
     resolutionFixed = true;
   } catch (e) { /* 실패하면 엔트리 기본 해상도를 쓴다 */ }

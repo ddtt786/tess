@@ -84,11 +84,14 @@ const jsValue = (value) => JSON.stringify(value ?? null)
   .replaceAll('\u2028', '\\u2028').replaceAll('\u2029', '\\u2029');
 
 /**
- * @param {{name: string, base: string, summary: object, entName: string, reload?: boolean}} options
+ * @param {{name: string, base: string, mediaBase?: string, summary: object, entName: string, reload?: boolean, boost?: boolean}} options
  *   base 는 entryjs 파일들을 가져올 곳 (`/lib` 또는 CDN 주소)
+ *   mediaBase 는 엔트리 기본 그림·소리를 가져올 곳. 부스트 모드에서는 반드시 같은
+ *   origin(`/lib`)이어야 한다 — WebGL 은 다른 origin 의 그림을 텍스처로 못 올린다
  *   reload 가 true 면 서버가 다시 컴파일할 때마다 페이지를 자동으로 새로고침한다
+ *   boost 가 true 면 엔트리를 부스트 모드(WebGL/PIXI 렌더러)로 띄운다
  */
-export function playerPage({ name, base, summary, entName, reload = true }) {
+export function playerPage({ name, base, mediaBase = base, summary, entName, reload = true, boost = false }) {
   // crossorigin="anonymous" 가 없으면, 실행 중 이 스크립트들(cross-origin CDN 이면)
   // 안에서 던진 오류는 브라우저가 보안상 진짜 메시지·스택을 숨기고 그냥 "Script error."
   // 라고만 알려준다 — 디버그 패널에 그렇게 뜨면 원인을 전혀 알 수 없다. jsDelivr·unpkg
@@ -658,7 +661,7 @@ ${runtimeScripts}
     await preloadTextFonts(project);
     Entry.init(document.getElementById('workspace'), {
       type: 'minimize',
-      libDir: ${jsValue(base)},
+      libDir: ${jsValue(mediaBase)},
       // baseUrl 은 일부러 안 정한다 — entryjs 기본값이 location.origin(util/init.js
       // setDefaultPathsFromOptions)이라 tts 읽어주기(block_ai_utilize_tts.js) 같은
       // 'AI 활용' 블록이 우리 서버(/api/expansionBlock/tts/read.mp3)로 요청을 보내는데,
@@ -677,6 +680,9 @@ ${runtimeScripts}
       // 줘서 mediaFilePath 가 우리 base 와 같은 규칙(밑에 바로 images/)을 쓰게 맞춘다.
       entryDir: '',
       fonts: [],
+      // 부스트 모드 = PIXI(WebGL) 렌더러. 엔트리 만들기 화면에서는 못 켜지만
+      // 실행기 자체는 이 옵션 하나로 그 모드로 돈다(GEHelper.INIT).
+      useWebGL: ${jsValue(boost)},
     });
     // Entry.init 은 그 안에서 매번 Entry.toast = new Entry.Toast() 를 새로 만든다
     // (entryjs util/init.js). interceptRuntimeErrors 가 Entry.init 보다 먼저 실행되면

@@ -77,15 +77,20 @@ export function findLocalRuntime(from = process.cwd()) {
 /**
  * 작품을 실행할 수 있는 서버를 띄운다.
  *
- * @param {{project: object, bundle: Buffer, assets: Array, name: string, port?: number, reload?: boolean, sourceMap?: object}} options
+ * @param {{project: object, bundle: Buffer, assets: Array, name: string, port?: number, reload?: boolean, sourceMap?: object, boost?: boolean}} options
  * @returns {Promise<{url: string, close: Function, runtime: string, update: Function}>}
  */
 export function serveProject({
   project, bundle, assets = [], name, port = DEFAULT_PORT, cwd = process.cwd(), reload = true, sourceMap = {},
+  boost = false,
 }) {
   const localRuntime = findLocalRuntime(cwd);
   const arrowDir = findArrowDir();
   const base = localRuntime ? '/lib' : CDN;
+  // 엔트리 기본 그림(확인 단추 · 좌표계 …)을 가져올 곳. 부스트 모드는 WebGL 이라
+  // 다른 origin 의 그림을 텍스처로 못 올리므로(entryjs 가 crossOrigin 없이 Image 를
+  // 만든다) 늘 우리 서버를 거치게 하고, 파일이 없으면 아래에서 CDN 으로 대신 받아 준다.
+  const mediaBase = localRuntime || boost ? '/lib' : CDN;
   const entName = `${safeName(name)}.ent`;
 
   let currentProject = project;
@@ -101,7 +106,7 @@ export function serveProject({
       objects: currentProject.objects.length,
       blocks: currentProject.objects.reduce((sum, object) => sum + countBlocks(JSON.parse(object.script)), 0),
     };
-    return playerPage({ name, base, summary, entName, reload });
+    return playerPage({ name, base, mediaBase, summary, entName, reload, boost });
   };
 
   const server = http.createServer((request, response) => {
@@ -133,6 +138,7 @@ export function serveProject({
       const target = path.join(localRuntime, url.slice('/lib/'.length));
       if (target.startsWith(localRuntime) && fs.existsSync(target)) return sendFile(response, target);
     }
+    if (!localRuntime && boost && url.startsWith('/lib/')) return proxyRuntimeFile(url, response);
 
     if (url === DEBUG_UI_PATH) return sendFile(response, DEBUG_UI_FILE);
 
@@ -220,6 +226,28 @@ async function proxyTts(request, response) {
     Readable.fromWeb(upstream.body).pipe(response);
   } catch (error) {
     send(response, 502, '.html', `<h1>tts 요청을 playentry.org 로 보내지 못했습니다: ${error.message}</h1>`);
+  }
+}
+
+/**
+ * 실행기 파일 하나를 CDN 에서 대신 받아 우리 origin 으로 내보낸다.
+ *
+ * 부스트 모드는 WebGL 로 그리는데, entryjs 는 기본 그림을 `crossOrigin` 없이
+ * `new Image()` 로 받아서(GEHelper.newSpriteWithCallback) CDN 에서 온 그림이면
+ * 캔버스가 오염된 것으로 취급돼 `texImage2D` 가 SecurityError 로 막힌다 — 확인
+ * 단추 같은 기본 그림이 통째로 안 보이고 그 프레임 렌더가 끊긴다.
+ */
+async function proxyRuntimeFile(url, response) {
+  const rest = url.slice('/lib/'.length);
+  // 남의 경로로 새어 나가지 않게 한다 — 이 프록시는 그 패키지 안만 내보낸다
+  if (rest.split('/').includes('..')) return send(response, 404, '.html', '<h1>404</h1>');
+  try {
+    const upstream = await fetch(`${CDN}/${rest}`);
+    if (!upstream.ok) return send(response, upstream.status, '.html', '<h1>404</h1>');
+    const body = Buffer.from(await upstream.arrayBuffer());
+    return send(response, 200, path.extname(rest).toLowerCase(), body);
+  } catch (error) {
+    return send(response, 502, '.html', `<h1>실행기 파일을 CDN 에서 받지 못했습니다: ${error.message}</h1>`);
   }
 }
 
