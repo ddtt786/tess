@@ -39,12 +39,19 @@ async function mountDebugPanel(t) {
   const live = {
     variables: { v1: 42 },
     lists: { l1: [{ data: 'ㄱ' }, { data: 'ㄴ' }] },
+    visible: { v1: false, l1: false },
   };
+  const seen = (id) => ({
+    isVisible: () => live.visible[id],
+    setVisible: (value) => { live.visible[id] = value; },
+  });
   const fakeVariable = (id) => (id in live.variables ? {
+    ...seen(id),
     getValue: () => live.variables[id],
     setValue: (value) => { live.variables[id] = value; },
   } : null);
   const fakeList = (id) => (id in live.lists ? {
+    ...seen(id),
     getArray: () => live.lists[id],
     replaceValue: (index, data) => { live.lists[id][index - 1].data = data; },
     appendValue: (data) => { live.lists[id].push({ data }); },
@@ -62,6 +69,8 @@ async function mountDebugPanel(t) {
     getDirection() { return this.direction; }, setDirection(v) { this.direction = v; },
     getScaleX() { return 1; }, getScaleY() { return 1; },
     getVisible() { return this.visible; },
+    setVisible(v) { this.visible = v; },
+    setImage(picture) { this.picture = picture; },
   };
   const stageObject = {
     id: 'o1',
@@ -69,14 +78,24 @@ async function mountDebugPanel(t) {
     rotateMethod: 'free',
     pictures: [{ id: 'p1', name: '기본' }, { id: 'p2', name: '점프' }],
     entity,
+    getPicture(id) { return this.pictures.find((p) => p.id === id) || null; },
+    setRotateMethod(method) { this.rotateMethod = method; },
   };
   entity.parent = stageObject;
+
+  const scenes = [{ id: 's1', name: '장면 1' }, { id: 's2', name: '장면 2' }];
+  const scene = {
+    selected: scenes[0],
+    getSceneById: (sceneId) => scenes.find((s) => s.id === sceneId) || null,
+    selectScene(target) { this.selected = target; },
+  };
 
   const listeners = {};
   window.Entry = {
     engine,
     block: blocks,
     requestUpdate: false,
+    scene,
     variableContainer: { getVariable: fakeVariable, getList: fakeList },
     container: { getObject: (id) => (id === 'o1' ? stageObject : null) },
     addEventListener: (name, fn) => { (listeners[name] = listeners[name] || []).push(fn); },
@@ -112,6 +131,7 @@ async function mountDebugPanel(t) {
     live,
     entity,
     stageObject,
+    scene,
     byId,
     click: (id) => byId(id).dispatchEvent(new window.MouseEvent('click')),
     choose: (id, value) => {
@@ -353,6 +373,94 @@ test('펼친 리스트에서 항목을 고치고 넣고 지울 수 있다', asyn
   assert.deepEqual(ui.live.lists.l1.map((item) => item.data), ['ㄷ', '']);
 });
 
+// 빈 항목은 글자가 없어서 칸의 폭이 0 이 돼 누를 수가 없었다.
+test('값이 빈 리스트 항목도 눌러서 고칠 수 있다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.live.lists.l1 = [{ data: '' }];
+  const list = await openData(ui);
+  [...list.querySelectorAll('.debug-expand')].find((n) => n.textContent === '기록')
+    .dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+
+  const cell = ui.byId('var-list').querySelector('.debug-list-ol .debug-edit');
+  assert.ok(cell.textContent.trim().length > 0, '빈 값이어도 누를 자리가 있어야 한다');
+  assert.match(cell.className, /empty/);
+
+  await ui.edit(cell, '채움');
+  assert.deepEqual(ui.live.lists.l1.map((item) => item.data), ['채움']);
+});
+
+// 펼친 항목·블록이 이름 오른쪽으로 눕지 않도록 flex 는 바로 아래 줄에만 건다.
+test('펼친 리스트 항목과 함수 블록은 세로로 쌓인다', () => {
+  const css = playerPage({
+    name: 'a', base: '/lib', summary: { scenes: 1, objects: 1, blocks: 1 }, entName: 'a.ent', reload: false,
+  });
+  assert.match(css, /\.debug-rows > li \{[^}]*display: flex/);
+  assert.doesNotMatch(css, /\.debug-rows li \{/);
+  assert.match(css, /\.debug-rows > li\.debug-items-row \{[^}]*display: block/);
+});
+
+// 넣고 지운 결과가 화면에 바로 보여야 한다. arrow 는 처음 평가에서 읽은 것만
+// 따라가므로, 접혀 있을 때 일찍 돌아가면 state.tick 을 놓쳐서 다시 안 그렸다.
+test('항목을 넣고 지우면 목록이 바로 다시 그려진다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  const list = await openData(ui);
+  [...list.querySelectorAll('.debug-expand')].find((n) => n.textContent === '기록')
+    .dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+  const rows = () => ui.byId('var-list').querySelectorAll('.debug-list-ol > li').length;
+  assert.equal(rows(), 2);
+
+  ui.byId('var-list').querySelector('.debug-add-btn').dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+  assert.equal(rows(), 3, '넣은 항목이 바로 보여야 한다');
+
+  ui.byId('var-list').querySelectorAll('.debug-list-ol .debug-mini-btn')[0]
+    .dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+  assert.equal(rows(), 2, '지운 항목이 바로 사라져야 한다');
+});
+
+// 고친 <input> 이 다음 칸에 재사용되면, value 속성을 다시 써도 화면 값이 안 따라온다.
+test('한 항목을 고친 뒤 다른 항목을 열면 그 항목의 값이 뜬다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  const list = await openData(ui);
+  [...list.querySelectorAll('.debug-expand')].find((n) => n.textContent === '기록')
+    .dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+
+  const cells = () => ui.byId('var-list').querySelectorAll('.debug-list-ol .debug-edit');
+  await ui.edit(cells()[0], '바뀐값');
+  assert.deepEqual(ui.live.lists.l1.map((i) => i.data), ['바뀐값', 'ㄴ']);
+
+  // 두 번째 항목을 열면 'ㄴ' 이 떠야 한다 (앞서 고친 '바뀐값' 이 아니라)
+  cells()[1].dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+  assert.equal(ui.window.document.querySelector('.debug-edit-input').value, 'ㄴ');
+});
+
+test('변수와 리스트를 무대에서 보이거나 숨길 수 있다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  const list = await openData(ui);
+
+  const toggles = list.querySelectorAll('.debug-toggle');
+  assert.equal(toggles.length, 2); // 변수 하나, 리스트 하나
+  assert.equal(toggles[0].textContent, '숨김'); // 처음엔 안 보이는 상태
+
+  toggles[0].dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+  assert.equal(ui.live.visible.v1, true);
+  assert.equal(ui.byId('var-list').querySelectorAll('.debug-toggle')[0].textContent, '보임');
+
+  ui.byId('var-list').querySelectorAll('.debug-toggle')[1]
+    .dispatchEvent(new ui.window.MouseEvent('click'));
+  assert.equal(ui.live.visible.l1, true);
+});
+
 test('리스트가 길어도 펼친 높이에는 한계가 있다', () => {
   const css = playerPage({
     name: 'a', base: '/lib', summary: { scenes: 1, objects: 1, blocks: 1 }, entName: 'a.ent', reload: false,
@@ -407,12 +515,39 @@ test('오브젝트 정보에 좌표 · 크기 · 방향 · 모양이 나온다',
   assert.match(info, /x 좌표12.35/);   // 소수점 둘째 자리까지만
   assert.match(info, /y 좌표-7/);
   assert.match(info, /크기100/);
-  assert.match(info, /방향0/);
   assert.match(info, /이동 방향90/);
-  assert.match(info, /모양점프/);
   assert.match(info, /모양 번호2 \/ 2/);
-  assert.match(info, /보이기보임/);
-  assert.match(info, /회전 방식free/);
+
+  // 모양·회전 방식은 드롭다운, 보이기는 토글이다
+  const [costume, rotate] = ui.byId('object-info').querySelectorAll('select');
+  assert.deepEqual([...costume.options].map((o) => o.textContent), ['기본', '점프']);
+  assert.equal(costume.value, 'p2'); // 지금 모양이 골라져 있다
+  assert.deepEqual([...rotate.options].map((o) => o.value), ['free', 'vertical', 'none']);
+  assert.equal(rotate.value, 'free');
+  assert.equal(ui.byId('object-info').querySelector('.debug-toggle').textContent, '보임');
+});
+
+test('모양·회전 방식을 드롭다운으로 바꾸고 보이기를 토글한다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug(dataProject);
+  ui.tab('objects');
+  await ui.settle();
+
+  const [costume, rotate] = ui.byId('object-info').querySelectorAll('select');
+  costume.value = 'p1';
+  costume.dispatchEvent(new ui.window.Event('change'));
+  assert.equal(ui.entity.picture.id, 'p1');
+
+  rotate.value = 'vertical';
+  rotate.dispatchEvent(new ui.window.Event('change'));
+  assert.equal(ui.stageObject.rotateMethod, 'vertical');
+
+  const toggle = ui.byId('object-info').querySelector('.debug-toggle');
+  toggle.dispatchEvent(new ui.window.MouseEvent('click'));
+  assert.equal(ui.entity.visible, false);
+  await ui.settle();
+  assert.equal(ui.byId('object-info').querySelector('.debug-toggle').textContent, '숨김');
 });
 
 test('오브젝트 좌표를 눌러서 바로 옮길 수 있다', async (t) => {
@@ -436,6 +571,81 @@ test('실행기가 아직 없으면 오브젝트 정보는 안내만 보여 준�
   ui.tab('objects');
   await ui.settle();
   assert.match(ui.byId('object-info').textContent, /한 번 실행해 보세요/);
+});
+
+// arrow 1.0.6 은 조각을 떼어낼 때 큐에 남은 갱신을 걷어내지 않아서, 오브젝트를 바꿀 때
+// 줄이 생기거나 없어지면 `expressionPool[effect] is not a function` 으로 터진다.
+// 그래서 줄 구성은 언제나 같아야 하고, 안 쓰는 줄은 hidden 으로만 감춰야 한다.
+test('오브젝트 정보의 줄 구성은 상황이 달라져도 그대로다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  const labels = () => [...ui.byId('object-info').querySelectorAll('li')]
+    .map((li) => li.querySelector('.key')?.textContent ?? '');
+
+  ui.window.tessRenderProjectDebug(dataProject);
+  ui.tab('objects');
+  await ui.settle();
+  const withObject = labels();
+  assert.ok(withObject.length > 5);
+
+  // 실행기가 이 오브젝트를 모를 때도 줄 수는 같고, 값 줄만 숨는다
+  ui.window.Entry.container = { getObject: () => null };
+  ui.click('debug-toggle'); // 패널을 열면 값 새로고침이 돌기 시작한다
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert.deepEqual(labels(), withObject);
+  const hidden = [...ui.byId('object-info').querySelectorAll('li')].filter((li) => li.hasAttribute('hidden'));
+  assert.equal(hidden.length, withObject.length - 1); // 안내 줄 하나만 남는다
+  assert.match(ui.byId('object-info').textContent, /한 번 실행해 보세요/);
+});
+
+test('글상자는 글 내용을 고칠 수 있고, 모양 줄은 감춘다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.entity.text = '점수: 0';
+  ui.entity.setText = (value) => { ui.entity.text = value; };
+  ui.window.tessRenderProjectDebug(dataProject);
+  ui.tab('objects');
+  await ui.settle();
+
+  const row = (label) => [...ui.byId('object-info').querySelectorAll('li')]
+    .find((li) => li.querySelector('.key')?.textContent === label);
+  assert.equal(row('글 내용').hasAttribute('hidden'), false);
+  assert.equal(row('모양').hasAttribute('hidden'), true); // 글상자에는 모양이 없다
+
+  await ui.edit(row('글 내용').querySelector('.debug-edit'), '점수: 99');
+  assert.equal(ui.entity.text, '점수: 99');
+});
+
+test('장면 바로가기로 그 장면으로 넘어간다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug({
+    ...dataProject,
+    scenes: [{ id: 's1', name: '장면 1' }, { id: 's2', name: '장면 2' }],
+  });
+  ui.tab('objects');
+  await ui.settle();
+
+  const buttons = ui.byId('scene-tree').querySelectorAll('.debug-scene-go');
+  assert.equal(buttons.length, 2);
+  assert.equal(ui.scene.selected.id, 's1');
+
+  buttons[1].dispatchEvent(new ui.window.MouseEvent('click'));
+  assert.equal(ui.scene.selected.id, 's2');
+});
+
+test('항목 추가 단추는 목록 맨 위에 있다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  const list = await openData(ui);
+  [...list.querySelectorAll('.debug-expand')].find((n) => n.textContent === '기록')
+    .dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+
+  const box = ui.byId('var-list').querySelector('.debug-list-items');
+  const kids = [...box.children];
+  assert.ok(kids[0].classList.contains('debug-add-btn'), '추가 단추가 첫 자식이어야 한다');
+  assert.ok(kids.indexOf(box.querySelector('.debug-list-ol')) > 0);
 });
 
 // --- Ctrl+Shift 로 무대에서 오브젝트 고르기 --------------------------------------

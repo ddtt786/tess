@@ -214,7 +214,11 @@ ${fontStyles}
   .error-item { font-size: 12px; margin-bottom: 6px; border: 1px solid #e5484d55; border-radius: 6px; padding: 4px 8px; }
   .error-item summary { cursor: pointer; color: #e5484d; word-break: break-word; }
   .error-item pre { white-space: pre-wrap; word-break: break-word; font-size: 11px; opacity: .8; margin: 6px 0 0; }
-  .debug-scene-title { font-size: 13px; font-weight: 600; margin: 8px 0 2px; }
+  .debug-scene-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 600; margin: 8px 0 2px;
+  }
+  .debug-scene-go { margin-left: auto; font-weight: 400; }
   .debug-object-list { list-style: none; margin: 0; padding: 0; }
   .debug-object-btn {
     display: block; width: 100%; text-align: left; padding: 3px 6px; margin: 1px 0; border-radius: 4px;
@@ -269,7 +273,13 @@ ${fontStyles}
 
   /* --- 자료 탭 --- */
   .debug-rows { list-style: none; margin: 0; padding: 0; font-size: 13px; }
-  .debug-rows li { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; border-bottom: 1px solid #0001; }
+  /* 바로 아래 줄에만 건다 — 펼친 리스트 항목과 함수 블록 트리에도 flex 가 걸리면
+     항목이 이름 오른쪽으로 눕고 블록이 가로로 늘어선다. */
+  .debug-rows > li { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; border-bottom: 1px solid #0001; }
+  /* display 를 정해 두면 브라우저 기본 스타일의 hidden(=display:none)을 이겨 버린다 */
+  .debug-rows > li[hidden] { display: none; }
+  /* 펼친 내용은 이름 줄 다음 줄로 따로 나온다 — 가로로 눕으면 안 된다 */
+  .debug-rows > li.debug-items-row { display: block; border-bottom: none; padding: 0; }
   .debug-rows .key { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
   .debug-rows .val {
     margin-left: auto; text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -288,16 +298,33 @@ ${fontStyles}
     font-size: 12px; overflow-wrap: anywhere; max-width: 60%;
     border: 1px solid transparent; border-radius: 4px; background: none; color: inherit;
     cursor: text; padding: 1px 5px;
+    /* 빈 값이어도 누를 수 있어야 한다 — 글자가 없으면 폭이 0 이 돼 버린다 */
+    min-width: 3.5em; min-height: 18px;
   }
   .debug-edit:hover { border-color: #0003; background: #4f80ff11; }
+  .debug-edit.empty { opacity: .4; font-style: italic; }
   .debug-edit-input {
     margin-left: auto; width: 55%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 12px; text-align: right; padding: 1px 5px; border-radius: 4px;
     border: 1px solid #4f80ff; background: none; color: inherit;
   }
 
+  /* 골라 쓰는 칸 (모양 · 회전 방식) */
+  .debug-select {
+    margin-left: auto; flex: none; font: inherit; font-size: 12px; max-width: 60%;
+    padding: 1px 4px; border-radius: 4px; border: 1px solid #0003; background: none; color: inherit;
+  }
+  .debug-select option { color: initial; }
+  /* 켜고 끄는 칸 (보이기 · 변수 보이기) */
+  .debug-toggle {
+    flex: none; margin-left: 8px; font-size: 11px; line-height: 1; padding: 3px 9px;
+    border-radius: 999px; border: 1px solid #0003; background: none; color: inherit;
+    cursor: pointer; opacity: .45;
+  }
+  .debug-toggle.on { opacity: 1; border-color: #4f80ff88; background: #4f80ff1a; }
+  .debug-toggle:hover { background: #4f80ff22; }
+
   /* 펼치는 줄 (리스트 · 함수) */
-  .debug-list-row { display: block; }
   .debug-list-head { display: flex; align-items: baseline; gap: 8px; }
   .debug-expand {
     border: none; background: none; color: inherit; font: inherit; cursor: pointer;
@@ -309,14 +336,20 @@ ${fontStyles}
   /* 항목이 100개여도 패널을 다 잡아먹지 않도록 여기서 스크롤한다 */
   .debug-list-items { max-height: 190px; overflow: auto; margin: 4px 0 8px 12px; }
   .debug-list-ol { list-style: none; margin: 0; padding: 0; }
-  .debug-list-ol li { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
-  .debug-list-index { font-size: 11px; opacity: .45; min-width: 22px; }
+  .debug-list-ol > li { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+  .debug-list-index { flex: none; font-size: 11px; opacity: .45; min-width: 22px; text-align: right; }
+  /* 항목 값은 남는 폭을 다 쓴다. 오른쪽으로 밀어 놓으면 글이 긴 항목이 몇 글자만 보인다. */
+  .debug-list-ol .debug-edit,
+  .debug-list-ol .debug-edit-input {
+    flex: 1 1 auto; width: auto; max-width: none; margin-left: 0; text-align: left; min-width: 0;
+  }
+  .debug-list-ol .debug-mini-btn { flex: none; }
   .debug-mini-btn {
     font-size: 11px; line-height: 1; padding: 3px 7px; border-radius: 5px;
     border: 1px solid #0003; background: none; color: inherit; cursor: pointer;
   }
   .debug-mini-btn:hover { background: #4f80ff22; }
-  .debug-add-btn { margin-top: 5px; }
+  .debug-add-btn { margin: 0 0 6px; }
   .debug-func-code { font-size: 12px; }
   .debug-func-code ul { list-style: none; margin: 0; padding-left: 12px; border-left: 1px dashed #0002; }
   .debug-func-code > ul { padding-left: 0; border-left: none; }

@@ -193,6 +193,25 @@ const addListItem = (id) => {
   state.tick += 1;
 };
 
+/** 무대에 값이 보이는지 — 변수·리스트 모두 같은 API 를 쓴다 */
+const liveEntryOf = (entry) => (entry.variableType === 'list' ? liveList(entry.id) : liveVariable(entry.id));
+
+const entryVisible = (entry) => {
+  const live = liveEntryOf(entry);
+  try {
+    if (live && typeof live.isVisible === 'function') return live.isVisible();
+  } catch (error) { /* 실행기가 아직 없으면 선언된 값을 쓴다 */ }
+  return Boolean(entry.visible);
+};
+
+const setEntryVisible = (entry, visible) => {
+  const live = liveEntryOf(entry);
+  try {
+    if (live && typeof live.setVisible === 'function') live.setVisible(Boolean(visible));
+  } catch (error) { failed('변수 보이기 바꾸기', error); }
+  state.tick += 1;
+};
+
 const removeListItem = (id, index) => {
   try {
     const list = liveList(id);
@@ -231,11 +250,16 @@ const describeFunction = (fn) => {
 // --- 고쳐 쓰기 칸 -------------------------------------------------------------
 // 값을 늘 <input> 으로 두면 0.4초마다 도는 새로고침이 타이핑을 덮어써 버린다.
 // 그래서 평소엔 글자만 보여 주고, 누른 칸 하나만 잠깐 입력칸으로 바꾼다.
-const beginEdit = (key) => {
+const beginEdit = (key, current) => {
   state.editing = key;
   requestAnimationFrame(() => {
     const input = panel.querySelector('.debug-edit-input');
-    if (input) { input.focus(); input.select(); }
+    if (!input) return;
+    // arrow 가 앞서 고치던 칸의 <input> 을 그대로 다시 쓸 수 있는데, 사람이 한 번
+    // 건드린 입력칸은 value 속성을 다시 써도 화면 값이 안 따라온다. 여기서 직접 넣는다.
+    input.value = String(current ?? '');
+    input.focus();
+    input.select();
   });
 };
 
@@ -245,8 +269,11 @@ const editable = (key, getValue, commit) => () => {
   state.tick;
   const value = getValue();
   if (state.editing !== key) {
-    return html`<button type="button" class="val debug-edit" title="눌러서 고치기"
-      @click="${() => beginEdit(key)}">${preview(value)}</button>`;
+    // 빈 값도 눌러서 고칠 수 있어야 하므로 자리를 채워 둔다 (글자가 없으면 폭이 0 이다)
+    const text = preview(value);
+    return html`<button type="button" title="눌러서 고치기"
+      class="${'val debug-edit' + (text === '' ? ' empty' : '')}"
+      @click="${() => beginEdit(key, value)}">${text === '' ? '(빈 값)' : text}</button>`;
   }
   // Enter 로 끝내면 입력칸이 사라지면서 blur 까지 이어 나므로 한 번만 반영한다
   let settled = false;
@@ -262,6 +289,37 @@ const editable = (key, getValue, commit) => () => {
     if (event.key === 'Enter') done(event);
     if (event.key === 'Escape') { settled = true; state.editing = ''; }
   }}">`;
+};
+
+/**
+ * 골라 쓰는 칸. 목록도 지금 고른 값도 함수로 받는다 — 줄 DOM 은 다시 쓰이므로
+ * 만들 때 값을 붙잡아 두면 오브젝트를 바꿔도 옛 목록이 그대로 남는다.
+ * `value` 는 arrow 가 속성이 아니라 프로퍼티로 넣어 주므로(setAttr) 실제로 선택이
+ * 따라 움직인다 — 작품이 실행 중에 모양을 바꿔도 여기에 그대로 비친다.
+ */
+const chooser = (getOptions, getValue, commit) => html`
+  <select class="val debug-select" value="${() => { state.tick; return String(getValue()); }}"
+    @change="${(event) => commit(event.target.value)}">
+    ${() => {
+    state.tick;
+    // <option> 안에는 반응형 표현식(함수)을 두지 않는다. 목록이 통째로 갈릴 때
+    // (오브젝트를 바꾸면 모양 목록이 달라진다) arrow 가 그 조각들을 떼어내는데,
+    // 그 안에 큐로 올라간 갱신이 남아 있으면 이미 반납된 자리를 불러 터진다
+    // (`expressionPool[effect] is not a function`). `selected` 는 함수가 아니라
+    // 지금 값으로 계산해 둔 상수라서 처음 그릴 때의 선택만 정하고, 그 뒤로 값이
+    // 바뀌는 것은 위의 `value` 가 프로퍼티로 직접 넣어 준다.
+    const current = String(getValue());
+    return getOptions().map((option) => html`<option value="${option.value}"
+        selected="${option.value === current}">${option.label}</option>`.key(option.value));
+  }}
+  </select>`;
+
+/** 켜고 끄는 칸 */
+const toggle = (getValue, commit, labels) => () => {
+  state.tick;
+  const on = Boolean(getValue());
+  return html`<button type="button" class="${'val debug-toggle' + (on ? ' on' : '')}"
+    @click="${() => commit(!on)}">${on ? labels[0] : labels[1]}</button>`;
 };
 
 // --- 블록 트리 --------------------------------------------------------------
@@ -300,6 +358,18 @@ const showObject = (object) => {
   } catch (error) {
     currentThreads = [];
   }
+  state.tick += 1;
+};
+
+/**
+ * 그 장면으로 바로 넘어간다 — 엔트리의 "장면 시작하기" 와 같은 길이다.
+ * 뒤쪽 장면을 고쳐 보려고 앞 장면을 처음부터 다시 깨는 수고를 덜어 준다.
+ */
+const goToScene = (sceneId) => {
+  try {
+    const scene = Entry.scene.getSceneById(sceneId);
+    if (scene) Entry.scene.selectScene(scene);
+  } catch (error) { failed('장면 바로가기', error); }
   state.tick += 1;
 };
 
@@ -353,31 +423,120 @@ const pictureInfo = (live) => {
   return { name: current.name || current.id, index: at < 0 ? '-' : String(at + 1) + ' / ' + pictures.length };
 };
 
-// body 는 함수로 받는다 — 키가 같은 줄은 DOM 이 다시 쓰이고, 그 안에서 함수로 넣은
-// 것만 다시 평가되기 때문이다 (editable 의 같은 주석 참고).
-const infoRow = (label, body) => html`
-  <li><span class="key">${label}</span>${body}</li>`.key(label);
+const setPicture = (objectId, pictureId) => {
+  const live = liveEntity(objectId);
+  try {
+    // 엔트리의 "모양으로 바꾸기" 와 같은 길이다 (entryjs block_looks.js)
+    const picture = live && live.object.getPicture ? live.object.getPicture(pictureId) : null;
+    if (picture) live.entity.setImage(picture);
+    if (window.Entry) Entry.requestUpdate = true;
+  } catch (error) { failed('모양 바꾸기', error); }
+  state.tick += 1;
+};
 
-const objectInfo = () => {
+const setRotateMethod = (objectId, method) => {
+  const live = liveEntity(objectId);
+  try {
+    if (live && typeof live.object.setRotateMethod === 'function') live.object.setRotateMethod(method);
+    if (window.Entry) Entry.requestUpdate = true;
+  } catch (error) { failed('회전 방식 바꾸기', error); }
+  state.tick += 1;
+};
+
+const setEntityVisible = (objectId, visible) => {
+  const live = liveEntity(objectId);
+  try {
+    if (live && typeof live.entity.setVisible === 'function') live.entity.setVisible(Boolean(visible));
+    if (window.Entry) Entry.requestUpdate = true;
+  } catch (error) { failed('보이기 바꾸기', error); }
+  state.tick += 1;
+};
+
+const setEntityText = (objectId, text) => {
+  const live = liveEntity(objectId);
+  try {
+    if (live && typeof live.entity.setText === 'function') live.entity.setText(String(text));
+    if (window.Entry) Entry.requestUpdate = true;
+  } catch (error) { failed('글 내용 바꾸기', error); }
+  state.tick += 1;
+};
+
+const ROTATE_METHODS = [
+  { value: 'free', label: '자유 회전' },
+  { value: 'vertical', label: '좌우 회전' },
+  { value: 'none', label: '회전 안 함' },
+];
+
+/**
+ * body 는 함수로 받는다 — 키가 같은 줄은 DOM 이 다시 쓰이고, 그 안에서 함수로 넣은
+ * 것만 다시 평가되기 때문이다 (editable 의 같은 주석 참고).
+ *
+ * 키에는 오브젝트를 넣지 않는다. 오브젝트를 바꿀 때마다 열두 줄의 키가 한꺼번에
+ * 달라지면 arrow 가 그 줄들의 표현식 자리를 반납하는데(releaseExpressions), 같은
+ * 순간 state.tick 이 큐에 올려 둔 그 줄들의 갱신이 뒤늦게 돌면서 이미 반납된 자리를
+ * 부른다 — `expressionPool[effect] is not a function` 이 그것이다. 줄은 그대로 두고
+ * 안쪽 함수들이 그때그때 지금 오브젝트를 찾아보게 한다.
+ */
+const infoRow = (label, body, visible) => html`
+  <li hidden="${() => { state.tick; return visible ? !visible() : false; }}"
+    ><span class="key">${label}</span>${body}</li>`.key(label);
+
+/** 지금 고른 오브젝트의 실행기 쪽 짝. 줄마다 그때그때 찾는다 (infoRow 주석 참고) */
+const currentLive = () => (state.currentId ? liveEntity(state.currentId) : null);
+const currentEntity = (get, fallback = '') => {
+  const live = currentLive();
+  return live ? get(live) : fallback;
+};
+
+/**
+ * 목록은 배열만 돌려준다 (varRows 의 주석 참고).
+ *
+ * 그리고 **줄 구성은 언제나 똑같다.** 오브젝트를 바꿀 때 줄이 생기거나 없어지면
+ * arrow 가 그 줄의 표현식 자리를 반납하는데(releaseExpressions), 이미 큐에 올라가
+ * 있던 그 줄의 갱신이 뒤늦게 돌면서 반납된 자리를 불러 터진다
+ * (`expressionPool[effect] is not a function`). arrow 1.0.6 은 조각을 떼어낼 때
+ * 큐에 남은 갱신을 걷어내지 않는다. 그래서 안내 문구도, 글상자 전용 줄도 줄을
+ * 없애는 대신 `hidden` 으로만 감춘다 — 속성만 바뀌지 구조는 그대로다.
+ */
+const objectInfoRows = () => {
   state.tick;
-  if (!state.currentId) return empty('위 목록에서 오브젝트를 고르세요.');
-  const live = liveEntity(state.currentId);
-  if (!live) return empty('실행기가 이 오브젝트를 아직 만들지 않았습니다. 한 번 실행해 보세요.');
+  state.editing;
 
   const shown = (get) => () => { state.tick; return html`<span class="val">${String(get())}</span>`; };
-  const rows = ENTITY_FIELDS.map((field) => infoRow(field.label, field.set
-    ? editable('entity:' + field.key, () => field.get(live.entity),
-      (text) => field.set(state.currentId, text))
-    : shown(() => field.get(live.entity))));
+  const ready = () => Boolean(currentLive());
+  const isText = () => currentEntity((l) => l.entity.text !== undefined, false);
+  const rows = [
+    infoRow('', () => html`<span class="debug-empty">${() => (state.currentId
+      ? '실행기가 이 오브젝트를 아직 만들지 않았습니다. 한 번 실행해 보세요.'
+      : '위 목록에서 오브젝트를 고르세요.')}</span>`, () => !ready()),
+  ];
+  for (const field of ENTITY_FIELDS) {
+    rows.push(infoRow(field.label, field.set
+      ? editable('entity:' + field.key, () => currentEntity((l) => field.get(l.entity)),
+        (text) => field.set(state.currentId, text))
+      : shown(() => currentEntity((l) => field.get(l.entity))), ready));
+  }
 
-  return html`<ul class="debug-rows">
-    ${rows}
-    ${infoRow('모양', shown(() => pictureInfo(live).name))}
-    ${infoRow('모양 번호', shown(() => pictureInfo(live).index))}
-    ${infoRow('보이기', shown(() => (call(live.entity, 'getVisible', true) ? '보임' : '숨김')))}
-    ${infoRow('회전 방식', shown(() => (live.object && live.object.rotateMethod) || 'free'))}
-    ${live.entity.text === undefined ? '' : infoRow('글 내용', shown(() => preview(live.entity.text)))}
-  </ul>`;
+  const costumes = () => currentEntity(
+    (l) => ((l.object && l.object.pictures) || []).map((p) => ({ value: p.id, label: p.name || p.id })),
+    [],
+  );
+
+  rows.push(infoRow('모양', chooser(costumes,
+    () => currentEntity((l) => (l.entity.picture ? l.entity.picture.id : '')),
+    (id) => setPicture(state.currentId, id)), () => ready() && !isText()));
+  rows.push(infoRow('모양 번호', shown(() => currentEntity((l) => pictureInfo(l).index)),
+    () => ready() && !isText()));
+  rows.push(infoRow('보이기', toggle(() => currentEntity((l) => call(l.entity, 'getVisible', true), true),
+    (next) => setEntityVisible(state.currentId, next), ['보임', '숨김']), ready));
+  rows.push(infoRow('회전 방식', chooser(() => ROTATE_METHODS,
+    () => currentEntity((l) => (l.object && l.object.rotateMethod) || 'free', 'free'),
+    (method) => setRotateMethod(state.currentId, method)), () => ready() && !isText()));
+  // 글상자는 글 내용도 여기서 바로 고친다
+  rows.push(infoRow('글 내용', editable('entity:text',
+    () => currentEntity((l) => l.entity.text),
+    (text) => setEntityText(state.currentId, text)), () => ready() && isText()));
+  return rows;
 };
 
 // --- 섹션 (위아래 크기 조절 · 딱 붙이기) ------------------------------------------
@@ -483,12 +642,32 @@ const expandClass = (key) => () => 'key debug-expand' + (state.expanded === key 
 /** 리스트 한 줄 — 이름을 누르면 항목이 펼쳐지고, 다시 누르면 접힌다 */
 const listRow = (entry) => {
   const key = 'list:' + entry.id;
-  const items = () => {
-    if (state.expanded !== key) return '';
-    state.tick;
-    const array = listArray(entry.source);
-    return html`
+  return html`
+    <li class="debug-list-head">
+      <button type="button" class="${expandClass(key)}"
+        @click="${() => toggleExpanded(key)}">${entry.name}</button>
+      <span class="tag">${entry.scope} · ${entry.kind}</span>
+      <span class="val">${() => { state.tick; return liveValue(entry.source); }}</span>
+      ${visibleToggle(entry)}
+    </li>`.key(entry.id);
+};
+
+/**
+ * 펼친 리스트 항목들 — 이름 줄 안이 아니라 그 다음 줄로 따로 낸다.
+ *
+ * arrow 는 키가 같은 줄의 DOM 을 다시 쓰면서 새로 넘긴 함수를 다시 묶지 않는다.
+ * 그래서 이름 줄 안에 넣어 두면 처음 묶인 함수가 그대로 남아, 항목을 넣거나 지워도
+ * 화면이 안 바뀐다. 목록의 한 줄로 따로 내고 키에 항목 수를 넣으면, 개수가 달라질
+ * 때 arrow 가 키가 다른 새 줄로 보고 제대로 다시 만든다.
+ */
+const listItemsRow = (entry) => {
+  const key = 'list:' + entry.id;
+  const array = listArray(entry.source);
+  return html`
+    <li class="debug-items-row">
       <div class="debug-list-items">
+        <button type="button" class="debug-mini-btn debug-add-btn"
+          @click="${() => addListItem(entry.id)}">항목 추가</button>
         ${array.length === 0
     ? html`<p class="debug-empty">비어 있습니다.</p>`
     : html`<ol class="debug-list-ol">${array.map((item, index) => html`
@@ -499,67 +678,92 @@ const listRow = (entry) => {
               <button type="button" class="debug-mini-btn" title="이 항목 지우기"
                 @click="${() => removeListItem(entry.id, index)}">−</button>
             </li>`.key(index))}</ol>`}
-        <button type="button" class="debug-mini-btn debug-add-btn"
-          @click="${() => addListItem(entry.id)}">항목 추가</button>
-      </div>`;
-  };
-  return html`
-    <li class="debug-list-row">
-      <div class="debug-list-head">
-        <button type="button" class="${expandClass(key)}"
-          @click="${() => toggleExpanded(key)}">${entry.name}</button>
-        <span class="tag">${entry.scope} · ${entry.kind}</span>
-        <span class="val">${() => { state.tick; return liveValue(entry.source); }}</span>
       </div>
-      ${items}
-    </li>`.key(entry.id);
+    </li>`.key(entry.id + ':items:' + array.length);
 };
+
+/** 무대에 값을 띄울지 말지 (엔트리의 "변수 보이기/숨기기" 와 같은 것) */
+const visibleToggle = (entry) => toggle(
+  () => entryVisible(entry.source),
+  (next) => setEntryVisible(entry.source, next),
+  ['보임', '숨김'],
+);
 
 const variableRow = (entry) => html`
   <li>
     <span class="key">${entry.name}</span>
     <span class="tag">${entry.scope} · ${entry.kind}</span>
     ${editable('var:' + entry.id, () => rawValue(entry.source), (text) => setVariable(entry.id, text))}
+    ${visibleToggle(entry)}
   </li>`.key(entry.id);
 
 /** 함수 한 줄 — 이름을 누르면 그 함수의 블록이 펼쳐진다 */
 const functionRow = (fn) => {
   const key = 'func:' + fn.id;
-  const code = () => {
-    if (state.expanded !== key) return '';
-    const content = functionContentById.get(fn.id);
-    return html`
+  return html`
+    <li class="debug-list-head">
+      <button type="button" class="${expandClass(key)}"
+        @click="${() => toggleExpanded(key)}">${fn.name}</button>
+      <span class="tag">${fn.params}개 인자</span>
+      <span class="val">${fn.kind}</span>
+    </li>`.key(fn.id);
+};
+
+/** 펼친 함수 코드 — 리스트 항목과 같은 이유로 이름 줄 다음에 따로 낸다 */
+const functionCodeRow = (fn) => {
+  const content = functionContentById.get(fn.id);
+  return html`
+    <li class="debug-items-row">
       <div class="debug-list-items debug-func-code">
         ${!content || content.length === 0
     ? html`<p class="debug-empty">블록을 읽지 못했습니다.</p>`
     : html`<ul>${content.map((block) => blockNode(block))}</ul>`}
-      </div>`;
-  };
-  return html`
-    <li class="debug-list-row">
-      <div class="debug-list-head">
-        <button type="button" class="${expandClass(key)}"
-          @click="${() => toggleExpanded(key)}">${fn.name}</button>
-        <span class="tag">${fn.params}개 인자</span>
-        <span class="val">${fn.kind}</span>
       </div>
-      ${code}
-    </li>`.key(fn.id);
+    </li>`.key(fn.id + ':code');
+};
+
+const emptyRow = (text) => html`<li class="debug-empty">${text}</li>`.key('empty');
+
+/**
+ * 목록은 "배열을 그대로 돌려주는" 꼴로만 만든다.
+ *
+ * arrow 1.0.6 은 `${() => 배열}` 은 키를 보고 제대로 다시 맞춰 주지만,
+ * `${() => html`<ul>${배열}</ul>`}` 처럼 템플릿으로 한 번 감싸면 처음 한 번만 그리고
+ * 그 뒤로는 항목이 늘거나 줄어도 화면이 안 바뀐다 (클로저는 다시 도는데 DOM 만
+ * 그대로다). 그래서 <ul> 은 바깥 템플릿에 붙박이로 두고, 함수는 <li> 배열만 돌려준다.
+ */
+const varRows = () => {
+  state.tick;
+  state.editing;
+  state.expanded;
+  if (state.variables.length === 0) return [emptyRow('변수나 리스트가 없습니다.')];
+  // 펼친 항목은 이름 줄 "다음 줄" 로 낸다 (listItemsRow 주석 참고)
+  const rows = [];
+  for (const entry of state.variables) {
+    if (entry.source.variableType !== 'list') { rows.push(variableRow(entry)); continue; }
+    rows.push(listRow(entry));
+    if (state.expanded === 'list:' + entry.id) rows.push(listItemsRow(entry));
+  }
+  return rows;
+};
+
+const functionRows = () => {
+  state.expanded;
+  state.tick;
+  if (state.functions.length === 0) return [emptyRow('함수가 없습니다.')];
+  const rows = [];
+  for (const fn of state.functions) {
+    rows.push(functionRow(fn));
+    if (state.expanded === 'func:' + fn.id) rows.push(functionCodeRow(fn));
+  }
+  return rows;
 };
 
 const dataTab = () => sections([
   {
     id: 'data-vars',
     title: '변수 · 리스트',
-    body: html`<div id="var-list">${() => {
-      state.tick;
-      state.editing;
-      state.expanded;
-      if (state.variables.length === 0) return empty('변수나 리스트가 없습니다.');
-      return html`<ul class="debug-rows">${state.variables.map((entry) => (entry.source.variableType === 'list'
-    ? listRow(entry)
-    : variableRow(entry)))}</ul>`;
-    }}</div>`,
+    body: html`<div id="var-list"><ul class="debug-rows">${varRows}</ul></div>`,
   },
   {
     id: 'data-signals',
@@ -575,13 +779,7 @@ const dataTab = () => sections([
   {
     id: 'data-functions',
     title: '함수',
-    body: html`<div id="function-list">${() => {
-      state.expanded;
-      state.tick;
-      return state.functions.length === 0
-        ? empty('함수가 없습니다.')
-        : html`<ul class="debug-rows">${state.functions.map(functionRow)}</ul>`;
-    }}</div>`,
+    body: html`<div id="function-list"><ul class="debug-rows">${functionRows}</ul></div>`,
   },
 ]);
 
@@ -593,7 +791,11 @@ const objectsTab = () => sections([
     ? empty('불러오는 중…')
     : state.scenes.map((scene) => html`
         <div>
-          <div class="debug-scene-title">${scene.name}</div>
+          <div class="debug-scene-title">
+            <span>${scene.name}</span>
+            <button type="button" class="debug-mini-btn debug-scene-go" data-scene-id="${scene.id}"
+              title="이 장면으로 바로 넘어가기" @click="${() => goToScene(scene.id)}">바로가기</button>
+          </div>
           <ul class="debug-object-list">${scene.objects.length === 0
     ? html`<li class="debug-empty">(오브젝트 없음)</li>`
     : scene.objects.map((object) => html`
@@ -607,7 +809,7 @@ const objectsTab = () => sections([
   {
     id: 'objects-info',
     title: html`오브젝트 정보 <span id="object-info-name">${() => (state.currentName ? '— ' + state.currentName : '')}</span>`,
-    body: html`<div id="object-info">${() => { state.editing; return objectInfo(); }}</div>`,
+    body: html`<div id="object-info"><ul class="debug-rows">${objectInfoRows}</ul></div>`,
   },
   {
     id: 'objects-blocks',
@@ -771,7 +973,7 @@ window.tessHighlightBlock = function highlightBlock(blockId) {
   openPanel('objects');
   requestAnimationFrame(() => {
     const target = panel.querySelector('[data-block-id="' + blockId + '"]');
-    if (target) target.scrollIntoView({ block: 'center' });
+    if (target && target.scrollIntoView) target.scrollIntoView({ block: 'center' });
   });
 };
 
@@ -785,7 +987,7 @@ const selectObjectById = (objectId) => {
   // 오브젝트가 149개나 되는 작품도 있어서, 고른 줄이 목록 밖에 있으면 안 보인다
   requestAnimationFrame(() => {
     const row = panel.querySelector('[data-object-id="' + objectId + '"]');
-    if (row) row.scrollIntoView({ block: 'nearest' });
+    if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
   });
 };
 

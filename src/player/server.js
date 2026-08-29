@@ -224,7 +224,12 @@ async function proxyTts(request, response) {
 }
 
 function send(response, status, ext, body) {
-  response.writeHead(status, { 'content-type': MIME[ext] ?? 'application/octet-stream' });
+  response.writeHead(status, {
+    'content-type': MIME[ext] ?? 'application/octet-stream',
+    // 이 서버는 고칠 때마다 다시 띄우는 개발용이다. 브라우저가 한 번 받아 둔
+    // project.json 이나 debug-ui.js 를 계속 쓰면, 고친 게 새로고침해도 안 나온다.
+    'cache-control': 'no-store',
+  });
   response.end(body);
 }
 
