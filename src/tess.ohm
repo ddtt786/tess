@@ -307,7 +307,7 @@ Tess {
     | flip y                    -- flipY
     | order front               -- orderFront
     | order back                -- orderBack
-    | order first                -- orderFirst
+    | order first               -- orderFirst
     | order last                -- orderLast
 
   // --- 8.5 글상자 제어 -------------------------------------------------------
@@ -522,6 +522,7 @@ Tess {
   free        = "free"        ~identifierPart
   from        = "from"        ~identifierPart
   front       = "front"       ~identifierPart
+  first       = "first"       ~identifierPart
   function    = "function"    ~identifierPart
   go          = "go"          ~identifierPart
   hide        = "hide"        ~identifierPart
@@ -532,6 +533,7 @@ Tess {
   jump        = "jump"        ~identifierPart
   key         = "key"         ~identifierPart
   kill        = "kill"        ~identifierPart
+  last        = "last"        ~identifierPart
   list        = "list"        ~identifierPart
   lock        = "lock"        ~identifierPart
   look        = "look"        ~identifierPart
