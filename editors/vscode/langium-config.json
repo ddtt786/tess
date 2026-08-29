@@ -1,0 +1,12 @@
+{
+  "projectName": "Tess",
+  "languages": [
+    {
+      "id": "tess",
+      "grammar": "src/language/tess.langium",
+      "fileExtensions": [".tess"],
+      "caseInsensitive": false
+    }
+  ],
+  "out": "src/language/generated"
+}

@@ -1,19 +1,63 @@
 {
   "name": "tess-lang",
   "displayName": "Tess",
-  "description": "Tess 언어 문법 강조 (엔트리 작품으로 컴파일되는 텍스트 언어)",
-  "version": "1.0.0",
+  "description": "Tess language support — Langium language server, diagnostics, completion and highlighting",
+  "version": "2.0.0",
   "publisher": "tess",
   "license": "ISC",
-  "engines": { "vscode": "^1.60.0" },
-  "categories": ["Programming Languages"],
+  "private": true,
+  "type": "module",
+  "engines": {
+    "vscode": "^1.85.0",
+    "node": ">=18"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "main": "./out/extension.cjs",
+  "scripts": {
+    "langium:generate": "langium generate",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package --no-dependencies",
+    "pretest": "npm run build",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "langium": "~4.3.1",
+    "vscode-languageclient": "~10.1.1",
+    "vscode-languageserver": "~10.0.1"
+  },
+  "devDependencies": {
+    "@babel/code-frame": "^8.0.0",
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.85.0",
+    "chevrotain": "^13.2.0",
+    "esbuild": "^0.25.0",
+    "langium-cli": "~4.3.0",
+    "typescript": "^5.7.0"
+  },
+  "activationEvents": [
+    "onLanguage:tess"
+  ],
   "contributes": {
     "languages": [
       {
         "id": "tess",
-        "aliases": ["Tess", "tess"],
-        "extensions": [".tess"],
-        "configuration": "./language-configuration.json"
+        "aliases": [
+          "Tess",
+          "tess"
+        ],
+        "extensions": [
+          ".tess"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/tess.svg",
+          "dark": "./icons/tess.svg"
+        }
       }
     ],
     "grammars": [
@@ -22,6 +66,35 @@
         "scopeName": "source.tess",
         "path": "./syntaxes/tess.tmLanguage.json"
       }
-    ]
+    ],
+    "commands": [
+      {
+        "command": "tess.restartServer",
+        "title": "Tess: 언어 서버 다시 시작",
+        "category": "Tess"
+      }
+    ],
+    "configuration": {
+      "title": "Tess",
+      "properties": {
+        "tess.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "언어 서버와 주고받는 메시지를 출력 채널에 기록합니다."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[tess]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2,
+        "editor.semanticHighlighting.enabled": true
+      }
+    }
   }
 }

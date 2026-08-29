@@ -2,3 +2,5 @@ node_modules
 build
 temp
 examples/ent
+editors/vscode/out
+editors/vscode/*.vsix
