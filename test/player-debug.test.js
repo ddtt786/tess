@@ -35,13 +35,52 @@ async function mountDebugPanel(t) {
     is_touch_supported: { func: () => '실제터치' },
     is_current_device_type: { func: (sprite, script) => '실제' + script.getField('DEVICE', script) },
   };
+  // 실행기가 들고 있는 값. 디버거가 고쳐 쓰면 여기가 바뀌어야 한다.
+  const live = {
+    variables: { v1: 42 },
+    lists: { l1: [{ data: 'ㄱ' }, { data: 'ㄴ' }] },
+  };
+  const fakeVariable = (id) => (id in live.variables ? {
+    getValue: () => live.variables[id],
+    setValue: (value) => { live.variables[id] = value; },
+  } : null);
+  const fakeList = (id) => (id in live.lists ? {
+    getArray: () => live.lists[id],
+    replaceValue: (index, data) => { live.lists[id][index - 1].data = data; },
+    appendValue: (data) => { live.lists[id].push({ data }); },
+    deleteValue: (index) => { live.lists[id].splice(index - 1, 1); },
+  } : null);
+
+  // 무대 위 오브젝트. entity 는 엔트리가 주는 게터들만 흉내낸다.
+  const entity = {
+    x: 12.345, y: -7, size: 100, rotation: 0, direction: 90, visible: true,
+    picture: { id: 'p2', name: '점프' },
+    getX() { return this.x; }, setX(v) { this.x = v; },
+    getY() { return this.y; }, setY(v) { this.y = v; },
+    getSize() { return this.size; }, setSize(v) { this.size = v; },
+    getRotation() { return this.rotation; }, setRotation(v) { this.rotation = v; },
+    getDirection() { return this.direction; }, setDirection(v) { this.direction = v; },
+    getScaleX() { return 1; }, getScaleY() { return 1; },
+    getVisible() { return this.visible; },
+  };
+  const stageObject = {
+    id: 'o1',
+    name: '치로',
+    rotateMethod: 'free',
+    pictures: [{ id: 'p1', name: '기본' }, { id: 'p2', name: '점프' }],
+    entity,
+  };
+  entity.parent = stageObject;
+
+  const listeners = {};
   window.Entry = {
     engine,
     block: blocks,
-    variableContainer: {
-      getVariable: (id) => (id === 'v1' ? { getValue: () => 42 } : null),
-      getList: (id) => (id === 'l1' ? { getArray: () => [{ data: 'ㄱ' }, { data: 'ㄴ' }] } : null),
-    },
+    requestUpdate: false,
+    variableContainer: { getVariable: fakeVariable, getList: fakeList },
+    container: { getObject: (id) => (id === 'o1' ? stageObject : null) },
+    addEventListener: (name, fn) => { (listeners[name] = listeners[name] || []).push(fn); },
+    dispatchEvent: (name, ...args) => (listeners[name] || []).forEach((fn) => fn(...args)),
   };
   window.tessDebugSink = (fn) => { window.__sink = fn; };
   window.tessReportError = (kind, error) => window.__sink({
@@ -70,6 +109,9 @@ async function mountDebugPanel(t) {
     window,
     engine,
     blocks,
+    live,
+    entity,
+    stageObject,
     byId,
     click: (id) => byId(id).dispatchEvent(new window.MouseEvent('click')),
     choose: (id, value) => {
@@ -79,6 +121,16 @@ async function mountDebugPanel(t) {
     tab: (name) => window.document.querySelector('.debug-tab[data-tab="' + name + '"]')
       .dispatchEvent(new window.MouseEvent('click')),
     settle: () => new Promise((resolve) => setTimeout(resolve, 20)),
+    /** 값 칸을 눌러서 입력칸으로 바꾸고, 새 값을 넣고 Enter 를 친다 */
+    async edit(node, value) {
+      node.dispatchEvent(new window.MouseEvent('click'));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const input = window.document.querySelector('.debug-edit-input');
+      assert.ok(input, '입력칸이 열려야 한다');
+      input.value = value;
+      input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter' }));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    },
   };
 }
 
@@ -190,6 +242,22 @@ const dataProject = {
   }],
 };
 
+/** 본문이 든 함수 하나짜리 작품 — 함수 코드 펼치기 검사용 */
+const functionProject = {
+  ...dataProject,
+  functions: [{
+    id: 'f1',
+    content: JSON.stringify([[{
+      type: 'function_create',
+      params: [{
+        type: 'function_field_label',
+        params: ['스폰', { type: 'function_field_string', params: [{ type: 'stringParam_a' }, null] }],
+      }],
+      statements: [[{ id: 'b1', type: 'move_direction', params: [{ id: 'b2', type: 'number', params: ['10'] }] }]],
+    }]]),
+  }],
+};
+
 test('자료 탭에서 변수의 지금 값 · 신호 · 함수를 볼 수 있다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();
@@ -210,6 +278,111 @@ test('자료 탭에서 변수의 지금 값 · 신호 · 함수를 볼 수 있�
   assert.match(functions, /1개 인자/);
 });
 
+/** 자료 탭을 열고 변수 목록을 돌려준다 */
+async function openData(ui, project = dataProject) {
+  ui.window.tessRenderProjectDebug(project);
+  ui.tab('data');
+  await ui.settle();
+  return ui.byId('var-list');
+}
+
+test('변수 값을 눌러서 바로 고칠 수 있다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  const list = await openData(ui);
+
+  const cell = [...list.querySelectorAll('.debug-edit')].find((node) => node.textContent === '42');
+  assert.ok(cell, '지금 값이 눌러서 고칠 수 있는 칸이어야 한다');
+  await ui.edit(cell, '77');
+
+  // 숫자로 읽히는 값은 숫자로 넣어야 계산 블록이 제대로 돈다
+  assert.equal(ui.live.variables.v1, 77);
+  assert.match(ui.byId('var-list').textContent, /77/);
+});
+
+test('숫자가 아닌 값은 글자 그대로 넣는다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  const list = await openData(ui);
+
+  await ui.edit([...list.querySelectorAll('.debug-edit')].find((n) => n.textContent === '42'), '가나다');
+  assert.equal(ui.live.variables.v1, '가나다');
+});
+
+test('리스트는 이름을 눌러 펼치고 다시 눌러 접는다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  const list = await openData(ui);
+
+  const name = [...list.querySelectorAll('.debug-expand')].find((node) => node.textContent === '기록');
+  assert.ok(name);
+  assert.equal(list.querySelectorAll('.debug-list-items').length, 0);
+
+  name.dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+  const items = ui.byId('var-list').querySelectorAll('.debug-list-ol li');
+  assert.equal(items.length, 2);
+  assert.match(items[0].textContent, /ㄱ/);
+
+  ui.byId('var-list').querySelector('.debug-expand.open').dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+  assert.equal(ui.byId('var-list').querySelectorAll('.debug-list-items').length, 0);
+});
+
+test('펼친 리스트에서 항목을 고치고 넣고 지울 수 있다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  const list = await openData(ui);
+  [...list.querySelectorAll('.debug-expand')].find((n) => n.textContent === '기록')
+    .dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+
+  // 고치기
+  await ui.edit(ui.byId('var-list').querySelectorAll('.debug-list-ol .debug-edit')[1], 'ㄷ');
+  assert.deepEqual(ui.live.lists.l1.map((item) => item.data), ['ㄱ', 'ㄷ']);
+
+  // 넣기
+  ui.byId('var-list').querySelector('.debug-add-btn').dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+  assert.equal(ui.live.lists.l1.length, 3);
+
+  // 지우기 (첫 항목)
+  ui.byId('var-list').querySelectorAll('.debug-list-ol .debug-mini-btn')[0]
+    .dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+  assert.deepEqual(ui.live.lists.l1.map((item) => item.data), ['ㄷ', '']);
+});
+
+test('리스트가 길어도 펼친 높이에는 한계가 있다', () => {
+  const css = playerPage({
+    name: 'a', base: '/lib', summary: { scenes: 1, objects: 1, blocks: 1 }, entName: 'a.ent', reload: false,
+  });
+  assert.match(css, /\.debug-list-items\s*\{[^}]*max-height:\s*\d+px/);
+  assert.match(css, /\.debug-list-items\s*\{[^}]*overflow:\s*auto/);
+});
+
+test('함수 이름을 누르면 그 함수의 블록이 펼쳐진다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug(functionProject);
+  ui.tab('data');
+  await ui.settle();
+
+  const name = ui.byId('function-list').querySelector('.debug-expand');
+  assert.match(name.textContent, /스폰/);
+  assert.equal(ui.byId('function-list').querySelectorAll('.debug-func-code').length, 0);
+
+  name.dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+  const code = ui.byId('function-list').querySelector('.debug-func-code');
+  assert.ok(code, '함수 코드가 열려야 한다');
+  assert.match(code.textContent, /move_direction/);
+
+  name.dispatchEvent(new ui.window.MouseEvent('click'));
+  await ui.settle();
+  assert.equal(ui.byId('function-list').querySelectorAll('.debug-func-code').length, 0);
+});
+
 test('자료 탭의 신호를 눌러서 바로 보낼 수 있다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();
@@ -220,6 +393,183 @@ test('자료 탭의 신호를 눌러서 바로 보낼 수 있다', async (t) => 
   ui.byId('signal-list').querySelector('.debug-send-btn')
     .dispatchEvent(new ui.window.MouseEvent('click'));
   assert.deepEqual(ui.engine.fired, [['when_message_cast', 'm1']]);
+});
+
+// --- 오브젝트 탭 --------------------------------------------------------------
+test('오브젝트 정보에 좌표 · 크기 · 방향 · 모양이 나온다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug(dataProject);
+  ui.tab('objects');
+  await ui.settle();
+
+  const info = ui.byId('object-info').textContent.replace(/\s+/g, ' ');
+  assert.match(info, /x 좌표12.35/);   // 소수점 둘째 자리까지만
+  assert.match(info, /y 좌표-7/);
+  assert.match(info, /크기100/);
+  assert.match(info, /방향0/);
+  assert.match(info, /이동 방향90/);
+  assert.match(info, /모양점프/);
+  assert.match(info, /모양 번호2 \/ 2/);
+  assert.match(info, /보이기보임/);
+  assert.match(info, /회전 방식free/);
+});
+
+test('오브젝트 좌표를 눌러서 바로 옮길 수 있다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug(dataProject);
+  ui.tab('objects');
+  await ui.settle();
+
+  const cell = [...ui.byId('object-info').querySelectorAll('.debug-edit')]
+    .find((node) => node.textContent === '12.35');
+  await ui.edit(cell, '-100');
+  assert.equal(ui.entity.x, -100);
+});
+
+test('실행기가 아직 없으면 오브젝트 정보는 안내만 보여 준다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.Entry.container = { getObject: () => null };
+  ui.window.tessRenderProjectDebug(dataProject);
+  ui.tab('objects');
+  await ui.settle();
+  assert.match(ui.byId('object-info').textContent, /한 번 실행해 보세요/);
+});
+
+// --- Ctrl+Shift 로 무대에서 오브젝트 고르기 --------------------------------------
+test('Ctrl+Shift 로 무대를 누르면 그 오브젝트가 디버거에서 열린다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug({
+    ...dataProject,
+    objects: [
+      { id: 'o0', name: '다른', scene: 's1', script: '[]' },
+      { id: 'o1', name: '치로', scene: 's1', script: '[]' },
+    ],
+  });
+  await ui.settle();
+  ui.window.tessWatchStagePicks();
+
+  // 처음엔 첫 오브젝트가 골라져 있다
+  assert.equal(ui.byId('object-info-name').textContent, '— 다른');
+
+  const stage = ui.byId('workspace');
+  stage.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
+    bubbles: true, button: 0, ctrlKey: true, shiftKey: true,
+  }));
+  ui.window.Entry.dispatchEvent('entityClick', ui.entity);
+  await ui.settle();
+
+  assert.equal(ui.byId('object-info-name').textContent, '— 치로');
+  assert.equal(ui.byId('tab-objects').hidden, false); // 오브젝트 탭이 열린다
+});
+
+test('그냥 누른 것은 디버거가 가로채지 않는다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug({
+    ...dataProject,
+    objects: [
+      { id: 'o0', name: '다른', scene: 's1', script: '[]' },
+      { id: 'o1', name: '치로', scene: 's1', script: '[]' },
+    ],
+  });
+  await ui.settle();
+  ui.window.tessWatchStagePicks();
+
+  const stage = ui.byId('workspace');
+  stage.dispatchEvent(new ui.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+  ui.window.Entry.dispatchEvent('entityClick', ui.entity);
+  await ui.settle();
+
+  assert.equal(ui.byId('object-info-name').textContent, '— 다른'); // 그대로다
+});
+
+test('오브젝트를 고르는 동안에는 작품의 클릭 이벤트가 돌지 않는다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug(dataProject);
+  await ui.settle();
+  ui.window.tessWatchStagePicks();
+
+  const fired = [];
+  ui.window.Entry.engine.fireEventOnEntity = (type) => fired.push(type);
+
+  const stage = ui.byId('workspace');
+  stage.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
+    bubbles: true, button: 0, ctrlKey: true, shiftKey: true,
+  }));
+  ui.window.Entry.engine.fireEventOnEntity('when_object_click', ui.entity);
+  assert.deepEqual(fired, [], '고르는 동안에는 작품 이벤트를 막는다');
+
+  // 고르기가 끝나면 원래대로 돌아온다
+  await ui.settle();
+  ui.window.Entry.engine.fireEventOnEntity('when_object_click', ui.entity);
+  assert.deepEqual(fired, ['when_object_click']);
+});
+
+// --- 딱 붙이기 (sticky) --------------------------------------------------------
+test('섹션을 끝까지 줄이면 딱 붙어서 높이가 0 이 된다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  const section = ui.byId('tab-run').querySelector('.debug-section');
+  const drag = (from, to) => {
+    section.querySelector('.debug-vresize')
+      .dispatchEvent(new ui.window.MouseEvent('mousedown', { clientY: from, bubbles: true }));
+    ui.window.dispatchEvent(new ui.window.MouseEvent('mousemove', { clientY: to }));
+    ui.window.dispatchEvent(new ui.window.MouseEvent('mouseup'));
+  };
+
+  // jsdom 은 실제 높이를 0 으로 재므로 끌어당긴 만큼이 그대로 높이가 된다
+  drag(100, 130); // 30px — 딱 붙는 크기보다 작다
+  await ui.settle();
+  assert.match(section.getAttribute('style'), /height:0px/);
+  assert.match(section.getAttribute('class'), /collapsed/);
+  // 손잡이는 접힌 자리에 그대로 남아 있어야 다시 끌 수 있다
+  assert.equal(section.querySelectorAll('.debug-vresize').length, 1);
+
+  drag(100, 200); // 다시 끌어내면 딱 하고 펴진다
+  await ui.settle();
+  assert.match(section.getAttribute('style'), /height:100px/);
+  assert.doesNotMatch(section.getAttribute('class'), /collapsed/);
+});
+
+test('패널도 끝까지 줄이면 딱 붙어서 폭이 0 이 된다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.innerWidth = 1200;
+  const panel = ui.byId('debug-panel');
+  const drag = (to) => {
+    ui.byId('debug-resize-handle')
+      .dispatchEvent(new ui.window.MouseEvent('mousedown', { clientX: 800, bubbles: true }));
+    ui.window.dispatchEvent(new ui.window.MouseEvent('mousemove', { clientX: to }));
+    ui.window.dispatchEvent(new ui.window.MouseEvent('mouseup'));
+  };
+
+  drag(1180); // 폭 20px — 딱 붙는 크기보다 작다
+  assert.equal(panel.style.width, '0px');
+  assert.match(panel.className, /collapsed/);
+
+  drag(1000); // 200px — 다시 보인다
+  assert.equal(panel.style.width, '200px');
+  assert.doesNotMatch(panel.className, /collapsed/);
+});
+
+test('접어 둔 패널을 다시 열면 폭이 되살아난다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.innerWidth = 1200;
+  ui.byId('debug-resize-handle')
+    .dispatchEvent(new ui.window.MouseEvent('mousedown', { clientX: 800, bubbles: true }));
+  ui.window.dispatchEvent(new ui.window.MouseEvent('mousemove', { clientX: 1190 }));
+  ui.window.dispatchEvent(new ui.window.MouseEvent('mouseup'));
+  assert.equal(ui.byId('debug-panel').style.width, '0px');
+
+  ui.click('debug-toggle');
+  await ui.settle();
+  assert.equal(ui.byId('debug-panel').style.width, '');
 });
 
 test('작품 안의 이름은 어떤 것도 태그가 되지 않는다 (XSS)', async (t) => {
@@ -307,10 +657,11 @@ test('패널이 실제로 그려진다 (arrow-js 목록 렌더 회귀)', async (
   const panel = ui.byId('debug-panel');
 
   assert.equal(panel.querySelectorAll('.debug-tab').length, 4);
-  assert.equal(panel.querySelectorAll('.debug-section').length, 8);
+  assert.equal(panel.querySelectorAll('.debug-section').length, 9);
   assert.deepEqual(
     [...panel.querySelectorAll('.debug-section h3')].map((h) => h.textContent.trim()),
-    ['실행 제어', '실행 환경 흉내내기', '변수 · 리스트', '신호', '함수', '장면 · 오브젝트', '컴파일된 블록', '오류 로그'],
+    ['실행 제어', '실행 환경 흉내내기', '변수 · 리스트', '신호', '함수',
+      '장면 · 오브젝트', '오브젝트 정보', '컴파일된 블록', '오류 로그'],
   );
 
   // 자바스크립트 소스가 화면에 글자로 새어 나오면 안 된다

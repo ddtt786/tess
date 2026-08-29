@@ -178,17 +178,35 @@ ${fontStyles}
     position: absolute; top: 0; left: -5px; width: 9px; height: 100%; cursor: col-resize; z-index: 1001;
   }
   #debug-resize-handle:hover, #debug-resize-handle.dragging { background: #4f80ff33; }
+  /* 패널도 끝까지 줄이면 딱 붙어서 폭이 0 이 된다. 손잡이만 화면 오른쪽 가장자리에
+     남아 있어서 다시 끌어내면 펴진다 (닫기 × 와 달리 사라지지는 않는다). */
+  #debug-panel.collapsed { box-shadow: none; overflow: visible; }
+  #debug-panel.collapsed > :not(#debug-resize-handle) { display: none; }
+  #debug-panel.collapsed > #debug-resize-handle { width: 11px; left: -11px; background: #4f80ff33; }
   .debug-header { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid #0002; flex: none; }
   .debug-header h2 { font-size: 15px; margin: 0; }
   .debug-header button { margin-left: auto; border: none; background: none; font-size: 18px; cursor: pointer; color: inherit; line-height: 1; }
   .debug-section {
     position: relative; border-bottom: 1px solid #0001; padding: 10px 16px 14px;
-    overflow: auto; flex: 0 0 auto; box-sizing: border-box;
+    flex: 0 0 auto; box-sizing: border-box;
+    display: flex; flex-direction: column; overflow: hidden;
   }
+  /* 내용만 스크롤한다 — 섹션 자체가 스크롤하면 접었을 때 손잡이까지 잘려 나간다 */
+  .debug-section-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
   .debug-section-last { flex: 1 1 auto; min-height: 120px; }
+  /* 끝까지 줄이면 창이 딱 붙어서 높이가 0 이 된다. 손잡이는 있던 자리에 그대로
+     남아서, 다시 끌어내면 딱 하고 펴진다. */
+  .debug-section.collapsed { padding: 0; overflow: visible; border-bottom-color: #4f80ff66; }
+  .debug-section.collapsed > h3, .debug-section.collapsed > .debug-section-body { display: none; }
+  /* 접히면 손잡이를 아래로 내건다. 위로 두면 접힌 섹션 위쪽 상자 밖으로 나가서
+     .debug-panelbody 의 overflow:hidden 에 잘려 다시 잡을 수 없다. */
+  .debug-section.collapsed > .debug-vresize {
+    top: 0; bottom: auto; height: 9px; background: #4f80ff26;
+  }
+  .debug-section.collapsed > .debug-vresize:hover { background: #4f80ff55; }
   /* 섹션 아래쪽 가장자리를 끌어서 높이를 조절한다 */
   .debug-vresize {
-    position: absolute; left: 0; right: 0; bottom: 0; height: 7px; cursor: row-resize;
+    position: absolute; left: 0; right: 0; bottom: 0; height: 7px; cursor: row-resize; z-index: 2;
   }
   .debug-vresize:hover { background: #4f80ff33; }
   .debug-section h3 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .03em; opacity: .6; }
@@ -263,6 +281,49 @@ ${fontStyles}
     border: 1px solid #0003; background: none; color: inherit; cursor: pointer;
   }
   .debug-send-btn:hover { background: #4f80ff22; }
+
+  /* 값을 눌러서 바로 고쳐 쓰는 칸 (변수 · 리스트 항목 · 오브젝트 좌표) */
+  .debug-edit {
+    margin-left: auto; text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; overflow-wrap: anywhere; max-width: 60%;
+    border: 1px solid transparent; border-radius: 4px; background: none; color: inherit;
+    cursor: text; padding: 1px 5px;
+  }
+  .debug-edit:hover { border-color: #0003; background: #4f80ff11; }
+  .debug-edit-input {
+    margin-left: auto; width: 55%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; text-align: right; padding: 1px 5px; border-radius: 4px;
+    border: 1px solid #4f80ff; background: none; color: inherit;
+  }
+
+  /* 펼치는 줄 (리스트 · 함수) */
+  .debug-list-row { display: block; }
+  .debug-list-head { display: flex; align-items: baseline; gap: 8px; }
+  .debug-expand {
+    border: none; background: none; color: inherit; font: inherit; cursor: pointer;
+    padding: 0; text-align: left;
+  }
+  .debug-expand::before { content: '▸'; display: inline-block; width: 12px; opacity: .5; }
+  .debug-expand.open::before { content: '▾'; }
+  .debug-expand:hover { color: #4f80ff; }
+  /* 항목이 100개여도 패널을 다 잡아먹지 않도록 여기서 스크롤한다 */
+  .debug-list-items { max-height: 190px; overflow: auto; margin: 4px 0 8px 12px; }
+  .debug-list-ol { list-style: none; margin: 0; padding: 0; }
+  .debug-list-ol li { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+  .debug-list-index { font-size: 11px; opacity: .45; min-width: 22px; }
+  .debug-mini-btn {
+    font-size: 11px; line-height: 1; padding: 3px 7px; border-radius: 5px;
+    border: 1px solid #0003; background: none; color: inherit; cursor: pointer;
+  }
+  .debug-mini-btn:hover { background: #4f80ff22; }
+  .debug-add-btn { margin-top: 5px; }
+  .debug-func-code { font-size: 12px; }
+  .debug-func-code ul { list-style: none; margin: 0; padding-left: 12px; border-left: 1px dashed #0002; }
+  .debug-func-code > ul { padding-left: 0; border-left: none; }
+
+  /* --- 오브젝트 정보 --- */
+  #object-info .key { opacity: .7; }
+  #object-info .val { margin-left: auto; text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
   /* 브라우저는 사용자가 페이지와 아직 상호작용하지 않았으면 소리 재생을 조용히 막는다
      (자동재생 정책 — createjs 가 쓰는 AudioContext 도 예외가 아니다). 실행하기를 페이지가
      뜨자마자 스스로 누르면, 그 시점엔 아직 클릭 한 번 없었으니 when start 에서 바로

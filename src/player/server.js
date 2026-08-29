@@ -48,6 +48,9 @@ const CDN = 'https://unpkg.com/@entrylabs/entry@4.0.22';
 
 const DEBUG_UI_FILE = fileURLToPath(new URL('./debug-ui.js', import.meta.url));
 
+/** `run` 이 기본으로 쓰는 포트 */
+export const DEFAULT_PORT = 2013;
+
 // arrow-js 는 dist/index.mjs 를 그대로 쓴다. 같은 패키지의 index.min.mjs 는 1.0.6 기준
 // 목록 렌더가 깨져서(내부 함수를 글자로 찍는다) 못 쓴다.
 /** 디버그 패널이 쓰는 arrow-js 의 dist 폴더. 못 찾으면 null */
@@ -78,7 +81,7 @@ export function findLocalRuntime(from = process.cwd()) {
  * @returns {Promise<{url: string, close: Function, runtime: string, update: Function}>}
  */
 export function serveProject({
-  project, bundle, assets = [], name, port = 0, cwd = process.cwd(), reload = true, sourceMap = {},
+  project, bundle, assets = [], name, port = DEFAULT_PORT, cwd = process.cwd(), reload = true, sourceMap = {},
 }) {
   const localRuntime = findLocalRuntime(cwd);
   const arrowDir = findArrowDir();
@@ -143,7 +146,19 @@ export function serveProject({
   });
 
   return new Promise((resolve, reject) => {
-    server.on('error', reject);
+    // The default port is a fixed one so the debugger keeps the same origin
+    // between runs (devtools state, bookmarks). Fall back to any free port when
+    // it is taken rather than refusing to start.
+    let retried = port === DEFAULT_PORT;
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE' && retried) {
+        retried = false;
+        console.error(`포트 ${port} 가 이미 쓰이고 있어 비어 있는 포트로 대신 엽니다.`);
+        server.listen(0, '127.0.0.1');
+        return;
+      }
+      reject(error);
+    });
     server.listen(port, '127.0.0.1', () => {
       const { port: actual } = server.address();
       resolve({
