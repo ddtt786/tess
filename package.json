@@ -1,14 +1,14 @@
 {
   "name": "tess",
   "version": "1.0.0",
-  "description": "Tess 언어(엔트리 블록 코드로 변환되는 텍스트 언어)의 Ohm 문법 구현",
+  "description": "Tess 언어(엔트리 블록 코드로 변환되는 텍스트 언어)의 문법 구현",
   "main": "index.js",
   "scripts": {
     "test": "node --test test/*.test.js"
   },
   "keywords": [
     "tess",
-    "ohm",
+    "chevrotain",
     "parser",
     "grammar",
     "entry"
@@ -25,11 +25,11 @@
   "type": "module",
   "dependencies": {
     "@arrow-js/core": "^1.0.6",
+    "@babel/code-frame": "^8.0.0",
     "@clack/prompts": "^1.7.0",
     "chevrotain": "^13.2.0",
     "image-size": "^2.0.2",
     "music-metadata": "^11.15.0",
-    "ohm-js": "^17.5.0",
     "preact": "^10.29.8",
     "sharp": "^0.35.4",
     "tar": "^7.5.22"

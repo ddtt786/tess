@@ -1,5 +1,5 @@
 // ============================================================================
-//  tess.ohm 과 builtins.js 를 읽어 VS Code 문법 강조 파일을 만든다.
+//  파서의 키워드 목록과 builtins.js 를 읽어 VS Code 문법 강조 파일을 만든다.
 //  (손으로 키워드를 옮겨 적지 않도록 — 언어가 바뀌면 다시 돌리면 된다)
 //
 //  실행:  node editors/vscode/build-grammar.mjs
@@ -8,15 +8,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BUILTIN_FUNCTIONS, OPTION_KEYWORDS, STATE_VALUES, OBJECT_PROPERTIES, TEXT_ONLY_PROPERTIES } from '../../src/builtins.js';
+import { KEYWORDS } from '../../src/parser/tokens.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const grammarSource = fs.readFileSync(path.join(here, '..', '..', 'src', 'tess.ohm'), 'utf-8');
 
-/** tess.ohm 의 `이름 = "글자" ~identifierPart` 규칙에서 키워드를 모은다 */
-const keywords = new Set(
-  [...grammarSource.matchAll(/^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*"([^"]+)"\s*~identifierPart/gm)]
-    .map((match) => match[1]),
-);
+/** 렉서가 쓰는 키워드 목록이 그대로 강조 대상이 된다 */
+const keywords = new Set(KEYWORDS);
 
 /** 낱말 경계 (Tess 식별자는 _ 와 한글도 쓴다) */
 const word = (list) => `(?<![A-Za-z0-9_])(?:${[...list].sort((a, b) => b.length - a.length).join('|')})(?![A-Za-z0-9_])`;

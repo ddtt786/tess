@@ -3,13 +3,17 @@
 //
 //  주는 것
 //    /                 실행 페이지
-//    /project.json     컴파일한 작품
-//    /<이름>.ent        내려받기용 묶음
-//    /temp/...         모양·소리 리소스
+//    /project.json     컴파일한 작품 (리소스 링크는 아래 실제 경로를 가리킨다)
+//    /assets/...       모양·소리 파일을 디스크에 있는 그대로
+//    /temp/...         같은 파일을 엔트리가 쓰는 주소로도 (asset-routes.js 참고)
+//    /<이름>.ent        내려받기용 묶음 — 요청받은 그때 처음 묶는다
 //    /lib/...          @entrylabs/entry 가 설치돼 있으면 그 파일들
 //    /debug-ui.js      디버그 패널 UI (모듈)
 //    /arrow/...        디버그 패널 UI 가 쓰는 arrow-js
 //    /api/expansionBlock/tts/read.mp3   tts 읽어주기 — playentry.org 로 대신 요청해 준다
+//
+//  `run` 은 작품을 묶지 않는다. 리소스는 있는 자리에서 그대로 내보내고, .ent 는
+//  내려받기를 눌렀을 때만 만든다. 묶는 일은 `build` 가 한다.
 // ============================================================================
 import fs from 'node:fs';
 import http from 'node:http';
@@ -17,6 +21,8 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { playerPage, DEBUG_UI_PATH, ARROW_PATH } from './template.js';
+import { assetRoutes, withServedAssets } from './asset-routes.js';
+import { makeEntryBundle } from '../compiler/bundle.js';
 
 // entryjs 의 tts 읽어주기(block_ai_utilize_tts.js)는 `${Entry.baseUrl}/api/expansionBlock/tts/read.mp3?...`
 // 로 브라우저에서 직접 요청한다. Entry.baseUrl 기본값은 location.origin(우리 서버)이라
@@ -77,12 +83,15 @@ export function findLocalRuntime(from = process.cwd()) {
 /**
  * 작품을 실행할 수 있는 서버를 띄운다.
  *
- * @param {{project: object, bundle: Buffer, assets: Array, name: string, port?: number, reload?: boolean, sourceMap?: object, boost?: boolean}} options
+ * 리소스는 디스크에 있는 파일을 그대로 내보낸다 — `run` 은 작품을 묶지 않는다.
+ * .ent 는 내려받기를 눌렀을 때만 만든다.
+ *
+ * @param {{project: object, assets: Array, assetDirs?: string[], name: string, port?: number, reload?: boolean, sourceMap?: object, boost?: boolean}} options
  * @returns {Promise<{url: string, close: Function, runtime: string, update: Function}>}
  */
 export function serveProject({
-  project, bundle, assets = [], name, port = DEFAULT_PORT, cwd = process.cwd(), reload = true, sourceMap = {},
-  boost = false,
+  project, assets = [], assetDirs = [], name, port = DEFAULT_PORT, cwd = process.cwd(),
+  reload = true, sourceMap = {}, boost = false,
 }) {
   const localRuntime = findLocalRuntime(cwd);
   const arrowDir = findArrowDir();
@@ -94,11 +103,23 @@ export function serveProject({
   const entName = `${safeName(name)}.ent`;
 
   let currentProject = project;
-  let currentBundle = bundle;
+  let currentAssets = assets;
   let currentSourceMap = sourceMap;
-  // temp/... 경로 -> 실제 파일
-  let assetFiles = new Map(assets.map((asset) => [`/${asset.target}`, asset.source]));
+  // 주소 -> 실제 파일. 엔트리의 temp/… 주소와 디스크 그대로의 주소를 함께 담는다.
+  let assetFiles = new Map();
+  // fileurl 을 서빙 주소로 바꾼 사본. 내려받는 .ent 는 원본 쪽으로 만든다.
+  let servedProject = project;
+  // .ent 는 실제로 요청받기 전까지 만들지 않는다.
+  let cachedBundle = null;
   const reloadClients = new Set();
+
+  const useAssets = (nextProject, nextAssets) => {
+    const { files, rewrites } = assetRoutes(nextAssets, assetDirs, [`/${entName}`]);
+    assetFiles = files;
+    servedProject = withServedAssets(nextProject, rewrites);
+    cachedBundle = null;
+  };
+  useAssets(project, assets);
 
   const renderPage = () => {
     const summary = {
@@ -128,9 +149,13 @@ export function serveProject({
     if (url === TTS_PROXY_PATH) return proxyTts(request, response);
 
     if (url === '/' || url === '/index.html') return send(response, 200, '.html', renderPage());
-    if (url === '/project.json') return send(response, 200, '.json', JSON.stringify(currentProject));
+    if (url === '/project.json') return send(response, 200, '.json', JSON.stringify(servedProject));
     if (url === '/sourcemap.json') return send(response, 200, '.json', JSON.stringify(currentSourceMap));
-    if (url === `/${entName}`) return send(response, 200, '.ent', currentBundle);
+    if (url === `/${entName}`) {
+      // 여기서 처음으로 작품을 묶는다 — 내려받기를 누르지 않으면 묶을 일이 없다.
+      cachedBundle ??= makeEntryBundle(currentProject, currentAssets);
+      return send(response, 200, '.ent', cachedBundle);
+    }
 
     if (assetFiles.has(url)) return sendFile(response, assetFiles.get(url));
 
@@ -181,11 +206,11 @@ export function serveProject({
           return new Promise((done) => server.close(done));
         },
         /** 다시 컴파일한 작품으로 갈아 끼우고, 열려 있는 브라우저를 새로고침한다 */
-        update({ project: nextProject, bundle: nextBundle, assets: nextAssets = [], sourceMap: nextSourceMap = {} }) {
+        update({ project: nextProject, assets: nextAssets = [], sourceMap: nextSourceMap = {} }) {
           currentProject = nextProject;
-          currentBundle = nextBundle;
+          currentAssets = nextAssets;
           currentSourceMap = nextSourceMap;
-          assetFiles = new Map(nextAssets.map((asset) => [`/${asset.target}`, asset.source]));
+          useAssets(nextProject, nextAssets);
           for (const client of reloadClients) client.write('event: reload\ndata: ok\n\n');
         },
       });

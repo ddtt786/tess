@@ -6,24 +6,24 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compileProject } from '../src/compiler/index.js';
-import { makeEntryBundle } from '../src/compiler/bundle.js';
 import { serveProject, findLocalRuntime } from '../src/player/server.js';
+import { assetRoutes } from '../src/player/asset-routes.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-function compileExample() {
-  const file = path.join(root, 'examples/all_blocks.tess');
+function compileExample(name = 'examples/all_blocks.tess') {
+  const file = path.join(root, name);
   const result = compileProject(fs.readFileSync(file, 'utf-8'), { path: file });
   assert.deepEqual(result.errors, []);
-  return result;
+  return { ...result, assetDirs: [path.dirname(file)] };
 }
 
 async function withServer(options, body) {
-  const result = compileExample();
+  const result = compileExample(options.example);
   const server = await serveProject({
     project: result.project,
-    bundle: makeEntryBundle(result.project, result.assets),
     assets: result.assets,
+    assetDirs: result.assetDirs,
     name: result.project.name,
     port: 0,
     ...options,
@@ -84,6 +84,48 @@ test('작품 파일(.ent)을 내려받을 수 있다', async () => {
     assert.equal(bytes.length % 512, 0);
     assert.equal(bytes.subarray(0, 100).toString('utf-8').replace(/\0+$/, ''), 'temp/project.json');
   });
+});
+
+test('리소스를 디스크에 있는 그대로의 주소로 내보낸다', async () => {
+  await withServer({ example: 'examples/cat_run.tess' }, async (server, result) => {
+    const project = await (await fetch(`${server.url}project.json`)).json();
+    const pictures = project.objects.flatMap((object) => object.sprite.pictures);
+    const cat = pictures.find((picture) => picture.fileurl.endsWith('cat_idle.png'));
+
+    // 엔트리의 temp/<해시> 주소가 아니라 파일이 실제로 있는 경로를 가리킨다
+    assert.equal(cat.fileurl, '/cat_idle.png');
+
+    const served = await fetch(server.url + cat.fileurl.slice(1));
+    assert.equal(served.status, 200);
+    assert.deepEqual(
+      Buffer.from(await served.arrayBuffer()),
+      fs.readFileSync(path.join(root, 'examples/cat_idle.png')),
+    );
+
+    // 엔트리가 쓰던 주소도 그대로 답한다
+    const hashed = result.assets.find((asset) => asset.source.endsWith('cat_idle.png')).target;
+    assert.equal((await fetch(`${server.url}${hashed}`)).status, 200);
+  });
+});
+
+test('리소스 폴더 밖의 파일은 엔트리의 원래 주소를 그대로 쓴다', () => {
+  const { files, rewrites } = assetRoutes(
+    [{ source: '/그밖/멀리.png', target: 'temp/aa/bb/image/x.png' }],
+    ['/작품'],
+  );
+  assert.equal(rewrites.size, 0);
+  assert.equal(files.get('/temp/aa/bb/image/x.png'), '/그밖/멀리.png');
+});
+
+test('두 폴더가 같은 이름을 주장하면 어느 쪽도 그 주소를 쓰지 않는다', () => {
+  const { rewrites } = assetRoutes(
+    [
+      { source: path.join('/작품/가', '고양이.png'), target: 'temp/aa/bb/image/1.png' },
+      { source: path.join('/작품/나', '고양이.png'), target: 'temp/cc/dd/image/2.png' },
+    ],
+    ['/작품/가', '/작품/나'],
+  );
+  assert.equal(rewrites.size, 0);
 });
 
 test('없는 주소는 404 를 준다', async () => {

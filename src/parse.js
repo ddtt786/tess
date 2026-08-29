@@ -1,8 +1,7 @@
 // ============================================================================
 //  Tess 공개 API
 // ============================================================================
-import { grammar } from './grammar.js';
-import { semantics } from './ast.js';
+import { parseSource, checkSource } from './parser/index.js';
 import { lineAndColumn, validate } from './validate.js';
 
 /**
@@ -10,29 +9,35 @@ import { lineAndColumn, validate } from './validate.js';
  *
  * @param {string} source
  * @param {{validate?: boolean, startRule?: string}} [options]
- * @returns {{ok: boolean, ast: object|null, errors: Array, warnings: Array, match: object}}
+ * @returns {{ok: boolean, ast: object|null, errors: Array, warnings: Array}}
  */
 export function parse(source, options = {}) {
   const { validate: runValidation = true, startRule } = options;
-  const match = startRule ? grammar.match(source, startRule) : grammar.match(source);
+  const result = parseSource(source, { startRule });
 
-  if (match.failed()) {
-    const offset = match.getRightmostFailurePosition();
-    const { line, column } = lineAndColumn(source, offset);
+  if (!result.ok) {
+    const errors = result.errors.map((error) => ({
+      ...lineAndColumn(source, error.offset),
+      offset: error.offset,
+      message: error.message,
+      detail: error.detail,
+    }));
     return {
-      ok: false,
-      ast: null,
-      match,
-      warnings: [],
-      errors: [{ line, column, offset, message: match.shortMessage, detail: match.message }],
+      ok: false, ast: null, errors, warnings: [],
     };
   }
 
-  const ast = semantics(match).ast();
-  if (!runValidation) return { ok: true, ast, match, errors: [], warnings: [] };
+  const { ast } = result;
+  if (!runValidation) {
+    return {
+      ok: true, ast, errors: [], warnings: [],
+    };
+  }
 
   const { errors, warnings } = validate(ast, source);
-  return { ok: errors.length === 0, ast, match, errors, warnings };
+  return {
+    ok: errors.length === 0, ast, errors, warnings,
+  };
 }
 
 /** 파싱에 실패하면 예외를 던지고, 성공하면 AST 를 돌려준다. */
@@ -49,13 +54,8 @@ export function parseOrThrow(source, options = {}) {
 }
 
 /** 문법에 맞는 코드인지만 빠르게 확인한다. */
-export function check(source) {
-  return grammar.match(source).succeeded();
+export function check(source, startRule) {
+  return checkSource(source, startRule);
 }
 
-/** 파서가 어떤 판단을 내렸는지 단계별로 보여준다 (디버깅용). */
-export function trace(source, startRule) {
-  return (startRule ? grammar.trace(source, startRule) : grammar.trace(source)).toString();
-}
-
-export { grammar, semantics, validate, lineAndColumn };
+export { validate, lineAndColumn };

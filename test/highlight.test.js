@@ -122,7 +122,7 @@ test('예제 파일 전체를 토큰으로 쪼갤 수 있다', () => {
   assert.ok(colored > 1000, `칠해진 토큰이 ${colored}개뿐입니다.`);
 });
 
-test('문법 파일이 tess.ohm 과 맞춰져 있다', () => {
+test('문법 파일이 파서의 키워드 목록과 맞춰져 있다', () => {
   // build-grammar.mjs 를 다시 돌려도 결과가 같아야 한다
   const before = fs.readFileSync(grammarPath, 'utf-8');
   const { execFileSync } = require('node:child_process');

@@ -11,12 +11,8 @@ export {
   parse,
   parseOrThrow,
   check,
-  trace,
-  grammar,
-  semantics,
   validate,
 } from "./src/parse.js";
-export { grammarSource } from "./src/grammar.js";
 export { compileProject, createCompileCache } from "./src/compiler/index.js";
 export { makeEntryBundle, makeTar } from "./src/compiler/bundle.js";
 export { verifyEntryProject } from "./src/compiler/verify.js";
@@ -213,12 +209,11 @@ async function runProject(file, options) {
     );
   }
 
-  const bundle = makeEntryBundle(result.project, result.assets);
   const reload = !options.noReload;
   const server = await serveProject({
     project: result.project,
-    bundle,
     assets: result.assets,
+    assetDirs,
     name: result.project.name,
     port: options.port,
     cwd: path.dirname(path.resolve(file)),
@@ -288,10 +283,8 @@ function watchAndReload(file, options, assetDirs, label, server) {
           `${label}: --force — 에러 ${result.errors.length}개를 무시하고 그대로 반영합니다.`,
         );
       }
-      const nextBundle = makeEntryBundle(result.project, result.assets);
       server.update({
         project: result.project,
-        bundle: nextBundle,
         assets: result.assets,
         sourceMap: result.sourceMap,
       });

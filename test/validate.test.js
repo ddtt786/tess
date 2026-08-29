@@ -229,5 +229,8 @@ test('문법 에러도 같은 형태로 돌려준다', () => {
   assert.equal(result.ok, false);
   assert.equal(result.ast, null);
   assert.equal(typeof result.errors[0].line, 'number');
-  assert.ok(result.errors[0].detail.includes('Line'));
+  assert.equal(typeof result.errors[0].column, 'number');
+  // detail 은 문제가 난 줄을 짚어 주는 코드 프레임이다
+  assert.match(result.errors[0].detail, /^\s*2 \|\s+when start do$/m);
+  assert.match(result.errors[0].detail, /\^/);
 });
