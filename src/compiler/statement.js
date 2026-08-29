@@ -15,6 +15,7 @@ import {
   shiftIndex,
 } from "./expression.js";
 import { requireScaleSetter } from "./runtime.js";
+import { didYouMean, orHint } from "./suggest.js";
 
 const STOP_TARGETS = {
   this: "thisThread", // 현재 스크립트만
@@ -258,7 +259,7 @@ function compile(node, ctx) {
       const scene = ctx.sceneByName.get(node.target.value);
       if (!scene)
         return [
-          ctx.error(node, `'${node.target.value}' 이라는 장면이 없습니다.`),
+          ctx.error(node, `'${node.target.value}' 이라는 장면이 없습니다.${didYouMean(node.target.value, ctx.sceneByName.keys())}`),
         ].filter(Boolean);
       return one(ctx.block("start_scene", [scene.id, null]));
     }
@@ -626,7 +627,9 @@ function resolveSound(node, ctx) {
     if (ctx.forcedResourceIds.has(node.value)) return node.value;
     return ctx.error(
       node,
-      `'${node.value}' 소리가 이 오브젝트에 없습니다. sound ${node.value} "파일명" 으로 먼저 등록하세요.`,
+      `'${node.value}' 소리가 이 오브젝트에 없습니다.`
+      + orHint(node.value, ctx.object?.sounds.keys() ?? [],
+        `sound ${node.value} "파일명" 으로 먼저 등록하세요.`),
     );
   }
   return compileValue(node, ctx);
@@ -640,7 +643,9 @@ function resolvePicture(node, ctx) {
     if (ctx.forcedResourceIds.has(node.value)) return node.value;
     return ctx.error(
       node,
-      `'${node.value}' 모양이 이 오브젝트에 없습니다. costume ${node.value} "파일명" 으로 먼저 등록하세요.`,
+      `'${node.value}' 모양이 이 오브젝트에 없습니다.`
+      + orHint(node.value, ctx.object?.pictures.keys() ?? [],
+        `costume ${node.value} "파일명" 으로 먼저 등록하세요.`),
     );
   }
   return compileValue(node, ctx);
@@ -971,7 +976,8 @@ function compilePropertyAssign(node, name, ctx) {
       return [
         ctx.error(
           node,
-          `선언되지 않은 이름 '${name}' 에 값을 대입했습니다. var 로 먼저 선언하세요.`,
+          `선언되지 않은 이름 '${name}' 에 값을 대입했습니다.`
+          + orHint(name, ctx.knownNames(), 'var 로 먼저 선언하세요.'),
         ),
       ].filter(Boolean);
   }

@@ -67,9 +67,9 @@ export const RUNTIME_FILES = [
 
 export const RUNTIME_STYLE = 'dist/entry.css';
 
-// 디버그 패널 UI 와 그것이 쓰는 arrow-js. 둘 다 ESM 이라 서버가 따로 내보낸다.
+// 디버그 패널 UI 와 그것이 쓰는 preact. 둘 다 ESM 이라 서버가 따로 내보낸다.
 export const DEBUG_UI_PATH = '/debug-ui.js';
-export const ARROW_PATH = '/arrow/';
+export const PREACT_PATH = '/preact/';
 
 const escapeHtml = (text) => String(text)
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -273,6 +273,14 @@ ${fontStyles}
                         border: 1px solid #0003; background: none; color: inherit; }
   .debug-field select option { color: initial; }
   .debug-note { font-size: 12px; opacity: .55; margin: 8px 0 0; line-height: 1.6; }
+  /* Ctrl+Shift 로 무대에서 오브젝트를 고르는 중이라는 표시 */
+  .debug-pick-hint {
+    border-left: 2px solid transparent; padding-left: 8px; margin-left: -10px;
+    transition: opacity .12s, border-color .12s, color .12s;
+  }
+  .debug-pick-hint.active {
+    opacity: 1; color: #4f80ff; border-left-color: #4f80ff; font-weight: 600;
+  }
 
   /* --- 자료 탭 --- */
   .debug-rows { list-style: none; margin: 0; padding: 0; font-size: 13px; }

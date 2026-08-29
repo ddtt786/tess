@@ -20,7 +20,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { playerPage, DEBUG_UI_PATH, ARROW_PATH } from './template.js';
+import { playerPage, DEBUG_UI_PATH, PREACT_PATH } from './template.js';
 import { assetRoutes, withServedAssets } from './asset-routes.js';
 import { makeEntryBundle } from '../compiler/bundle.js';
 
@@ -57,12 +57,11 @@ const DEBUG_UI_FILE = fileURLToPath(new URL('./debug-ui.js', import.meta.url));
 /** `run` 이 기본으로 쓰는 포트 */
 export const DEFAULT_PORT = 2013;
 
-// arrow-js 는 dist/index.mjs 를 그대로 쓴다. 같은 패키지의 index.min.mjs 는 1.0.6 기준
-// 목록 렌더가 깨져서(내부 함수를 글자로 찍는다) 못 쓴다.
-/** 디버그 패널이 쓰는 arrow-js 의 dist 폴더. 못 찾으면 null */
-export function findArrowDir() {
+// preact 는 dist/preact.mjs 한 파일이면 된다 — 다른 파일을 부르지 않는 ESM 이다.
+/** 디버그 패널이 쓰는 preact 의 dist 폴더. 못 찾으면 null */
+export function findPreactDir() {
   try {
-    return path.dirname(fileURLToPath(import.meta.resolve('@arrow-js/core')));
+    return path.dirname(fileURLToPath(import.meta.resolve('preact')));
   } catch {
     return null;
   }
@@ -94,7 +93,7 @@ export function serveProject({
   reload = true, sourceMap = {}, boost = false,
 }) {
   const localRuntime = findLocalRuntime(cwd);
-  const arrowDir = findArrowDir();
+  const preactDir = findPreactDir();
   const base = localRuntime ? '/lib' : CDN;
   // 엔트리 기본 그림(확인 단추 · 좌표계 …)을 가져올 곳. 부스트 모드는 WebGL 이라
   // 다른 origin 의 그림을 텍스처로 못 올리므로(entryjs 가 crossOrigin 없이 Image 를
@@ -170,10 +169,10 @@ export function serveProject({
 
     if (url === DEBUG_UI_PATH) return sendFile(response, DEBUG_UI_FILE);
 
-    // 디버그 패널 UI 가 import 하는 arrow-js
-    if (arrowDir && url.startsWith(ARROW_PATH)) {
-      const target = path.join(arrowDir, url.slice(ARROW_PATH.length));
-      if (target.startsWith(arrowDir) && fs.existsSync(target)) return sendFile(response, target);
+    // 디버그 패널 UI 가 import 하는 preact
+    if (preactDir && url.startsWith(PREACT_PATH)) {
+      const target = path.join(preactDir, url.slice(PREACT_PATH.length));
+      if (target.startsWith(preactDir) && fs.existsSync(target)) return sendFile(response, target);
     }
 
     return send(response, 404, '.html', '<h1>404</h1>');
@@ -197,7 +196,7 @@ export function serveProject({
       const { port: actual } = server.address();
       resolve({
         url: `http://127.0.0.1:${actual}/`,
-        runtime: localRuntime ? `설치된 @entrylabs/entry (${localRuntime})` : `CDN (${CDN})`,
+        runtime: localRuntime ? '설치된 @entrylabs/entry' : `CDN ${CDN.replace(/^https:\/\//, '')}`,
         // /__reload 의 SSE 연결은 브라우저가 열려 있는 한 계속 붙어 있어서,
         // 그냥 server.close() 만 부르면 콜백이 영영 안 불려 Ctrl+C 로도 못 끝난다
         // (Node 는 켜져 있는 커넥션이 다 끝나야 close 콜백을 부른다). 그래서

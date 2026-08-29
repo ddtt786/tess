@@ -9,9 +9,9 @@ import { playerPage } from '../src/player/template.js';
 import { compileProject } from '../src/compiler/index.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const arrowDist = () => path.dirname(fileURLToPath(import.meta.resolve('@arrow-js/core')));
+const preactDist = () => path.dirname(fileURLToPath(import.meta.resolve('preact')));
 
-/** 디버그 UI 모듈을 jsdom 에 올린다. import 는 떼고 arrow-js 를 직접 넣어 준다. */
+/** 디버그 UI 모듈을 jsdom 에 올린다. import 는 떼고 preact 를 직접 넣어 준다. */
 async function mountDebugPanel(t) {
   const html = playerPage({
     name: '치로', base: '/lib', summary: { scenes: 1, objects: 1, blocks: 1 }, entName: 'a.ent', reload: false,
@@ -68,6 +68,7 @@ async function mountDebugPanel(t) {
     getRotation() { return this.rotation; }, setRotation(v) { this.rotation = v; },
     getDirection() { return this.direction; }, setDirection(v) { this.direction = v; },
     getScaleX() { return 1; }, getScaleY() { return 1; },
+    getWidth() { return 100; }, getHeight() { return 100; },
     getVisible() { return this.visible; },
     setVisible(v) { this.visible = v; },
     setImage(picture) { this.picture = picture; },
@@ -107,21 +108,21 @@ async function mountDebugPanel(t) {
   });
   window.fetch = () => Promise.resolve({ json: () => Promise.resolve({}) });
 
-  // arrow-js 는 Node 쪽에서 import 되므로 전역 document 가 jsdom 것을 가리켜야 한다
+  // preact 는 Node 쪽에서 import 되므로 전역 document 가 jsdom 것을 가리켜야 한다
   const globals = ['document', 'Node', 'Element', 'HTMLElement', 'DocumentFragment',
     'Text', 'Comment', 'NodeFilter', 'MutationObserver', 'requestAnimationFrame'];
   const saved = globals.map((key) => [key, globalThis[key]]);
   for (const key of globals) globalThis[key] = window[key];
   t.after(() => { for (const [key, value] of saved) globalThis[key] = value; });
 
-  // 브라우저가 실제로 받는 arrow-js 파일을 그대로 쓴다. 패키지 기본 진입점을 쓰면
+  // 브라우저가 실제로 받는 preact 파일을 그대로 쓴다. 패키지 기본 진입점을 쓰면
   // 서버가 내보내는 파일과 달라져서, 그 파일만 깨져 있어도 테스트가 통과해 버린다.
   const source = fs.readFileSync(path.join(root, 'src/player/debug-ui.js'), 'utf-8');
-  const arrowFile = source.match(/from '\/arrow\/([^']+)'/)[1];
-  const arrow = await import(path.join(arrowDist(), arrowFile));
-  window.reactive = arrow.reactive;
-  window.html = arrow.html;
-  window.eval(source.replace(/^import[^;]+;$/m, 'const { reactive, html } = window;'));
+  const preactFile = source.match(/from '\/preact\/([^']+)'/)[1];
+  const preact = await import(path.join(preactDist(), preactFile));
+  window.h = preact.h;
+  window.render = preact.render;
+  window.eval(source.replace(/^import[^;]+;$/m, 'const { h, render } = window;'));
 
   const byId = (id) => window.document.getElementById(id);
   return {
@@ -512,11 +513,11 @@ test('오브젝트 정보에 좌표 · 크기 · 방향 · 모양이 나온다',
   await ui.settle();
 
   const info = ui.byId('object-info').textContent.replace(/\s+/g, ' ');
-  assert.match(info, /x 좌표12.35/);   // 소수점 둘째 자리까지만
-  assert.match(info, /y 좌표-7/);
-  assert.match(info, /크기100/);
-  assert.match(info, /이동 방향90/);
-  assert.match(info, /모양 번호2 \/ 2/);
+  assert.match(info, /x 좌표 12.35/);   // 소수점 둘째 자리까지만
+  assert.match(info, /y 좌표 -7/);
+  assert.match(info, /크기 100/);
+  assert.match(info, /이동 방향 90/);
+  assert.match(info, /모양 번호 2 \/ 2/);
 
   // 모양·회전 방식은 드롭다운, 보이기는 토글이다
   const [costume, rotate] = ui.byId('object-info').querySelectorAll('select');
@@ -576,7 +577,7 @@ test('실행기가 아직 없으면 오브젝트 정보는 안내만 보여 준�
 // arrow 1.0.6 은 조각을 떼어낼 때 큐에 남은 갱신을 걷어내지 않아서, 오브젝트를 바꿀 때
 // 줄이 생기거나 없어지면 `expressionPool[effect] is not a function` 으로 터진다.
 // 그래서 줄 구성은 언제나 같아야 하고, 안 쓰는 줄은 hidden 으로만 감춰야 한다.
-test('오브젝트 정보의 줄 구성은 상황이 달라져도 그대로다', async (t) => {
+test('실행기가 오브젝트를 아직 모르면 안내만 보여 준다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();
   const labels = () => [...ui.byId('object-info').querySelectorAll('li')]
@@ -585,20 +586,17 @@ test('오브젝트 정보의 줄 구성은 상황이 달라져도 그대로다',
   ui.window.tessRenderProjectDebug(dataProject);
   ui.tab('objects');
   await ui.settle();
-  const withObject = labels();
-  assert.ok(withObject.length > 5);
+  assert.ok(labels().length > 5, '실행기가 아는 오브젝트는 값 줄이 나온다');
 
-  // 실행기가 이 오브젝트를 모를 때도 줄 수는 같고, 값 줄만 숨는다
+  // 실행기가 이 오브젝트를 모르면 값 줄 대신 안내 한 줄만 남는다
   ui.window.Entry.container = { getObject: () => null };
   ui.click('debug-toggle'); // 패널을 열면 값 새로고침이 돌기 시작한다
   await new Promise((resolve) => setTimeout(resolve, 500));
-  assert.deepEqual(labels(), withObject);
-  const hidden = [...ui.byId('object-info').querySelectorAll('li')].filter((li) => li.hasAttribute('hidden'));
-  assert.equal(hidden.length, withObject.length - 1); // 안내 줄 하나만 남는다
+  assert.deepEqual(labels(), ['']);
   assert.match(ui.byId('object-info').textContent, /한 번 실행해 보세요/);
 });
 
-test('글상자는 글 내용을 고칠 수 있고, 모양 줄은 감춘다', async (t) => {
+test('글상자는 글 내용을 고칠 수 있고, 모양 줄은 내지 않는다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();
   ui.entity.text = '점수: 0';
@@ -609,8 +607,9 @@ test('글상자는 글 내용을 고칠 수 있고, 모양 줄은 감춘다', as
 
   const row = (label) => [...ui.byId('object-info').querySelectorAll('li')]
     .find((li) => li.querySelector('.key')?.textContent === label);
-  assert.equal(row('글 내용').hasAttribute('hidden'), false);
-  assert.equal(row('모양').hasAttribute('hidden'), true); // 글상자에는 모양이 없다
+  assert.ok(row('글 내용'), '글상자는 글 내용을 고칠 수 있다');
+  assert.equal(row('모양'), undefined);        // 글상자에는 모양이 없다
+  assert.equal(row('회전 방식'), undefined);
 
   await ui.edit(row('글 내용').querySelector('.debug-edit'), '점수: 99');
   assert.equal(ui.entity.text, '점수: 99');
@@ -661,6 +660,8 @@ test('Ctrl+Shift 로 무대를 누르면 그 오브젝트가 디버거에서 열
   });
   await ui.settle();
   ui.window.tessWatchStagePicks();
+  ui.tab('objects');
+  await ui.settle();
 
   // 처음엔 첫 오브젝트가 골라져 있다
   assert.equal(ui.byId('object-info-name').textContent, '— 다른');
@@ -688,6 +689,8 @@ test('그냥 누른 것은 디버거가 가로채지 않는다', async (t) => {
   });
   await ui.settle();
   ui.window.tessWatchStagePicks();
+  ui.tab('objects');
+  await ui.settle();
 
   const stage = ui.byId('workspace');
   stage.dispatchEvent(new ui.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
@@ -714,10 +717,72 @@ test('오브젝트를 고르는 동안에는 작품의 클릭 이벤트가 돌�
   ui.window.Entry.engine.fireEventOnEntity('when_object_click', ui.entity);
   assert.deepEqual(fired, [], '고르는 동안에는 작품 이벤트를 막는다');
 
-  // 고르기가 끝나면 원래대로 돌아온다
-  await ui.settle();
+  // 오브젝트를 고르면 그 자리에서 원래대로 돌아온다.
+  // entityClick 은 pointerdown 과 같은 차례에 오지 않는다 — createjs 는 뒤이어 오는
+  // mousedown 에서, PIXI 는 제 ticker 에서 쏜다. 그래서 고르는 창은 넉넉히 열어 두고,
+  // 고르는 순간(또는 시간이 다 되면) 닫는다.
+  ui.window.Entry.dispatchEvent('entityClick', ui.entity);
   ui.window.Entry.engine.fireEventOnEntity('when_object_click', ui.entity);
   assert.deepEqual(fired, ['when_object_click']);
+});
+
+test('무대를 눌렀는데 아무 오브젝트도 안 걸리면 고르기가 저절로 풀린다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug(dataProject);
+  await ui.settle();
+  ui.window.tessWatchStagePicks();
+
+  const fired = [];
+  ui.window.Entry.engine.fireEventOnEntity = (type) => fired.push(type);
+
+  ui.byId('workspace').dispatchEvent(new ui.window.MouseEvent('pointerdown', {
+    bubbles: true, button: 0, ctrlKey: true, shiftKey: true,
+  }));
+  ui.window.Entry.engine.fireEventOnEntity('when_object_click', ui.entity);
+  assert.deepEqual(fired, []);
+
+  // 빈 곳을 눌렀으면 entityClick 이 영영 안 온다. 창이 닫히면 되돌아와야 한다.
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  ui.window.Entry.engine.fireEventOnEntity('when_object_click', ui.entity);
+  assert.deepEqual(fired, ['when_object_click'], '고르기가 풀리면 작품 이벤트가 다시 돈다');
+});
+
+test('부스트 모드처럼 캔버스가 여럿이어도 무대에서 오브젝트를 고른다', async (t) => {
+  // 부스트 모드(WebGL)는 PIXI 가 글자 따위를 그리려고 눈에 안 보이는 도우미 캔버스를
+  // 열 몇 개나 먼저 만든다. `#workspace canvas` 로 첫 번째를 집으면 크기 0 짜리
+  // 엉뚱한 캔버스가 잡혀서, 무대를 눌러도 고르기가 아예 시작되지 않았다.
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug(dataProject);
+  await ui.settle();
+
+  const doc = ui.window.document;
+  const rect = (left, top, width, height) => () => ({
+    left, top, width, height, right: left + width, bottom: top + height, x: left, y: top,
+  });
+
+  const workspace = ui.byId('workspace');
+  const decoy = doc.createElement('canvas');          // PIXI 가 만든 도우미
+  decoy.getBoundingClientRect = rect(0, 0, 0, 0);
+  const stage = doc.createElement('canvas');          // 진짜 무대
+  stage.id = 'entryCanvas';
+  stage.getBoundingClientRect = rect(100, 50, 480, 270);
+  workspace.append(decoy, stage);
+
+  ui.window.Entry.container.objects_ = [ui.stageObject];
+  ui.window.tessWatchStagePicks();
+
+  // 무대 (0,0) = 캔버스 한가운데. 오브젝트는 그 자리에 100x100 으로 있다.
+  ui.entity.x = 0;
+  ui.entity.y = 0;
+  stage.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
+    bubbles: true, button: 0, ctrlKey: true, shiftKey: true, clientX: 340, clientY: 185,
+  }));
+  await ui.settle();
+
+  assert.equal(ui.byId('object-info-name').textContent, '— 치로');
+  assert.equal(ui.byId('tab-objects').hidden, false);
 });
 
 // --- 딱 붙이기 (sticky) --------------------------------------------------------
@@ -735,14 +800,14 @@ test('섹션을 끝까지 줄이면 딱 붙어서 높이가 0 이 된다', async
   // jsdom 은 실제 높이를 0 으로 재므로 끌어당긴 만큼이 그대로 높이가 된다
   drag(100, 130); // 30px — 딱 붙는 크기보다 작다
   await ui.settle();
-  assert.match(section.getAttribute('style'), /height:0px/);
+  assert.match(section.getAttribute('style'), /height:\s*0px/);
   assert.match(section.getAttribute('class'), /collapsed/);
   // 손잡이는 접힌 자리에 그대로 남아 있어야 다시 끌 수 있다
   assert.equal(section.querySelectorAll('.debug-vresize').length, 1);
 
   drag(100, 200); // 다시 끌어내면 딱 하고 펴진다
   await ui.settle();
-  assert.match(section.getAttribute('style'), /height:100px/);
+  assert.match(section.getAttribute('style'), /height:\s*100px/);
   assert.doesNotMatch(section.getAttribute('class'), /collapsed/);
 });
 
@@ -792,14 +857,15 @@ test('작품 안의 이름은 어떤 것도 태그가 되지 않는다 (XSS)', a
     messages: [{ id: 'm9', name: '<iframe src=javascript:1>' }],
     functions: [],
   });
-  ui.tab('data');
-  await ui.settle();
-
   // 작품 이름이 들어가는 영역만 본다 (실행 탭의 안내 글에는 우리가 쓴 <b> 가 있다)
   const areas = ['#tab-data', '#tab-objects'];
   const selector = areas.flatMap((area) => ['img', 'svg', 'iframe', 'script', 'b'].map((tag) => area + ' ' + tag)).join(', ');
-  const injected = ui.window.document.querySelectorAll(selector);
-  assert.equal(injected.length, 0, [...injected].map((node) => node.outerHTML).join('\n'));
+  for (const name of ['data', 'objects']) {
+    ui.tab(name);
+    await ui.settle();
+    const injected = ui.window.document.querySelectorAll(selector);
+    assert.equal(injected.length, 0, [...injected].map((node) => node.outerHTML).join('\n'));
+  }
   assert.equal(ui.window.PWNED, undefined);
   // 그래도 사람이 읽을 수 있게 글자로는 그대로 보여야 한다
   assert.match(ui.byId('scene-tree').textContent, /<img src=x/);
@@ -834,7 +900,7 @@ test('탭 안의 섹션들은 마지막을 빼고 위아래로 크기를 조절�
   // 마지막 섹션은 남은 높이를 채우므로 손잡이가 없다
   assert.equal(sections[0].querySelectorAll('.debug-vresize').length, 1);
   assert.equal(sections[1].querySelectorAll('.debug-vresize').length, 0);
-  assert.match(sections[0].getAttribute('style'), /height:200px/);
+  assert.match(sections[0].getAttribute('style'), /height:\s*200px/);
 
   const handle = sections[0].querySelector('.debug-vresize');
   handle.dispatchEvent(new ui.window.MouseEvent('mousedown', { clientY: 100, bubbles: true }));
@@ -843,7 +909,7 @@ test('탭 안의 섹션들은 마지막을 빼고 위아래로 크기를 조절�
   await ui.settle();
 
   // jsdom 은 실제 높이를 0 으로 재므로 끌어당긴 만큼(60px)이 그대로 높이가 된다
-  assert.match(sections[0].getAttribute('style'), /height:60px/);
+  assert.match(sections[0].getAttribute('style'), /height:\s*60px/);
 });
 
 test('패널 폭은 좌우로 조절할 수 있다', async (t) => {
@@ -859,21 +925,26 @@ test('패널 폭은 좌우로 조절할 수 있다', async (t) => {
   assert.equal(ui.byId('debug-panel').style.width, '500px');
 });
 
-test('패널이 실제로 그려진다 (arrow-js 목록 렌더 회귀)', async (t) => {
-  // arrow-js 1.0.6 의 index.min.mjs 는 목록을 그리지 못하고 내부 함수를 글자로 찍는다.
-  // 브라우저가 받는 파일이 바뀌었을 때 이 테스트가 걸린다.
+test('패널이 실제로 그려진다', async (t) => {
+  // 브라우저가 받는 preact 파일이 바뀌었을 때 이 테스트가 걸린다.
   const ui = await mountDebugPanel(t);
   await ui.settle();
   const panel = ui.byId('debug-panel');
 
   assert.equal(panel.querySelectorAll('.debug-tab').length, 4);
-  assert.equal(panel.querySelectorAll('.debug-section').length, 9);
-  assert.deepEqual(
-    [...panel.querySelectorAll('.debug-section h3')].map((h) => h.textContent.trim()),
-    ['실행 제어', '실행 환경 흉내내기', '변수 · 리스트', '신호', '함수',
-      '장면 · 오브젝트', '오브젝트 정보', '컴파일된 블록', '오류 로그'],
-  );
 
+  // 안 보이는 탭은 그리지 않는다 (블록이 수만 개인 작품도 있다). 탭마다 확인한다.
+  const titles = [];
+  for (const name of ['run', 'data', 'objects', 'errors']) {
+    ui.tab(name);
+    await ui.settle();
+    titles.push(...[...panel.querySelectorAll('.debug-section h3')].map((h) => h.textContent.trim()));
+  }
+  assert.deepEqual(titles, ['실행 제어', '실행 환경 흉내내기', '변수 · 리스트', '신호', '함수',
+    '장면 · 오브젝트', '오브젝트 정보', '컴파일된 블록', '오류 로그']);
+
+  ui.tab('run');
+  await ui.settle();
   // 자바스크립트 소스가 화면에 글자로 새어 나오면 안 된다
   const text = panel.textContent;
   assert.doesNotMatch(text, /appendChild|=>\s*\{|function\s*\(/);

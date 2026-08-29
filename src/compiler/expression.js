@@ -6,9 +6,10 @@
 //   - index_of: 엔트리는 1부터(못 찾으면 0)               -> -1 보정
 //   - slice(s, a, b): Tess 는 [a, b), 엔트리 substring 은 1부터 양끝 포함
 // ============================================================================
-import { keyCodeOf } from './keycodes.js';
+import { KEY_CODES, keyCodeOf } from './keycodes.js';
+import { didYouMean, orHint } from './suggest.js';
 import { requirePowerRefiner } from './runtime.js';
-import { OPTION_KEYWORDS, STATE_VALUES } from '../builtins.js';
+import { BUILTIN_FUNCTIONS, OPTION_KEYWORDS, STATE_VALUES } from '../builtins.js';
 
 /** 결과가 엔트리 "판단(boolean)" 블록인 타입들 */
 const BOOLEAN_TYPES = new Set([
@@ -166,7 +167,7 @@ function compileIdentifier(node, ctx) {
   if (OPTION_KEYWORDS.has(name) || STATE_VALUES.has(name)) {
     return ctx.error(node, `'${name}' 은(는) 이 자리에서 값으로 쓸 수 없습니다.`);
   }
-  return ctx.error(node, `선언되지 않은 이름 '${name}' 입니다.`);
+  return ctx.error(node, `선언되지 않은 이름 '${name}' 입니다.${didYouMean(name, ctx.knownNames())}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -469,7 +470,9 @@ function resolveSoundValue(node, ctx) {
   if (sound) return sound.id;
   // force id 로 고정해 둔 진짜 엔트리 id 면 그대로 흘려보낸다 (resolveSound 와 같은 이유)
   if (ctx.forcedResourceIds.has(node.value)) return node.value;
-  return ctx.error(node, `'${node.value}' 소리가 이 오브젝트에 없습니다. sound ${node.value} "파일명" 으로 먼저 등록하세요.`);
+  return ctx.error(node, `'${node.value}' 소리가 이 오브젝트에 없습니다.`
+    + orHint(node.value, ctx.object?.sounds.keys() ?? [],
+      `sound ${node.value} "파일명" 으로 먼저 등록하세요.`));
 }
 
 /** 식별자가 리스트를 가리키면 그 엔트리 변수 항목을 돌려준다 */
@@ -705,14 +708,16 @@ function compileCall(node, ctx) {
       return ctx.error(node, 'random_color() 는 draw_color = random_color() 형태로만 쓸 수 있습니다.');
 
     default:
-      return ctx.error(node, `알 수 없는 함수 '${callee}' 입니다.`);
+      return ctx.error(node, `알 수 없는 함수 '${callee}' 입니다.`
+        + didYouMean(callee, [...BUILTIN_FUNCTIONS, ...ctx.functionByName.keys()]));
   }
 }
 
 function literalKeyCode(node, ctx, at) {
   if (node.type !== 'String') return ctx.error(at, '키 이름은 "space" 처럼 문자열로 직접 적어야 합니다.');
   const code = keyCodeOf(node.value);
-  return code ?? ctx.error(at, `알 수 없는 키 이름 "${node.value}" 입니다.`);
+  return code ?? ctx.error(at, `알 수 없는 키 이름 "${node.value}" 입니다.`
+    + didYouMean(node.value, Object.keys(KEY_CODES)));
 }
 
 /**
@@ -731,5 +736,5 @@ export function resolveTarget(node, ctx, options = {}) {
   if (options.all && name === 'all') return 'all';
 
   const id = ctx.objectId(name);
-  return id ?? ctx.error(node, `'${name}' 이라는 오브젝트가 없습니다.`);
+  return id ?? ctx.error(node, `'${name}' 이라는 오브젝트가 없습니다.${didYouMean(name, ctx.objectByName.keys())}`);
 }

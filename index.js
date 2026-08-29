@@ -29,6 +29,7 @@ import { parse } from "./src/parse.js";
 import { compileProject, createCompileCache } from "./src/compiler/index.js";
 import { makeEntryBundle } from "./src/compiler/bundle.js";
 import { serveProject } from "./src/player/server.js";
+import * as out from "./src/cli/output.js";
 
 const USAGE = `사용법
   node index.js check      <파일.tess>          문법 · 의미 검사 (컴파일까지 해 본다)
@@ -68,42 +69,6 @@ const USAGE = `사용법
                      '기록[(3 - 1)]' 대신 '기록[2]', 컴파일할 때 '(2 + 1)' 대신 '3').
                      기본은 접지 않아서 적어 둔 숫자가 그대로 보인다`;
 
-function report(label, diagnostics, kind) {
-  for (const item of diagnostics) {
-    const where =
-      item.file && item.file !== label ? path.basename(item.file) : label;
-    console.error(
-      `${where}:${item.line}:${item.column}  ${kind}: ${item.message}`,
-    );
-    if (item.detail) console.error(item.detail);
-  }
-}
-
-// 한글·한자는 터미널에서 두 칸을 차지한다. 글자 수로 맞추면 칸이 어긋난다.
-const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/;
-const displayWidth = (text) =>
-  [...text].reduce((width, ch) => width + (WIDE.test(ch) ? 2 : 1), 0);
-
-/**
- * 단계마다 걸린 시간을 찍는다.
- *
- * @param {Array<{label: string, ms: number}>} timings
- * @param {Array<{label: string, ms: number}>} [extra] 컴파일 밖에서 잰 단계
- */
-function reportTimings(timings = [], extra = []) {
-  const rows = [...timings, ...extra, null];
-  if (rows.length === 1) return;
-
-  const total = timings.concat(extra).reduce((sum, row) => sum + row.ms, 0);
-  const width = Math.max(...rows.map((row) => displayWidth(row?.label ?? "합계")));
-  console.log("  단계별 시간");
-  for (const row of rows) {
-    const { label, ms } = row ?? { label: "합계", ms: total };
-    const pad = " ".repeat(width - displayWidth(label));
-    console.log(`    ${label}${pad}  ${ms.toFixed(0).padStart(5)} ms`);
-  }
-}
-
 function parseArgs(argv) {
   const options = { assets: [] };
   const rest = [];
@@ -130,31 +95,43 @@ function parseArgs(argv) {
 function runCheck(file, options = { assets: [] }) {
   const source = fs.readFileSync(file, "utf-8");
   const label = path.basename(file);
-  const assetDirs =
-    options.assets?.length > 0
-      ? options.assets.map((dir) => path.resolve(dir))
-      : [path.dirname(path.resolve(file))];
+  const assetDirs = assetDirsFor(file, options);
 
+  out.begin("check", file);
   const result = compileProject(source, {
     path: file,
     assetDirs,
     name: options.name,
     cache: options.cache,
     foldIndex: options.foldIndex,
+    onPhase: out.step,
   });
-  report(label, result.errors, "에러");
-  report(label, result.warnings, "경고");
-  if (result.ok) console.log(`${label}: OK`);
-  return result.ok ? 0 : 1;
+  out.report(label, result.errors, "에러");
+  out.report(label, result.warnings, "경고");
+
+  if (!result.ok) {
+    out.outro(out.red(`${label}: 에러 ${result.errors.length}개`));
+    return 1;
+  }
+  out.outro(`${out.green("OK")}  ${label}`);
+  return 0;
+}
+
+/** 모양·소리를 찾을 폴더. --assets 가 없으면 소스 파일 옆이다. */
+function assetDirsFor(file, options) {
+  return options.assets?.length > 0
+    ? options.assets.map((dir) => path.resolve(dir))
+    : [path.dirname(path.resolve(file))];
 }
 
 function runAst(file) {
   const source = fs.readFileSync(file, "utf-8");
   const result = parse(source);
   if (!result.ok) {
-    report(path.basename(file), result.errors, "에러");
+    out.report(path.basename(file), result.errors, "에러");
     return 1;
   }
+  // AST 는 다른 도구로 넘겨 쓰는 것이라 꾸미지 않고 그대로 낸다.
   console.log(JSON.stringify(result.ast, null, 2));
   return 0;
 }
@@ -162,11 +139,9 @@ function runAst(file) {
 async function runBuild(file, options) {
   const source = fs.readFileSync(file, "utf-8");
   const label = path.basename(file);
-  const assetDirs =
-    options.assets.length > 0
-      ? options.assets.map((dir) => path.resolve(dir))
-      : [path.dirname(path.resolve(file))];
+  const assetDirs = assetDirsFor(file, options);
 
+  out.begin("build", file);
   const result = compileProject(source, {
     path: file,
     assetDirs,
@@ -174,42 +149,55 @@ async function runBuild(file, options) {
     force: options.force,
     cache: options.cache,
     foldIndex: options.foldIndex,
+    onPhase: out.step,
   });
-  report(label, result.warnings, "경고");
+  out.report(label, result.warnings, "경고");
   if (!result.ok) {
-    report(label, result.errors, "에러");
+    out.report(label, result.errors, "에러");
     // 문법 에러면 작품 자체가 없으므로(project 가 null) --force 로도 내보낼 게 없다
-    if (!options.force || !result.project) return 1;
-    console.error(
-      `${label}: --force — 에러 ${result.errors.length}개를 무시하고 그대로 내보냅니다.`,
+    if (!options.force || !result.project) {
+      out.outro(out.red(`${label}: 에러 ${result.errors.length}개 — 내보내지 않았습니다`));
+      return 1;
+    }
+    out.log.warn(`--force — 에러 ${result.errors.length}개를 무시하고 그대로 내보냅니다.`);
+  }
+
+  const outPath = options.out ?? `${file.replace(/\.tess$/, "")}.ent`;
+  fs.mkdirSync(path.dirname(path.resolve(outPath)), { recursive: true });
+
+  const asJson = outPath.endsWith(".json");
+  const spin = out.working(asJson ? "작품 내보내는 중" : "작품 묶는 중 (모양 미리보기까지)");
+  try {
+    fs.writeFileSync(
+      outPath,
+      asJson
+        ? JSON.stringify(result.project, null, 2)
+        : await makeEntryBundle(result.project, result.assets),
     );
+  } catch (error) {
+    spin.fail(`내보내지 못했습니다: ${error.message}`);
+    out.outro(out.red(`${label}: 실패`));
+    return 1;
   }
-
-  const out = options.out ?? `${file.replace(/\.tess$/, "")}.ent`;
-  fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
-
-  const startedWrite = performance.now();
-  if (out.endsWith(".json")) {
-    fs.writeFileSync(out, JSON.stringify(result.project, null, 2));
-  } else {
-    fs.writeFileSync(out, await makeEntryBundle(result.project, result.assets));
-  }
-  const writeMs = performance.now() - startedWrite;
+  spin.done(asJson ? "파일 쓰기" : "묶기 · 파일 쓰기");
 
   const { project } = result;
   const blocks = project.objects.reduce(
     (sum, o) => sum + countBlocks(JSON.parse(o.script)),
     0,
   );
-  console.log(
-    `${label} -> ${out}\n` +
-      `  장면 ${project.scenes.length} · 오브젝트 ${project.objects.length} · ` +
-      `변수 ${project.variables.length} · 신호 ${project.messages.length} · ` +
-      `함수 ${project.functions.length} · 블록 ${blocks}`,
+  out.note(
+    out.details([
+      ["장면", project.scenes.length],
+      ["오브젝트", project.objects.length],
+      ["변수", project.variables.length],
+      ["신호", project.messages.length],
+      ["함수", project.functions.length],
+      ["블록", blocks],
+    ]),
+    "요약",
   );
-  reportTimings(result.timings, [
-    { label: out.endsWith(".json") ? "파일 쓰기" : "묶기 · 파일 쓰기", ms: writeMs },
-  ]);
+  out.outro(`${out.green("완료")}  ${label} ${out.dim("->")} ${outPath}`);
   return 0;
 }
 
@@ -217,11 +205,9 @@ async function runBuild(file, options) {
 async function runProject(file, options) {
   const source = fs.readFileSync(file, "utf-8");
   const label = path.basename(file);
-  const assetDirs =
-    options.assets.length > 0
-      ? options.assets.map((dir) => path.resolve(dir))
-      : [path.dirname(path.resolve(file))];
+  const assetDirs = assetDirsFor(file, options);
 
+  out.begin("run", file);
   const result = compileProject(source, {
     path: file,
     assetDirs,
@@ -229,18 +215,20 @@ async function runProject(file, options) {
     force: options.force,
     cache: options.cache,
     foldIndex: options.foldIndex,
+    onPhase: out.step,
   });
-  report(label, result.warnings, "경고");
+  out.report(label, result.warnings, "경고");
   if (!result.ok) {
-    report(label, result.errors, "에러");
-    if (!options.force || !result.project) return 1;
-    console.error(
-      `${label}: --force — 에러 ${result.errors.length}개를 무시하고 그대로 실행합니다.`,
-    );
+    out.report(label, result.errors, "에러");
+    if (!options.force || !result.project) {
+      out.outro(out.red(`${label}: 에러 ${result.errors.length}개 — 실행하지 않았습니다`));
+      return 1;
+    }
+    out.log.warn(`--force — 에러 ${result.errors.length}개를 무시하고 그대로 실행합니다.`);
   }
 
   const reload = !options.noReload;
-  const startedServer = performance.now();
+  const spin = out.working("서버 여는 중");
   const server = await serveProject({
     project: result.project,
     assets: result.assets,
@@ -253,16 +241,17 @@ async function runProject(file, options) {
     boost: options.boost,
   });
 
-  const serverMs = performance.now() - startedServer;
+  spin.done("서버 준비");
 
-  console.log(`${label} -> ${server.url}`);
-  console.log(`  실행기: ${server.runtime}`);
-  if (options.boost) console.log("  부스트 모드: 켜짐 (WebGL 렌더러)");
-  console.log(
-    `  자동 새로고침: ${reload ? "켜짐 (--no-reload 로 끌 수 있습니다)" : "꺼짐"}`,
-  );
-  reportTimings(result.timings, [{ label: "서버 준비", ms: serverMs }]);
-  console.log("  Ctrl+C 로 끕니다.");
+  const rows = [
+    ["주소", out.cyan(server.url)],
+    ["실행기", server.runtime],
+    ["새로고침", reload ? "켜짐  " + out.dim("--no-reload 로 끌 수 있습니다") : "꺼짐"],
+  ];
+  if (options.boost) rows.push(["부스트", "켜짐  " + out.dim("WebGL 렌더러")]);
+  out.note(out.details(rows), "실행 중");
+
+  out.outro(out.dim("Ctrl+C 로 끕니다."));
   if (!options.noOpen) openBrowser(server.url);
 
   const stopWatching = reload
@@ -304,18 +293,14 @@ function watchAndReload(file, options, assetDirs, label, server) {
         cache,
         foldIndex: options.foldIndex,
       });
-      report(label, result.warnings, "경고");
+      out.report(label, result.warnings, "경고");
       if (!result.ok) {
-        report(label, result.errors, "에러");
+        out.report(label, result.errors, "에러");
         if (!options.force || !result.project) {
-          console.error(
-            `${label}: 다시 불러오기 실패 — 이전 버전을 계속 보여줍니다.`,
-          );
+          out.log.warn("다시 불러오기 실패 — 이전 버전을 계속 보여줍니다.");
           return;
         }
-        console.error(
-          `${label}: --force — 에러 ${result.errors.length}개를 무시하고 그대로 반영합니다.`,
-        );
+        out.log.warn(`--force — 에러 ${result.errors.length}개를 무시하고 그대로 반영합니다.`);
       }
       server.update({
         project: result.project,
@@ -323,13 +308,12 @@ function watchAndReload(file, options, assetDirs, label, server) {
         sourceMap: result.sourceMap,
       });
       const parsed = cache.parsed - before;
-      console.log(
-        `${label}: 변경 사항을 반영했습니다.` +
-          ` (파일 ${parsed}개 다시 컴파일 · ${Date.now() - started}ms)`,
+      out.log.success(
+        `${out.green("다시 불러왔습니다")}  ` +
+          out.dim(`파일 ${parsed}개 · ${out.duration(Date.now() - started)}`),
       );
-      reportTimings(result.timings);
     } catch (error) {
-      console.error(`${label}: 다시 불러오기 실패 — ${error.message}`);
+      out.log.error(`다시 불러오기 실패 — ${error.message}`);
     }
   };
 
@@ -394,6 +378,8 @@ async function runDecompile(file, options) {
   const label = path.basename(file);
   const bytes = fs.readFileSync(file);
 
+  out.begin("decompile", file);
+  const reading = out.working("작품 읽는 중");
   let result;
   try {
     result = await decompileEnt(bytes, {
@@ -402,11 +388,14 @@ async function runDecompile(file, options) {
       keepSvg: options.keepSvg,
     });
   } catch (error) {
-    console.error(`${label}: 되돌리기 실패 — ${error.message}`);
+    reading.fail(`되돌리기 실패 — ${error.message}`);
+    out.outro(out.red(`${label}: 실패`));
     return 1;
   }
+  reading.done("작품 읽기");
 
   const outDir = options.out ?? `${file.replace(/\.ent$/i, "")}_tess`;
+  const writing = out.working("소스와 에셋 쓰는 중");
   fs.mkdirSync(outDir, { recursive: true });
   const mainFile = path.join(outDir, "main.tess");
   fs.writeFileSync(mainFile, result.source);
@@ -415,40 +404,51 @@ async function runDecompile(file, options) {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, asset.data);
   }
+  writing.done("파일 쓰기");
 
   const fragmentCount = result.assets.filter((asset) =>
     asset.path.endsWith(".tess"),
   ).length;
-  console.log(`${label} -> ${mainFile}`);
-  console.log(
-    `  오브젝트 조각 파일 ${fragmentCount}개, 에셋(모양·소리) ${result.assets.length - fragmentCount}개 옮김`,
-  );
+
+  const rows = [
+    ["오브젝트 조각", `${fragmentCount}개`],
+    ["모양 · 소리", `${result.assets.length - fragmentCount}개`],
+  ];
+  if (result.warnings.length > 0) {
+    rows.push(["주의", out.yellow(`${result.warnings.length}개`)]);
+  }
+  out.note(out.details(rows), "요약");
 
   if (result.warnings.length > 0) {
-    console.log(`  주의 ${result.warnings.length}개`);
     if (options.warnings) {
-      for (const warning of result.warnings.slice(0, 20))
-        console.log(`    - ${warning}`);
-      if (result.warnings.length > 20)
-        console.log(`    ... 그 외 ${result.warnings.length - 20}개`);
+      const shown = result.warnings.slice(0, 20);
+      const more = result.warnings.length - shown.length;
+      out.log.warn(
+        [...shown, ...(more > 0 ? [out.dim(`… 외 ${more}개`)] : [])].join("\n"),
+      );
     } else {
-      console.log(`  자세한 내용은 --warnings 옵션을 붙여서 다시 실행하세요.`);
+      out.log.info(out.dim("--warnings 를 붙이면 옮기지 못한 부분을 자세히 보여줍니다."));
     }
   }
 
+  // 되돌린 소스가 실제로 다시 컴파일되는지 확인해 준다 (참고용)
   try {
     const recheck = compileProject(result.source, {
       path: mainFile,
       assetDirs: [outDir],
     });
-    console.log(
-      recheck.ok
-        ? "  되돌린 소스가 다시 정상적으로 컴파일됩니다."
-        : `  참고: 되돌린 소스에 아직 컴파일 에러가 ${recheck.errors.length}개 있습니다 — node index.js check ${mainFile} 로 자세히 보세요.`,
-    );
+    if (recheck.ok) out.log.success("되돌린 소스가 다시 정상적으로 컴파일됩니다.");
+    else {
+      out.log.warn(
+        `되돌린 소스에 아직 컴파일 에러가 ${recheck.errors.length}개 있습니다.\n` +
+          out.dim(`node index.js check ${mainFile}`),
+      );
+    }
   } catch {
     // 다시 컴파일해 보는 건 참고용이라, 실패해도 결과물은 그대로 둔다
   }
+
+  out.outro(`${out.green("완료")}  ${label} ${out.dim("->")} ${mainFile}`);
   return 0;
 }
 

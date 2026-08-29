@@ -9,6 +9,7 @@
 //   4) 반복문 밖의 break / skip
 //   5) project 블록 중복 선언                  (spec 3.2)
 // ============================================================================
+import { didYouMean } from './compiler/suggest.js';
 import {
   BUILTIN_FUNCTIONS,
   OBJECT_PROPERTIES,
@@ -276,14 +277,18 @@ export function validate(program, source = '', sources = null) {
     }
 
     if (!hasUse && !ctx.objectLocals.has(name)) {
-      warn(identifier, `선언되지 않은 이름 '${name}' 입니다.`);
+      const known = [...ctx.scope, ...ctx.objectLocals, ...STATE_VALUES];
+      warn(identifier, `선언되지 않은 이름 '${name}' 입니다.${didYouMean(name, known)}`);
     }
   }
 
   function checkCall(call, ctx) {
     if (BUILTIN_FUNCTIONS.has(call.callee)) return;
     if (ctx.functions.has(call.callee)) return;
-    if (!hasUse) warn(call, `선언되지 않은 함수 '${call.callee}' 를 호출했습니다.`);
+    if (!hasUse) {
+      const known = [...BUILTIN_FUNCTIONS, ...ctx.functions];
+      warn(call, `선언되지 않은 함수 '${call.callee}' 를 호출했습니다.${didYouMean(call.callee, known)}`);
+    }
   }
 
   return { errors, warnings };

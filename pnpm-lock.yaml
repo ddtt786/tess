@@ -207,9 +207,6 @@ importers:
 
   .:
     dependencies:
-      '@arrow-js/core':
-        specifier: ^1.0.6
-        version: 1.0.6
       '@babel/code-frame':
         specifier: ^8.0.0
         version: 8.0.0
@@ -219,9 +216,6 @@ importers:
       chevrotain:
         specifier: ^13.2.0
         version: 13.2.0
-      image-size:
-        specifier: ^2.0.2
-        version: 2.0.2
       preact:
         specifier: ^10.29.8
         version: 10.29.8
@@ -246,10 +240,6 @@ importers:
         version: 9.3.2
 
 packages:
-
-  '@arrow-js/core@1.0.6':
-    resolution: {integrity: sha512-75f4N0iHtHTwgxf9XS8a1vtfGZZmCvqT0Ix+ScDLclNuR9Fqp2yOIK1u8vmN1BPsS4aRfMVTdSFSmgGCqkJSCg==}
-    engines: {node: '>=20.19.0 || >=22.12.0'}
 
   '@asamuzakjp/css-color@6.0.7':
     resolution: {integrity: sha512-vC/bk1Lz7Tn/EfU9/apOTBk80/8dyGyWMowPoV1tJ52muDGsDqt2HPT2klrFUiY60MQmQv9q8yIht15JnBgDGw==}
@@ -1950,11 +1940,6 @@ packages:
   ignore@7.0.6:
     resolution: {integrity: sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw==}
     engines: {node: '>= 4'}
-
-  image-size@2.0.2:
-    resolution: {integrity: sha512-IRqXKlaXwgSMAMtpNzZa1ZAe8m+Sa1770Dhk8VkSsP9LS+iHD62Zd8FQKs8fbPiagBE7BzoFX23cxFnwshpV6w==}
-    engines: {node: '>=16.x'}
-    hasBin: true
 
   import-local@2.0.0:
     resolution: {integrity: sha512-b6s04m3O+s3CGSbqDIyP4R6aAwAeYlVq9+WUWep6iHa8ETRf9yei1U48C5MmfJmV9AiLYYBKPMq/W+/WRpQmCQ==}
@@ -3692,8 +3677,6 @@ packages:
     resolution: {integrity: sha512-8HFIh676uyGYP6wP13R/j6OJ/1HwJ46snpvzE7aHAN3Ryqh2yX6Xox2B4CUmTwwOIzlG3Bs7ocsP5dZH/R1Qbg==}
 
 snapshots:
-
-  '@arrow-js/core@1.0.6': {}
 
   '@asamuzakjp/css-color@6.0.7':
     dependencies:
@@ -5809,8 +5792,6 @@ snapshots:
   ieee754@1.2.1: {}
 
   ignore@7.0.6: {}
-
-  image-size@2.0.2: {}
 
   import-local@2.0.0:
     dependencies:

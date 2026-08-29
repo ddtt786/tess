@@ -15,7 +15,8 @@ import { buildCommentMap } from './comments.js';
 import { makeAsset } from './assets.js';
 import { compileStatements, compileStatement } from './statement.js';
 import { compileValue, BOOLEAN_TEXT } from './expression.js';
-import { keyCodeOf } from './keycodes.js';
+import { KEY_CODES, keyCodeOf } from './keycodes.js';
+import { didYouMean } from './suggest.js';
 import { validate } from '../validate.js';
 import { isAutoParamName } from '../function-params.js';
 
@@ -46,7 +47,7 @@ const BRUSH_DEFAULT_PROPERTIES = ['draw_color', 'fill_color', 'draw_width', 'dra
  */
 export function compileProject(source, options = {}) {
   const filePath = options.path ?? '<input>';
-  const timer = createTimer();
+  const timer = createTimer(options.onPhase);
   const loaded = loadProgram({
     source, path: filePath, readFile: options.readFile, cache: options.cache,
   });
@@ -100,22 +101,45 @@ export function compileProject(source, options = {}) {
     ok,
     project: ok || options.force ? project : null,
     errors: ctx.errors,
-    warnings: ctx.warnings,
+    warnings: withoutDuplicates(ctx.warnings, ctx.errors),
     assets: ctx.assetFiles,
     sourceMap: ctx.sourceMap,
     timings: timer.timings,
   };
 }
 
-/** 단계마다 걸린 시간을 재 둔다 — CLI 가 그대로 찍는다 */
-function createTimer() {
+/** 진단 하나가 가리키는 자리 */
+const spotOf = (item) => `${item.file ?? ''}:${item.offset}`;
+
+/**
+ * 컴파일러가 이미 에러를 낸 자리의 검증 경고는 접는다.
+ *
+ * 검증기는 컴파일 전에 이름을 훑어서 "선언되지 않은 이름" 을 미리 알려 주는데,
+ * 컴파일까지 갔으면 같은 자리에서 더 자세한 에러가 이미 나온다. 둘 다 내면 같은
+ * 오타를 두 번 읽게 된다.
+ */
+function withoutDuplicates(warnings, errors) {
+  if (errors.length === 0) return warnings;
+  const spots = new Set(errors.map(spotOf));
+  return warnings.filter((warning) => !spots.has(spotOf(warning)));
+}
+
+/**
+ * 단계마다 걸린 시간을 잰다.
+ *
+ * 끝나는 즉시 `onPhase` 로 알려 준다 — CLI 는 그걸 그때그때 한 줄씩 찍어서, 큰
+ * 작품을 컴파일하는 동안에도 어디까지 갔는지 보이게 한다.
+ */
+function createTimer(onPhase) {
   const timings = [];
   let last = performance.now();
   return {
     timings,
     mark(label) {
       const now = performance.now();
-      timings.push({ label, ms: now - last });
+      const phase = { label, ms: now - last };
+      timings.push(phase);
+      onPhase?.(phase);
       last = now;
     },
   };
@@ -554,7 +578,7 @@ function compileEvent(event, ctx) {
 
     case 'key': {
       const code = keyCodeOf(event.key);
-      if (!code) return [ctx.error(event, `알 수 없는 키 이름 "${event.key}" 입니다.`)] && null;
+      if (!code) return [ctx.error(event, `알 수 없는 키 이름 "${event.key}" 입니다.${didYouMean(event.key, Object.keys(KEY_CODES))}`)] && null;
       return [ctx.block('when_some_key_pressed', [null, code]), ...body()];
     }
 
@@ -563,7 +587,7 @@ function compileEvent(event, ctx) {
       //   시작하기 -> 계속 반복: 키가 눌릴 때까지 기다림 -> 떼질 때까지 기다림 -> 본문
       // (SPEC-ADDENDUM 4 에 적어 둔 정해진 변환이라 따로 알리지 않는다)
       const code = keyCodeOf(event.key);
-      if (!code) return [ctx.error(event, `알 수 없는 키 이름 "${event.key}" 입니다.`)] && null;
+      if (!code) return [ctx.error(event, `알 수 없는 키 이름 "${event.key}" 입니다.${didYouMean(event.key, Object.keys(KEY_CODES))}`)] && null;
       const pressed = () => ctx.block('is_press_some_key', [code, null]);
       const loop = ctx.block('repeat_inf', [null, null], [[
         ctx.block('wait_until_true', [pressed(), null]),

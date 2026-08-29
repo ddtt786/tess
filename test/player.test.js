@@ -256,7 +256,7 @@ test('무대 배치가 바뀌면 엔트리가 캐시한 캔버스 위치를 새�
   });
 });
 
-test('디버그 UI 와 arrow-js 를 모듈로 내보낸다', async () => {
+test('디버그 UI 와 preact 를 모듈로 내보낸다', async () => {
   await withServer({}, async (server) => {
     const page = await (await fetch(server.url)).text();
     assert.match(page, /<script type="module" src="\/debug-ui\.js"><\/script>/);
@@ -264,10 +264,10 @@ test('디버그 UI 와 arrow-js 를 모듈로 내보낸다', async () => {
     const ui = await fetch(`${server.url}debug-ui.js`);
     assert.equal(ui.status, 200);
     const uiSource = await ui.text();
-    const arrowFile = uiSource.match(/from '\/arrow\/([^']+)'/)[1];
-    assert.equal((await fetch(`${server.url}arrow/${arrowFile}`)).status, 200);
-    // arrow 폴더 바깥은 주지 않는다
-    const escaped = await fetch(`${server.url}arrow/${encodeURIComponent('../../../package.json')}`);
+    const preactFile = uiSource.match(/from '\/preact\/([^']+)'/)[1];
+    assert.equal((await fetch(`${server.url}preact/${preactFile}`)).status, 200);
+    // preact 폴더 바깥은 주지 않는다
+    const escaped = await fetch(`${server.url}preact/${encodeURIComponent('../../../package.json')}`);
     assert.equal(escaped.status, 404);
   });
 });
@@ -338,8 +338,8 @@ test('디버그 패널의 부스트 모드 흉내내기는 그대로 남는다',
   await withServer({}, async (server) => {
     const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
     assert.match(ui, /wrap\('is_boost_mode', \(\) => choice\(state\.env\.boost\)\)/);
-    assert.match(ui, /id="env-boost"/);
-    // 실제 렌더러는 패널에 표시만 한다 (arrow 가 따라가려면 반응형 상태여야 한다)
+    assert.match(ui, /'env-boost'/);
+    // 실제 렌더러는 패널에 표시만 한다 (다시 그리려면 반응형 상태여야 한다)
     assert.match(ui, /realBoost: false,/);
     assert.match(ui, /state\.realBoost = Boolean\(Entry\.options && Entry\.options\.useWebGL\)/);
   });

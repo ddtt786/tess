@@ -172,6 +172,15 @@ export class Context {
     return this.objectByName.get(name)?.id ?? null;
   }
 
+  /** 지금 자리에서 값으로 쓸 수 있는 이름들 — 오타를 짚어 줄 때 후보가 된다 */
+  knownNames() {
+    const names = [...this.globals.keys(), ...this.locals.keys()];
+    if (this.funcScope) {
+      names.push(...this.funcScope.params, ...this.funcScope.localVars.keys());
+    }
+    return names;
+  }
+
   /** 신호 이름 -> 엔트리 메시지 id (없으면 만든다) */
   messageId(name) {
     let message = this.messageByName.get(name);
