@@ -46,18 +46,30 @@ const BRUSH_DEFAULT_PROPERTIES = ['draw_color', 'fill_color', 'draw_width', 'dra
  */
 export function compileProject(source, options = {}) {
   const filePath = options.path ?? '<input>';
+  const timer = createTimer();
   const loaded = loadProgram({
     source, path: filePath, readFile: options.readFile, cache: options.cache,
   });
+  timer.mark('불러오기 · 파싱');
   if (!loaded.ast) {
-    return { ok: false, project: null, errors: loaded.errors, warnings: loaded.warnings, assets: [] };
+    return {
+      ok: false,
+      project: null,
+      errors: loaded.errors,
+      warnings: loaded.warnings,
+      assets: [],
+      timings: timer.timings,
+    };
   }
 
   const semantic = validate(loaded.ast, source, loaded.sources);
+  timer.mark('의미 검증');
+  const comments = buildCommentMap(loaded.ast, loaded.sources);
+  timer.mark('주석 모으기');
   const ctx = new Context(source, {
     ...options,
     sources: loaded.sources,
-    comments: buildCommentMap(loaded.ast, loaded.sources),
+    comments,
     assetDirs: options.assetDirs ?? [path.dirname(path.resolve(filePath))],
   });
   // Include errors (a fragment that will not parse, a `use` path that is not
@@ -70,14 +82,19 @@ export function compileProject(source, options = {}) {
   const program = loaded.ast;
   collectScenes(program, ctx);
   collectGlobals(program, ctx);
+  // 모양·소리 파일을 실제로 읽어 크기와 길이를 재는 것이 여기다.
   collectObjects(program, ctx);
   collectFunctions(program, ctx);
   collectMessages(program, ctx);
+  timer.mark('심볼 · 리소스 수집');
 
   compileFunctions(ctx);
   compileObjects(ctx);
+  timer.mark('스크립트 컴파일');
 
   const project = assemble(program, ctx, options);
+  timer.mark('작품 조립');
+
   const ok = ctx.errors.length === 0;
   return {
     ok,
@@ -86,6 +103,21 @@ export function compileProject(source, options = {}) {
     warnings: ctx.warnings,
     assets: ctx.assetFiles,
     sourceMap: ctx.sourceMap,
+    timings: timer.timings,
+  };
+}
+
+/** 단계마다 걸린 시간을 재 둔다 — CLI 가 그대로 찍는다 */
+function createTimer() {
+  const timings = [];
+  let last = performance.now();
+  return {
+    timings,
+    mark(label) {
+      const now = performance.now();
+      timings.push({ label, ms: now - last });
+      last = now;
+    },
   };
 }
 

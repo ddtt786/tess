@@ -154,7 +154,10 @@ export function serveProject({
     if (url === `/${entName}`) {
       // 여기서 처음으로 작품을 묶는다 — 내려받기를 누르지 않으면 묶을 일이 없다.
       cachedBundle ??= makeEntryBundle(currentProject, currentAssets);
-      return send(response, 200, '.ent', cachedBundle);
+      return cachedBundle.then(
+        (bytes) => send(response, 200, '.ent', bytes),
+        (error) => send(response, 500, '.html', `<h1>작품을 묶지 못했습니다: ${error.message}</h1>`),
+      );
     }
 
     if (assetFiles.has(url)) return sendFile(response, assetFiles.get(url));

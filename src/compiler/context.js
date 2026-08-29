@@ -6,7 +6,7 @@
 // ============================================================================
 import { createIdFactory, seedFrom } from './ids.js';
 import { commentKey, makeComment } from './comments.js';
-import { lineAndColumn } from '../validate.js';
+import { lineIndex } from '../validate.js';
 
 /** 엔트리 블록 한 개의 기본 뼈대 */
 export function makeBlock(id, type, params = [], statements = []) {
@@ -28,6 +28,9 @@ export function makeBlock(id, type, params = [], statements = []) {
 }
 
 export class Context {
+  /** 파일별 줄 찾기표. 블록마다 위치를 남기므로 파일당 한 번만 만든다. */
+  #lineLookups = new Map();
+
   constructor(source, options = {}) {
     this.source = source;
     this.sources = options.sources ?? null;
@@ -84,9 +87,24 @@ export class Context {
   #report(bucket, node, message) {
     const offset = node?.loc?.start ?? 0;
     const file = node?.loc?.file;
-    const text = (file && this.sources?.get(file)) ?? this.source;
-    const { line, column } = lineAndColumn(text, offset);
+    const { line, column } = this.#positionIn(file, offset);
     bucket.push({ line, column, file, offset, message });
+  }
+
+  /**
+   * Line and column for an offset in one of the compiled files.
+   *
+   * Every block records where it came from, so this runs once per block. The
+   * line table for each file is built the first time that file is asked about.
+   */
+  #positionIn(file, offset) {
+    const key = file ?? '';
+    let lookup = this.#lineLookups.get(key);
+    if (lookup === undefined) {
+      lookup = lineIndex((file && this.sources?.get(file)) ?? this.source);
+      this.#lineLookups.set(key, lookup);
+    }
+    return lookup(offset);
   }
 
   // --- 블록 만들기 ---------------------------------------------------------
@@ -101,9 +119,8 @@ export class Context {
     const node = this.currentNode;
     if (!node?.loc) return;
     const file = node.loc.file ?? this.options.path ?? null;
-    const text = (file && this.sources?.get(file)) ?? this.source;
-    const start = lineAndColumn(text, node.loc.start);
-    const end = lineAndColumn(text, node.loc.end ?? node.loc.start);
+    const start = this.#positionIn(file, node.loc.start);
+    const end = this.#positionIn(file, node.loc.end ?? node.loc.start);
     this.sourceMap[block.id] = {
       file, line: start.line, column: start.column, endLine: end.line, endColumn: end.column,
     };

@@ -6,40 +6,28 @@
 //    temp/<앞2자>/<다음2자>/image/<파일명>.png
 //    temp/<앞2자>/<다음2자>/sound/<파일명>.mp3
 //
-//  의존성 없이 쓰기 위해 ustar 헤더를 직접 만든다.
+//  담을 내용이 전부 메모리에 있어서(project.json 과 방금 만든 미리보기는 디스크에
+//  없다) `tar.create` 대신 `tar.Header` 로 블록을 직접 쌓는다 — ustar 헤더의
+//  자릿수와 체크섬은 그 패키지가 맡는다.
 // ============================================================================
 import fs from 'node:fs';
+import { Header } from 'tar';
 import { makeThumbnail } from './thumbnail.js';
 
 const BLOCK_SIZE = 512;
 
-/** tar 엔트리 하나의 헤더(512바이트) */
-function header(name, size, mtime) {
-  const buffer = Buffer.alloc(BLOCK_SIZE);
-  const write = (text, offset, length) => buffer.write(String(text), offset, length, 'utf-8');
-  const octal = (value, length) => `${value.toString(8).padStart(length - 1, '0')}\0`;
-
-  if (Buffer.byteLength(name) > 100) throw new Error(`tar 경로가 너무 깁니다: ${name}`);
-  write(name, 0, 100);
-  write(octal(0o644, 8), 100, 8);   // mode
-  write(octal(0, 8), 108, 8);       // uid
-  write(octal(0, 8), 116, 8);       // gid
-  write(octal(size, 12), 124, 12);
-  write(octal(mtime, 12), 136, 12);
-  write('        ', 148, 8);        // 체크섬 자리는 공백으로 두고 계산한다
-  write('0', 156, 1);               // typeflag: 일반 파일
-  write('ustar\0', 257, 6);
-  write('00', 263, 2);
-
-  let checksum = 0;
-  for (const byte of buffer) checksum += byte;
-  write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148, 8);
-  return buffer;
-}
-
 function padding(size) {
   const remainder = size % BLOCK_SIZE;
   return remainder === 0 ? Buffer.alloc(0) : Buffer.alloc(BLOCK_SIZE - remainder);
+}
+
+/** tar 엔트리 하나의 헤더(512바이트) */
+function header(name, size, mtime) {
+  const block = Buffer.alloc(BLOCK_SIZE);
+  new Header({
+    path: name, size, mtime, type: 'File', mode: 0o644, uid: 0, gid: 0,
+  }).encode(block, 0);
+  return block;
 }
 
 /**
@@ -47,7 +35,7 @@ function padding(size) {
  * @returns {Buffer} tar 바이트열
  */
 export function makeTar(entries) {
-  const mtime = Math.floor(Date.now() / 1000);
+  const mtime = new Date();
   const chunks = [];
   for (const { name, data } of entries) {
     chunks.push(header(name, data.length, mtime), data, padding(data.length));
@@ -59,30 +47,43 @@ export function makeTar(entries) {
 /**
  * 컴파일 결과를 .ent 묶음 바이트열로 만든다.
  *
+ * 미리보기를 그리는 동안 기다려야 해서 비동기다. `run` 은 이 일을 하지 않는다 —
+ * 내려받기를 눌렀을 때만 부른다 (src/player/server.js).
+ *
  * @param {object} project compileProject() 가 만든 프로젝트 객체
  * @param {Array<{source: string, target: string}>} assets 함께 담을 리소스 파일
+ * @returns {Promise<Buffer>}
  */
-export function makeEntryBundle(project, assets = []) {
+export async function makeEntryBundle(project, assets = []) {
   const entries = [{
     name: 'temp/project.json',
     data: Buffer.from(JSON.stringify(project), 'utf-8'),
   }];
 
   const packed = new Set();
+  const pending = [];
   for (const asset of assets) {
     if (packed.has(asset.target)) continue;
     packed.add(asset.target);
     const data = fs.readFileSync(asset.source);
-    entries.push({ name: asset.target, data });
+    const index = entries.push({ name: asset.target, data }) - 1;
 
     // 그림은 미리보기도 같이 담는다 — 엔트리 편집기의 오브젝트·모양 목록이 이걸
     // 쓰고, 실제 작품 파일도 image/ 옆에 thumb/ 를 나란히 갖고 있다.
     const thumbName = asset.target.replace('/image/', '/thumb/');
     if (thumbName === asset.target || packed.has(thumbName)) continue;
-    const thumb = makeThumbnail(data);
-    if (!thumb) continue; // SVG 처럼 못 그리는 형식은 엔트리도 미리보기를 안 만든다
     packed.add(thumbName);
-    entries.push({ name: thumbName, data: thumb });
+    pending.push({ index, name: thumbName, data });
+  }
+
+  // 미리보기는 서로 상관이 없으니 한꺼번에 그린다.
+  const thumbs = await Promise.all(pending.map(({ data }) => makeThumbnail(data)));
+
+  // 원본 바로 뒤에 미리보기가 오도록, 뒤에서부터 끼워 넣는다.
+  for (let i = pending.length - 1; i >= 0; i -= 1) {
+    const thumb = thumbs[i];
+    if (!thumb) continue; // SVG 처럼 못 그리는 형식은 엔트리도 미리보기를 안 만든다
+    entries.splice(pending[i].index + 1, 0, { name: pending[i].name, data: thumb });
   }
   return makeTar(entries);
 }

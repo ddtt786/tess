@@ -839,10 +839,10 @@ for (const example of examples) {
   });
 }
 
-test('.ent 묶음은 temp/project.json 을 담은 tar 다', () => {
+test('.ent 묶음은 temp/project.json 을 담은 tar 다', async () => {
   const file = path.join(root, 'examples/all_blocks.tess');
   const { project } = compileProject(fs.readFileSync(file, 'utf-8'), { path: file });
-  const tar = makeEntryBundle(project, []);
+  const tar = await makeEntryBundle(project, []);
 
   assert.equal(tar.length % 512, 0);
   const name = tar.subarray(0, 100).toString('utf-8').replace(/\0+$/, '');

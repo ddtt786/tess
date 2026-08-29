@@ -19,6 +19,35 @@ import {
 
 const LOOP_TYPES = new Set(['Repeat', 'While', 'Until', 'Forever']);
 
+/**
+ * 한 파일의 줄 찾기표를 만든다.
+ *
+ * `lineAndColumn` 은 파일 처음부터 훑기 때문에 한두 번 쓰기에는 괜찮지만 블록마다
+ * 부르기에는 안 된다 — 컴파일러는 만드는 블록마다 소스 위치를 남기므로, 그때마다
+ * 훑으면 비용이 (블록 수 × 파일 길이)로 늘어난다. 줄 시작 위치를 한 번만 모아 두고
+ * 이분 탐색한다.
+ *
+ * @param {string} source
+ * @returns {(offset: number) => {line: number, column: number}}
+ */
+export function lineIndex(source) {
+  const starts = [0];
+  for (let i = 0; i < source.length; i += 1) {
+    if (source.charCodeAt(i) === 10) starts.push(i + 1);
+  }
+  return (offset) => {
+    const target = Math.min(Math.max(offset, 0), source.length);
+    let low = 0;
+    let high = starts.length - 1;
+    while (low < high) {
+      const mid = (low + high + 1) >> 1;
+      if (starts[mid] <= target) low = mid;
+      else high = mid - 1;
+    }
+    return { line: low + 1, column: target - starts[low] + 1 };
+  };
+}
+
 /** 오프셋을 사람이 읽는 줄/열로 변환 */
 export function lineAndColumn(source, offset) {
   let line = 1;

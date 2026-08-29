@@ -79,6 +79,31 @@ function report(label, diagnostics, kind) {
   }
 }
 
+// 한글·한자는 터미널에서 두 칸을 차지한다. 글자 수로 맞추면 칸이 어긋난다.
+const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/;
+const displayWidth = (text) =>
+  [...text].reduce((width, ch) => width + (WIDE.test(ch) ? 2 : 1), 0);
+
+/**
+ * 단계마다 걸린 시간을 찍는다.
+ *
+ * @param {Array<{label: string, ms: number}>} timings
+ * @param {Array<{label: string, ms: number}>} [extra] 컴파일 밖에서 잰 단계
+ */
+function reportTimings(timings = [], extra = []) {
+  const rows = [...timings, ...extra, null];
+  if (rows.length === 1) return;
+
+  const total = timings.concat(extra).reduce((sum, row) => sum + row.ms, 0);
+  const width = Math.max(...rows.map((row) => displayWidth(row?.label ?? "합계")));
+  console.log("  단계별 시간");
+  for (const row of rows) {
+    const { label, ms } = row ?? { label: "합계", ms: total };
+    const pad = " ".repeat(width - displayWidth(label));
+    console.log(`    ${label}${pad}  ${ms.toFixed(0).padStart(5)} ms`);
+  }
+}
+
 function parseArgs(argv) {
   const options = { assets: [] };
   const rest = [];
@@ -134,7 +159,7 @@ function runAst(file) {
   return 0;
 }
 
-function runBuild(file, options) {
+async function runBuild(file, options) {
   const source = fs.readFileSync(file, "utf-8");
   const label = path.basename(file);
   const assetDirs =
@@ -163,11 +188,13 @@ function runBuild(file, options) {
   const out = options.out ?? `${file.replace(/\.tess$/, "")}.ent`;
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
 
+  const startedWrite = performance.now();
   if (out.endsWith(".json")) {
     fs.writeFileSync(out, JSON.stringify(result.project, null, 2));
   } else {
-    fs.writeFileSync(out, makeEntryBundle(result.project, result.assets));
+    fs.writeFileSync(out, await makeEntryBundle(result.project, result.assets));
   }
+  const writeMs = performance.now() - startedWrite;
 
   const { project } = result;
   const blocks = project.objects.reduce(
@@ -180,6 +207,9 @@ function runBuild(file, options) {
       `변수 ${project.variables.length} · 신호 ${project.messages.length} · ` +
       `함수 ${project.functions.length} · 블록 ${blocks}`,
   );
+  reportTimings(result.timings, [
+    { label: out.endsWith(".json") ? "파일 쓰기" : "묶기 · 파일 쓰기", ms: writeMs },
+  ]);
   return 0;
 }
 
@@ -210,6 +240,7 @@ async function runProject(file, options) {
   }
 
   const reload = !options.noReload;
+  const startedServer = performance.now();
   const server = await serveProject({
     project: result.project,
     assets: result.assets,
@@ -222,12 +253,15 @@ async function runProject(file, options) {
     boost: options.boost,
   });
 
+  const serverMs = performance.now() - startedServer;
+
   console.log(`${label} -> ${server.url}`);
   console.log(`  실행기: ${server.runtime}`);
   if (options.boost) console.log("  부스트 모드: 켜짐 (WebGL 렌더러)");
   console.log(
     `  자동 새로고침: ${reload ? "켜짐 (--no-reload 로 끌 수 있습니다)" : "꺼짐"}`,
   );
+  reportTimings(result.timings, [{ label: "서버 준비", ms: serverMs }]);
   console.log("  Ctrl+C 로 끕니다.");
   if (!options.noOpen) openBrowser(server.url);
 
@@ -293,6 +327,7 @@ function watchAndReload(file, options, assetDirs, label, server) {
         `${label}: 변경 사항을 반영했습니다.` +
           ` (파일 ${parsed}개 다시 컴파일 · ${Date.now() - started}ms)`,
       );
+      reportTimings(result.timings);
     } catch (error) {
       console.error(`${label}: 다시 불러오기 실패 — ${error.message}`);
     }
