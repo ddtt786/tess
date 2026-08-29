@@ -217,6 +217,7 @@ function collectObjects(program, ctx) {
       defaultPicture: null,
       properties: new Map(),
       boxSize: null,
+      center: null,
       script: [],
     };
     ctx.objects.push(object);
@@ -280,6 +281,9 @@ function collectObjectMembers(object, ctx) {
         break;
       case 'BoxSize':
         object.boxSize = member;
+        break;
+      case 'Center':
+        object.center = member;
         break;
       case 'VarDecl': case 'ListDecl': {
         const entry = makeVariable(member, ctx, object.id);
@@ -657,7 +661,17 @@ function buildObject(object, ctx) {
   if (!isText) {
     const width = picture?.dimension.width ?? 100;
     const height = picture?.dimension.height ?? 100;
-    Object.assign(entity, { regX: width / 2, regY: height / 2, width, height });
+    // regX/regY is the registration point: the spot the object's x/y actually
+    // put on the stage. Entry fixes it when the object is made and never moves
+    // it again, and it defaults to the middle of the costume — but the user can
+    // drag it anywhere, even outside the image, and then x/y mean something
+    // else entirely. Without `center` the object lands in the wrong place.
+    Object.assign(entity, {
+      regX: object.center?.x ?? width / 2,
+      regY: object.center?.y ?? height / 2,
+      width,
+      height,
+    });
   }
 
   const result = {

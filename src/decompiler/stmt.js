@@ -7,7 +7,7 @@
 //  진행한다 (하나 때문에 전체를 못 옮기면 안 되니까).
 // ============================================================================
 import { exprOf } from './expr.js';
-import { tessString, tessNumber } from './ident.js';
+import { tessString, tessNumber, ownsResource } from './ident.js';
 
 const REVERSE_STOP_TARGET = {
   thisThread: '', otherThread: 'other', thisOnly: 'me', other_objects: 'them', all: 'all',
@@ -292,10 +292,12 @@ function resourceExpr(value, ctx, byId) {
   const raw = literalOf(value);
   const literal = raw === null ? null : String(raw);
   if (literal !== null && byId.has(literal)) {
+    const info = byId.get(literal);
     // 함수 안에서는 이름으로 바꾸지 않고 id 를 그대로 둔다. 그 모양·소리 선언에
     // `force id` 가 붙으므로 다시 컴파일해도 같은 id 가 나온다(index.js 참고).
-    if (ctx.inFunction) return tessString(literal);
-    return tessString(byId.get(literal).identifier);
+    // 그 오브젝트가 가진 함수 안이라면 이름이 어느 것을 가리키는지 분명하므로 이름을 쓴다.
+    if (ctx.inFunction && !ownsResource(ctx, info)) return tessString(literal);
+    return tessString(info.identifier);
   }
   // Nth-resource index. Entry reads the slot as a string, so the index turns up
   // as a `text` block or a bare value just as often as a `number` block;
@@ -309,24 +311,29 @@ function isExactNumber(literal) {
   return literal !== '' && String(Number(literal)) === literal;
 }
 
+
 /**
  * project.functions[i].content 의 최상위 블록(function_create[_value])을
  * `function 이름(a, b): ... end` 선언으로 바꾼다. 오브젝트 스크립트 안이
  * 아니라 함수 목록을 훑을 때 index.js 가 직접 부른다 — 함수 정의는 언제나
  * 이 자리에만 있고, 이름·매개변수 이름은 이미 ctx.functionsById 에 있다.
  */
-export function functionDeclarationLines(fn, createBlock, ctx) {
+export function functionDeclarationLines(fn, createBlock, ctx, ownerId = null) {
   const p = createBlock.params ?? [];
   const isValue = createBlock.type === 'function_create_value';
   // 함수 안에서는 리터럴 모양·소리 id 를 이름으로 되짚지 않는다(resourceExpr) — 함수는
   // 엔트리에서 전역이라 여러 오브젝트가 같이 부를 수 있는데, id 로 하드코딩된 값을
   // "이 오브젝트의 이 이름" 으로 바꿔 버리면 다른 오브젝트가 불렀을 때 어긋난다
-  // (index.js buildContext 의 forcedIds 주석 참고).
+  // (index.js buildContext 의 forcedIds 주석 참고). `ownerId` 가 있으면 이 선언이
+  // 그 오브젝트 조각 파일 안으로 들어가므로, 그 오브젝트 리소스는 이름으로 적는다.
   const previousInFunction = ctx.inFunction;
+  const previousOwner = ctx.functionOwnerId;
   ctx.inFunction = true;
+  ctx.functionOwnerId = ownerId;
   const body = indent(blocksToLines(createBlock.statements?.[0] ?? [], ctx));
   const returnExpr = isValue ? exprOf(p[3], ctx) : null;
   ctx.inFunction = previousInFunction;
+  ctx.functionOwnerId = previousOwner;
 
   const lines = [`function ${fn.name}(${fn.params.join(', ')}):`, ...body];
   if (isValue) lines.push(...indent([`return ${returnExpr}`]));

@@ -6,7 +6,7 @@
 //  형태의 자리표시자를 남기고 ctx.warnings 에 기록한다.
 // ============================================================================
 import { KEY_CODES } from '../compiler/keycodes.js';
-import { tessNumber, tessString } from './ident.js';
+import { tessNumber, tessString, ownsResource } from './ident.js';
 
 const REVERSE_COMPARE = {
   EQUAL: '==', NOT_EQUAL: '!=', GREATER: '>', LESS: '<', GREATER_OR_EQUAL: '>=', LESS_OR_EQUAL: '<=',
@@ -64,7 +64,7 @@ function unshiftIndex(block, ctx, delta = 1) {
  * 함수는 전역이라 어느 오브젝트가 부를지 모르기 때문 (decompiler/index.js 참고).
  */
 function resourceRef(ctx, id, byId, nameOf) {
-  if (ctx.inFunction && byId.has(id)) return tessString(id);
+  if (ctx.inFunction && byId.has(id) && !ownsResource(ctx, byId.get(id))) return tessString(id);
   return tessString(nameOf(id));
 }
 

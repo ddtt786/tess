@@ -336,11 +336,13 @@ end`;
 //
 //  함수는 엔트리에서 전역이라 여러 오브젝트가 같이 부를 수 있는데도, 많은 실제 작품이
 //  "개인 함수"를 흉내 내려고 그 함수 안에 특정 오브젝트 하나의 모양 id 를 문자열로
-//  그대로 박아 넣어 왔다. 이 id 를 이름으로 되짚어 버리면(오브젝트 스크립트에서는
-//  안전하지만) 함수 안에서는 그 이름이 정말 그 함수를 부르는 오브젝트에도 있다는
-//  보장이 없어 다시 컴파일했을 때 깨질 수 있다 — 그래서 함수 안에서는 id 를 그대로
-//  두고, 그 모양 선언에 `force id` 를 붙여 다시 컴파일해도 정확히 같은 id 가 나오게
-//  만든다.
+//  그대로 박아 넣어 왔다.
+//
+//  함수가 건드리는 모양·소리가 전부 한 오브젝트 것이면, 그 함수는 사실상 그
+//  오브젝트의 것이다 — 선언을 그 오브젝트 조각 파일 맨 끝으로 옮기면 (Tess 함수는
+//  오브젝트 안에도 선언할 수 있다) 리소스를 이름으로 적을 수 있어 `force id` 가 아예
+//  필요 없다. 두 오브젝트 이상을 건드리는 함수만 예전처럼 전역에 남고, 이름이 어느
+//  오브젝트 것인지 알 수 없으므로 id 와 `force id` 를 그대로 쓴다.
 // ---------------------------------------------------------------------------
 // 모양 자리에 id 가 들어가는 두 가지 모습 — 손으로 박아 넣은 문자열(text 블록)과,
 // 편집기 드롭다운으로 고른 get_pictures 블록. 함수 안에서는 둘 다 똑같이 다뤄야 한다.
@@ -349,8 +351,24 @@ const SHAPE_VALUES = [
   ['드롭다운으로 고른 모양', (value) => ({ type: 'get_pictures', params: [value] })],
 ];
 
-function hardcodedFunctionProject(shapeValue) {
+/** `shared: true` 면 함수가 두 번째 오브젝트의 모양도 건드린다 */
+function hardcodedFunctionProject(shapeValue, { shared = false } = {}) {
   const startHat = () => ({ type: 'when_run_button_click', params: [null], statements: [] });
+  const sprite = (id, name, pictures) => ({
+    id,
+    name,
+    objectType: 'sprite',
+    scene: 'scene1',
+    rotateMethod: 'free',
+    selectedPictureId: pictures[0].id,
+    entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true, regX: 5, regY: 5 },
+    sprite: { pictures, sounds: [] },
+    script: JSON.stringify([[startHat(), { type: 'func_fn1', params: [null], statements: [] }]]),
+  });
+  const picture = (id, name) => ({ id, name, fileurl: null, dimension: { width: 10, height: 10 } });
+
+  const body = [{ type: 'change_to_some_shape', params: [shapeValue('qio1'), null], statements: [] }];
+  if (shared) body.push({ type: 'change_to_some_shape', params: [shapeValue('zzz1'), null], statements: [] });
 
   return {
     name: '하드코딩 함수 테스트',
@@ -359,73 +377,106 @@ function hardcodedFunctionProject(shapeValue) {
     variables: [],
     messages: [],
     aiUtilizeBlocks: [],
-    objects: [{
-      id: 'obj1',
-      name: '주인공',
-      objectType: 'sprite',
-      scene: 'scene1',
-      rotateMethod: 'free',
-      selectedPictureId: 'pic1',
-      entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true },
-      sprite: {
-        pictures: [
-          { id: 'pic1', name: '기본', fileurl: null, dimension: { width: 10, height: 10 } },
-          { id: 'qio1', name: '점프', fileurl: null, dimension: { width: 10, height: 10 } },
-        ],
-        sounds: [],
-      },
-      script: JSON.stringify([[startHat(), { type: 'func_fn1', params: [null], statements: [] }]]),
-    }],
+    objects: [
+      sprite('obj1', '주인공', [picture('pic1', '기본'), picture('qio1', '점프')]),
+      sprite('obj2', '조연', [picture('pic2', '기본'), picture('zzz1', '구르기')]),
+    ],
     functions: [{
       id: 'fn1',
       content: JSON.stringify([[{
         type: 'function_create',
         params: [{ type: 'function_field_label', params: ['점프하기', null] }],
-        statements: [[
-          // "점프" 모양 이름이 아니라, 그 모양의 진짜 엔트리 id 를 가리킨다.
-          { type: 'change_to_some_shape', params: [shapeValue('qio1'), null], statements: [] },
-        ]],
+        // "점프" 모양 이름이 아니라, 그 모양의 진짜 엔트리 id 를 가리킨다.
+        statements: [body],
       }]]),
     }],
   };
 }
 
+/** 되돌린 결과를 임시 폴더에 풀고 다시 컴파일한다 */
+function recompileResult(result, prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const mainFile = path.join(dir, 'main.tess');
+  fs.writeFileSync(mainFile, result.source);
+  for (const asset of result.assets) {
+    const target = path.join(dir, asset.path);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, asset.data);
+  }
+  return compileProject(fs.readFileSync(mainFile, 'utf-8'), { path: mainFile, assetDirs: [dir] });
+}
+
 for (const [label, shapeValue] of SHAPE_VALUES) {
-  test(`함수 안 모양 id(${label})는 이름으로 안 바꾸고, 그 모양 선언에 force id 를 붙인다`, () => {
+  test(`한 오브젝트만 건드리는 함수(${label})는 그 오브젝트 조각 파일로 옮기고 이름을 쓴다`, () => {
     const result = decompileProject(hardcodedFunctionProject(shapeValue), []);
     assert.deepEqual(result.warnings, []);
 
-    assert.match(result.source, /^function 점프하기\(\):$/m);
-    assert.match(result.source, /^ {2}costume = "qio1"$/m); // 함수 안에서는 이름으로 안 바뀐다
+    // main.tess 에는 더 이상 함수 선언이 없다
+    assert.doesNotMatch(result.source, /^function /m);
 
     const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
-    assert.match(fragment, /^costume 점프 "점프\.png" size 10 10 force id "qio1"$/m);
+    assert.match(fragment, /^function 점프하기\(\):$/m);
+    assert.match(fragment, /^ {2}costume = "점프"$/m); // id 가 아니라 이름으로
+    assert.doesNotMatch(fragment, /qio1/); // force id 도, 박아 넣은 id 도 사라진다
+    // 함수는 이벤트 블록 뒤, 조각 파일 맨 끝에 온다
+    assert.ok(fragment.indexOf('when start do') < fragment.indexOf('function 점프하기'));
   });
 
-  test(`되돌린 함수 코드(${label})도 다시 정상적으로 컴파일되고, id 가 그대로 고정된다`, () => {
+  test(`옮긴 함수(${label})를 다시 컴파일하면 원래 모양을 그대로 가리킨다`, () => {
     const result = decompileProject(hardcodedFunctionProject(shapeValue), []);
-
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-decompile-forceid-'));
-    const mainFile = path.join(dir, 'main.tess');
-    fs.writeFileSync(mainFile, result.source);
-    for (const asset of result.assets) {
-      const target = path.join(dir, asset.path);
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, asset.data);
-    }
-
-    const recompiled = compileProject(fs.readFileSync(mainFile, 'utf-8'), { path: mainFile, assetDirs: [dir] });
+    const recompiled = recompileResult(result, 'tess-decompile-owned-');
     assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
 
-    const picture = recompiled.project.objects[0].sprite.pictures.find((p) => p.name === '점프');
-    assert.equal(picture.id, 'qio1');
-
-    const fn = recompiled.project.functions[0];
-    const block = JSON.parse(fn.content)[0][0].statements[0][0];
+    const hero = recompiled.project.objects.find((o) => o.name === '주인공');
+    const jump = hero.sprite.pictures.find((p) => p.name === '점프');
+    const block = JSON.parse(recompiled.project.functions[0].content)[0][0].statements[0][0];
     assert.equal(block.type, 'change_to_some_shape');
+    assert.equal(block.params[0].type, 'get_pictures');
+    assert.equal(block.params[0].params[0], jump.id);
+  });
+
+  test(`두 오브젝트를 건드리는 함수(${label})는 전역에 남고 force id 를 쓴다`, () => {
+    const result = decompileProject(hardcodedFunctionProject(shapeValue, { shared: true }), []);
+    assert.deepEqual(result.warnings, []);
+
+    assert.match(result.source, /^function 점프하기\(\):$/m);
+    assert.match(result.source, /^ {2}costume = "qio1"$/m); // 이름으로 바꾸면 어긋난다
+    assert.match(result.source, /^ {2}costume = "zzz1"$/m);
+
+    const hero = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+    const other = result.assets.find((a) => a.path === 'objects/조연.tess').data.toString('utf-8');
+    assert.match(hero, /^costume 점프 "점프\.png" size 10 10 force id "qio1"$/m);
+    assert.match(other, /^costume 구르기 "구르기\.png" size 10 10 force id "zzz1"$/m);
+    assert.doesNotMatch(hero, /^function /m);
+  });
+
+  test(`전역에 남은 함수(${label})도 다시 컴파일하면 id 가 그대로 고정된다`, () => {
+    const result = decompileProject(hardcodedFunctionProject(shapeValue, { shared: true }), []);
+    const recompiled = recompileResult(result, 'tess-decompile-forceid-');
+    assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
+
+    const hero = recompiled.project.objects.find((o) => o.name === '주인공');
+    assert.equal(hero.sprite.pictures.find((p) => p.name === '점프').id, 'qio1');
+
+    const block = JSON.parse(recompiled.project.functions[0].content)[0][0].statements[0][0];
     assert.equal(block.params[0], 'qio1'); // 함수를 누가 부르든 정확히 그 모양을 가리킨다
   });
 }
+
+// 리소스를 아예 안 건드리는 함수는 어느 오브젝트 것도 아니므로 전역에 남는다.
+test('모양·소리를 안 쓰는 함수는 전역에 그대로 둔다', () => {
+  const project = hardcodedFunctionProject((value) => ({ type: 'text', params: [value] }));
+  project.functions[0].content = JSON.stringify([[{
+    type: 'function_create',
+    params: [{ type: 'function_field_label', params: ['인사하기', null] }],
+    statements: [[{ type: 'dialog', params: [{ type: 'text', params: ['안녕'] }, 'speak', null], statements: [] }]],
+  }]]);
+
+  const result = decompileProject(project, []);
+  assert.match(result.source, /^function 인사하기\(\):$/m);
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  assert.doesNotMatch(fragment, /^function /m);
+});
 
 // ---------------------------------------------------------------------------
 //  엔트리 기본 오브젝트(걷는 엔트리봇)의 모양·소리
@@ -753,6 +804,73 @@ test('되돌린 글상자를 다시 컴파일하면 원본 틀 크기가 그대�
   assert.equal(entity.width, 65.49);
   assert.equal(entity.height, 104.65);
   assert.equal(entity.lineBreak, true);
+});
+
+// ---------------------------------------------------------------------------
+//  무게중심(중심점 · 엔트리 regX/regY)
+//
+//  오브젝트의 x/y 는 그림 가운데가 아니라 "중심점" 을 무대의 그 자리에 놓는다.
+//  엔트리는 오브젝트를 만들 때 이 점을 정하고 그 뒤로는 바꾸지 않으며, 기본값은
+//  모양 한가운데다. 사람이 이 점을 옮겨 두면 x/y 의 뜻 자체가 달라지므로, 안 옮기면
+//  오브젝트가 엉뚱한 데 놓인다 — right_leaning.ent 는 `go 0 0` 하나뿐인데도
+//  중심점 덕분에 엔트리봇이 무대 맨 왼쪽에 선다.
+// ---------------------------------------------------------------------------
+function centerProject(regX, regY) {
+  return {
+    name: '중심점 테스트',
+    speed: 60,
+    scenes: [{ id: 'scene1', name: '장면 1' }],
+    variables: [],
+    messages: [],
+    functions: [],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: 'obj1',
+      name: '주인공',
+      objectType: 'sprite',
+      scene: 'scene1',
+      rotateMethod: 'free',
+      selectedPictureId: 'pic1',
+      entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true, regX, regY },
+      sprite: {
+        pictures: [{ id: 'pic1', name: '기본', fileurl: null, dimension: { width: 144, height: 246 } }],
+        sounds: [],
+      },
+      script: JSON.stringify([[]]),
+    }],
+  };
+}
+
+test('옮겨진 중심점은 center 가로 세로 로 되돌아온다', () => {
+  const result = decompileProject(centerProject(461.84, 116.7), []);
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  assert.match(fragment, /^center 461\.84 116\.7$/m);
+});
+
+test('중심점이 모양 한가운데면 center 줄을 적지 않는다', () => {
+  const result = decompileProject(centerProject(72, 123), []);
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  assert.doesNotMatch(fragment, /^center /m);
+});
+
+test('되돌린 중심점을 다시 컴파일하면 regX/regY 가 그대로 나온다', () => {
+  const result = decompileProject(centerProject(461.84, 116.7), []);
+  const recompiled = recompileResult(result, 'tess-decompile-center-');
+  assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
+
+  const { entity } = recompiled.project.objects[0];
+  assert.equal(entity.regX, 461.84);
+  assert.equal(entity.regY, 116.7);
+  // 중심점을 안 적었을 때 나오던 기본값(모양 한가운데)이 아니어야 한다
+  assert.notEqual(entity.regX, 72);
+});
+
+test('center 를 안 적으면 모양 한가운데가 기본값이다', () => {
+  const result = decompileProject(centerProject(72, 123), []);
+  const recompiled = recompileResult(result, 'tess-decompile-center-default-');
+  const { entity } = recompiled.project.objects[0];
+  assert.equal(entity.regX, 72);
+  assert.equal(entity.regY, 123);
 });
 
 test('크기를 모르는 글상자는 size 줄을 적지 않는다', () => {

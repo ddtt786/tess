@@ -51,3 +51,12 @@ export function tessNumber(value) {
   if (!Number.isFinite(value)) return '0';
   return String(value);
 }
+
+/**
+ * Whether the function currently being written belongs to the object that owns
+ * this costume/sound. Inside such a function the resource name is unambiguous,
+ * so it can be written by name instead of by raw entry id (index.js).
+ */
+export function ownsResource(ctx, info) {
+  return Boolean(ctx.functionOwnerId) && info?.owner?.id === ctx.functionOwnerId;
+}

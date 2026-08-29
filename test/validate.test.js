@@ -60,6 +60,22 @@ end`);
   assert.ok(result.ok);
 });
 
+// 중심점은 모양에서 나오므로 글상자에는 없다.
+test('center 가로 세로 는 text 에서 쓸 수 없다', () => {
+  const errors = messages(`text "t":
+  center 10 20
+end`);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /오브젝트\(object\) 전용/);
+});
+
+test('center 는 음수도 받는다', () => {
+  const result = parse(`object "o":
+  center -12.5 -3
+end`);
+  assert.deepEqual(result.errors, []);
+});
+
 test('14.2 함수는 오브젝트 로컬 변수를 참조할 수 없다', () => {
   const errors = messages(`object "hero":
   var local_power = 50

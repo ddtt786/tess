@@ -86,6 +86,8 @@ export function decompileProject(project, entries, options = {}) {
   for (const fn of project.functions ?? []) {
     const entry = ctx.functionsById.get(fn.id);
     if (!entry) continue;
+    // 한 오브젝트 것만 건드리는 함수는 그 오브젝트 조각 파일에 이미 들어갔다
+    if (ctx.functionOwnerById.has(fn.id)) continue;
     try {
       const content = JSON.parse(fn.content ?? '[]');
       const createBlock = content?.[0]?.[0];
@@ -113,14 +115,37 @@ const ID_HOLDING_BLOCKS = new Set(['text', 'number', 'get_pictures', 'get_sounds
 
 /** 블록 트리를 훑으면서, 프로젝트에 실제로 있는 모양·소리 id 와 같은 값을 ctx.forcedIds 에 모은다 */
 function collectHardcodedIds(node, ctx) {
-  if (Array.isArray(node)) { node.forEach((child) => collectHardcodedIds(child, ctx)); return; }
-  if (!node || typeof node !== 'object') return;
+  for (const id of resourceIdsIn(node, ctx)) ctx.forcedIds.add(id);
+}
+
+/** 블록 트리가 가리키는, 프로젝트에 실제로 있는 모양·소리 id 들 */
+function resourceIdsIn(node, ctx, found = new Set()) {
+  if (Array.isArray(node)) {
+    node.forEach((child) => resourceIdsIn(child, ctx, found));
+    return found;
+  }
+  if (!node || typeof node !== 'object') return found;
   if (ID_HOLDING_BLOCKS.has(node.type) && typeof node.params?.[0] === 'string') {
     const raw = node.params[0];
-    if (ctx.picturesById.has(raw) || ctx.soundsById.has(raw)) ctx.forcedIds.add(raw);
+    if (ctx.picturesById.has(raw) || ctx.soundsById.has(raw)) found.add(raw);
   }
-  for (const param of node.params ?? []) collectHardcodedIds(param, ctx);
-  for (const branch of node.statements ?? []) collectHardcodedIds(branch, ctx);
+  for (const param of node.params ?? []) resourceIdsIn(param, ctx, found);
+  for (const branch of node.statements ?? []) resourceIdsIn(branch, ctx, found);
+  return found;
+}
+
+/**
+ * The object id when every costume/sound a function names belongs to one object,
+ * else null. A function that names none is left global — nothing ties it down.
+ */
+function soleResourceOwner(content, ctx) {
+  const owners = new Set();
+  for (const id of resourceIdsIn(content, ctx)) {
+    const info = ctx.picturesById.get(id) ?? ctx.soundsById.get(id);
+    owners.add(info.owner.id);
+    if (owners.size > 1) return null;
+  }
+  return owners.size === 1 ? [...owners][0] : null;
 }
 
 /**
@@ -174,9 +199,15 @@ function buildContext(project, entries, options = {}) {
     // 함수 안에 하드코딩된 채로 발견된, 진짜 모양·소리 id 들 (1.4절 참고).
     // objectFragmentLines 가 이 id 를 가진 모양·소리 선언에 `force id "..."` 를 붙인다.
     forcedIds: new Set(),
+    // Functions whose costumes/sounds all belong to one object: the declaration
+    // moves into that object's fragment and resources are named, not id'd.
+    functionOwnerById: new Map(),
+    functionsByOwner: new Map(),
     // eventLines/resourceExpr 가 "지금 함수 몸통을 옮기는 중인가" 를 보는 플래그 —
     // 함수 안에서는 리터럴 id 를 이름으로 되짚지 않고 그대로 둔다(아래 forcedIds 주석 참고).
     inFunction: false,
+    // The object that owns the function being written, when it has one.
+    functionOwnerId: null,
     varName(id) {
       const info = ctx.varsById.get(id);
       if (info) return info.identifier;
@@ -285,8 +316,26 @@ function buildContext(project, entries, options = {}) {
   // 함수는 전역이라 어느 오브젝트가 부를지 모르므로, 함수 안의 모양·소리 id 는 이름으로
   // 바꾸지 않고 그대로 둔다. 대신 그 선언에 `force id` 를 붙여 다시 컴파일해도 같은
   // id 가 나오게 한다 (SPEC-ADDENDUM.md 1.4절).
+  //
+  // 다만 함수가 건드리는 모양·소리가 전부 한 오브젝트 것이면 얘기가 다르다. 그런
+  // 함수는 사실상 그 오브젝트의 것이므로, 선언을 그 오브젝트 조각 파일로 옮기고
+  // 리소스도 이름으로 적는다 — Tess 함수는 오브젝트 안에도 선언할 수 있고, 그 안에서는
+  // 이름이 어느 오브젝트 것인지 분명하기 때문이다. 그러면 `force id` 가 아예 필요 없다.
   for (const fn of project.functions ?? []) {
-    try { collectHardcodedIds(JSON.parse(fn.content ?? '[]'), ctx); } catch { /* 못 읽으면 건너뛴다 */ }
+    let content = null;
+    try { content = JSON.parse(fn.content ?? '[]'); } catch { /* 못 읽으면 건너뛴다 */ }
+    if (!content) continue;
+
+    const ownerId = soleResourceOwner(content, ctx);
+    const entry = ctx.functionsById.get(fn.id);
+    const createBlock = content?.[0]?.[0];
+    if (ownerId && entry && createBlock) {
+      ctx.functionOwnerById.set(fn.id, ownerId);
+      if (!ctx.functionsByOwner.has(ownerId)) ctx.functionsByOwner.set(ownerId, []);
+      ctx.functionsByOwner.get(ownerId).push({ id: fn.id, entry, createBlock });
+      continue;
+    }
+    collectHardcodedIds(content, ctx);
   }
 
   // --- 리소스(모양 · 소리) 실제 파일 -----------------------------------------------
@@ -450,7 +499,34 @@ function objectFragmentLines(object, ctx, isText) {
   }
   for (const thread of threads) lines.push(...eventLines(thread, ctx, 0));
 
+  // 이 오브젝트 것만 건드리는 함수는 여기, 조각 파일 맨 끝에 선언한다. 그 안에서는
+  // 모양·소리를 이름으로 적을 수 있어서 `force id` 가 필요 없다(buildContext 참고).
+  for (const owned of ctx.functionsByOwner.get(object.id) ?? []) {
+    lines.push('');
+    lines.push(...functionDeclarationLines(owned.entry, owned.createBlock, ctx, object.id));
+  }
+
   return lines;
+}
+
+/**
+ * `center X Y` — the object's registration point (regX/regY), the spot its x/y
+ * actually put on the stage. Entry defaults it to the middle of the costume, so
+ * the line is only written when the user moved it; the compiler falls back to
+ * the same default. Dropping it puts the object somewhere else entirely — in
+ * right_leaning.ent the entrybot slides ~200px across the stage.
+ */
+function centerLine(object, pad) {
+  const entity = object.entity ?? {};
+  if (!Number.isFinite(entity.regX) || !Number.isFinite(entity.regY)) return [];
+
+  const picture = (object.sprite?.pictures ?? []).find((p) => p.id === object.selectedPictureId)
+    ?? (object.sprite?.pictures ?? [])[0];
+  const width = picture?.dimension?.width ?? 100;
+  const height = picture?.dimension?.height ?? 100;
+  if (entity.regX === width / 2 && entity.regY === height / 2) return [];
+
+  return [`${pad}center ${tessNumber(entity.regX)} ${tessNumber(entity.regY)}`];
 }
 
 function objectPropertyLines(object, isText, indentLevel) {
@@ -463,6 +539,7 @@ function objectPropertyLines(object, isText, indentLevel) {
   if (entity.direction !== undefined && entity.direction !== 90) lines.push(`${pad}way = ${tessNumber(entity.direction)}`);
   if (entity.scaleX !== undefined && entity.scaleX !== 1) lines.push(`${pad}scale_x = ${tessNumber(Math.round(entity.scaleX * 100))}`);
   if (entity.scaleY !== undefined && entity.scaleY !== 1) lines.push(`${pad}scale_y = ${tessNumber(Math.round(entity.scaleY * 100))}`);
+  if (!isText) lines.push(...centerLine(object, pad));
 
   if (isText) {
     if (object.text) lines.push(`${pad}text_content = ${tessString(object.text)}`);

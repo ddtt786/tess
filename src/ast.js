@@ -96,6 +96,10 @@ semantics.addOperation('ast', {
   PropertyDecl_boxSize(_size, width, height) {
     return { type: 'BoxSize', width: width.ast().value, height: height.ast().value, loc: at(this) };
   },
+  // Registration point (Entry regX/regY) — what the object's x/y actually point at.
+  PropertyDecl_center(_center, x, y) {
+    return { type: 'Center', x: x.ast().value, y: y.ast().value, loc: at(this) };
+  },
   PropertyDecl_soundLength(_sound, id, file, _for, duration, forceIdOpt) {
     return {
       type: 'Sound',
@@ -571,6 +575,9 @@ semantics.addOperation('ast', {
     return { type: 'Identifier', name: this.sourceString, loc: at(this) };
   },
 
+  signedNumberLiteral(_sign, _number) {
+    return { type: 'Number', value: parseFloat(this.sourceString), loc: at(this) };
+  },
   numberLiteral_decimal(_int, _dot, _frac) {
     return { type: 'Number', value: parseFloat(this.sourceString), loc: at(this) };
   },

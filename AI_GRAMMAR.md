@@ -128,8 +128,13 @@ PropertyDecl
   | lock B                          -- lock
   | rotation rotateMethod           -- rotation
   | size N N                        -- boxSize                 // 글상자틀 크기
+  | center sN sN                    -- center                  // 무게중심(중심점)
   | propertyName "=" ~"=" Expr      -- assign                  // 그 외 전부(`x = 10` 등)
 ```
+
+`center` 의 두 값은 `signedNumberLiteral`(`"-"? numberLiteral`)이다 — 중심점은 그림
+밖으로도 끌어낼 수 있어서 음수가 된다. 렉시컬 규칙이라 붙여 쓴 부호만 받는다
+(`- 5` 는 뺄셈으로 남는다).
 
 `boxSize`(`size 65.49 104.65`)와 `assign`의 `size = 150`은 같은 `size` 키워드로
 시작하지만 겹치지 않는다 — `boxSize`는 뒤에 `numberLiteral` 두 개를 요구하므로
@@ -580,6 +585,7 @@ say "숨었다"
 | `PropertyDecl_soundLength` / `_sound` | `Sound` |
 | `PropertyDecl_name` / `_visible` / `_lock` / `_rotation` / `_assign` | `Property` |
 | `PropertyDecl_boxSize` | `BoxSize` (`width`, `height` — 글상자 전용) |
+| `PropertyDecl_center` | `Center` (`x`, `y` — 오브젝트 전용) |
 | `FunctionDecl` | `FunctionDecl` |
 | `VarDecl` / `ListDecl` | `VarDecl` / `ListDecl` |
 | `EventHandler_*` | `Event` (`event: 'start'\|'key'\|'signal'\|...`) |

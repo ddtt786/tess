@@ -107,6 +107,13 @@ export function validate(program, source = '', sources = null) {
             error(member, `'size 가로 세로' 는 글상자(text) 전용입니다. 모양 크기는 costume 뒤에 적으세요.`);
           }
           break;
+        case 'Center':
+          // Entry leaves a text box's registration point at 0,0 — only a sprite
+          // gets one, taken from its costume.
+          if (isText) {
+            error(member, `'center 가로 세로' 는 오브젝트(object) 전용입니다. 글상자는 중심점을 옮길 수 없습니다.`);
+          }
+          break;
         case 'FunctionDecl':
           visitFunction(member, locals);
           break;
