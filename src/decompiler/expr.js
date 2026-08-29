@@ -6,7 +6,7 @@
 //  형태의 자리표시자를 남기고 ctx.warnings 에 기록한다.
 // ============================================================================
 import { KEY_CODES } from '../compiler/keycodes.js';
-import { tessNumber, tessString, ownsResource } from './ident.js';
+import { tessNumber, tessString, ownsResource, isExactNumber } from './ident.js';
 
 const REVERSE_COMPARE = {
   EQUAL: '==', NOT_EQUAL: '!=', GREATER: '>', LESS: '<', GREATER_OR_EQUAL: '>=', LESS_OR_EQUAL: '<=',
@@ -43,6 +43,13 @@ for (const [name, code] of Object.entries(KEY_CODES)) {
 /** 값 블록이 없을 때(빈 슬롯) 쓰는 기본값 */
 const EMPTY = '0';
 
+/** #RRGGBB 는 Tess 색 리터럴로 그대로, 그 밖은 문자열로 */
+export function colorLiteral(raw) {
+  if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw;
+  if (raw === 'transparent') return 'transparent';
+  return tessString(raw);
+}
+
 function targetName(ctx, raw) {
   if (raw === 'self' || raw === 'mouse') return raw;
   if (typeof raw === 'string' && raw.startsWith('wall')) return raw;
@@ -50,11 +57,24 @@ function targetName(ctx, raw) {
   return object ? object.identifier : raw;
 }
 
-/** 리스트/문자열 인덱스: 엔트리(1부터) -> Tess(0부터) */
+/**
+ * 리스트/문자열 인덱스: 엔트리(1부터) -> Tess(0부터).
+ * 순번도 number 블록에만 들어 있는 게 아니라 text 블록에 담겨 있을 수 있다 —
+ * 그것까지 알아봐야 `("3" - 1)` 같은 게 안 남는다.
+ */
+export function literalNumber(block) {
+  const raw = block && (block.type === 'number' || block.type === 'text')
+    ? block.params?.[0]
+    : block;
+  if (typeof raw !== 'string' && typeof raw !== 'number') return null;
+  const text = String(raw);
+  return isExactNumber(text) ? Number(text) : null;
+}
+
 function unshiftIndex(block, ctx, delta = 1) {
-  if (block && block.type === 'number' && !Number.isNaN(Number(block.params?.[0]))) {
-    return tessNumber(Number(block.params[0]) - delta);
-  }
+  // 상수 접기는 `foldIndex` 옵션을 켰을 때만 한다 (기본은 원본 숫자를 그대로 보인다)
+  const literal = ctx.foldIndex ? literalNumber(block) : null;
+  if (literal !== null) return tessNumber(literal - delta);
   const inner = exprOf(block, ctx);
   return delta === 0 ? inner : `(${inner} - ${delta})`;
 }
@@ -85,19 +105,19 @@ export function exprOf(block, ctx) {
   const at = (i) => p[i];
 
   switch (block.type) {
-    case 'number': {
-      const raw = at(0);
-      const n = Number(raw);
-      return Number.isNaN(n) ? tessString(String(raw)) : tessNumber(n);
-    }
-    case 'angle': return tessNumber(Number(at(0)) || 0);
-    case 'text': {
+    // 엔트리의 number·text 블록은 둘 다 적어 둔 글자를 그대로 돌려주는 같은 원시
+    // 블록이다. 그래서 숫자를 어느 쪽에 담아 두었는지는 작품을 만든 사람이 어느 칸에
+    // 입력했느냐일 뿐이고, 실행 결과는 똑같다 — 판단문 안이든 계산식 안이든 함수
+    // 인수든, 숫자로 읽히는 리터럴은 숫자로 옮긴다. 다시 적었을 때 글자가 달라지는
+    // 값("01" 처럼)만 그대로 글자로 남긴다 (isExactNumber).
+    case 'number': case 'text': {
       const raw = String(at(0) ?? '');
       if (raw === 'true' || raw === 'false') return raw;
       if (raw === 'transparent') return 'transparent';
       if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw;
-      return tessString(raw);
+      return isExactNumber(raw) ? raw : tessString(raw);
     }
+    case 'angle': return tessNumber(Number(at(0)) || 0);
 
     case 'get_variable': return ctx.varName(at(0));
     case 'get_func_variable': return ctx.funcLocalName(at(0));
@@ -199,6 +219,11 @@ export function exprOf(block, ctx) {
 
     case 'get_pictures': return resourceRef(ctx, at(0), ctx.picturesById, ctx.pictureName);
     case 'get_sounds': return resourceRef(ctx, at(0), ctx.soundsById, ctx.soundName);
+    // 소리 길이 — VALUE 는 블록이 아니라 드롭다운 칸이라 소리 id 가 그대로 들어 있다
+    case 'get_sound_duration':
+      return `sound_duration(${resourceRef(ctx, at(1), ctx.soundsById, ctx.soundName)})`;
+    // 색 고르기 칸. 고른 색(#RRGGBB)을 그대로 돌려주는 블록이다.
+    case 'text_color': return colorLiteral(String(at(0) ?? ''));
 
     // 사용자 정의 함수 호출(값을 돌려주는 것) — func_<함수id>
     default: {

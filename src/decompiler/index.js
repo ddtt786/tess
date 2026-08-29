@@ -183,6 +183,8 @@ function buildContext(project, entries, options = {}) {
     warnings: new Set(),
     // Write `size W H` on every costume, not just the ones the compiler cannot measure.
     allSizes: options.sizes === true,
+    // Fold a literal list/string index into one number instead of writing `(3 - 1)`.
+    foldIndex: options.foldIndex === true,
     varsById: new Map(),
     globalVars: [],
     localVarsByObject: new Map(),

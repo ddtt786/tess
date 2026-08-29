@@ -9,6 +9,7 @@
 //  의존성 없이 쓰기 위해 ustar 헤더를 직접 만든다.
 // ============================================================================
 import fs from 'node:fs';
+import { makeThumbnail } from './thumbnail.js';
 
 const BLOCK_SIZE = 512;
 
@@ -71,7 +72,17 @@ export function makeEntryBundle(project, assets = []) {
   for (const asset of assets) {
     if (packed.has(asset.target)) continue;
     packed.add(asset.target);
-    entries.push({ name: asset.target, data: fs.readFileSync(asset.source) });
+    const data = fs.readFileSync(asset.source);
+    entries.push({ name: asset.target, data });
+
+    // 그림은 미리보기도 같이 담는다 — 엔트리 편집기의 오브젝트·모양 목록이 이걸
+    // 쓰고, 실제 작품 파일도 image/ 옆에 thumb/ 를 나란히 갖고 있다.
+    const thumbName = asset.target.replace('/image/', '/thumb/');
+    if (thumbName === asset.target || packed.has(thumbName)) continue;
+    const thumb = makeThumbnail(data);
+    if (!thumb) continue; // SVG 처럼 못 그리는 형식은 엔트리도 미리보기를 안 만든다
+    packed.add(thumbName);
+    entries.push({ name: thumbName, data: thumb });
   }
   return makeTar(entries);
 }

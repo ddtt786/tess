@@ -17,10 +17,12 @@ const IDENT_PART = /[\p{L}\p{N}_]/u;
  * 안에서 겹치면 숫자를 붙여 구분한다.
  */
 export function safeIdentifier(raw, usedNames, fallback = 'item') {
+  // 글자 고르기는 자리를 가리지 않는다. 맨 앞에서 IDENT_START 로 걸러 버리면 "3.png"
+  // 처럼 숫자로 시작하는 이름의 그 숫자가 통째로 사라져서("png"), "1.png"·"2.png" 가
+  // 죄다 같은 이름이 된 뒤 뒤에 번호가 붙어 원래 순서와 어긋났다. 숫자도 그대로 두고,
+  // 식별자가 숫자로 시작하는 문제는 아래에서 앞에 이름을 붙여 푼다.
   let cleaned = '';
-  for (const ch of String(raw ?? '')) {
-    cleaned += (cleaned.length === 0 ? IDENT_START : IDENT_PART).test(ch) ? ch : (cleaned ? '_' : '');
-  }
+  for (const ch of String(raw ?? '')) cleaned += IDENT_PART.test(ch) ? ch : '_';
   cleaned = cleaned.replace(/_+/g, '_').replace(/^_+|_+$/g, '');
   if (!cleaned || !IDENT_START.test(cleaned[0])) cleaned = `${fallback}${cleaned ? `_${cleaned}` : ''}`;
   cleaned = cleaned.slice(0, 40) || fallback;
@@ -50,6 +52,18 @@ export function tessString(value) {
 export function tessNumber(value) {
   if (!Number.isFinite(value)) return '0';
   return String(value);
+}
+
+/**
+ * 다시 적어도 글자 하나 안 바뀌는 숫자인지 ("1.0"·"01"·" 1" 은 아니다).
+ *
+ * 엔트리의 `number` 블록과 `text` 블록은 둘 다 적어 둔 글자를 그대로 돌려주는 같은
+ * 원시 블록이라(block_entry.js: 둘 다 `script.getField(...)` 하나뿐이다), 값이 글자로
+ * 같기만 하면 어느 쪽으로 옮겨도 실행 결과가 똑같다. 그래서 이 검사를 통과하는
+ * 리터럴만 숫자로 옮긴다.
+ */
+export function isExactNumber(literal) {
+  return literal !== '' && String(Number(literal)) === literal;
 }
 
 /**

@@ -50,7 +50,10 @@ const USAGE = `사용법
                      소스에 '# [decompile]' 주석으로만 남기고 콘솔은 개수만 보여준다)
   --sizes            decompile 이 모든 모양에 'size 가로 세로' 를 적어 둔다. 기본은
                      컴파일러가 그림 파일에서 직접 재게 두고 생략한다 (글상자의
-                     'size 가로 세로' 는 이 옵션과 상관없이 항상 적는다)`;
+                     'size 가로 세로' 는 이 옵션과 상관없이 항상 적는다)
+  --fold-index       리스트·글자 순번의 상수를 미리 계산한다 (예: 되돌릴 때
+                     '기록[(3 - 1)]' 대신 '기록[2]', 컴파일할 때 '(2 + 1)' 대신 '3').
+                     기본은 접지 않아서 적어 둔 숫자가 그대로 보인다`;
 
 function report(label, diagnostics, kind) {
   for (const item of diagnostics) {
@@ -73,6 +76,7 @@ function parseArgs(argv) {
     else if (arg === '--no-reload') options.noReload = true;
     else if (arg === '--warnings') options.warnings = true;
     else if (arg === '--sizes') options.sizes = true;
+    else if (arg === '--fold-index') options.foldIndex = true;
     else if (arg === '--force') options.force = true;
     else rest.push(arg);
   }
@@ -88,7 +92,7 @@ function runCheck(file, options = { assets: [] }) {
     : [path.dirname(path.resolve(file))];
 
   const result = compileProject(source, {
-    path: file, assetDirs, name: options.name, cache: options.cache,
+    path: file, assetDirs, name: options.name, cache: options.cache, foldIndex: options.foldIndex,
   });
   report(label, result.errors, '에러');
   report(label, result.warnings, '경고');
@@ -116,6 +120,7 @@ function runBuild(file, options) {
 
   const result = compileProject(source, {
     path: file, assetDirs, name: options.name, force: options.force, cache: options.cache,
+    foldIndex: options.foldIndex,
   });
   report(label, result.warnings, '경고');
   if (!result.ok) {
@@ -155,6 +160,7 @@ async function runProject(file, options) {
 
   const result = compileProject(source, {
     path: file, assetDirs, name: options.name, force: options.force, cache: options.cache,
+    foldIndex: options.foldIndex,
   });
   report(label, result.warnings, '경고');
   if (!result.ok) {
@@ -213,6 +219,7 @@ function watchAndReload(file, options, assetDirs, label, server) {
       const started = Date.now();
       const result = compileProject(source, {
         path: file, assetDirs, name: options.name, force: options.force, cache,
+        foldIndex: options.foldIndex,
       });
       report(label, result.warnings, '경고');
       if (!result.ok) {
@@ -288,7 +295,7 @@ async function runDecompile(file, options) {
 
   let result;
   try {
-    result = await decompileEnt(bytes, { sizes: options.sizes });
+    result = await decompileEnt(bytes, { sizes: options.sizes, foldIndex: options.foldIndex });
   } catch (error) {
     console.error(`${label}: 되돌리기 실패 — ${error.message}`);
     return 1;

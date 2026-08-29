@@ -15,6 +15,9 @@ import { fileURLToPath } from 'node:url';
 import { imageSize } from '../src/compiler/assets.js';
 import { audioDuration } from '../src/compiler/audio.js';
 import { compileProject } from '../src/compiler/index.js';
+import { makeEntryBundle } from '../src/compiler/bundle.js';
+import { makeThumbnail } from '../src/compiler/thumbnail.js';
+import { readTar } from '../src/decompiler/tar.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -159,4 +162,57 @@ end`;
   assert.equal(declared.project.objects[0].sprite.sounds[0].duration, 9);
 
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+//  모양 미리보기(썸네일)
+//
+//  엔트리 작품 파일은 그림마다 image/ 옆에 thumb/ 를 나란히 갖고 있고, 편집기의
+//  오브젝트·모양 목록이 그걸 쓴다. 우리가 만든 .ent 에는 이게 빠져 있었다.
+// ---------------------------------------------------------------------------
+test('PNG 에서 96x96 안에 맞춘 미리보기를 만든다', () => {
+  const bytes = fs.readFileSync(path.join(root, 'examples/cat_run.png'));
+  const original = imageSize(bytes);
+  const thumb = makeThumbnail(bytes);
+  assert.ok(thumb, '미리보기를 만들어야 한다');
+
+  const size = imageSize(thumb);
+  assert.ok(size.width <= 96 && size.height <= 96, `96 안에 들어와야 한다: ${size.width}x${size.height}`);
+  assert.equal(Math.max(size.width, size.height), 96); // 긴 쪽이 96 에 딱 맞는다
+  // 비율이 유지된다
+  const before = original.width / original.height;
+  const after = size.width / size.height;
+  assert.ok(Math.abs(before - after) / before < 0.02, `비율이 달라졌다: ${before} -> ${after}`);
+  assert.ok(thumb.length < bytes.length, '미리보기가 원본보다 작아야 한다');
+});
+
+test('원본이 96 보다 작으면 늘리지 않는다', () => {
+  // 8x4 짜리 아주 작은 PNG 를 만들어서 넣는다
+  const tiny = makeThumbnail(fs.readFileSync(path.join(root, 'examples/cat_run.png')), 4096);
+  assert.equal(imageSize(tiny).width, imageSize(fs.readFileSync(path.join(root, 'examples/cat_run.png'))).width);
+});
+
+test('PNG 가 아닌 파일은 미리보기를 만들지 않는다 (엔트리도 SVG 는 안 만든다)', () => {
+  assert.equal(makeThumbnail(Buffer.from('<svg viewBox="0 0 10 10"></svg>')), null);
+  assert.equal(makeThumbnail(Buffer.alloc(0)), null);
+});
+
+test('.ent 묶음에 image/ 와 나란히 thumb/ 가 들어간다', async () => {
+  const source = `scene "s":
+  object "o":
+    default costume 달리기 "cat_run.png"
+  end
+end`;
+  const result = compileProject(source, { path: path.join(root, 'x.tess'), assetDirs: [path.join(root, 'examples')] });
+  assert.deepEqual(result.errors, []);
+
+  const entries = await readTar(makeEntryBundle(result.project, result.assets));
+  const names = entries.map((e) => e.name);
+  const image = names.find((n) => n.includes('/image/'));
+  assert.ok(image, '그림이 담겨야 한다');
+  const thumb = image.replace('/image/', '/thumb/');
+  assert.ok(names.includes(thumb), `미리보기가 같이 담겨야 한다: ${thumb}`);
+
+  const thumbBytes = entries.find((e) => e.name === thumb).data;
+  assert.equal(Math.max(imageSize(thumbBytes).width, imageSize(thumbBytes).height), 96);
 });

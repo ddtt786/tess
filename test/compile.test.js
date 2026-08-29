@@ -11,7 +11,7 @@ import { makeEntryBundle } from '../src/compiler/bundle.js';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** 문장 하나를 오브젝트 안에 넣어 컴파일하고 그 스크립트를 돌려준다 */
-function compileScript(body, { before = '', kind = 'object', costumes = '' } = {}) {
+function compileScript(body, { before = '', kind = 'object', costumes = '', foldIndex = false } = {}) {
   const source = `${before}
 scene "s":
   ${kind} "o":
@@ -21,7 +21,7 @@ ${body.split('\n').map((line) => `      ${line}`).join('\n')}
     end
   end
 end`;
-  const result = compileProject(source, { path: path.join(root, 'test.tess') });
+  const result = compileProject(source, { path: path.join(root, 'test.tess'), foldIndex });
   assert.deepEqual(result.errors, [], result.errors.map((e) => `${e.line}: ${e.message}`).join('\n'));
   const object = result.project.objects.find((o) => o.name === 'o');
   return { project: result.project, thread: JSON.parse(object.script)[0], result };
@@ -133,10 +133,22 @@ test('stop 계열을 stop_object 의 대상으로 구분한다', () => {
 });
 
 // --- 자료 ---------------------------------------------------------------------
+// 기본은 상수를 접지 않는다 — 소스에 적은 숫자가 만들어진 블록에도 그대로 보인다
 test('리스트 인덱스를 0부터 -> 1부터로 보정한다', () => {
   const { thread } = compileScript(
     '기록[0] = 9\nin 기록 insert 5 at 2\nremove 기록[1]\nvar a = 기록[0]',
     { before: 'list 기록 = [1, 2, 3]' },
+  );
+  assert.equal(sketch(thread[1].params[1]), 'calc_basic(number(0) PLUS number(1))');
+  assert.equal(sketch(thread[2].params[2]), 'calc_basic(number(2) PLUS number(1))');
+  assert.equal(sketch(thread[3].params[0]), 'calc_basic(number(1) PLUS number(1))');
+  assert.equal(sketch(thread[4].params[1].params[3]), 'calc_basic(number(0) PLUS number(1))');
+});
+
+test('--fold-index 를 켜면 상수 순번을 미리 계산한다', () => {
+  const { thread } = compileScript(
+    '기록[0] = 9\nin 기록 insert 5 at 2\nremove 기록[1]\nvar a = 기록[0]',
+    { before: 'list 기록 = [1, 2, 3]', foldIndex: true },
   );
   assert.equal(thread[1].params[1].params[0], '1');   // 0 -> 1
   assert.equal(thread[2].params[2].params[0], '3');   // 2 -> 3
@@ -145,7 +157,7 @@ test('리스트 인덱스를 0부터 -> 1부터로 보정한다', () => {
 });
 
 test('문자열 함수의 인덱스도 보정한다', () => {
-  const { thread } = compileScript('var a = slice("abcdef", 0, 3)\nvar b = index_of("abc", "b")');
+  const { thread } = compileScript('var a = slice("abcdef", 0, 3)\nvar b = index_of("abc", "b")', { foldIndex: true });
   assert.equal(sketch(thread[1].params[1]), 'substring(text(abcdef) number(1) number(3))');
   assert.equal(sketch(thread[2].params[1]), 'calc_basic(index_of_string(text(abc) text(b)) MINUS number(1))');
 });
@@ -395,6 +407,67 @@ end`;
   assert.equal(entity.height, 30);
   assert.equal(entity.scaleX, 1.5);
   assert.equal(entity.scaleY, 1.5);
+});
+
+// ---------------------------------------------------------------------------
+//  복잡한 수식
+//
+//  우선순위·괄호·좌결합이 엔트리 블록 트리로 제대로 접히는지, 블록 모양만 보지 않고
+//  엔트리가 하는 것과 똑같이 실제로 계산해서 값으로 확인한다.
+// ---------------------------------------------------------------------------
+/** 엔트리 계산 블록 트리를 실행기가 하듯 계산한다 */
+function runCalc(block) {
+  if (block === null || typeof block !== 'object') return Number(block);
+  const p = block.params ?? [];
+  switch (block.type) {
+    case 'number': case 'text': return Number(p[0]);
+    case 'calc_basic': {
+      const left = runCalc(p[0]);
+      const right = runCalc(p[2]);
+      return { PLUS: left + right, MINUS: left - right, MULTI: left * right, DIVIDE: left / right }[p[1]];
+    }
+    case 'quotient_and_mod': {
+      const left = runCalc(p[1]);
+      const right = runCalc(p[3]);
+      return p[5] === 'MOD' ? left % right : Math.floor(left / right);
+    }
+    default: throw new Error(`계산할 수 없는 블록: ${block.type}`);
+  }
+}
+
+const MATH_CASES = [
+  ['3 - 2 * (3 + 7 - 2 * 5)', 3],
+  ['(2 + 3) * 4', 20],
+  ['10 - 2 - 3', 5],           // 좌결합
+  ['2 * 3 + 4 * 5', 26],
+  ['100 / 5 / 2', 10],
+  ['1 + 2 * 3 - 4 / 2', 5],
+  ['((1 + 2) * (3 + 4)) - 5', 16],
+  ['7 % 3 + 8 // 3', 3],
+  ['-3 + 5', 2],
+  ['2 - -3', 5],
+  ['(3 - 2) * (3 + 7 - 2 * 5)', 0],
+];
+
+for (const [expr, expected] of MATH_CASES) {
+  test(`수식 ${expr} 를 엔트리 블록으로 옮겨도 값이 같다`, () => {
+    const { thread, result } = compileScript(`var r = ${expr}`);
+    assert.deepEqual(result.errors, []);
+    const set = thread.find((block) => block.type === 'set_variable');
+    assert.equal(runCalc(set.params[1]), expected);
+  });
+}
+
+test('괄호가 블록 중첩으로 그대로 남는다', () => {
+  const { thread } = compileScript('var r = 3 - 2 * (3 + 7 - 2 * 5)');
+  const value = thread.find((block) => block.type === 'set_variable').params[1];
+  // 3 - (2 * ((3 + 7) - (2 * 5)))
+  assert.equal(value.type, 'calc_basic');
+  assert.equal(value.params[1], 'MINUS');
+  assert.equal(value.params[0].params[0], '3');
+  const rhs = value.params[2];
+  assert.equal(rhs.params[1], 'MULTI');
+  assert.equal(rhs.params[2].params[1], 'MINUS'); // 괄호 안이 통째로 오른쪽에 들어간다
 });
 
 test('모양·소리를 엔트리 리소스 경로로 만든다', () => {

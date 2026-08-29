@@ -89,7 +89,7 @@
       "patterns": [
         {
           "name": "support.function.builtin.tess",
-          "match": "(?<![A-Za-z0-9_])(?:costume_number|text_content|random_color|block_count|uppercase|lowercase|key_down|touching|distance|index_of|contains|from_hex|costume|replace|reverse|random|length|to_hex|log10|floor|round|angle|slice|count|type|asin|acos|atan|log2|ceil|root|size|join|sin|cos|tan|abs|way|now|ln|x|y)(?![A-Za-z0-9_])(?=\\s*\\()"
+          "match": "(?<![A-Za-z0-9_])(?:costume_number|sound_duration|text_content|random_color|block_count|uppercase|lowercase|key_down|touching|distance|index_of|contains|from_hex|costume|replace|reverse|random|length|to_hex|log10|floor|round|angle|slice|count|type|asin|acos|atan|log2|ceil|root|size|join|sin|cos|tan|abs|way|now|ln|x|y)(?![A-Za-z0-9_])(?=\\s*\\()"
         },
         {
           "match": "([A-Za-z_\\p{L}][A-Za-z0-9_\\p{L}]*)(?=\\s*\\()",

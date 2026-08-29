@@ -26,6 +26,8 @@ export const BUILTIN_FUNCTIONS = new Set([
   'reverse', 'uppercase', 'lowercase',
   // 리스트
   'contains',
+  // 소리
+  'sound_duration',
   // 시간 · 색상
   'now', 'to_hex', 'from_hex', 'random_color',
 ]);

@@ -421,9 +421,15 @@ function compileUnary(node, ctx) {
 // ---------------------------------------------------------------------------
 //  인덱스 (리스트 · 문자열)
 // ---------------------------------------------------------------------------
-/** Tess 인덱스(0부터) -> 엔트리 인덱스(1부터) */
+/**
+ * Tess 인덱스(0부터) -> 엔트리 인덱스(1부터).
+ *
+ * 상수는 `foldIndex` 옵션을 켰을 때만 미리 계산해서 숫자 하나로 접는다. 기본은
+ * 접지 않고 `[2] -> (2 + 1)` 처럼 더하기 블록을 그대로 둔다 — 소스에 적은 숫자가
+ * 만들어진 블록에도 그대로 보여야 어디서 온 값인지 짚기 쉽기 때문이다.
+ */
 export function shiftIndex(node, ctx, delta = 1) {
-  if (node.type === 'Number') return ctx.number(node.value + delta);
+  if (node.type === 'Number' && ctx.options?.foldIndex) return ctx.number(node.value + delta);
   const value = compileValue(node, ctx);
   if (!value) return null;
   return ctx.block('calc_basic', [value, delta > 0 ? 'PLUS' : 'MINUS', ctx.number(Math.abs(delta))]);
@@ -449,6 +455,21 @@ export function compileCallArguments(fn, args, ctx) {
   return args.map((arg, index) => (fn.booleanParams?.has(fn.params[index])
     ? compileBoolean(arg, ctx)
     : compileValue(arg, ctx)));
+}
+
+/**
+ * 소리 이름 -> 그 소리의 엔트리 id (블록이 아니라 드롭다운 칸 값이다).
+ * `play sound` 와 달리 get_sound_duration 의 VALUE 는 필드라서 id 를 그대로 넣는다.
+ */
+function resolveSoundValue(node, ctx) {
+  if (node.type !== 'String') {
+    return ctx.error(node, 'sound_duration() 은 소리 이름을 문자열로 적어야 합니다.');
+  }
+  const sound = ctx.object?.sounds.get(node.value);
+  if (sound) return sound.id;
+  // force id 로 고정해 둔 진짜 엔트리 id 면 그대로 흘려보낸다 (resolveSound 와 같은 이유)
+  if (ctx.forcedResourceIds.has(node.value)) return node.value;
+  return ctx.error(node, `'${node.value}' 소리가 이 오브젝트에 없습니다. sound ${node.value} "파일명" 으로 먼저 등록하세요.`);
 }
 
 /** 식별자가 리스트를 가리키면 그 엔트리 변수 항목을 돌려준다 */
@@ -567,6 +588,14 @@ function compileCall(node, ctx) {
       if (!arity(1)) return null;
       const target = resolveTarget(args[0], ctx, { self: true, all: true });
       return target && ctx.block('get_block_count', [target]);
+    }
+
+    // 이 오브젝트가 가진 소리의 재생 길이(초). 모양·소리 이름을 받는 다른 자리와
+    // 똑같이 이름을 그 소리로 풀어 준다.
+    case 'sound_duration': {
+      if (!arity(1)) return null;
+      const sound = resolveSoundValue(args[0], ctx);
+      return sound && ctx.block('get_sound_duration', [null, sound, null]);
     }
 
     case 'length': {

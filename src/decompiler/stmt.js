@@ -6,8 +6,8 @@
 //  `indent()` 로 필요한 만큼 들여쓴다. 모르는 블록은 주석으로 남기고 계속
 //  진행한다 (하나 때문에 전체를 못 옮기면 안 되니까).
 // ============================================================================
-import { exprOf } from './expr.js';
-import { tessString, tessNumber, ownsResource } from './ident.js';
+import { exprOf, literalNumber } from './expr.js';
+import { tessString, tessNumber, ownsResource, isExactNumber } from './ident.js';
 
 const REVERSE_STOP_TARGET = {
   thisThread: '', otherThread: 'other', thisOnly: 'me', other_objects: 'them', all: 'all',
@@ -235,7 +235,9 @@ function statementLines(block, ctx) {
 }
 
 function unshift(indexBlock, ctx) {
-  if (indexBlock && indexBlock.type === 'number') return String(Number(indexBlock.params?.[0]) - 1);
+  // 상수 접기는 `foldIndex` 옵션을 켰을 때만 (unshiftIndex 의 같은 주석 참고)
+  const literal = ctx.foldIndex ? literalNumber(indexBlock) : null;
+  if (literal !== null) return tessNumber(literal - 1);
   return `(${exprOf(indexBlock, ctx)} - 1)`;
 }
 
@@ -304,11 +306,6 @@ function resourceExpr(value, ctx, byId) {
   // emitting the string form back compiles to a missing-resource error.
   if (literal !== null && isExactNumber(literal)) return tessNumber(Number(literal));
   return exprOf(value, ctx);
-}
-
-/** True when re-printing the number yields the same characters ("1.0"/"01" do not). */
-function isExactNumber(literal) {
-  return literal !== '' && String(Number(literal)) === literal;
 }
 
 

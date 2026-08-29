@@ -807,6 +807,187 @@ test('되돌린 글상자를 다시 컴파일하면 원본 틀 크기가 그대�
 });
 
 // ---------------------------------------------------------------------------
+//  숫자를 문자열로 옮기던 문제
+//
+//  엔트리의 number 블록과 text 블록은 둘 다 "적어 둔 글자를 그대로 돌려주는" 같은
+//  원시 블록이라(block_entry.js), 사람이 어느 칸에 입력했느냐만 다르고 실행 결과는
+//  똑같다. 그런데 되돌리기가 text 블록을 무조건 문자열로 옮겨서, 판단문 안이나
+//  계산식 안이나 함수 인수의 숫자가 `"45"` 처럼 따옴표를 뒤집어쓰고 나왔다.
+// ---------------------------------------------------------------------------
+function numberShapeProject() {
+  const startHat = () => ({ type: 'when_run_button_click', params: [null], statements: [] });
+  const text = (value) => ({ type: 'text', params: [value] });
+  const number = (value) => ({ type: 'number', params: [value] });
+  const compare = (left, op, right) => ({ type: 'boolean_basic_operator', params: [left, op, right] });
+  const calc = (left, op, right) => ({ type: 'calc_basic', params: [left, op, right] });
+
+  return {
+    name: '숫자 모양 테스트',
+    speed: 60,
+    scenes: [{ id: 'scene1', name: '장면 1' }],
+    variables: [
+      { id: 'v1', name: '단계', value: 0 },
+      { id: 'l1', name: '기록', variableType: 'list', array: [{ data: 'ㄱ' }] },
+    ],
+    messages: [],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: 'obj1',
+      name: '주인공',
+      objectType: 'sprite',
+      scene: 'scene1',
+      rotateMethod: 'free',
+      selectedPictureId: 'pic1',
+      entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true },
+      sprite: {
+        pictures: [{ id: 'pic1', name: '기본', fileurl: null, dimension: { width: 10, height: 10 } }],
+        sounds: [],
+      },
+      script: JSON.stringify([[
+        startHat(),
+        // 판단값 안의 숫자
+        { type: '_if', params: [compare({ type: 'get_variable', params: ['v1'] }, 'EQUAL', text('14'))], statements: [[]] },
+        // 괄호로 감싼 계산식 안의 숫자
+        { type: 'set_variable', params: ['v1', calc(text('3'), 'MULTI', calc(text('2'), 'PLUS', number('5')))], statements: [] },
+        // 함수 인수
+        { type: 'func_fn1', params: [text('7'), null], statements: [] },
+        // 리스트 순번
+        { type: 'remove_value_from_list', params: [text('3'), 'l1', null], statements: [] },
+        // 다시 적으면 글자가 달라지는 값은 그대로 글자로 둔다
+        { type: 'dialog', params: [text('007'), 'speak', null], statements: [] },
+      ]]),
+    }],
+    functions: [{
+      id: 'fn1',
+      content: JSON.stringify([[{
+        type: 'function_create',
+        params: [{
+          type: 'function_field_label',
+          params: ['더하기', { type: 'function_field_string', params: [{ type: 'stringParam_a' }, null] }],
+        }],
+        statements: [[]],
+      }]]),
+    }],
+  };
+}
+
+test('판단값 · 계산식 · 함수 인수 · 순번 안의 숫자는 숫자로 되돌아온다', () => {
+  const result = decompileProject(numberShapeProject(), []);
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+
+  assert.match(fragment, /^ {2}if \(단계 == 14\):$/m);                 // 판단값
+  assert.match(fragment, /^ {2}단계 = \(3 \* \(2 \+ 5\)\)$/m);         // 괄호 친 계산식
+  assert.match(fragment, /^ {2}더하기\(7\)$/m);                        // 함수 인수
+  assert.match(fragment, /^ {2}remove 기록\[\(3 - 1\)\]$/m);          // 순번은 기본으로 안 접는다
+  assert.doesNotMatch(fragment, /"14"|"2"|"7"/);
+
+  // 다시 적으면 달라지는 값은 글자 그대로 둔다
+  assert.match(fragment, /^ {2}say "007"$/m);
+});
+
+test('숫자로 되돌린 코드는 다시 컴파일해도 값이 그대로다', () => {
+  const result = decompileProject(numberShapeProject(), []);
+  const recompiled = recompileResult(result, 'tess-decompile-number-');
+  assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
+
+  const thread = JSON.parse(recompiled.project.objects[0].script)[0];
+  const condition = thread.find((b) => b.type === '_if').params[0];
+  // number 블록이든 text 블록이든 엔트리는 적어 둔 글자를 그대로 돌려준다 — 값이 같아야 한다
+  assert.equal(condition.params[2].params[0], '14');
+  const assign = thread.find((b) => b.type === 'set_variable').params[1];
+  assert.equal(assign.params[0].params[0], '3');
+  assert.equal(assign.params[2].params[0].params[0], '2');
+});
+
+// 소리 길이(get_sound_duration)와 색 고르기 칸(text_color)은 예전엔 자리표시자로
+// 남아서 되돌린 소스가 컴파일되지 않았다.
+test('소리 길이와 색 고르기 칸을 되돌리고 다시 컴파일한다', () => {
+  const project = {
+    name: 't',
+    speed: 60,
+    scenes: [{ id: 'scene1', name: '장면 1' }],
+    variables: [{ id: 'v1', name: '길이', value: 0 }],
+    messages: [],
+    functions: [],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: 'obj1',
+      name: '점수판',
+      objectType: 'textBox',
+      scene: 'scene1',
+      rotateMethod: 'free',
+      text: '가',
+      entity: {
+        x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true,
+        colour: '#000000', bgColor: '#ffffff', font: '20px Nanum Gothic', fontSize: 20,
+      },
+      sprite: {
+        pictures: [],
+        sounds: [{ id: 'snd1', name: '점프음', fileurl: null, ext: '.mp3', duration: 2.5 }],
+      },
+      script: JSON.stringify([[
+        { type: 'when_run_button_click', params: [null], statements: [] },
+        { type: 'set_variable', params: ['v1', { type: 'get_sound_duration', params: [null, 'snd1', null] }], statements: [] },
+        { type: 'text_change_font_color', params: [{ type: 'text_color', params: ['#16d8a3'] }, null], statements: [] },
+      ]]),
+    }],
+  };
+
+  const result = decompileProject(project, []);
+  assert.deepEqual([...result.warnings], []);
+  const fragment = result.assets.find((a) => a.path === 'objects/점수판.tess').data.toString('utf-8');
+  assert.match(fragment, /^ {2}길이 = sound_duration\("점프음"\)$/m);
+  assert.match(fragment, /^ {2}font_color = #16d8a3$/m);
+  assert.doesNotMatch(fragment, /\[decompile/);
+
+  const recompiled = recompileResult(result, 'tess-decompile-sound-');
+  assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
+  const thread = JSON.parse(recompiled.project.objects[0].script)[0];
+  const duration = thread.find((b) => b.type === 'set_variable').params[1];
+  assert.equal(duration.type, 'get_sound_duration');
+  // 소리 id 는 다시 배정되지만 그 소리를 그대로 가리켜야 한다
+  assert.equal(duration.params[1], recompiled.project.objects[0].sprite.sounds[0].id);
+  assert.equal(thread.find((b) => b.type === 'text_change_font_color').params[0], '#16d8a3');
+});
+
+// 이름 맨 앞의 숫자를 지워 버리면 "1.png"·"2.png"·"3.png" 가 죄다 같은 이름이 된 뒤
+// 뒤에 번호가 붙어서, 원본과 짝이 어긋난 채로 되돌아왔다.
+test('숫자로 시작하는 모양 이름도 숫자를 잃지 않는다', () => {
+  const picture = (id, name) => ({ id, name, fileurl: null, dimension: { width: 10, height: 10 } });
+  const project = {
+    name: 't',
+    speed: 60,
+    scenes: [{ id: 'scene1', name: '장면 1' }],
+    variables: [],
+    messages: [],
+    functions: [],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: 'obj1',
+      name: '주인공',
+      objectType: 'sprite',
+      scene: 'scene1',
+      rotateMethod: 'free',
+      selectedPictureId: 'p1',
+      entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true },
+      sprite: { pictures: [picture('p1', '3.png'), picture('p2', '1.png'), picture('p3', '2.png')], sounds: [] },
+      script: JSON.stringify([[
+        { type: 'when_run_button_click', params: [null], statements: [] },
+        { type: 'change_to_some_shape', params: [{ type: 'get_pictures', params: ['p3'] }, null], statements: [] },
+      ]]),
+    }],
+  };
+
+  const result = decompileProject(project, []);
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  assert.match(fragment, /^default costume costume_3_png /m);
+  assert.match(fragment, /^costume costume_1_png /m);
+  assert.match(fragment, /^costume costume_2_png /m);
+  // 어느 모양을 가리키는지가 원본 그대로여야 한다 ("2.png")
+  assert.match(fragment, /^ {2}costume = "costume_2_png"$/m);
+});
+
+// ---------------------------------------------------------------------------
 //  무게중심(중심점 · 엔트리 regX/regY)
 //
 //  오브젝트의 x/y 는 그림 가운데가 아니라 "중심점" 을 무대의 그 자리에 놓는다.
