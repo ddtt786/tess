@@ -100,6 +100,13 @@ export function validate(program, source = '', sources = null) {
             error(member, `'${member.name}' 은(는) 글상자(text) 전용 속성입니다. object 에서는 쓸 수 없습니다.`);
           }
           break;
+        case 'BoxSize':
+          // A sprite takes its size from its costume image; only a text box
+          // carries a frame size of its own.
+          if (!isText) {
+            error(member, `'size 가로 세로' 는 글상자(text) 전용입니다. 모양 크기는 costume 뒤에 적으세요.`);
+          }
+          break;
         case 'FunctionDecl':
           visitFunction(member, locals);
           break;

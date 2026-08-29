@@ -47,7 +47,10 @@ const USAGE = `사용법
                      문장은 빠진 채로 나오니, 남은 부분만 확인하고 싶을 때만 쓰세요
                      (문법 에러는 작품을 만들 수조차 없어서 --force 도 소용없습니다)
   --warnings         decompile 이 옮기지 못한 부분을 콘솔에도 알려준다 (기본은 결과
-                     소스에 '# [decompile]' 주석으로만 남기고 콘솔은 개수만 보여준다)`;
+                     소스에 '# [decompile]' 주석으로만 남기고 콘솔은 개수만 보여준다)
+  --sizes            decompile 이 모든 모양에 'size 가로 세로' 를 적어 둔다. 기본은
+                     컴파일러가 그림 파일에서 직접 재게 두고 생략한다 (글상자의
+                     'size 가로 세로' 는 이 옵션과 상관없이 항상 적는다)`;
 
 function report(label, diagnostics, kind) {
   for (const item of diagnostics) {
@@ -69,6 +72,7 @@ function parseArgs(argv) {
     else if (arg === '--no-open') options.noOpen = true;
     else if (arg === '--no-reload') options.noReload = true;
     else if (arg === '--warnings') options.warnings = true;
+    else if (arg === '--sizes') options.sizes = true;
     else if (arg === '--force') options.force = true;
     else rest.push(arg);
   }
@@ -284,7 +288,7 @@ async function runDecompile(file, options) {
 
   let result;
   try {
-    result = await decompileEnt(bytes);
+    result = await decompileEnt(bytes, { sizes: options.sizes });
   } catch (error) {
     console.error(`${label}: 되돌리기 실패 — ${error.message}`);
     return 1;

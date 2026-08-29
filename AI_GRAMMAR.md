@@ -127,8 +127,20 @@ PropertyDecl
   | visible B                       -- visible
   | lock B                          -- lock
   | rotation rotateMethod           -- rotation
+  | size N N                        -- boxSize                 // 글상자틀 크기
   | propertyName "=" ~"=" Expr      -- assign                  // 그 외 전부(`x = 10` 등)
 ```
+
+`boxSize`(`size 65.49 104.65`)와 `assign`의 `size = 150`은 같은 `size` 키워드로
+시작하지만 겹치지 않는다 — `boxSize`는 뒤에 `numberLiteral` 두 개를 요구하므로
+`size =`를 만나면 실패하고 `assign`으로 넘어간다. 둘은 정하는 것도 다르다:
+`size = 150`은 배율(%), `size 65.49 104.65`는 글상자틀의 픽셀 크기다.
+
+글상자틀 크기가 문법에 있는 이유: 엔트리는 이 값을 글자를 실제로 그려 보고 재
+두는데, 컴파일러는 글꼴을 그릴 수 없어 `글자수 × fontSize × 0.85`로 어림잡는다.
+줄바꿈(`line_break`) 글상자는 폭이 줄 나눔을, 높이가 줄 수를 정하므로 어림값과
+크게 어긋난다(실제 작품에서 65×105짜리가 95×15로 납작해졌다). 그래서 되돌리기는
+글상자에 한해 이 줄을 늘 적어 둔다.
 
 `propertyName`도 같은 이유로 `"scale_x"`, `"font_color"`처럼 **긴 이름을 접두어인
 짧은 이름보다 먼저** 나열해 둔다 — `"font"`가 `"font_color"`보다 먼저 오면 PEG는
@@ -491,7 +503,7 @@ PEG의 `|`는 정규식의 `|`와 달리 **처음 성공하는 대안을 그 자
 접두사를 가진 대안들은 **더 길거나 더 구체적인 쪽을 먼저** 둬야 한다.
 이 문법에서 그 규칙을 지키는 곳:
 
-- `PropertyDecl`: `size` 붙은 형태 → 안 붙은 형태
+- `PropertyDecl`: `size` 붙은 형태 → 안 붙은 형태, `size N N` → `size = Expr`
 - `propertyName`: `"scale_x"` → (없음, `"scale"`은 애초에 없음), `"font_color"` → `"font"`
 - `StopStatement`: 인자 있는 형태 전부 → 단독 `stop`
 - `SoundStatement`: `and wait` 붙은 형태 → 안 붙은 형태
@@ -567,6 +579,7 @@ say "숨었다"
 | `PropertyDecl_*costume*` | `Costume` |
 | `PropertyDecl_soundLength` / `_sound` | `Sound` |
 | `PropertyDecl_name` / `_visible` / `_lock` / `_rotation` / `_assign` | `Property` |
+| `PropertyDecl_boxSize` | `BoxSize` (`width`, `height` — 글상자 전용) |
 | `FunctionDecl` | `FunctionDecl` |
 | `VarDecl` / `ListDecl` | `VarDecl` / `ListDecl` |
 | `EventHandler_*` | `Event` (`event: 'start'\|'key'\|'signal'\|...`) |

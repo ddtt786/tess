@@ -47,20 +47,26 @@ function findRuntimeDir() {
 
 /**
  * .ent 파일 바이트열을 Tess 소스로 되돌린다.
+ *
+ * `sizes: true` writes `size W H` on every costume instead of only where the
+ * compiler cannot measure the image itself.
+ *
+ * @param {Buffer} bytes
+ * @param {{sizes?: boolean}} [options]
  * @returns {Promise<{source: string, warnings: string[], assets: Array<{path:string, data:Buffer}>, name: string}>}
  */
-export async function decompileEnt(bytes) {
+export async function decompileEnt(bytes, options = {}) {
   const entries = await readTar(bytes);
   const projectEntry = entries.find((e) => e.name.endsWith('project.json'));
   if (!projectEntry) {
     throw new Error('project.json 을 찾지 못했습니다 — .ent(엔트리 작품) 파일이 맞는지 확인하세요.');
   }
   const project = JSON.parse(projectEntry.data.toString('utf-8'));
-  return decompileProject(project, entries);
+  return decompileProject(project, entries, options);
 }
 
-export function decompileProject(project, entries) {
-  const ctx = buildContext(project, entries);
+export function decompileProject(project, entries, options = {}) {
+  const ctx = buildContext(project, entries, options);
 
   const lines = [];
   // 선언 묶음과 그 뒤의 코드 사이는 두 줄을 띄운다. 선언은 파일 머리말에 가까워서,
@@ -144,12 +150,14 @@ function readFunctionFields(create) {
   return fields;
 }
 
-function buildContext(project, entries) {
+function buildContext(project, entries, options = {}) {
   const usedNames = new Set(); // 변수 · 함수 이름은 한 네임스페이스로 합쳐서 절대 안 겹치게 한다
   const entriesByPath = new Map(entries.map((e) => [e.name, e.data]));
 
   const ctx = {
     warnings: new Set(),
+    // Write `size W H` on every costume, not just the ones the compiler cannot measure.
+    allSizes: options.sizes === true,
     varsById: new Map(),
     globalVars: [],
     localVarsByObject: new Map(),
@@ -402,7 +410,9 @@ function objectFragmentLines(object, ctx, isText) {
     // 크기는 적지 않는 것이 기본이다. 컴파일러가 그림 파일에서 크기를 직접 읽으므로,
     // 적어 두면 그림을 바꿀 때마다 숫자까지 함께 고쳐야 한다. 파일이 없을 때와,
     // 파일에서 잰 크기가 실제 크기가 아닌 1×1 빈 그림일 때만 적는다.
-    const sizePart = picInfo.relativePath && !picInfo.blankImage
+    // (`sizes` 옵션을 켜면 원본 dimension 을 전부 적어 둔다.)
+    const measurable = picInfo.relativePath && !picInfo.blankImage && !ctx.allSizes;
+    const sizePart = measurable
       ? ''
       : ` size ${tessNumber(picture.dimension?.width ?? 100)} ${tessNumber(picture.dimension?.height ?? 100)}`;
     const filePart = picInfo.relativePath ?? (picture.fileurl ?? `${picInfo.identifier}.png`);
@@ -457,6 +467,11 @@ function objectPropertyLines(object, isText, indentLevel) {
   if (isText) {
     if (object.text) lines.push(`${pad}text_content = ${tessString(object.text)}`);
     if (entity.fontSize) lines.push(`${pad}font_size = ${tessNumber(entity.fontSize)}`);
+    // Always keep the frame Entry measured. The compiler can only estimate it
+    // from the character count, which is far off for wrapping text boxes.
+    if (Number.isFinite(entity.width) && Number.isFinite(entity.height)) {
+      lines.push(`${pad}size ${tessNumber(entity.width)} ${tessNumber(entity.height)}`);
+    }
 
     const font = parseFont(entity.font);
     // 컴파일러의 기본값(src/compiler/index.js buildObject)과 같을 때는 생략한다

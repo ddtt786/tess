@@ -350,6 +350,53 @@ end`;
   assert.equal(object.entity.fontSize, 24);
 });
 
+// 엔트리는 글상자틀을 글자를 그려 보고 재 두지만, 컴파일러는 글꼴을 그릴 수 없어
+// 글자 수로 어림잡는다. `size 가로 세로` 를 적으면 그 값이 그대로 들어가야 한다.
+test('글상자의 size 가로 세로 가 entity 크기가 된다', () => {
+  const source = `scene "s":
+  text "t":
+    text_content = "이름:\\n\\n죄목:"
+    font_size = 14
+    line_break = true
+    size 65.49 104.65
+  end
+end`;
+  const { project } = compileProject(source, { path: 'x.tess' });
+  const { entity } = project.objects[0];
+  assert.equal(entity.width, 65.49);
+  assert.equal(entity.height, 104.65);
+});
+
+test('size 가로 세로 가 없으면 글자 수로 어림잡은 크기를 쓴다', () => {
+  const source = `scene "s":
+  text "t":
+    text_content = "가나다"
+    font_size = 20
+  end
+end`;
+  const { project } = compileProject(source, { path: 'x.tess' });
+  const { entity } = project.objects[0];
+  assert.equal(entity.width, 3 * 20 * 0.85);
+  assert.equal(entity.height, 22);
+});
+
+// `size = 100` 은 예전부터 배율(%)이다 — 새로 들어온 `size 가로 세로` 와 헷갈리면 안 된다.
+test('size = 배율과 size 가로 세로 는 서로 다른 것을 정한다', () => {
+  const source = `scene "s":
+  text "t":
+    text_content = "가"
+    size 80 30
+    size = 150
+  end
+end`;
+  const { project } = compileProject(source, { path: 'x.tess' });
+  const { entity } = project.objects[0];
+  assert.equal(entity.width, 80);
+  assert.equal(entity.height, 30);
+  assert.equal(entity.scaleX, 1.5);
+  assert.equal(entity.scaleY, 1.5);
+});
+
 test('모양·소리를 엔트리 리소스 경로로 만든다', () => {
   const { project } = compileScript('', {
     costumes: 'costume 기본 "hero.png" size 10 20\n    sound 점프 "jump.mp3"',

@@ -41,6 +41,25 @@ end`);
   assert.match(errors[0], /글상자\(text\) 전용 속성/);
 });
 
+// 글상자틀 크기(`size 가로 세로`)는 글상자만 갖는다 — 오브젝트 크기는 모양 그림에서 나온다.
+test('size 가로 세로 는 object 에서 쓸 수 없다', () => {
+  const errors = messages(`object "o":
+  size 300 50
+end`);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /글상자\(text\) 전용/);
+});
+
+test('size 가로 세로 는 text 에서는 괜찮고, size = 배율과 함께 쓸 수 있다', () => {
+  const result = parse(`text "t":
+  text_content = "가나다"
+  size 120.5 22
+  size = 150
+end`);
+  assert.deepEqual(result.errors, []);
+  assert.ok(result.ok);
+});
+
 test('14.2 함수는 오브젝트 로컬 변수를 참조할 수 없다', () => {
   const errors = messages(`object "hero":
   var local_power = 50

@@ -680,6 +680,91 @@ test('파일을 담은 모양·소리는 크기·길이를 적지 않고, 1×1 �
   assert.match(fragment, /^costume 새그림 "assets\/image\/엔트리봇_새그림\.png" size 960 540$/m);
 });
 
+// 사람이 고칠 소스에는 숫자를 안 적는 게 기본이지만, 원본 dimension 을 그대로 남겨
+// 두고 싶을 때(그림 파일을 못 구했거나, 원본과 픽셀 하나까지 맞춰야 할 때)가 있다.
+test('sizes 옵션을 켜면 모든 모양에 size 가로 세로 를 적는다', () => {
+  const result = decompileProject(builtinObjectProject(), [], { sizes: true });
+  const fragment = result.assets.find((a) => a.path === 'objects/엔트리봇.tess').data.toString('utf-8');
+
+  assert.match(fragment, /^default costume 엔트리봇_걷기1 "assets\/image\/엔트리봇_엔트리봇_걷기1\.svg" size 144 246$/m);
+  assert.match(fragment, /^costume 엔트리봇_걷기2 "assets\/image\/엔트리봇_엔트리봇_걷기2\.svg" size 144 246$/m);
+  // 소리 길이는 이 옵션과 상관없다 — 컴파일러가 파일에서 잰다
+  assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3"$/m);
+});
+
+// ---------------------------------------------------------------------------
+//  글상자틀 크기
+//
+//  엔트리는 글상자틀을 실제로 글자를 그려 보고 재 두는데, 컴파일러는 글꼴을 그릴 수
+//  없어 글자 수로 어림잡는다. 줄바꿈 글상자는 폭이 줄 나눔을, 높이가 줄 수를 정하므로
+//  어림값과 크게 어긋난다(실제 작품에서 65×105 짜리가 95×15 로 납작해졌다).
+//  그래서 글상자만은 `size 가로 세로` 를 늘 적어 둔다.
+// ---------------------------------------------------------------------------
+function textBoxProject(entityExtra = {}) {
+  return {
+    name: '글상자 크기 테스트',
+    speed: 60,
+    scenes: [{ id: 'scene1', name: '장면 1' }],
+    variables: [],
+    messages: [],
+    functions: [],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: 'obj1',
+      name: '안내문',
+      objectType: 'textBox',
+      scene: 'scene1',
+      rotateMethod: 'free',
+      text: '이름:\n\n죄목:',
+      entity: {
+        x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true,
+        colour: '#000000', bgColor: '#ffffff', font: '13.98px Nanum Gothic', fontSize: 13.98,
+        lineBreak: true, width: 65.49, height: 104.65, ...entityExtra,
+      },
+      sprite: { pictures: [], sounds: [] },
+      script: JSON.stringify([[]]),
+    }],
+  };
+}
+
+test('글상자는 옵션 없이도 size 가로 세로 를 적는다', () => {
+  const result = decompileProject(textBoxProject(), []);
+  const fragment = result.assets.find((a) => a.path === 'objects/안내문.tess').data.toString('utf-8');
+
+  assert.match(fragment, /^size 65\.49 104\.65$/m);
+});
+
+test('되돌린 글상자를 다시 컴파일하면 원본 틀 크기가 그대로 나온다', () => {
+  const result = decompileProject(textBoxProject(), []);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-decompile-textbox-'));
+  const mainFile = path.join(dir, 'main.tess');
+  fs.writeFileSync(mainFile, result.source);
+  for (const asset of result.assets) {
+    const target = path.join(dir, asset.path);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, asset.data);
+  }
+
+  const recompiled = compileProject(fs.readFileSync(mainFile, 'utf-8'), { path: mainFile, assetDirs: [dir] });
+  assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
+
+  const { entity } = recompiled.project.objects[0];
+  assert.equal(entity.width, 65.49);
+  assert.equal(entity.height, 104.65);
+  assert.equal(entity.lineBreak, true);
+});
+
+test('크기를 모르는 글상자는 size 줄을 적지 않는다', () => {
+  const project = textBoxProject();
+  delete project.objects[0].entity.width;
+  delete project.objects[0].entity.height;
+
+  const result = decompileProject(project, []);
+  const fragment = result.assets.find((a) => a.path === 'objects/안내문.tess').data.toString('utf-8');
+  assert.doesNotMatch(fragment, /^size /m);
+});
+
 test('판단 매개변수는 이름? 로 되돌아오고, 다시 컴파일해도 판단 칸이다', () => {
   const field = fieldLabel('스폰', fieldString('p1', fieldLabel('살았나', fieldBoolean('b1', null))));
   const body = [{ type: '_if', params: [{ type: 'booleanParam_b1', params: [null] }], statements: [[]] }];

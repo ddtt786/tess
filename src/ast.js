@@ -92,6 +92,10 @@ semantics.addOperation('ast', {
   PropertyDecl_rotation(_rotation, method) {
     return { type: 'Property', name: 'rotation', value: { type: 'Keyword', name: method.sourceString }, loc: at(this) };
   },
+  // Text box frame size in pixels — not the `size = 100` scale property.
+  PropertyDecl_boxSize(_size, width, height) {
+    return { type: 'BoxSize', width: width.ast().value, height: height.ast().value, loc: at(this) };
+  },
   PropertyDecl_soundLength(_sound, id, file, _for, duration, forceIdOpt) {
     return {
       type: 'Sound',

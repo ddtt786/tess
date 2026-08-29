@@ -81,6 +81,8 @@ Tess {
 
   // 오브젝트 속성. `default costume` 처럼 접두 키워드가 붙는 형태가 먼저 와야 한다.
   // 모양 뒤의 `size W H` 는 이미지 파일을 찾을 수 없을 때 쓰는 원본 크기 선언이다.
+  // 모양에 붙지 않은 `size W H` 한 줄은 글상자의 글상자틀 크기다 (`size = 100` 은
+  // 여전히 배율이다 — `=` 가 있는 쪽은 propertyName 으로 넘어간다).
   // `force id "..."` 는 (addendum, SPEC-ADDENDUM.md 참고) 이 모양·소리의 엔트리 id 를
   // 시드로 새로 만들지 않고 그 문자열로 그대로 고정한다 — 되돌리기가 예전 방식으로
   // 하드코딩된 id 를 살리는 데 쓴다.
@@ -95,6 +97,7 @@ Tess {
     | visible booleanLiteral                                                             -- visible
     | lock booleanLiteral                                                                -- lock
     | rotation rotateMethod                                                              -- rotation
+    | size numberLiteral numberLiteral                                                   -- boxSize
     | propertyName "=" ~"=" Expr                                                         -- assign
 
   ForceId = force id stringLiteral

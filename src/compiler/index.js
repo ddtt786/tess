@@ -216,6 +216,7 @@ function collectObjects(program, ctx) {
       locals: new Map(),
       defaultPicture: null,
       properties: new Map(),
+      boxSize: null,
       script: [],
     };
     ctx.objects.push(object);
@@ -276,6 +277,9 @@ function collectObjectMembers(object, ctx) {
       }
       case 'Property':
         object.properties.set(member.name, member.value);
+        break;
+      case 'BoxSize':
+        object.boxSize = member;
         break;
       case 'VarDecl': case 'ListDecl': {
         const entry = makeVariable(member, ctx, object.id);
@@ -693,8 +697,12 @@ function buildObject(object, ctx) {
       underLine: boolean('text_underline', false),
       strike: boolean('text_strikethrough', false),
       fontSize,
-      width: Math.max(text.length * fontSize * 0.85, fontSize),
-      height: Math.round(fontSize * 1.1),
+      // Entry measures the frame by laying the text out; with no font to draw
+      // the compiler can only estimate it from the character count. `size W H`
+      // overrides that — a wrapping text box takes its line breaks from the
+      // width and its line count from the height, so the estimate is far off.
+      width: object.boxSize?.width ?? Math.max(text.length * fontSize * 0.85, fontSize),
+      height: object.boxSize?.height ?? Math.round(fontSize * 1.1),
     });
     result.text = text;
   } else {
