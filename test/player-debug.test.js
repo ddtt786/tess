@@ -648,6 +648,36 @@ test('항목 추가 단추는 목록 맨 위에 있다', async (t) => {
 });
 
 // --- Ctrl+Shift 로 무대에서 오브젝트 고르기 --------------------------------------
+/** 무대 캔버스를 붙이고 그 위의 오브젝트 목록을 세워 둔다 */
+function withStage(ui, objects, current = objects) {
+  const doc = ui.window.document;
+  const canvas = doc.createElement('canvas');
+  canvas.id = 'entryCanvas';
+  canvas.getBoundingClientRect = () => ({
+    left: 100, top: 50, width: 480, height: 270, right: 580, bottom: 320, x: 100, y: 50,
+  });
+  ui.byId('workspace').append(canvas);
+  ui.window.Entry.container.objects_ = objects;
+  ui.window.Entry.container.getCurrentObjects = () => current;
+  ui.window.tessWatchStagePicks();
+  // 무대 (0,0) 은 캔버스 한가운데다
+  return { canvas, center: { clientX: 340, clientY: 185 } };
+}
+
+/** 무대 좌표에 100x100 으로 서 있는 오브젝트 하나 */
+function stageActor(id, name, x = 0, y = 0) {
+  return {
+    id,
+    name,
+    entity: {
+      getX: () => x, getY: () => y,
+      getWidth: () => 100, getHeight: () => 100,
+      getScaleX: () => 1, getScaleY: () => 1,
+      getVisible: () => true,
+    },
+  };
+}
+
 test('Ctrl+Shift 로 무대를 누르면 그 오브젝트가 디버거에서 열린다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();
@@ -658,23 +688,48 @@ test('Ctrl+Shift 로 무대를 누르면 그 오브젝트가 디버거에서 열
       { id: 'o1', name: '치로', scene: 's1', script: '[]' },
     ],
   });
-  await ui.settle();
-  ui.window.tessWatchStagePicks();
   ui.tab('objects');
   await ui.settle();
+  assert.equal(ui.byId('object-info-name').textContent, '— 다른'); // 처음엔 첫 오브젝트
 
-  // 처음엔 첫 오브젝트가 골라져 있다
-  assert.equal(ui.byId('object-info-name').textContent, '— 다른');
-
-  const stage = ui.byId('workspace');
-  stage.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
-    bubbles: true, button: 0, ctrlKey: true, shiftKey: true,
+  const { canvas, center } = withStage(ui, [stageActor('o1', '치로')]);
+  canvas.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
+    bubbles: true, cancelable: true, button: 0, ctrlKey: true, shiftKey: true, ...center,
   }));
-  ui.window.Entry.dispatchEvent('entityClick', ui.entity);
   await ui.settle();
 
   assert.equal(ui.byId('object-info-name').textContent, '— 치로');
   assert.equal(ui.byId('tab-objects').hidden, false); // 오브젝트 탭이 열린다
+});
+
+test('몇 번을 눌러도 계속 골라진다', async (t) => {
+  // 예전에는 "고르는 중" 플래그와 실행기 함수 바꿔치기가 걸려 있어서, 한 번 어긋나면
+  // 그 뒤로는 영영 안 먹었다. 지금은 누를 때마다 이벤트만 보고 새로 판단한다.
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug({
+    ...dataProject,
+    objects: [
+      { id: 'o1', name: '치로', scene: 's1', script: '[]' },
+      { id: 'o2', name: '엔트리봇', scene: 's1', script: '[]' },
+    ],
+  });
+  ui.tab('objects');
+  await ui.settle();
+
+  // 위쪽(무대 y=100)에는 엔트리봇, 가운데에는 치로
+  const { canvas } = withStage(ui, [stageActor('o2', '엔트리봇', 0, 100), stageActor('o1', '치로')]);
+  const click = (clientX, clientY) => canvas.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
+    bubbles: true, cancelable: true, button: 0, ctrlKey: true, shiftKey: true, clientX, clientY,
+  }));
+
+  const picked = [];
+  for (let i = 0; i < 4; i += 1) {
+    click(340, i % 2 === 0 ? 85 : 185); // 엔트리봇 <-> 치로
+    await ui.settle();
+    picked.push(ui.byId('object-info-name').textContent);
+  }
+  assert.deepEqual(picked, ['— 엔트리봇', '— 치로', '— 엔트리봇', '— 치로']);
 });
 
 test('그냥 누른 것은 디버거가 가로채지 않는다', async (t) => {
@@ -687,65 +742,70 @@ test('그냥 누른 것은 디버거가 가로채지 않는다', async (t) => {
       { id: 'o1', name: '치로', scene: 's1', script: '[]' },
     ],
   });
-  await ui.settle();
-  ui.window.tessWatchStagePicks();
   ui.tab('objects');
   await ui.settle();
 
-  const stage = ui.byId('workspace');
-  stage.dispatchEvent(new ui.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
-  ui.window.Entry.dispatchEvent('entityClick', ui.entity);
+  const { canvas, center } = withStage(ui, [stageActor('o1', '치로')]);
+  const event = new ui.window.MouseEvent('pointerdown', {
+    bubbles: true, cancelable: true, button: 0, ...center,
+  });
+  canvas.dispatchEvent(event);
   await ui.settle();
 
   assert.equal(ui.byId('object-info-name').textContent, '— 다른'); // 그대로다
+  assert.equal(event.defaultPrevented, false);                     // 작품이 그대로 받는다
 });
 
-test('오브젝트를 고르는 동안에는 작품의 클릭 이벤트가 돌지 않는다', async (t) => {
+test('고르는 클릭은 무대까지 내려가지 않는다', async (t) => {
+  // 디버깅하려고 누른 것이지 작품을 시작시키거나 진행시키려고 누른 게 아니다.
   const ui = await mountDebugPanel(t);
   await ui.settle();
   ui.window.tessRenderProjectDebug(dataProject);
+  ui.tab('objects');
   await ui.settle();
-  ui.window.tessWatchStagePicks();
 
-  const fired = [];
-  ui.window.Entry.engine.fireEventOnEntity = (type) => fired.push(type);
+  const { canvas, center } = withStage(ui, [stageActor('o1', '치로')]);
+  const reached = [];
+  canvas.addEventListener('pointerdown', () => reached.push('stage'));
+  canvas.addEventListener('click', () => reached.push('stage'));
 
-  const stage = ui.byId('workspace');
-  stage.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
-    bubbles: true, button: 0, ctrlKey: true, shiftKey: true,
-  }));
-  ui.window.Entry.engine.fireEventOnEntity('when_object_click', ui.entity);
-  assert.deepEqual(fired, [], '고르는 동안에는 작품 이벤트를 막는다');
-
-  // 오브젝트를 고르면 그 자리에서 원래대로 돌아온다.
-  // entityClick 은 pointerdown 과 같은 차례에 오지 않는다 — createjs 는 뒤이어 오는
-  // mousedown 에서, PIXI 는 제 ticker 에서 쏜다. 그래서 고르는 창은 넉넉히 열어 두고,
-  // 고르는 순간(또는 시간이 다 되면) 닫는다.
-  ui.window.Entry.dispatchEvent('entityClick', ui.entity);
-  ui.window.Entry.engine.fireEventOnEntity('when_object_click', ui.entity);
-  assert.deepEqual(fired, ['when_object_click']);
+  for (const type of ['pointerdown', 'click']) {
+    canvas.dispatchEvent(new ui.window.MouseEvent(type, {
+      bubbles: true, cancelable: true, button: 0, ctrlKey: true, shiftKey: true, ...center,
+    }));
+  }
+  await ui.settle();
+  assert.deepEqual(reached, [], '무대는 이 클릭을 보지 못한다');
 });
 
-test('무대를 눌렀는데 아무 오브젝트도 안 걸리면 고르기가 저절로 풀린다', async (t) => {
+test('다른 장면의 오브젝트는 고르지 않는다', async (t) => {
+  // Entry.container.objects_ 에는 모든 장면의 오브젝트가 다 들어 있고, 다른 장면 것도
+  // getVisible() 이 참인 채로 제자리에 남아 있다. 그대로 훑으면 화면에 있지도 않은
+  // 앞 장면의 배경이 먼저 걸려서, 장면을 한 번 넘긴 뒤로는 늘 그것만 골라졌다.
   const ui = await mountDebugPanel(t);
   await ui.settle();
-  ui.window.tessRenderProjectDebug(dataProject);
+  ui.window.tessRenderProjectDebug({
+    ...dataProject,
+    scenes: [{ id: 's1', name: '인트로' }, { id: 's2', name: '전투' }],
+    objects: [
+      { id: 'old', name: '인트로배경', scene: 's1', script: '[]' },
+      { id: 'now', name: '전투배경', scene: 's2', script: '[]' },
+    ],
+  });
+  ui.tab('objects');
   await ui.settle();
-  ui.window.tessWatchStagePicks();
 
-  const fired = [];
-  ui.window.Entry.engine.fireEventOnEntity = (type) => fired.push(type);
+  const intro = stageActor('old', '인트로배경');   // 앞 장면 것. 아직 보이는 상태로 남아 있다.
+  const battle = stageActor('now', '전투배경');
+  // objects_ 는 앞 장면 것이 먼저다. 지금 장면은 전투뿐이다.
+  const { canvas, center } = withStage(ui, [intro, battle], [battle]);
 
-  ui.byId('workspace').dispatchEvent(new ui.window.MouseEvent('pointerdown', {
-    bubbles: true, button: 0, ctrlKey: true, shiftKey: true,
+  canvas.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
+    bubbles: true, cancelable: true, button: 0, ctrlKey: true, shiftKey: true, ...center,
   }));
-  ui.window.Entry.engine.fireEventOnEntity('when_object_click', ui.entity);
-  assert.deepEqual(fired, []);
+  await ui.settle();
 
-  // 빈 곳을 눌렀으면 entityClick 이 영영 안 온다. 창이 닫히면 되돌아와야 한다.
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  ui.window.Entry.engine.fireEventOnEntity('when_object_click', ui.entity);
-  assert.deepEqual(fired, ['when_object_click'], '고르기가 풀리면 작품 이벤트가 다시 돈다');
+  assert.equal(ui.byId('object-info-name').textContent, '— 전투배경');
 });
 
 test('부스트 모드처럼 캔버스가 여럿이어도 무대에서 오브젝트를 고른다', async (t) => {

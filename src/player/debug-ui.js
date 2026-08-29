@@ -1146,16 +1146,42 @@ function insideStage(event) {
  *
  * `Entry.container.objects_` 는 앞에 있는 것이 먼저다.
  */
+/**
+ * 지금 장면에 있는 오브젝트만, 앞에 있는 것부터.
+ *
+ * `Entry.container.objects_` 에는 **모든 장면의** 오브젝트가 다 들어 있고, 다른 장면
+ * 것도 `getVisible()` 이 참인 채로 제자리에 남아 있다(마녀 작품 기준 558개 중 지금
+ * 장면은 13개, 다른 장면인데 보이는 것으로 잡히는 게 285개). 이걸 그대로 훑으면 화면에
+ * 있지도 않은 다른 장면의 배경이 먼저 걸려서, 장면을 한 번 넘긴 뒤로는 엉뚱한
+ * 오브젝트만 골라진다.
+ */
+function stageObjects() {
+  const container = window.Entry && Entry.container;
+  if (!container) return [];
+  try {
+    const current = container.getCurrentObjects?.();
+    if (Array.isArray(current)) return current;
+  } catch (error) { /* 아래에서 직접 걸러 낸다 */ }
+
+  const all = Array.isArray(container.objects_) ? container.objects_ : [];
+  const sceneId = window.Entry.scene?.selectedScene?.id;
+  if (!sceneId) return all;
+  return all.filter((object) => (object.scene?.id ?? object.scene) === sceneId);
+}
+
 function objectAtPoint(clientX, clientY) {
   const point = toStagePoint(clientX, clientY);
-  const objects = window.Entry && Entry.container && Entry.container.objects_;
-  if (!point || !Array.isArray(objects)) return null;
+  const objects = stageObjects();
+  if (!point) return null;
 
   for (const object of objects) {
     const entity = object && object.entity;
     if (!entity) continue;
     try {
       if (typeof entity.getVisible === 'function' && !entity.getVisible()) continue;
+      // 완전히 투명한 오브젝트는 화면에 없는 것과 같다. 무대를 덮는 투명한 판이
+      // 하나 있으면 어디를 눌러도 그것만 잡혀서 고르기가 안 되는 것처럼 보인다.
+      if (entity.effect && entity.effect.alpha === 0) continue;
       const halfWidth = Math.abs(entity.getWidth() * (entity.getScaleX() ?? 1)) / 2;
       const halfHeight = Math.abs(entity.getHeight() * (entity.getScaleY() ?? 1)) / 2;
       if (Math.abs(point.x - entity.getX()) <= halfWidth
@@ -1166,73 +1192,56 @@ function objectAtPoint(clientX, clientY) {
 }
 
 window.tessWatchStagePicks = function watchStagePicks() {
-  const entry = window.Entry;
-  if (!entry || !entry.addEventListener || watchStagePicks.armed) return;
+  if (watchStagePicks.armed) return;
   watchStagePicks.armed = true;
 
-  let engineRef = null;
-  let suppressed = null;
-  let timer = null;
+  /**
+   * Ctrl+Shift 로 무대를 누른 것인가.
+   *
+   * 이 판정에는 남아 있는 상태가 하나도 없다 — 누를 때마다 이벤트만 보고 새로
+   * 판단한다. 예전에는 "고르는 중" 플래그와 실행기 함수 바꿔치기를 걸어 뒀는데,
+   * 그 중 하나라도 되돌아오지 못하면 그 뒤로는 영영 안 먹었다.
+   */
+  const isPick = (event) => event.ctrlKey && event.shiftKey
+    && event.button === 0
+    && insideStage(event);
 
-  const stopPicking = () => {
-    if (timer) { clearTimeout(timer); timer = null; }
-    // 막아 뒀던 작품 쪽 이벤트 발사를 되돌린다
-    if (engineRef && suppressed) engineRef.fireEventOnEntity = suppressed;
-    engineRef = null;
-    suppressed = null;
-    state.picking = false;
-  };
-
-  const startPicking = () => {
-    if (state.picking) return;
+  // 눌렀다는 표시만 잠깐 켠다. 화면에 보이기만 할 뿐 고르는 일에는 관여하지 않는다.
+  let hintTimer = null;
+  const flashHint = () => {
     state.picking = true;
-    // 같은 클릭으로 작품의 "오브젝트를 클릭했을 때" 까지 돌면 안 된다 — 디버깅하려고
-    // 누른 것이지 작품을 진행시키려고 누른 게 아니다.
-    engineRef = entry.engine || null;
-    if (engineRef && typeof engineRef.fireEventOnEntity === 'function') {
-      suppressed = engineRef.fireEventOnEntity;
-      engineRef.fireEventOnEntity = () => {};
-    }
-    timer = setTimeout(stopPicking, PICK_WINDOW);
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => { state.picking = false; }, PICK_WINDOW);
   };
 
   const onDown = (event) => {
-    if (!(event.ctrlKey && event.shiftKey) || event.button !== 0) return;
-    if (!insideStage(event)) return;
-
+    if (!isPick(event)) return;
     // 이 클릭은 디버깅하려고 누른 것이다. 작품을 시작시키거나 진행시키면 안 되므로
-    // 덮개도 캔버스도 이 이벤트를 보지 못하게 여기서 끊는다.
+    // 덮개도 캔버스도 이 이벤트를 보지 못하게 여기서 끊는다. 실행기까지 못 가므로
+    // "오브젝트를 클릭했을 때" 도 돌지 않는다.
     event.preventDefault();
     event.stopPropagation();
+    flashHint();
 
-    startPicking();
     const object = objectAtPoint(event.clientX, event.clientY);
     if (object && object.id) selectObjectById(object.id);
   };
 
-  // 누른 뒤에 잇따라 오는 이벤트들도 삼킨다. 멈춰 있는 작품 위에 덮인 "눌러서 시작"
-  // 판은 click 으로 시작하므로, 이걸 막지 않으면 오브젝트를 살펴보려던 클릭이
-  // 작품을 시작시켜 버린다.
+  // 누른 뒤에 잇따라 오는 것들도 같은 기준으로 삼킨다. 멈춰 있는 작품 위에 덮인
+  // "눌러서 시작" 판은 click 으로 시작하므로, 이걸 막지 않으면 오브젝트를 살펴보려던
+  // 클릭이 작품을 시작시켜 버린다.
   const swallow = (event) => {
-    if (!state.picking || !(event.ctrlKey && event.shiftKey)) return;
-    if (!insideStage(event)) return;
+    if (!isPick(event)) return;
     event.preventDefault();
     event.stopPropagation();
   };
 
-  // createjs 는 mousedown, PIXI 는 pointerdown 을 쓴다. 둘 다 듣고, 먼저 오는 쪽이 연다.
+  // createjs 는 mousedown, PIXI 는 pointerdown 을 쓴다. 둘 다 듣는다.
   document.addEventListener('pointerdown', onDown, true);
   document.addEventListener('mousedown', onDown, true);
   document.addEventListener('mouseup', swallow, true);
   document.addEventListener('pointerup', swallow, true);
   document.addEventListener('click', swallow, true);
-
-  entry.addEventListener('entityClick', (entity) => {
-    if (!state.picking) return;
-    const object = entity && entity.parent;
-    stopPicking();
-    if (object && object.id) selectObjectById(object.id);
-  });
 };
 
 /** value_of_index_from_list 의 "can not insert value to array" 를 리스트 이름·길이가 담긴 메시지로 바꾼다 */
