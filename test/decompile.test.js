@@ -1240,3 +1240,79 @@ test('함께 저장한 PNG 가 없으면 SVG 를 그대로 가져온다', () => 
   const images = result.assets.filter((a) => a.path.startsWith('assets/image/'));
   assert.deepEqual(images.map((a) => a.path), ['assets/image/주인공_배경.svg']);
 });
+
+// ---------------------------------------------------------------------------
+//  함수 지역 변수
+// ---------------------------------------------------------------------------
+/** 지역 변수를 가진 함수 하나짜리 project.json. globals 로 전역 변수도 함께 둔다 */
+function funcLocalProject(localVariables, body, globals = []) {
+  const field = fieldLabel('계산', fieldString('p1', null));
+  return {
+    name: '지역 변수 테스트',
+    speed: 60,
+    scenes: [{ id: 'scene1', name: '장면 1' }],
+    variables: globals,
+    messages: [],
+    aiUtilizeBlocks: [],
+    objects: [],
+    functions: [{
+      id: 'fn1',
+      localVariables,
+      useLocalVariables: localVariables.length > 0,
+      content: JSON.stringify([[{ type: 'function_create', params: [field, null], statements: [body] }]]),
+    }],
+  };
+}
+
+const getLocal = (id) => ({ type: 'get_func_variable', params: [id, null], statements: [] });
+const setLocal = (id, value) => ({
+  type: 'set_func_variable',
+  params: [id, { type: 'number', params: [String(value)] }, null],
+  statements: [],
+});
+
+test('함수 지역 변수는 이름을 되찾아 몸통 맨 위에 var 로 선언된다', () => {
+  const project = funcLocalProject(
+    [{ name: '누적', value: 0, id: 'fn1_a' }],
+    [setLocal('fn1_a', 3), { type: 'dialog', params: [getLocal('fn1_a'), 'speak'], statements: [] }],
+  );
+  const result = decompileProject(project, []);
+
+  assert.deepEqual(result.warnings, []);
+  assert.match(result.source, /^function 계산\(a\):\n {2}var 누적 = 0\n {2}누적 = 3\n {2}say 누적$/m);
+});
+
+test('지역 변수 이름이 매개변수·전역과 겹치면 다른 이름을 준다', () => {
+  const project = funcLocalProject(
+    [{ name: 'a', value: 0, id: 'fn1_a' }, { name: '점수', value: 0, id: 'fn1_b' }],
+    [setLocal('fn1_a', 1), setLocal('fn1_b', 2)],
+    [{ id: 'g1', name: '점수', variableType: 'variable', value: 0, object: null }],
+  );
+  const result = decompileProject(project, []);
+
+  assert.match(result.source, /^ {2}var a_2 = 0$/m);
+  assert.match(result.source, /^ {2}var 점수_2 = 0$/m);
+});
+
+test('이름으로 쓸 수 없는 낱말은 뒤에 _ 를 붙여 되돌린다', () => {
+  const project = funcLocalProject(
+    [{ name: 'skip', value: 0, id: 'fn1_a' }],
+    [setLocal('fn1_a', 1)],
+  );
+  const result = decompileProject(project, []);
+
+  assert.match(result.source, /^ {2}var skip_ = 0$/m);
+  assert.match(result.source, /^ {2}skip_ = 1$/m);
+});
+
+test('되돌린 지역 변수는 다시 컴파일해도 함수의 지역 변수로 남는다', () => {
+  const project = funcLocalProject(
+    [{ name: '누적', value: 0, id: 'fn1_a' }],
+    [setLocal('fn1_a', 3), { type: 'dialog', params: [getLocal('fn1_a'), 'speak'], statements: [] }],
+  );
+  const result = decompileProject(project, []);
+
+  const recompiled = compileProject(result.source, { path: 'main.tess' });
+  assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
+  assert.deepEqual(recompiled.project.functions[0].localVariables.map((v) => v.name), ['누적']);
+});

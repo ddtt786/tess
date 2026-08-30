@@ -1034,7 +1034,9 @@ function compileColor(node, ctx) {
   if (node.type === "Color") return node.value;
   if (node.type === "Transparent") return "transparent";
   if (node.type === "String") return node.value;
-  return ctx.error(node, "색은 #ff0000 처럼 색상 리터럴로 적어야 합니다.");
+  // Entry's colour slots take a value block as well as a picked colour, so any
+  // expression that yields a colour string belongs here.
+  return compileValue(node, ctx);
 }
 
 /**

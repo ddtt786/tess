@@ -1006,3 +1006,11 @@ end`;
   assert.equal(compare.params[1].type, 'boolean_basic_operator');
   assert.equal(literal.params[1].type, 'True');
 });
+
+test('색 자리에는 계산되는 값도 넣을 수 있다', () => {
+  const { thread } = compileScript('var c = "#ff0000"\ndraw_color = c\nfont_color = join("#", "00ff00")', { kind: 'text' });
+  const drawColor = thread.find((block) => block.type === 'set_color');
+  const fontColor = thread.find((block) => block.type === 'text_change_font_color');
+  assert.equal(drawColor.params[0].type, 'get_variable');
+  assert.equal(fontColor.params[0].type, 'combine_something');
+});

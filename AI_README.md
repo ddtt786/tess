@@ -761,6 +761,23 @@ end
 `function 스폰(a, 체력)` 으로 되돌립니다 — 다시 컴파일하면 원래 사슬로 돌아갑니다
 (SPEC-ADDENDUM.md 4.6). 자동 이름은 `a`, `b`, … `z`, `a1`, `a2` … 순입니다.
 
+**함수의 지역 변수**도 이름을 되찾습니다. 엔트리는 함수 지역 변수를 함수 항목의
+`localVariables`(`{name, value, id}`) 에 따로 담아 두고, 함수 몸통에서는
+`get_func_variable`/`set_func_variable` 의 `함수id_해시` 로만 가리킵니다. 되돌리기는 이
+표를 읽어 id → 이름 대응을 만들고, 함수 몸통 맨 위에 `var 이름 = 초기값` 을 적습니다 —
+Tess 컴파일러가 함수 안의 `var` 를 그대로 엔트리 지역 변수로 되돌리므로(compiler/index.js
+`collectFunctionLocals`) 다시 컴파일해도 같은 표가 나옵니다. 이름은 함수 안의 이름 찾기
+순서(매개변수 → 지역 변수 → 전역)에 맞춰 매개변수·전역과 겹치지 않게 붙입니다. 이 표를
+못 읽으면 몸통이 `_missing_local_...` 자리표시자로 남아 다시 컴파일할 수 없습니다.
+
+`skip`·`stop`·`show` 처럼 **혼자서 문장이 되는 낱말**은 파서가 대입보다 먼저 문장으로
+읽어 버려서(`parser.js` 의 `STANDALONE_LEADERS`) 변수 이름이 될 수 없습니다. 되돌리기는
+이런 이름과 예약어(`RESERVED`)를 만나면 뒤에 `_` 를 붙입니다(`skip` → `skip_`).
+
+**색 자리**(`draw_color`/`fill_color`/`font_color`/`bg_color`)는 엔트리에서 색을 고르는
+칸이지만 값 블록을 끼워 넣을 수도 있고, 실제 작품이 그렇게 씁니다. 그래서 컴파일러는
+색상 리터럴·`transparent`·문자열뿐 아니라 **계산되는 값**도 받습니다.
+
 **엔트리 기본 오브젝트**(걷는 엔트리봇 등)의 모양·소리는 작품 파일 안에 안 들어 있습니다 —
 `project.json` 이 엔트리 실행기가 자기 번들에 들고 다니는 파일을
 `./bower_components/entry-js/images/media/entrybot1.svg` 처럼 가리킬 뿐입니다. 이 경로를

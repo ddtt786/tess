@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readTar } from './tar.js';
 import { findLocalRuntime } from '../player/server.js';
-import { safeIdentifier, tessString, tessNumber } from './ident.js';
+import { safeIdentifier, tessString, tessNumber, tessLiteral } from './ident.js';
 import { autoParamName } from '../function-params.js';
 import { blocksToLines, indent, functionDeclarationLines, colorExpr } from './stmt.js';
 import { KEY_CODES } from '../compiler/keycodes.js';
@@ -328,7 +328,19 @@ function buildContext(project, entries, options = {}) {
       if (field.blockType) ctx.funcParamsByBlockType.set(field.blockType, name);
     });
 
-    ctx.functionsById.set(fn.id, { name: identifier, params, displayLabel: label });
+    // Function locals are referenced by id in the body. Their names must clash
+    // with neither the parameters nor the globals: inside a function Tess
+    // resolves a name as parameter -> function local -> global.
+    const localUsed = new Set(paramNames);
+    for (const info of ctx.globalVars) localUsed.add(info.identifier);
+    const locals = [];
+    for (const local of fn.localVariables ?? []) {
+      const name = safeIdentifier(local.name, localUsed, 'local');
+      ctx.funcLocalsById.set(local.id, name);
+      locals.push({ name, value: local.value });
+    }
+
+    ctx.functionsById.set(fn.id, { name: identifier, params, locals, displayLabel: label });
   }
 
   // 함수는 전역이라 어느 오브젝트가 부를지 모르므로, 함수 안의 모양·소리 id 는 이름으로
@@ -410,22 +422,10 @@ function buildContext(project, entries, options = {}) {
 function declarationLine(info, indentLevel = 0) {
   const pad = '  '.repeat(indentLevel);
   if (info.isList) {
-    const items = (info.source.array ?? []).map((item) => literalOf(item.data));
+    const items = (info.source.array ?? []).map((item) => tessLiteral(item.data));
     return [`${pad}list ${info.identifier} = [${items.join(', ')}]`];
   }
-  return [`${pad}var ${info.identifier} = ${literalOf(info.source.value)}`];
-}
-
-function literalOf(value) {
-  if (typeof value === 'number') return tessNumber(value);
-  if (typeof value === 'boolean') return value ? 'true' : 'false';
-  const text = String(value ?? '');
-  // 엔트리에서 참·거짓을 값으로 쓰면 "TRUE"/"FALSE" 가 된다(compiler/expression.js 참고).
-  // 예전 작품에는 소문자로 적혀 있기도 하므로 둘 다 받아들인다.
-  if (text === 'TRUE' || text === 'true') return 'true';
-  if (text === 'FALSE' || text === 'false') return 'false';
-  if (/^-?\d+(\.\d+)?$/.test(text)) return text;
-  return tessString(text);
+  return [`${pad}var ${info.identifier} = ${tessLiteral(info.source.value)}`];
 }
 
 // ---------------------------------------------------------------------------

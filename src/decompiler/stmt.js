@@ -12,6 +12,7 @@ import {
   tessNumber,
   ownsResource,
   isExactNumber,
+  tessLiteral,
 } from "./ident.js";
 
 const REVERSE_STOP_TARGET = {
@@ -513,7 +514,17 @@ export function functionDeclarationLines(fn, createBlock, ctx, ownerId = null) {
   ctx.inFunction = previousInFunction;
   ctx.functionOwnerId = previousOwner;
 
-  const lines = [`function ${fn.name}(${fn.params.join(", ")}):`, ...body];
+  // Entry keeps function locals in a table on the function and initialises them
+  // at each call; `var` at the top of the body is the same thing in Tess.
+  const locals = (fn.locals ?? []).map(
+    (local) => `var ${local.name} = ${tessLiteral(local.value)}`,
+  );
+
+  const lines = [
+    `function ${fn.name}(${fn.params.join(", ")}):`,
+    ...indent(locals),
+    ...body,
+  ];
   if (isValue) lines.push(...indent([`return ${returnExpr}`]));
   lines.push("end");
   return lines;

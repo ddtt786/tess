@@ -45,6 +45,16 @@ export const RESERVED = new Set([
   'and', 'or', 'not', 'true', 'false', 'end', 'then', 'do', 'in', 'wait',
 ]);
 
+// Statements that are complete on their own. The parser commits to these at the
+// keyword, so they cannot stand on the left of an assignment either.
+export const STANDALONE_STATEMENTS = new Set([
+  'break', 'skip', 'restart', 'stop', 'bounce', 'stamp', 'show', 'hide',
+  'clone', 'kill',
+]);
+
+/** Words that cannot name a variable, because they read as a statement first. */
+export const UNUSABLE_AS_NAME = new Set([...RESERVED, ...STANDALONE_STATEMENTS]);
+
 /** Category matched by every token that may stand where a name is expected. */
 export const IdentLike = createToken({ name: 'IdentLike', pattern: Lexer.NA, label: '이름' });
 

@@ -8,6 +8,8 @@
 //  찍힐 원래 이름(name 속성으로 되돌려 놓는다).
 // ============================================================================
 
+import { UNUSABLE_AS_NAME } from '../parser/tokens.js';
+
 /** Ohm 의 `letter` 는 유니코드 Letter 카테고리 전부(한글 포함)를 허용한다 */
 const IDENT_START = /[\p{L}_]/u;
 const IDENT_PART = /[\p{L}\p{N}_]/u;
@@ -26,6 +28,9 @@ export function safeIdentifier(raw, usedNames, fallback = 'item') {
   cleaned = cleaned.replace(/_+/g, '_').replace(/^_+|_+$/g, '');
   if (!cleaned || !IDENT_START.test(cleaned[0])) cleaned = `${fallback}${cleaned ? `_${cleaned}` : ''}`;
   cleaned = cleaned.slice(0, 40) || fallback;
+  // A few keywords read as a statement before they read as a name, so `skip = 0`
+  // never parses as an assignment. Trailing '_' keeps such a name usable.
+  if (UNUSABLE_AS_NAME.has(cleaned)) cleaned = `${cleaned}_`;
 
   let candidate = cleaned;
   let n = 2;
@@ -73,4 +78,20 @@ export function isExactNumber(literal) {
  */
 export function ownsResource(ctx, info) {
   return Boolean(ctx.functionOwnerId) && info?.owner?.id === ctx.functionOwnerId;
+}
+
+/**
+ * Entry stores every field value as a string; turn one back into the Tess
+ * literal that compiles to the same value.
+ */
+export function tessLiteral(value) {
+  if (typeof value === 'number') return tessNumber(value);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  const text = String(value ?? '');
+  // 엔트리에서 참·거짓을 값으로 쓰면 "TRUE"/"FALSE" 가 된다(compiler/expression.js 참고).
+  // 예전 작품에는 소문자로 적혀 있기도 하므로 둘 다 받아들인다.
+  if (text === 'TRUE' || text === 'true') return 'true';
+  if (text === 'FALSE' || text === 'false') return 'false';
+  if (/^-?\d+(\.\d+)?$/.test(text)) return text;
+  return tessString(text);
 }

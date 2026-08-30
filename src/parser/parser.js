@@ -17,7 +17,7 @@ import {
   ALL_TOKENS, ASSIGN_OPERATORS, Assign, ColorLiteral, Colon, Comma, Eq, Ge, Gt,
   IdentLike, Identifier, IntDiv, LParen, LSquare, Le, Lt, Minus, Ne,
   NumberLiteral, Percent, Plus, Pow, Question, RParen, RSquare, Slash, Star,
-  StringLiteral, kw,
+  STANDALONE_STATEMENTS, StringLiteral, kw,
 } from './tokens.js';
 
 const idx = (tokenType) => tokenType.tokenTypeIdx;
@@ -49,10 +49,7 @@ const STATEMENT_LEADERS = idxSet(
 // Statements that are complete on their own. The grammar commits to these as
 // soon as it sees the keyword, so `stop = 5` is an error rather than an
 // assignment to a variable named `stop`.
-const STANDALONE_LEADERS = idxSet(
-  kw.break, kw.skip, kw.restart, kw.stop, kw.bounce, kw.stamp, kw.show,
-  kw.hide, kw.clone, kw.kill,
-);
+const STANDALONE_LEADERS = idxSet(...[...STANDALONE_STATEMENTS].map((word) => kw[word]));
 
 /** First set of Expr — what may legally begin an expression. */
 const EXPR_STARTERS = idxSet(
