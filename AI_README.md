@@ -559,9 +559,27 @@ playentry.org 에서 여는 방법을 안내합니다.
 `entity.setText` 입니다. 변수·리스트도 줄마다 **무대에 보이기/숨기기** 토글이
 있습니다(`variable.setVisible`).
 
-**장면 바로가기.** 장면 이름 옆의 단추로 그 장면으로 바로 넘어갑니다
-(`Entry.scene.selectScene`) — 뒤쪽 장면을 고쳐 보려고 앞 장면을 처음부터 다시 깨는 수고를
-덜어 줍니다.
+**장면 바로가기.** 장면 이름 옆의 단추로 그 장면으로 넘어가서 **그 장면을 실행합니다** —
+뒤쪽 장면을 고쳐 보려고 앞 장면을 처음부터 다시 깨는 수고를 덜어 줍니다. 엔트리의 "장면
+시작하기" 블록과 같은 길입니다.
+
+```js
+Entry.scene.selectScene(scene);
+Entry.engine.fireEvent('when_scene_start');
+```
+
+`selectScene` 은 무대에 그리는 장면만 갈아 끼울 뿐이라, 이것만으로는 그 장면의 **"장면이
+시작되었을 때"** 가 돌지 않습니다 — 장면은 넘어갔는데 아무것도 안 움직이는, 멈춘 화면처럼
+보입니다. 엔트리 자신도 `start_scene`·`start_neighbor_scene` 블록에서 `selectScene` 뒤에
+`fireEvent('when_scene_start')` 를 이어서 부릅니다(entryjs `block_scene.js`).
+
+**이벤트는 실행 중일 때만 갑니다.** `Entry.engine.fireEvent` 는 엔진 상태가 `run` 이
+아니면 그냥 돌아가므로(entryjs `class/engine.js`), 멈춰 있으면 `toggleRun`, 일시정지면
+`togglePause` 로 먼저 실행을 켠 다음에 이벤트를 보냅니다. 장면을 먼저 고르고 실행을 켜는
+순서라, 켜질 때 도는 "시작하기 버튼을 클릭했을 때" 도 넘어간 그 장면에서 돕니다.
+
+이미 그 장면에 있을 때 눌러도 이벤트를 다시 보냅니다 — 그 장면을 처음부터 다시 돌리는
+길입니다(`selectScene` 은 같은 장면이면 `resetSceneDuringRun` 만 하고 돌아갑니다).
 
 **Ctrl+Shift + 실행 화면 클릭** 이면 그 자리의 오브젝트가 오브젝트 탭에서 열립니다. 어느
 오브젝트를 눌렀는지는 엔트리가 이미 알고 있습니다 — 오브젝트마다 붙은 마우스 핸들러가

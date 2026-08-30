@@ -537,16 +537,28 @@ const showObject = (object) => {
 };
 
 /**
- * 그 장면으로 바로 넘어간다 — 엔트리의 "장면 시작하기" 와 같은 길이다.
- * 뒤쪽 장면을 고쳐 보려고 앞 장면을 처음부터 다시 깨는 수고를 덜어 준다.
+ * Jumps to a scene and runs it, the same way entry's "start scene" block does
+ * (`Entry.scene.selectScene` + `Entry.engine.fireEvent('when_scene_start')`).
+ *
+ * selectScene only swaps what the stage draws: without the event the scene's
+ * "when scene starts" scripts never run, so the scene opens frozen. The engine
+ * drops every event unless it is running, so it is started or resumed first.
  */
 const goToScene = (sceneId) => {
   try {
     const scene = Entry.scene.getSceneById(sceneId);
+    const runner = engine();
     if (scene) Entry.scene.selectScene(scene);
+    if (scene && runner) {
+      // Events are dropped while stopped or paused, so run the engine first
+      if (engineState() === "pause") runner.togglePause();
+      else if (engineState() !== "run") runner.toggleRun();
+      runner.fireEvent("when_scene_start");
+    }
   } catch (error) {
     failed("장면 바로가기", error);
   }
+  state.runState = engineState();
   touch();
 };
 
@@ -1179,7 +1191,7 @@ function ObjectsTab() {
                       type: "button",
                       class: "debug-mini-btn debug-scene-go",
                       "data-scene-id": scene.id,
-                      title: "이 장면으로 바로 넘어가기",
+                      title: "이 장면으로 넘어가서 바로 실행하기",
                       onClick: () => goToScene(scene.id),
                     },
                     "바로가기",
