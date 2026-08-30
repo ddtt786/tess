@@ -138,6 +138,7 @@ function compileIdentifier(node, ctx) {
 
   const found = ctx.lookupVariable(name);
   if (found) {
+    if (found.kind === 'ambiguousLocal') return ambiguousLocalError(node, found, ctx);
     if (found.kind === 'param') {
       const type = ctx.funcScope.params.get(name);
       // 판단 칸 매개변수 블록은 엔트리가 만든 원본에서도 빈 자리를 하나 갖는다
@@ -168,6 +169,18 @@ function compileIdentifier(node, ctx) {
     return ctx.error(node, `'${name}' 은(는) 이 자리에서 값으로 쓸 수 없습니다.`);
   }
   return ctx.error(node, `선언되지 않은 이름 '${name}' 입니다.${didYouMean(name, ctx.knownNames())}`);
+}
+
+/**
+ * Reports a local variable name that several objects declare, used from a place
+ * that belongs to none of them.
+ */
+export function ambiguousLocalError(node, found, ctx) {
+  return ctx.error(
+    node,
+    `'${found.name}' 은(는) ${found.owners.join(', ')} 가 저마다 가진 지역 변수라 어느 것인지 알 수 없습니다. `
+    + '이 함수를 그 오브젝트 안에 선언하거나, 값을 매개변수로 전달하세요.',
+  );
 }
 
 // ---------------------------------------------------------------------------

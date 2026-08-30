@@ -5,6 +5,7 @@
 //  (예: `move 20 20` 은 엔트리에 대응 블록이 없어서 move_x + move_y 로 펼친다)
 // ============================================================================
 import {
+  ambiguousLocalError,
   compileAnyValue,
   compileBoolean,
   compileCallArguments,
@@ -555,6 +556,9 @@ function compileVisibility(node, ctx) {
   }
 
   const found = ctx.lookupVariable(name);
+  if (found?.kind === "ambiguousLocal") {
+    return [ambiguousLocalError(node, found, ctx)].filter(Boolean);
+  }
   if (found?.kind !== "variable") {
     return [
       ctx.error(
@@ -689,6 +693,10 @@ function compileAssign(node, ctx) {
 
 function compileVariableAssign(node, found, ctx) {
   const { operator } = node;
+
+  if (found.kind === "ambiguousLocal") {
+    return [ambiguousLocalError(node, found, ctx)].filter(Boolean);
+  }
 
   if (found.kind === "param") {
     return [

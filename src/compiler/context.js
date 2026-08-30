@@ -150,7 +150,7 @@ export class Context {
   }
 
   // --- 심볼 조회 -----------------------------------------------------------
-  /** 이름으로 변수/리스트 찾기: 함수 지역 -> 오브젝트 로컬 -> 전역 */
+  /** 이름으로 변수/리스트 찾기: 매개변수 -> 함수 지역 -> 오브젝트 로컬 -> 전역 */
   lookupVariable(name) {
     if (this.funcScope) {
       if (this.funcScope.params.has(name)) return { kind: 'param', name };
@@ -158,13 +158,33 @@ export class Context {
       if (this.funcScope.localVars.has(name)) {
         return { kind: 'funcLocal', name, id: this.funcScope.localVars.get(name) };
       }
-      const global = this.globals.get(name);
-      return global ? { kind: 'variable', entry: global } : null;
+      // A function declared inside an object sees that object's locals.
+      const owned = this.locals.get(name);
+      if (owned) return { kind: 'variable', entry: owned };
+      const scoped = this.globals.get(name);
+      if (scoped) return { kind: 'variable', entry: scoped };
+      // A local named from a global function: an entry block carries the
+      // variable id, so it always means one object's variable. Source has only
+      // the name, so it means the same thing while exactly one object owns it.
+      return this.lookupObjectLocal(name);
     }
     const local = this.locals.get(name);
     if (local) return { kind: 'variable', entry: local };
     const global = this.globals.get(name);
     return global ? { kind: 'variable', entry: global } : null;
+  }
+
+  /**
+   * Finds an object local from a place that belongs to no object. Several
+   * objects owning the name leaves nothing to pick between them.
+   */
+  lookupObjectLocal(name) {
+    const owners = this.objects.filter((object) => object.locals?.has(name));
+    if (owners.length === 0) return null;
+    if (owners.length > 1) {
+      return { kind: 'ambiguousLocal', name, owners: owners.map((object) => object.name) };
+    }
+    return { kind: 'variable', entry: owners[0].locals.get(name), owner: owners[0] };
   }
 
   /** 오브젝트 이름 -> 엔트리 오브젝트 id */
@@ -177,6 +197,8 @@ export class Context {
     const names = [...this.globals.keys(), ...this.locals.keys()];
     if (this.funcScope) {
       names.push(...this.funcScope.params, ...this.funcScope.localVars.keys());
+      // A global function can name an object's local, so those are candidates too.
+      for (const object of this.objects) names.push(...(object.locals?.keys() ?? []));
     }
     return names;
   }

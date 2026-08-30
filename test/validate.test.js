@@ -76,16 +76,45 @@ end`);
   assert.deepEqual(result.errors, []);
 });
 
-test('14.2 함수는 오브젝트 로컬 변수를 참조할 수 없다', () => {
-  const errors = messages(`object "hero":
+test('오브젝트 안에 선언한 함수는 그 오브젝트의 로컬 변수를 그대로 쓴다', () => {
+  const result = parse(`object "hero":
   var local_power = 50
 
   function get_damage(base_dmg):
     return base_dmg * local_power
   end
 end`);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings, []);
+});
+
+test('전역 함수가 오브젝트 로컬 변수를 쓰면 그 오브젝트 안으로 옮기라고 알린다', () => {
+  const result = parse(`object "hero":
+  var local_power = 50
+end
+
+function get_damage(base_dmg):
+  return base_dmg * local_power
+end`);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0].message, /'local_power' 은\(는\) hero 의 지역 변수입니다/);
+});
+
+test('여러 오브젝트가 같은 이름의 로컬 변수를 가지면 어느 것인지 알 수 없다', () => {
+  const errors = messages(`object "hero":
+  var power = 50
+end
+
+object "villain":
+  var power = 70
+end
+
+function get_damage():
+  return power
+end`);
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /오브젝트의 로컬 변수 'local_power'/);
+  assert.match(errors[0], /hero, villain 가 저마다 가진 지역 변수/);
 });
 
 test('14.2 매개변수로 넘기면 문제없다 (spec 예제)', () => {

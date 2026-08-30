@@ -1014,3 +1014,49 @@ test('색 자리에는 계산되는 값도 넣을 수 있다', () => {
   assert.equal(drawColor.params[0].type, 'get_variable');
   assert.equal(fontColor.params[0].type, 'combine_something');
 });
+
+test('전역 함수가 쓴 오브젝트 로컬 변수는 그 오브젝트의 변수를 가리킨다', () => {
+  const source = `scene "s":
+  object "hero":
+    costume c "${path.join(root, 'assets', 'a.png')}"
+    when start do
+      회복(10)
+    end
+  end
+end
+
+function 회복(양):
+  체력 += 양
+end
+
+object "hero2":
+  costume c2 "${path.join(root, 'assets', 'a.png')}"
+  var 체력 = 50
+end`;
+  const result = compileProject(source, { path: path.join(root, 'test.tess') });
+  assert.deepEqual(result.errors, [], result.errors.map((e) => e.message).join('\n'));
+
+  const 체력 = result.project.variables.find((v) => v.name === '체력');
+  const hero2 = result.project.objects.find((o) => o.name === 'hero2');
+  assert.equal(체력.object, hero2.id);
+
+  const body = JSON.parse(result.project.functions[0].content)[0][0].statements[0];
+  assert.equal(body[0].type, 'change_variable');
+  assert.equal(body[0].params[0], 체력.id);
+});
+
+test('같은 이름의 로컬 변수를 여러 오브젝트가 가지면 전역 함수에서 못 쓴다', () => {
+  const source = `object "a":
+  var 힘 = 1
+end
+
+object "b":
+  var 힘 = 2
+end
+
+function 세기():
+  힘 += 1
+end`;
+  const result = compileProject(source, { path: path.join(root, 'test.tess') });
+  assert.ok(result.errors.some((e) => /a, b 가 저마다 가진 지역 변수/.test(e.message)));
+});

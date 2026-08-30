@@ -87,6 +87,9 @@ export function validate(program, source = '', sources = null) {
   // --- 사전 수집 -----------------------------------------------------------
   const globals = declaredNames(program.body);
   const knownFunctions = new Set(collectFunctionNames(program.body));
+  // name -> objects that declare it as a local. A global function may name one,
+  // and then it means that object's variable (compiler/context.js).
+  const localOwners = collectLocalOwners(program.body, globals);
   // `use` 로 다른 파일을 불러오는 프로그램은 이 파일만 봐서는 알 수 없는 이름이
   // 생기므로, 이름 기반 경고는 끈다.
   const hasUse = containsUse(program);
@@ -267,12 +270,26 @@ export function validate(program, source = '', sources = null) {
     if (STATE_VALUES.has(name) || OPTION_KEYWORDS.has(name)) return;
     if (OBJECT_PROPERTIES.has(name) || TEXT_ONLY_PROPERTIES.has(name)) return;
 
-    // spec 14.2: object 로컬 변수는 함수 안에서 참조할 수 없다.
-    if (ctx.inFunction && ctx.objectLocals.has(name)) {
-      error(
-        identifier,
-        `함수 안에서는 오브젝트의 로컬 변수 '${name}' 을(를) 참조할 수 없습니다. 매개변수로 전달하세요.`,
-      );
+    // A function declared inside an object reads that object's locals directly.
+    if (ctx.inFunction && ctx.objectLocals.has(name)) return;
+
+    // A global function may still name one — an entry block holds the variable
+    // id, so it means that one object's variable. Keeping the function inside
+    // that object says so in the source, and keeps the name unambiguous.
+    if (ctx.inFunction && localOwners.has(name)) {
+      const owners = localOwners.get(name);
+      if (owners.length === 1) {
+        warn(
+          identifier,
+          `'${name}' 은(는) ${owners[0]} 의 지역 변수입니다. 이 함수를 ${owners[0]} 안에 선언하는 편이 좋습니다.`,
+        );
+      } else {
+        error(
+          identifier,
+          `'${name}' 은(는) ${owners.join(', ')} 가 저마다 가진 지역 변수라 어느 것인지 알 수 없습니다. `
+          + '이 함수를 그 오브젝트 안에 선언하거나, 값을 매개변수로 전달하세요.',
+        );
+      }
       return;
     }
 
@@ -304,6 +321,39 @@ function declaredNames(body) {
   for (const member of body) {
     if (member.type === 'VarDecl' || member.type === 'ListDecl') names.add(member.name);
   }
+  return names;
+}
+
+/**
+ * name -> names of the objects declaring it as a local. Mirrors what the
+ * compiler registers: object-level declarations plus the first one inside an
+ * event handler, minus anything the program already declares globally.
+ */
+function collectLocalOwners(body, globals, owners = new Map()) {
+  for (const item of body) {
+    if (item.type === 'Scene') collectLocalOwners(item.body, globals, owners);
+    if (item.type !== 'Object') continue;
+    for (const name of objectLocalNames(item)) {
+      if (globals.has(name)) continue;
+      if (!owners.has(name)) owners.set(name, []);
+      if (!owners.get(name).includes(item.name)) owners.get(name).push(item.name);
+    }
+  }
+  return owners;
+}
+
+/** Every name an object declares, in its body or inside its event handlers. */
+function objectLocalNames(object) {
+  const names = declaredNames(object.body);
+  const walk = (statements) => {
+    for (const statement of statements) {
+      if (statement.type === 'VarDecl' || statement.type === 'ListDecl') names.add(statement.name);
+      for (const key of ['consequent', 'alternate', 'body']) {
+        if (Array.isArray(statement[key])) walk(statement[key]);
+      }
+    }
+  };
+  for (const member of object.body) if (member.type === 'Event') walk(member.body);
   return names;
 }
 
