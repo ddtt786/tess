@@ -104,7 +104,7 @@ export function decompileProject(project, entries, options = {}) {
     if (ctx.functionOwnerById.has(fn.id)) continue;
     try {
       const content = JSON.parse(fn.content ?? '[]');
-      const createBlock = content?.[0]?.[0];
+      const createBlock = functionCreateBlock(content);
       if (!createBlock) continue;
       lines.push(...functionDeclarationLines(entry, createBlock, ctx));
       lines.push('');
@@ -160,6 +160,21 @@ function soleResourceOwner(content, ctx) {
     if (owners.size > 1) return null;
   }
   return owners.size === 1 ? [...owners][0] : null;
+}
+
+/**
+ * The function_create block inside a function's content, or null.
+ *
+ * A function's workspace holds one thread per stack, and the definition is not
+ * always the first: a comment block or a stack the author left detached comes
+ * before it whenever it sits higher up in the workspace.
+ */
+function functionCreateBlock(content) {
+  for (const thread of content ?? []) {
+    const block = Array.isArray(thread) ? thread[0] : null;
+    if (block?.type === 'function_create' || block?.type === 'function_create_value') return block;
+  }
+  return null;
 }
 
 /**
@@ -306,7 +321,7 @@ function buildContext(project, entries, options = {}) {
   for (const fn of project.functions ?? []) {
     let fields = [];
     try {
-      fields = readFunctionFields(JSON.parse(fn.content ?? '[]')?.[0]?.[0]);
+      fields = readFunctionFields(functionCreateBlock(JSON.parse(fn.content ?? '[]')));
     } catch { /* 머리를 못 읽어도 id 로 대체해서 계속 진행한다 */ }
 
     // 맨 앞 라벨만 함수 이름이 된다 (src/function-params.js 참고)
@@ -358,7 +373,7 @@ function buildContext(project, entries, options = {}) {
 
     const ownerId = soleResourceOwner(content, ctx);
     const entry = ctx.functionsById.get(fn.id);
-    const createBlock = content?.[0]?.[0];
+    const createBlock = functionCreateBlock(content);
     if (ownerId && entry && createBlock) {
       ctx.functionOwnerById.set(fn.id, ownerId);
       if (!ctx.functionsByOwner.has(ownerId)) ctx.functionsByOwner.set(ownerId, []);

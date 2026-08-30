@@ -1316,3 +1316,20 @@ test('되돌린 지역 변수는 다시 컴파일해도 함수의 지역 변수�
   assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
   assert.deepEqual(recompiled.project.functions[0].localVariables.map((v) => v.name), ['누적']);
 });
+
+test('함수 정의 앞에 주석 블록이 놓여 있어도 정의를 찾아낸다', () => {
+  // The workspace keeps one thread per stack, ordered by position; a comment
+  // parked above the definition comes first.
+  const project = funcLocalProject(
+    [{ name: '누적', value: 0, id: 'fn1_a' }],
+    [setLocal('fn1_a', 3)],
+  );
+  const content = JSON.parse(project.functions[0].content);
+  project.functions[0].content = JSON.stringify([
+    [{ id: 'c1', type: 'comment', value: '메모', params: [], statements: [] }],
+    content[0],
+  ]);
+  const result = decompileProject(project, []);
+
+  assert.match(result.source, /^function 계산\(a\):\n {2}var 누적 = 0\n {2}누적 = 3\nend$/m);
+});
