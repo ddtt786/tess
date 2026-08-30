@@ -118,7 +118,7 @@ async function mountDebugPanel(t) {
   // 브라우저가 실제로 받는 preact 파일을 그대로 쓴다. 패키지 기본 진입점을 쓰면
   // 서버가 내보내는 파일과 달라져서, 그 파일만 깨져 있어도 테스트가 통과해 버린다.
   const source = fs.readFileSync(path.join(root, 'src/player/debug-ui.js'), 'utf-8');
-  const preactFile = source.match(/from '\/preact\/([^']+)'/)[1];
+  const preactFile = source.match(/from ["']\/preact\/([^"']+)["']/)[1];
   const preact = await import(path.join(preactDist(), preactFile));
   window.h = preact.h;
   window.render = preact.render;
@@ -615,22 +615,68 @@ test('글상자는 글 내용을 고칠 수 있고, 모양 줄은 내지 않는�
   assert.equal(ui.entity.text, '점수: 99');
 });
 
-test('장면 바로가기로 그 장면으로 넘어간다', async (t) => {
-  const ui = await mountDebugPanel(t);
-  await ui.settle();
+/** Mounts a two scene project and returns the per-scene shortcut buttons. */
+async function openScenes(ui) {
   ui.window.tessRenderProjectDebug({
     ...dataProject,
     scenes: [{ id: 's1', name: '장면 1' }, { id: 's2', name: '장면 2' }],
   });
   ui.tab('objects');
   await ui.settle();
+  return ui.byId('scene-tree').querySelectorAll('.debug-scene-go');
+}
 
-  const buttons = ui.byId('scene-tree').querySelectorAll('.debug-scene-go');
+const firedTypes = (ui) => ui.engine.fired.map(([type]) => type);
+
+test('장면 바로가기로 그 장면으로 넘어가고 장면 시작 이벤트가 돈다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  const buttons = await openScenes(ui);
   assert.equal(buttons.length, 2);
   assert.equal(ui.scene.selected.id, 's1');
 
   buttons[1].dispatchEvent(new ui.window.MouseEvent('click'));
   assert.equal(ui.scene.selected.id, 's2');
+  // Swapping the scene alone never runs its "when scene starts" scripts
+  assert.deepEqual(firedTypes(ui), ['when_scene_start']);
+});
+
+test('장면 바로가기는 멈춰 있거나 일시정지여도 그 장면을 돌린다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  let buttons = await openScenes(ui);
+
+  // Entry drops the event unless the engine runs, so the jump starts it
+  assert.equal(ui.engine.state, 'stop');
+  buttons[1].dispatchEvent(new ui.window.MouseEvent('click'));
+  assert.equal(ui.engine.state, 'run');
+  assert.deepEqual(firedTypes(ui), ['when_scene_start']);
+
+  ui.tab('run');
+  await ui.settle();
+  ui.click('pause-btn');
+  assert.equal(ui.engine.state, 'pause');
+  buttons = await openScenes(ui);
+
+  buttons[0].dispatchEvent(new ui.window.MouseEvent('click'));
+  assert.equal(ui.engine.state, 'run'); // resumed, not restarted
+  assert.equal(ui.scene.selected.id, 's1');
+  assert.deepEqual(firedTypes(ui), ['when_scene_start', 'when_scene_start']);
+
+  // Firing again on the scene already selected restarts that scene
+  buttons[0].dispatchEvent(new ui.window.MouseEvent('click'));
+  assert.equal(ui.engine.fired.length, 3);
+});
+
+test('장면 바로가기 뒤에는 실행 탭이 실행 중으로 보인다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  const buttons = await openScenes(ui);
+
+  buttons[1].dispatchEvent(new ui.window.MouseEvent('click'));
+  ui.tab('run');
+  await ui.settle();
+  assert.match(ui.window.document.querySelector('.debug-run-state').textContent, /실행 중/);
 });
 
 test('항목 추가 단추는 목록 맨 위에 있다', async (t) => {
