@@ -19,10 +19,14 @@
 //  화면만 뜨게 된다 — 이게 이 파일에서 고친 로딩 오류의 원인이었다.
 // ============================================================================
 
+// createjs must stay on the 2015.11.26 bundle (EaselJS 0.8.2). In EaselJS 1.0.0
+// cache() no longer sets _cacheScale/_cacheOffsetX/_cacheOffsetY, which
+// DisplayObject.getBounds() still reads, so every cached object reports 0x0
+// bounds and collision blocks always return false. See AI_README.md.
 /** entry.min.js 가 실행되기 전에 전역으로 준비돼 있어야 하는 서드파티 라이브러리 */
 export const THIRD_PARTY_SCRIPTS = [
   'https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js',
-  'https://cdn.jsdelivr.net/npm/createjs@1.0.1/builds/1.0.0/createjs.min.js',
+  'https://cdn.jsdelivr.net/npm/createjs@1.0.1/builds/createjs-2015.11.26.min.js',
   'https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js',
   'https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.13.2/jquery-ui.min.js',
   'https://cdn.jsdelivr.net/npm/velocity-animate@1.5.2/velocity.min.js',

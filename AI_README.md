@@ -429,6 +429,38 @@ all_blocks.tess -> http://127.0.0.1:41234/
 설치하면 그 파일을 씁니다. 둘 다 안 되면 페이지가 그 사실과 함께 `.ent` 를 받아
 playentry.org 에서 여는 방법을 안내합니다.
 
+#### createjs 판본 고정 — 2015.11.26 (EaselJS 0.8.2)
+
+`THIRD_PARTY_SCRIPTS` 의 createjs 는 반드시
+`createjs@1.0.1/builds/createjs-2015.11.26.min.js` 여야 한다. 같은 npm 패키지의
+기본 파일인 `builds/1.0.0/createjs.min.js`(EaselJS 1.0.0)를 쓰면 2D 렌더러에서
+**`~에 닿았는가?`(`reach_something`) 가 언제나 거짓**이 된다.
+
+경로는 이렇다.
+
+1. EaselJS 1.0.0 은 `DisplayObject.cache()` 를 `BitmapCache` 로 옮기면서
+   `_cacheScale` · `_cacheOffsetX` · `_cacheOffsetY` 를 더 이상 채우지 않는다.
+   그런데 `DisplayObject.getBounds()` 는 캐시가 있으면 여전히 그 세 값을 읽어
+   `setValues(undefined, undefined, w/undefined, h/undefined)` 를 만든다.
+   `Rectangle.setValues` 가 `NaN || 0` 을 거치므로 결과는 늘 `{0, 0, 0, 0}` 이다.
+   즉 **캐시된 오브젝트는 크기가 0×0 으로 보고된다.** 0.8.2 에는 `cache()` 안에
+   그 세 값을 넣는 코드가 있어서 이 문제가 없다.
+2. 엔트리는 효과(투명도 · 밝기 · 색깔 …)가 걸린 오브젝트를 createjs 렌더러에서
+   곧바로 캐시한다 (`EntityObject.applyFilter` → `cache()` →
+   `object.cache(0, 0, getWidth(), getHeight())`). 게임에서 페이드·투명 처리를
+   한 번이라도 거친 오브젝트는 전부 여기 걸린다.
+3. `reach_something` 의 픽셀 충돌은 `extern/util/ndgmr.Collision.js` 로 가는데,
+   그 첫 관문인 `_collisionDistancePrecheck` 가 `getTransformedBounds()` 를 쓴다.
+   폭·높이가 0 이면 `Math.abs(dx) < 0` 이 참이 될 수 없어 늘 "멀리 떨어져 있다" 로
+   판정하고 곧바로 `false` 를 돌려준다. 그 뒤의 실제 픽셀 비교는 아예 돌지 않는다.
+
+`build` 로 만든 `.ent` 를 playentry.org 에서 열면 멀쩡히 막히는 이유가 이것이다 —
+그쪽은 예전 판 createjs 로 돌고, 판본을 잘못 고른 것은 실행 페이지뿐이었다.
+`@types/createjs@0.0.29`(entryjs 의 devDependency)도 0.8.x 계열을 가리킨다.
+
+부스트 모드(`--boost`)는 PIXI 로 그리고 `window.ndgmr` 를 PIXI 전용 구현으로
+갈아 끼우므로 이 문제의 영향을 받지 않는다. 2D 로 돌 때만 나타난다.
+
 #### 디버그 패널 — preact
 
 `src/player/debug-ui.js` 한 파일이고, 서버가 `/debug-ui.js` 로, preact 를
