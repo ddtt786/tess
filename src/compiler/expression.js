@@ -2,9 +2,8 @@
 //  Tess 표현식 -> 엔트리 값(value) 블록
 //
 //  주의할 의미 차이
-//   - 리스트/문자열 인덱스: Tess 는 0부터, 엔트리는 1부터  -> +1 보정
-//   - index_of: 엔트리는 1부터(못 찾으면 0)               -> -1 보정
-//   - slice(s, a, b): Tess 는 [a, b), 엔트리 substring 은 1부터 양끝 포함
+//   - 리스트/문자열 인덱스, slice, index_of: Tess 도 엔트리처럼 1부터다.
+//     둘 다 1부터이므로 그대로 옮긴다 — 못 찾으면 0(index_of), 양끝 포함(slice).
 // ============================================================================
 import { KEY_CODES, keyCodeOf } from './keycodes.js';
 import { didYouMean, orHint } from './suggest.js';
@@ -165,6 +164,7 @@ function compileIdentifier(node, ctx) {
     return ctx.block('coordinate_object', [null, 'self', null, PROPERTY_COORDINATES[name]]);
   }
   if (name === 'sound_volume') return ctx.block('get_sound_volume', [null]);
+  if (name === 'sound_speed') return ctx.block('get_sound_speed', [null]);
   if (OPTION_KEYWORDS.has(name) || STATE_VALUES.has(name)) {
     return ctx.error(node, `'${name}' 은(는) 이 자리에서 값으로 쓸 수 없습니다.`);
   }
@@ -435,23 +435,9 @@ function compileUnary(node, ctx) {
 // ---------------------------------------------------------------------------
 //  인덱스 (리스트 · 문자열)
 // ---------------------------------------------------------------------------
-/**
- * Tess 인덱스(0부터) -> 엔트리 인덱스(1부터).
- *
- * 상수는 `foldIndex` 옵션을 켰을 때만 미리 계산해서 숫자 하나로 접는다. 기본은
- * 접지 않고 `[2] -> (2 + 1)` 처럼 더하기 블록을 그대로 둔다 — 소스에 적은 숫자가
- * 만들어진 블록에도 그대로 보여야 어디서 온 값인지 짚기 쉽기 때문이다.
- */
-export function shiftIndex(node, ctx, delta = 1) {
-  if (node.type === 'Number' && ctx.options?.foldIndex) return ctx.number(node.value + delta);
-  const value = compileValue(node, ctx);
-  if (!value) return null;
-  return ctx.block('calc_basic', [value, delta > 0 ? 'PLUS' : 'MINUS', ctx.number(Math.abs(delta))]);
-}
-
 function compileIndex(node, ctx) {
   const list = resolveList(node.target, ctx);
-  const index = shiftIndex(node.index, ctx);
+  const index = compileValue(node.index, ctx);
   if (!index) return null;
 
   if (list) return ctx.block('value_of_index_from_list', [null, list.id, null, index, null]);
@@ -483,7 +469,19 @@ function resolveSoundValue(node, ctx) {
   if (sound) return sound.id;
   // force id 로 고정해 둔 진짜 엔트리 id 면 그대로 흘려보낸다 (resolveSound 와 같은 이유)
   if (ctx.forcedResourceIds.has(node.value)) return node.value;
-  return ctx.error(node, `'${node.value}' 소리가 이 오브젝트에 없습니다.`
+  // 전역 함수는 기준 오브젝트가 없다 — 이 이름을 가진 오브젝트가 하나뿐이면 그대로 가리킨다.
+  if (!ctx.object) {
+    const found = ctx.lookupObjectResource('sounds', node.value);
+    if (found?.kind === 'found') return found.asset.id;
+    if (found?.kind === 'ambiguous') {
+      return ctx.error(
+        node,
+        `'${node.value}' 은(는) ${found.owners.join(', ')} 가 저마다 가진 소리라 어느 것인지 알 수 없습니다. `
+        + '이 함수를 그 오브젝트 안에 선언하거나, force id 로 고정하세요.',
+      );
+    }
+  }
+  return ctx.error(node, `'${node.value}' 소리가 ${ctx.object ? '이 오브젝트에' : '어느 오브젝트에도'} 없습니다.`
     + orHint(node.value, ctx.object?.sounds.keys() ?? [],
       `sound ${node.value} "파일명" 으로 먼저 등록하세요.`));
 }
@@ -631,10 +629,10 @@ function compileCall(node, ctx) {
     }
 
     case 'slice': {
-      // Tess: [start, end) 0부터 / 엔트리 substring: 1부터 양끝 포함
+      // 1부터, 양끝 포함 — 엔트리 substring 그대로다.
       if (!arity(3)) return null;
       const string = value(0);
-      const start = shiftIndex(args[1], ctx, 1);
+      const start = compileValue(args[1], ctx);
       const end = compileValue(args[2], ctx);
       return string && start && end && ctx.block('substring', [null, string, null, start, null, end, null]);
     }
@@ -654,16 +652,11 @@ function compileCall(node, ctx) {
     }
 
     case 'index_of': {
-      // 엔트리는 1부터, 못 찾으면 0 -> 1을 빼면 Tess 의 0부터/-1 과 맞는다
+      // 1부터, 못 찾으면 0 — 엔트리 index_of_string 그대로다.
       if (!arity(2)) return null;
       const string = value(0);
       const target = value(1);
-      if (!string || !target) return null;
-      return ctx.block('calc_basic', [
-        ctx.block('index_of_string', [null, string, null, target, null]),
-        'MINUS',
-        ctx.number(1),
-      ]);
+      return string && target && ctx.block('index_of_string', [null, string, null, target, null]);
     }
 
     case 'replace': {

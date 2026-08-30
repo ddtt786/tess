@@ -878,7 +878,7 @@ test('판단값 · 계산식 · 함수 인수 · 순번 안의 숫자는 숫자�
   assert.match(fragment, /^ {2}if \(단계 == 14\):$/m);                 // 판단값
   assert.match(fragment, /^ {2}단계 = \(3 \* \(2 \+ 5\)\)$/m);         // 괄호 친 계산식
   assert.match(fragment, /^ {2}더하기\(7\)$/m);                        // 함수 인수
-  assert.match(fragment, /^ {2}remove 기록\[\(3 - 1\)\]$/m);          // 순번은 기본으로 안 접는다
+  assert.match(fragment, /^ {2}remove 기록\[3\]$/m);                  // 순번은 엔트리와 같은 1부터라 그대로 옮긴다
   assert.doesNotMatch(fragment, /"14"|"2"|"7"/);
 
   // 다시 적으면 달라지는 값은 글자 그대로 둔다
@@ -948,6 +948,29 @@ test('소리 길이와 색 고르기 칸을 되돌리고 다시 컴파일한다'
   // 소리 id 는 다시 배정되지만 그 소리를 그대로 가리켜야 한다
   assert.equal(duration.params[1], recompiled.project.objects[0].sprite.sounds[0].id);
   assert.equal(thread.find((b) => b.type === 'text_change_font_color').params[0], '#16d8a3');
+});
+
+// get_sound_speed 에 대응하는 자리가 없어서 자리표시자로 남았고, 그 자리표시자가
+// 산술식에 섞이면(엔트리 재생 속도 값이 필요한 대기 조건 등) NaN 이 되어 다시는
+// 참이 되지 않는 wait 로 굳어 버렸다 — 글자 하나씩 찍는 효과가 첫 글자에서 멈추던 원인.
+test('sound_speed 를 되돌리고 다시 컴파일한다', () => {
+  const project = minimalProject(1);
+  project.variables.push({ id: 'v1', name: '속도', value: 0, object: null });
+  project.objects[0].script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    { type: 'set_variable', params: ['v1', { type: 'get_sound_speed', params: [null] }], statements: [] },
+  ]]);
+
+  const result = decompileProject(project, []);
+  assert.deepEqual([...result.warnings], []);
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  assert.match(fragment, /^ {2}속도 = sound_speed$/m);
+  assert.doesNotMatch(fragment, /\[decompile/);
+
+  const recompiled = recompileResult(result, 'tess-decompile-soundspeed-');
+  assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
+  const thread = JSON.parse(recompiled.project.objects[0].script)[0];
+  assert.equal(thread.find((b) => b.type === 'set_variable').params[1].type, 'get_sound_speed');
 });
 
 // 이름 맨 앞의 숫자를 지워 버리면 "1.png"·"2.png"·"3.png" 가 죄다 같은 이름이 된 뒤

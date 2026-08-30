@@ -274,6 +274,22 @@ id 는 `[a-z0-9]` 4글자입니다.
 - 값 함수 정의는 `function_create_value`, 반환식은 그 블록의 **params[3]** 에 붙습니다
 - 함수 호출 블록은 `func_<함수id>` 이고, 값을 안 돌려주는 함수만 끝에 아이콘 자리가 하나 더 있습니다
 
+#### `sound_speed` 값 읽기가 빠져서 글자 찍기 효과가 첫 글자에서 멈췄던 일
+
+`sound_volume`(소리 크기)은 값으로 읽는 자리(`compiler/expression.js`)와 되돌리는 자리
+(`decompiler/expr.js` 의 `get_sound_volume`)가 둘 다 있었는데, 짝인 `sound_speed`(재생
+속도, entryjs `get_sound_speed` — `Entry.playbackRateValue`)는 되돌리는 쪽이 빠져 있어서
+`[decompile: get_sound_speed]` 라는 문자열 자리표시자로 남았습니다. 이 값이 하필 배틀·
+대화창의 "글자 하나씩 찍기" 효과(`잡글효_글`)가 다음 글자로 넘어가기 전에 기다리는
+`n초_기다리기_조건` 안의 산술식(`timer * get_sound_speed()`)에 쓰이고 있어서, 문자열을
+곱하면 `NaN` 이 되고 `NaN >= NaN` 은 절대 참이 안 되어 그 `wait` 가 영원히 안 풀립니다.
+겉보기엔 "특정 글자만 보이고 그 뒤로는 하나도 안 보임" 으로 나타납니다 — 매 줄의 첫
+글자까지는(대기 이전이라) 정상적으로 찍히지만, 그다음 글자로 넘어가는 재귀 호출 자체가
+`wait` 에 막혀 한 번도 실행되지 못하기 때문입니다. `sound_volume` 과 똑같은 모양으로
+`compiler/expression.js`(읽기: `sound_speed` -> `get_sound_speed`)와
+`decompiler/expr.js`(되돌리기: `get_sound_speed` -> `sound_speed`) 양쪽에 짝을 채워
+넣어 고쳤습니다.
+
 ### 만든 결과를 검사합니다 — `verify.js`
 
 컴파일 결과가 엔트리가 읽을 수 있는 모양인지 확인합니다.
@@ -778,6 +794,15 @@ end
   안에 선언하라고 **경고**합니다.
 - 여러 오브젝트가 같은 이름의 로컬을 가진 것 — 무엇을 가리키는지 알 수 없으므로 **에러**입니다.
 
+**모양·소리 이름도 같은 이유로 같은 폴백을 씁니다.** `change_to_some_shape`/`get_sounds`
+같은 블록도 값 칸에 진짜 엔트리 id 를 들고 있어서, 그 모양·소리가 몇 번째 오브젝트
+것이든 상관없이 항상 그 하나를 가리킵니다. 그런데 `resolvePicture`/`resolveSound`(
+`compiler/statement.js`)와 `resolveSoundValue`(`compiler/expression.js`)는 오직
+`ctx.object`(지금 컴파일 중인 오브젝트) 하나만 봤어서, 전역 함수 안에서는 `ctx.object`
+가 `null` 이 되어 `costume = "이름"`/`play sound "이름"` 이 무조건 에러였습니다.
+`Context.lookupObjectResource(kind, name)` 를 추가해 `lookupObjectLocal` 과 같은 모양의
+폴백(유일한 소유자면 그 오브젝트 것으로 컴파일, 여럿이면 에러)을 셋 다 공유합니다.
+
 함수 하나의 `content` 에는 **스택마다 스레드가 하나씩** 들어 있고, 정의 블록이 항상
 첫 번째는 아닙니다 — 워크스페이스에서 정의보다 위에 놓인 주석 블록이나 떼어 놓은
 블록 뭉치가 먼저 옵니다. 그래서 되돌리기는 `content[0][0]` 을 그냥 집지 않고
@@ -904,7 +929,6 @@ boss.ent                1156개 -> 27개
 | `use` 펼치기     | 파일을 그 자리에 통째로 넣고, 에러는 원래 파일 이름·줄 번호로 알려 줍니다                                                                                                                                     |
 | 심볼 수집        | 장면·오브젝트·변수·리스트·신호·함수·모양·소리에 엔트리 id 를 붙입니다                                                                                                                                         |
 | 스코프 해석      | 함수 지역 → 오브젝트 로컬 → 전역 순으로 찾고, 없으면 오브젝트 속성으로 봅니다                                                                                                                                 |
-| 인덱스 보정      | 0부터인 Tess 인덱스를 1부터인 엔트리 인덱스로 (상수는 미리 계산)                                                                                                                                              |
 | 없는 블록 펼치기 | `move X Y` → 두 블록, `log2` → `ln/ln2`, `**` → 제곱·제곱근·곱셈                                                                                                                                              |
 | 주석 옮기기      | `#` 주석을 블록의 `comment` 로 (문자열 안의 `#` 과 색상은 건드리지 않습니다)                                                                                                                                  |
 | 리소스 처리      | 그림에서 원본 크기를, 소리에서 재생 길이를 헤더만 읽어 재고(`assets.js`·`audio.js`) `temp/xx/yy/image/…` 경로를 만듭니다 — 엔트리는 `project.json` 에 적힌 값을 그대로 믿어서, 안 재면 100×100·1초로 굳습니다. 이 단계는 동기라 헤더를 직접 읽습니다 (아래 '라이브러리' 참고) |
@@ -912,6 +936,16 @@ boss.ent                1156개 -> 27개
 
 엔트리에 없어서 다르게 만드는 것들(그리고 `use`/`useobject`/`usetext` 같은, 엔트리에는
 없는 Tess 만의 문법)은 [SPEC-ADDENDUM.md](./SPEC-ADDENDUM.md)에 정리했습니다.
+
+**리스트·문자열 인덱스는 이제 엔트리처럼 1부터입니다** (AI_SPEC-ADDENDUM.md 4.3절).
+전에는 Tess 만 0부터라서 컴파일할 때마다 `[i]` → `(i + 1)` 을, 되돌릴 때마다 `(i - 1)` 을
+끼워 넣었습니다 — 리터럴이면 `--fold-index` 로 미리 접을 수 있었지만 기본은 안 접어서,
+원본 `.ent` 를 되돌렸다가 다시 컴파일하면 있지도 않던 `calc_basic` 블록이 늘어나는
+구조적 잡음이 생겼습니다(순번이 상수든 계산식이든 마찬가지). 지금은 `shiftIndex`/
+`unshiftIndex` 를 걷어내고 인덱스를 그대로 옮기므로 이 잡음 자체가 안 생기고,
+`--fold-index` 플래그도 할 일이 없어져 지웠습니다. `slice(s, a, b)` 도 엔트리 `substring`
+그대로 양끝 포함으로 바뀌었고(전에는 Tess 만 절반열린 `[a, b)`), `index_of` 도 엔트리
+`index_of_string` 그대로 못 찾으면 `0` 을 돌려줍니다(전에는 Tess 가 `-1` 로 보정).
 
 #### 단계별 시간
 

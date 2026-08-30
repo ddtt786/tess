@@ -80,8 +80,8 @@ scene "play_game":
       # --- 12.3 문자열 ---------------------------------------------------------
       var msg = "Entry Tess"
       var len = length(msg)
-      var first_ch = msg[0]
-      var sub = slice(msg, 0, 5)
+      var first_ch = msg[1]
+      var sub = slice(msg, 1, 5)
       var cnt = count("banana", "a")
       var merged = join("Hello, ", "Tess!")
       var idx = index_of(msg, "Tess")
@@ -124,11 +124,11 @@ scene "play_game":
 
       # --- 13.2 리스트 ---------------------------------------------------------
       in ranking add 70
-      in ranking insert 80 at 1
-      remove ranking[0]
+      in ranking insert 80 at 2
+      remove ranking[1]
       var total_items = length(ranking)
       var has_perfect = contains(ranking, 100)
-      ranking[0] = 95
+      ranking[1] = 95
 
       # --- 13.3 대답 -----------------------------------------------------------
       ask "당신의 이름은 무엇인가요?"

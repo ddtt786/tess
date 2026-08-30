@@ -6,7 +6,7 @@
 //  `indent()` 로 필요한 만큼 들여쓴다. 모르는 블록은 주석으로 남기고 계속
 //  진행한다 (하나 때문에 전체를 못 옮기면 안 되니까).
 // ============================================================================
-import { exprOf, literalNumber } from "./expr.js";
+import { exprOf } from "./expr.js";
 import {
   tessString,
   tessNumber,
@@ -389,12 +389,12 @@ function statementLines(block, ctx) {
       return [`in ${ctx.varName(at(1))} add ${e(0)}`];
     case "insert_value_to_list":
       return [
-        `in ${ctx.varName(at(1))} insert ${e(0)} at ${unshift(at(2), ctx)}`,
+        `in ${ctx.varName(at(1))} insert ${e(0)} at ${exprOf(at(2), ctx)}`,
       ];
     case "remove_value_from_list":
-      return [`remove ${ctx.varName(at(1))}[${unshift(at(0), ctx)}]`];
+      return [`remove ${ctx.varName(at(1))}[${exprOf(at(0), ctx)}]`];
     case "change_value_list_index":
-      return [`${ctx.varName(at(0))}[${unshift(at(1), ctx)}] = ${e(2)}`];
+      return [`${ctx.varName(at(0))}[${exprOf(at(1), ctx)}] = ${e(2)}`];
 
     // --- 변수 ---------------------------------------------------------------
     case "set_variable":
@@ -412,12 +412,6 @@ function statementLines(block, ctx) {
   }
 }
 
-function unshift(indexBlock, ctx) {
-  // 상수 접기는 `foldIndex` 옵션을 켰을 때만 (unshiftIndex 의 같은 주석 참고)
-  const literal = ctx.foldIndex ? literalNumber(indexBlock) : null;
-  if (literal !== null) return tessNumber(literal - 1);
-  return `(${exprOf(indexBlock, ctx)} - 1)`;
-}
 
 /**
  * 색 값 파라미터는 엔트리가 '#RRGGBB' 를 그냥 문자열로 담아 두기도 하고(정적 엔티티

@@ -187,6 +187,18 @@ export class Context {
     return { kind: 'variable', entry: owners[0].locals.get(name), owner: owners[0] };
   }
 
+  /**
+   * Finds a costume/sound name declared by exactly one object, for a place
+   * that belongs to none (a global function). Several objects sharing the
+   * name leaves nothing to pick between them — same shape as lookupObjectLocal.
+   */
+  lookupObjectResource(kind, name) {
+    const owners = this.objects.filter((object) => object[kind].has(name));
+    if (owners.length === 0) return null;
+    if (owners.length > 1) return { kind: 'ambiguous', owners: owners.map((object) => object.name) };
+    return { kind: 'found', asset: owners[0][kind].get(name) };
+  }
+
   /** 오브젝트 이름 -> 엔트리 오브젝트 id */
   objectId(name) {
     return this.objectByName.get(name)?.id ?? null;

@@ -19,7 +19,7 @@ scene "main":
     scale_y = 100
 
     when start do
-      say high_scores[1] # wow!
+      say high_scores[2] # wow!
       forever:
         if mouse_down:
           forward 5

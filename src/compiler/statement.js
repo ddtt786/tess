@@ -13,7 +13,6 @@ import {
   isBooleanBlock,
   resolveList,
   resolveTarget,
-  shiftIndex,
 } from "./expression.js";
 import { requireScaleSetter } from "./runtime.js";
 import { didYouMean, orHint } from "./suggest.js";
@@ -469,7 +468,7 @@ function compile(node, ctx) {
     case "ListInsert": {
       const list = requireList(node.list, ctx);
       const value = compileValue(node.value, ctx);
-      const index = shiftIndex(node.index, ctx);
+      const index = compileValue(node.index, ctx);
       return (
         list &&
         value &&
@@ -480,7 +479,7 @@ function compile(node, ctx) {
 
     case "ListRemove": {
       const list = requireList(node.list, ctx);
-      const index = shiftIndex(node.index, ctx);
+      const index = compileValue(node.index, ctx);
       return (
         list &&
         index &&
@@ -629,9 +628,22 @@ function resolveSound(node, ctx) {
     // 가리킨다(예전에 함수 안에 특정 오브젝트의 소리 id 를 그대로 박아 넣던 관습을
     // 되돌릴 때 쓴다).
     if (ctx.forcedResourceIds.has(node.value)) return node.value;
+    // 전역 함수에는 기준 오브젝트가 없다 — 이 이름을 가진 오브젝트가 단 하나뿐이면
+    // 오브젝트 로컬 변수와 같은 이유로 그 소리를 그대로 가리킨다.
+    if (!ctx.object) {
+      const found = ctx.lookupObjectResource('sounds', node.value);
+      if (found?.kind === 'found') return ctx.block("get_sounds", [found.asset.id]);
+      if (found?.kind === 'ambiguous') {
+        return ctx.error(
+          node,
+          `'${node.value}' 은(는) ${found.owners.join(', ')} 가 저마다 가진 소리라 어느 것인지 알 수 없습니다. `
+          + '이 함수를 그 오브젝트 안에 선언하거나, force id 로 고정하세요.',
+        );
+      }
+    }
     return ctx.error(
       node,
-      `'${node.value}' 소리가 이 오브젝트에 없습니다.`
+      `'${node.value}' 소리가 ${ctx.object ? '이 오브젝트에' : '어느 오브젝트에도'} 없습니다.`
       + orHint(node.value, ctx.object?.sounds.keys() ?? [],
         `sound ${node.value} "파일명" 으로 먼저 등록하세요.`),
     );
@@ -645,9 +657,20 @@ function resolvePicture(node, ctx) {
     const picture = ctx.object?.pictures.get(node.value);
     if (picture) return ctx.block("get_pictures", [picture.id]);
     if (ctx.forcedResourceIds.has(node.value)) return node.value;
+    if (!ctx.object) {
+      const found = ctx.lookupObjectResource('pictures', node.value);
+      if (found?.kind === 'found') return ctx.block("get_pictures", [found.asset.id]);
+      if (found?.kind === 'ambiguous') {
+        return ctx.error(
+          node,
+          `'${node.value}' 은(는) ${found.owners.join(', ')} 가 저마다 가진 모양이라 어느 것인지 알 수 없습니다. `
+          + '이 함수를 그 오브젝트 안에 선언하거나, force id 로 고정하세요.',
+        );
+      }
+    }
     return ctx.error(
       node,
-      `'${node.value}' 모양이 이 오브젝트에 없습니다.`
+      `'${node.value}' 모양이 ${ctx.object ? '이 오브젝트에' : '어느 오브젝트에도'} 없습니다.`
       + orHint(node.value, ctx.object?.pictures.keys() ?? [],
         `costume ${node.value} "파일명" 으로 먼저 등록하세요.`),
     );
@@ -734,7 +757,7 @@ function compileVariableAssign(node, found, ctx) {
 
 function compileListElementAssign(node, ctx) {
   const list = requireList(node.target.target, ctx);
-  const index = shiftIndex(node.target.index, ctx);
+  const index = compileValue(node.target.index, ctx);
   if (!list || !index) return [];
 
   if (node.operator === "=") {
@@ -748,7 +771,7 @@ function compileListElementAssign(node, ctx) {
     null,
     list.id,
     null,
-    shiftIndex(node.target.index, ctx),
+    compileValue(node.target.index, ctx),
     null,
   ]);
   const combined = combine(current, node.operator, node.value, ctx);

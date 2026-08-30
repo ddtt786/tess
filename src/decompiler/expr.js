@@ -58,28 +58,6 @@ function targetName(ctx, raw) {
 }
 
 /**
- * 리스트/문자열 인덱스: 엔트리(1부터) -> Tess(0부터).
- * 순번도 number 블록에만 들어 있는 게 아니라 text 블록에 담겨 있을 수 있다 —
- * 그것까지 알아봐야 `("3" - 1)` 같은 게 안 남는다.
- */
-export function literalNumber(block) {
-  const raw = block && (block.type === 'number' || block.type === 'text')
-    ? block.params?.[0]
-    : block;
-  if (typeof raw !== 'string' && typeof raw !== 'number') return null;
-  const text = String(raw);
-  return isExactNumber(text) ? Number(text) : null;
-}
-
-function unshiftIndex(block, ctx, delta = 1) {
-  // 상수 접기는 `foldIndex` 옵션을 켰을 때만 한다 (기본은 원본 숫자를 그대로 보인다)
-  const literal = ctx.foldIndex ? literalNumber(block) : null;
-  if (literal !== null) return tessNumber(literal - delta);
-  const inner = exprOf(block, ctx);
-  return delta === 0 ? inner : `(${inner} - ${delta})`;
-}
-
-/**
  * 편집기 목록에서 고른 모양·소리를 옮긴다. 함수 안에서는 이름 대신 id 를 남긴다 —
  * 함수는 전역이라 어느 오브젝트가 부를지 모르기 때문 (decompiler/index.js 참고).
  */
@@ -170,6 +148,7 @@ export function exprOf(block, ctx) {
     case 'get_project_timer_value': case 'get_canvas_input_value':
       return REVERSE_STATE[block.type];
     case 'get_sound_volume': return 'sound_volume';
+    case 'get_sound_speed': return 'sound_speed';
     case 'get_block_count': {
       const target = at(0);
       if (!target || target === 'all') return 'block_count';
@@ -189,20 +168,19 @@ export function exprOf(block, ctx) {
 
     case 'value_of_index_from_list': {
       const list = ctx.varName(at(1));
-      return `${list}[${unshiftIndex(at(3), ctx)}]`;
+      return `${list}[${exprOf(at(3), ctx)}]`;
     }
-    case 'char_at': return `slice(${exprOf(at(1), ctx)}, ${unshiftIndex(at(3), ctx)}, ${unshiftIndex(at(3), ctx, 0)})`;
+    case 'char_at': {
+      const index = exprOf(at(3), ctx);
+      return `slice(${exprOf(at(1), ctx)}, ${index}, ${index})`;
+    }
     case 'length_of_list': return `length(${ctx.varName(at(1))})`;
     case 'length_of_string': return `length(${exprOf(at(1), ctx)})`;
     case 'is_included_in_list': return `contains(${ctx.varName(at(1))}, ${exprOf(at(3), ctx)})`;
     case 'combine_something': return `join(${exprOf(at(1), ctx)}, ${exprOf(at(3), ctx)})`;
-    case 'substring': {
-      const start = unshiftIndex(at(3), ctx);
-      const end = exprOf(at(5), ctx);
-      return `slice(${exprOf(at(1), ctx)}, ${start}, ${end})`;
-    }
+    case 'substring': return `slice(${exprOf(at(1), ctx)}, ${exprOf(at(3), ctx)}, ${exprOf(at(5), ctx)})`;
     case 'count_match_string': return `count(${exprOf(at(0), ctx)}, ${exprOf(at(2), ctx)})`;
-    case 'index_of_string': return `(index_of(${exprOf(at(1), ctx)}, ${exprOf(at(3), ctx)}) + 1)`;
+    case 'index_of_string': return `index_of(${exprOf(at(1), ctx)}, ${exprOf(at(3), ctx)})`;
     case 'replace_string': return `replace(${exprOf(at(1), ctx)}, ${exprOf(at(3), ctx)}, ${exprOf(at(5), ctx)})`;
     case 'reverse_of_string': return `reverse(${exprOf(at(1), ctx)})`;
     case 'change_string_case': return `${at(3) === 'toUpperCase' ? 'uppercase' : 'lowercase'}(${exprOf(at(1), ctx)})`;

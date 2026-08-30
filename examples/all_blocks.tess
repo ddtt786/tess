@@ -204,11 +204,11 @@ scene "무대":
       점수 /= 2
       점수 %= 3
       점수 **= 2
-      기록[0] = 99
-      기록[1] += 1
+      기록[1] = 99
+      기록[2] += 1
       in 기록 add 70
-      in 기록 insert 80 at 1
-      remove 기록[2]
+      in 기록 insert 80 at 2
+      remove 기록[3]
       ask "이름은?"
       show 점수
       hide 점수
@@ -260,7 +260,7 @@ scene "무대":
       점수 = x("상대") + y("상대") + angle("상대") + way("상대") + size("상대")
       점수 = distance("상대")
       점수 = length(기록)
-      점수 = 기록[0]
+      점수 = 기록[1]
       점수 = block_count("상대")
       점수 = now("year") + now("month") + now("weekday")
       점수 = from_hex(#ff0000, red)
@@ -270,8 +270,8 @@ scene "무대":
       var 글 = "Entry Tess"
       글 = join("안녕, ", nickname)
       글 = join(user_id, answer)
-      글 = slice(글, 0, 5)
-      글 = 글[0]
+      글 = slice(글, 1, 5)
+      글 = 글[1]
       글 = replace(글, "a", "b")
       글 = reverse(글)
       글 = uppercase(글)

@@ -64,10 +64,7 @@ const USAGE = `사용법
   --keep-svg         decompile 이 SVG 모양을 SVG 그대로 가져온다. 기본은 엔트리가
                      저장할 때 같이 남긴 PNG 를 대신 쓴다 — 엔트리 벡터 그림판은
                      저장한 뒤 SVG 를 다시 가운데로 옮겨 버려서, 그림판 크기를 넘는
-                     그림을 맞춰 놓은 위치가 SVG 에는 남지 않기 때문이다
-  --fold-index       리스트·글자 순번의 상수를 미리 계산한다 (예: 되돌릴 때
-                     '기록[(3 - 1)]' 대신 '기록[2]', 컴파일할 때 '(2 + 1)' 대신 '3').
-                     기본은 접지 않아서 적어 둔 숫자가 그대로 보인다`;
+                     그림을 맞춰 놓은 위치가 SVG 에는 남지 않기 때문이다`;
 
 function parseArgs(argv) {
   const options = { assets: [] };
@@ -84,7 +81,6 @@ function parseArgs(argv) {
     else if (arg === "--warnings") options.warnings = true;
     else if (arg === "--sizes") options.sizes = true;
     else if (arg === "--keep-svg") options.keepSvg = true;
-    else if (arg === "--fold-index") options.foldIndex = true;
     else if (arg === "--force") options.force = true;
     else rest.push(arg);
   }
@@ -103,7 +99,6 @@ function runCheck(file, options = { assets: [] }) {
     assetDirs,
     name: options.name,
     cache: options.cache,
-    foldIndex: options.foldIndex,
     onPhase: out.step,
   });
   out.report(label, result.errors, "에러");
@@ -148,7 +143,6 @@ async function runBuild(file, options) {
     name: options.name,
     force: options.force,
     cache: options.cache,
-    foldIndex: options.foldIndex,
     onPhase: out.step,
   });
   out.report(label, result.warnings, "경고");
@@ -214,7 +208,6 @@ async function runProject(file, options) {
     name: options.name,
     force: options.force,
     cache: options.cache,
-    foldIndex: options.foldIndex,
     onPhase: out.step,
   });
   out.report(label, result.warnings, "경고");
@@ -291,7 +284,6 @@ function watchAndReload(file, options, assetDirs, label, server) {
         name: options.name,
         force: options.force,
         cache,
-        foldIndex: options.foldIndex,
       });
       out.report(label, result.warnings, "경고");
       if (!result.ok) {
@@ -384,7 +376,6 @@ async function runDecompile(file, options) {
   try {
     result = await decompileEnt(bytes, {
       sizes: options.sizes,
-      foldIndex: options.foldIndex,
       keepSvg: options.keepSvg,
     });
   } catch (error) {

@@ -335,18 +335,20 @@ var 제곱근   = root(2, 2)       # 1.4142135623730951 (정확)
   변수에 먼저 담아 두고 쓰세요
 - 밑이 음수인데 지수가 정수가 아니면 결과가 없습니다(엔트리도 마찬가지입니다)
 
-## 4.3 인덱스와 값이 달라지는 곳
+## 4.3 인덱스
 
-엔트리는 리스트·문자열 인덱스가 **1부터**이고 Tess 는 **0부터**입니다. 컴파일러가 보정합니다.
+리스트·문자열 인덱스는 Tess 도 엔트리처럼 **1부터**입니다. 값도 그대로 옮기므로 보정 블록이
+따로 안 생깁니다. `slice(s, a, b)` 는 엔트리 `substring` 그대로 **양끝 포함**이고,
+`index_of(s, t)` 는 엔트리 `index_of_string` 그대로 **못 찾으면 0** 을 돌려줍니다.
 
-| Tess                      | 엔트리                                               |
-| ------------------------- | ---------------------------------------------------- |
-| `scores[0]`               | `value_of_index_from_list(scores, 1)`                |
-| `in scores insert 5 at 2` | `insert_value_to_list(5, scores, 3)`                 |
-| `remove scores[1]`        | `remove_value_from_list(2, scores)`                  |
-| `msg[0]`                  | `char_at(msg, 1)`                                    |
-| `slice(s, 0, 3)`          | `substring(s, 1, 3)` (엔트리는 양끝 포함)            |
-| `index_of(s, t)`          | `index_of_string(s, t) - 1` (못 찾으면 Tess 는 `-1`) |
+| Tess                      | 엔트리                                |
+| ------------------------- | -------------------------------------- |
+| `scores[1]`               | `value_of_index_from_list(scores, 1)`  |
+| `in scores insert 5 at 2` | `insert_value_to_list(5, scores, 2)`   |
+| `remove scores[2]`        | `remove_value_from_list(2, scores)`    |
+| `msg[1]`                  | `char_at(msg, 1)`                      |
+| `slice(s, 1, 3)`          | `substring(s, 1, 3)` (양끝 포함)       |
+| `index_of(s, t)`          | `index_of_string(s, t)` (못 찾으면 0)  |
 
 ## 4.4 컴파일 에러가 나는 경우
 
