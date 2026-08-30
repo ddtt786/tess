@@ -637,23 +637,37 @@ end`, { path: 'x.tess' });
   assert.deepEqual(verifyEntryProject(inexact.project), []);
 });
 
-test('엔트리에 없는 동작은 에러로 알려 준다', () => {
-  const cases = [
-    ['go "없는오브젝트"', /오브젝트가 없습니다/],
-    ['play sound "없는소리"', /소리가 이 오브젝트에 없습니다/],
-    ['jump "없는장면"', /장면이 없습니다/],
-    ['costume = "없는모양"', /모양이 이 오브젝트에 없습니다/],
-  ];
-  for (const [code, pattern] of cases) {
-    const result = compileProject(`scene "s":
+const inObject = (code) => `scene "s":
   object "o":
     when start do
       ${code}
     end
   end
-end`, { path: 'x.tess' });
+end`;
+
+test('엔트리에 없는 오브젝트 · 장면은 에러로 알려 준다', () => {
+  const cases = [
+    ['go "없는오브젝트"', /오브젝트가 없습니다/],
+    ['jump "없는장면"', /장면이 없습니다/],
+  ];
+  for (const [code, pattern] of cases) {
+    const result = compileProject(inObject(code), { path: 'x.tess' });
     assert.equal(result.ok, false, code);
     assert.match(result.errors[0].message, pattern, code);
+  }
+});
+
+test('없는 모양 · 소리 이름은 경고로 알려 준다', () => {
+  // 엔트리는 이 자리를 실행할 때 id · 이름 · 순번 순으로 찾는다. 컴파일 시점에 없는
+  // 이름이라고 막아 버리면, 실제로 그렇게 쓰는 작품을 되돌린 소스가 빌드되지 않는다.
+  const cases = [
+    ['play sound "없는소리"', /소리를 이 오브젝트에서 찾지 못했습니다/],
+    ['costume = "없는모양"', /모양을 이 오브젝트에서 찾지 못했습니다/],
+  ];
+  for (const [code, pattern] of cases) {
+    const result = compileProject(inObject(code), { path: 'x.tess' });
+    assert.equal(result.ok, true, code);
+    assert.match(result.warnings[0].message, pattern, code);
   }
 });
 
@@ -838,7 +852,7 @@ test('.ent 묶음은 temp/project.json 을 담은 tar 다', async () => {
   assert.equal(name, 'temp/project.json');
   const size = parseInt(tar.subarray(124, 136).toString('utf-8').replace(/\0/g, '').trim(), 8);
   const content = tar.subarray(512, 512 + size).toString('utf-8');
-  assert.deepEqual(JSON.parse(content).scenes.length, 2);
+  assert.deepEqual(JSON.parse(content).scenes.length, 3);
 });
 
 test('같은 소스는 항상 같은 결과로 컴파일된다', () => {
@@ -861,7 +875,7 @@ end
 object "주인공":
   costume 기본 "없음.png" size 10 10
   when start do
-    costume = "없는모양"
+    jump "없는장면"
     x += 1
   end
 end`;
@@ -876,7 +890,7 @@ test('에러가 있으면 project 는 null 이고, force 를 주면 만들다 �
   assert.deepEqual(forced.errors.map((e) => e.message), plain.errors.map((e) => e.message));
   assert.ok(forced.project);
 
-  // 에러가 난 문장(costume = "없는모양")은 빠지고, 그 뒤의 멀쩡한 블록은 그대로 남는다
+  // 에러가 난 문장(jump "없는장면")은 빠지고, 그 뒤의 멀쩡한 블록은 그대로 남는다
   const script = JSON.parse(forced.project.objects[0].script);
   assert.deepEqual(script[0].map((block) => block.type), ['when_run_button_click', 'move_x']);
 });
@@ -1080,7 +1094,7 @@ end`;
   assert.equal(sound.params[0].params[0], hero.sprite.sounds[0].id);
 });
 
-test('같은 이름의 모양·소리를 여러 오브젝트가 가지면 전역 함수에서 못 쓴다', () => {
+test('여러 오브젝트가 같은 이름의 모양을 가지면 전역 함수는 이름 그대로 남긴다', () => {
   const source = `object "a":
   costume 점프 "${path.join(root, 'assets', 'a.png')}"
 end
@@ -1093,5 +1107,9 @@ function 바꾸기():
   costume = "점프"
 end`;
   const result = compileProject(source, { path: path.join(root, 'test.tess') });
-  assert.ok(result.errors.some((e) => /a, b 가 저마다 가진 모양/.test(e.message)));
+  assert.deepEqual(result.errors, []);
+  // 엔트리는 이 값을 부르는 오브젝트의 모양과 맞춰 보므로, 이름이 그대로 남아야 한다.
+  const [fn] = result.project.functions;
+  assert.match(fn.content, /"점프"/);
+  assert.ok(!/get_pictures/.test(fn.content));
 });

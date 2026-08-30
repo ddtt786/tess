@@ -88,6 +88,8 @@ export function decompileProject(project, entries, options = {}) {
   for (const varInfo of ctx.globalVars) lines.push(...declarationLine(varInfo));
   if (ctx.globalVars.length) lines.push('', '');
 
+  for (const [, info] of ctx.tablesById) lines.push(...tableLines(info), '');
+
   lines.push('project:');
   lines.push(`  title ${tessString(project.name ?? 'Tess 작품')}`);
   if (project.description) lines.push(`  description ${tessString(project.description)}`);
@@ -146,6 +148,63 @@ function resourceIdsIn(node, ctx, found = new Set()) {
   for (const param of node.params ?? []) resourceIdsIn(param, ctx, found);
   for (const branch of node.statements ?? []) resourceIdsIn(branch, ctx, found);
   return found;
+}
+
+// Where a block keeps the id of the variable or list it works on. Mirrors the
+// VARIABLE/LIST entries of each block's paramsKeyMap in entryjs.
+const VARIABLE_SLOTS = new Map([
+  ['get_variable', 0], ['set_variable', 0], ['change_variable', 0],
+  ['show_variable', 0], ['hide_variable', 0],
+]);
+const LIST_SLOTS = new Map([
+  ['show_list', 0], ['hide_list', 0], ['change_value_list_index', 0],
+  ['value_of_index_from_list', 1], ['length_of_list', 1], ['is_included_in_list', 1],
+  ['add_value_to_list', 1], ['remove_value_from_list', 1], ['insert_value_to_list', 1],
+]);
+
+/** Variable and list ids a block tree reads or writes, split by which kind it wants. */
+function variableIdsIn(node, found = { variables: new Set(), lists: new Set() }) {
+  if (Array.isArray(node)) {
+    node.forEach((child) => variableIdsIn(child, found));
+    return found;
+  }
+  if (!node || typeof node !== 'object') return found;
+  for (const [slots, bucket] of [[VARIABLE_SLOTS, found.variables], [LIST_SLOTS, found.lists]]) {
+    const index = slots.get(node.type);
+    if (index === undefined) continue;
+    const id = node.params?.[index];
+    if (typeof id === 'string' && id) bucket.add(id);
+  }
+  for (const param of node.params ?? []) variableIdsIn(param, found);
+  for (const branch of node.statements ?? []) variableIdsIn(branch, found);
+  return found;
+}
+
+/**
+ * Declares a variable for every id the blocks reference but the project no
+ * longer defines. Entry leaves such references behind when a variable is
+ * deleted while blocks still point at it; without a declaration the source
+ * would not compile at all.
+ */
+function reviveDanglingVariables(project, ctx, usedNames) {
+  const found = { variables: new Set(), lists: new Set() };
+  const scan = (text) => {
+    try { variableIdsIn(JSON.parse(text ?? '[]'), found); } catch { /* unreadable script */ }
+  };
+  for (const object of project.objects ?? []) scan(object.script);
+  for (const fn of project.functions ?? []) scan(fn.content);
+
+  for (const [ids, isList] of [[found.variables, false], [found.lists, true]]) {
+    for (const id of ids) {
+      if (ctx.varsById.has(id) || ctx.funcLocalsById.has(id)) continue;
+      const identifier = safeIdentifier(`_missing_${isList ? 'list' : 'var'}_${id}`, usedNames, 'missing');
+      const source = isList ? { name: identifier, array: [] } : { name: identifier, value: 0 };
+      const info = { identifier, isList, objectId: null, source };
+      ctx.varsById.set(id, info);
+      ctx.globalVars.push(info);
+      ctx.warnings.add(`변수/리스트 id '${id}' 가 작품에 없어 '${identifier}' 로 새로 선언했습니다.`);
+    }
+  }
 }
 
 /**
@@ -218,6 +277,7 @@ function buildContext(project, entries, options = {}) {
     globalVars: [],
     localVarsByObject: new Map(),
     messagesById: new Map(),
+    tablesById: new Map(),
     objectsById: new Map(),
     scenesById: new Map(),
     functionsById: new Map(),
@@ -268,11 +328,20 @@ function buildContext(project, entries, options = {}) {
     messageName(id) {
       return ctx.messagesById.get(id) ?? String(id);
     },
+    tableName(id) {
+      return ctx.tablesById.get(id)?.identifier ?? String(id);
+    },
     funcLocalsById: new Map(),
   };
 
   // --- 신호 ------------------------------------------------------------------
   for (const message of project.messages ?? []) ctx.messagesById.set(message.id, message.name);
+
+  // --- 테이블 ------------------------------------------------------------------
+  for (const table of project.tables ?? []) {
+    const identifier = safeIdentifier(table.name, usedNames, 'table');
+    ctx.tablesById.set(table.id, { identifier, source: table });
+  }
 
   // --- 장면 --------------------------------------------------------------------
   for (const scene of project.scenes ?? []) {
@@ -305,9 +374,15 @@ function buildContext(project, entries, options = {}) {
     if (entry.variableType === 'timer' || entry.variableType === 'answer') continue;
     const isList = entry.variableType === 'list';
     const identifier = safeIdentifier(entry.name, usedNames, isList ? 'list' : 'var');
-    const info = { identifier, isList, objectId: entry.object, source: entry };
+    // A local whose object is gone has nowhere to be declared. Writing it as a
+    // global keeps it in the work instead of dropping it without a trace.
+    const owned = entry.object && ctx.objectsById.has(entry.object);
+    if (entry.object && !owned) {
+      ctx.warnings.add(`'${entry.name}' 은(는) 작품에 없는 오브젝트의 지역 변수라 전역으로 옮겼습니다.`);
+    }
+    const info = { identifier, isList, objectId: owned ? entry.object : null, source: entry };
     ctx.varsById.set(entry.id, info);
-    if (entry.object) {
+    if (owned) {
       if (!ctx.localVarsByObject.has(entry.object)) ctx.localVarsByObject.set(entry.object, []);
       ctx.localVarsByObject.get(entry.object).push(info);
     } else {
@@ -355,6 +430,8 @@ function buildContext(project, entries, options = {}) {
 
     ctx.functionsById.set(fn.id, { name: identifier, params, locals, displayLabel: label });
   }
+
+  reviveDanglingVariables(project, ctx, usedNames);
 
   // 함수는 전역이라 어느 오브젝트가 부를지 모르므로, 함수 안의 모양·소리 id 는 이름으로
   // 바꾸지 않고 그대로 둔다. 대신 그 선언에 `force id` 를 붙여 다시 컴파일해도 같은
@@ -432,13 +509,38 @@ function buildContext(project, entries, options = {}) {
   return ctx;
 }
 
+/**
+ * The ` as "..."` clause that carries an Entry name the identifier cannot spell.
+ * Without it a renamed resource breaks every runtime lookup by name.
+ */
+function displayNamePart(identifier, entryName) {
+  const name = String(entryName ?? '');
+  return name && name !== identifier ? ` as ${tessString(name)}` : '';
+}
+
+/** `table 이름: columns ... row ... end` */
+function tableLines(info) {
+  const table = info.source;
+  const cells = (row) => (row ?? []).map((cell) => tessLiteral(cell)).join(', ');
+  const lines = [`table ${info.identifier}${displayNamePart(info.identifier, table.name)}:`];
+  lines.push(`  columns ${cells(table.fields)}`);
+  for (const row of table.data ?? []) lines.push(`  row ${cells(row)}`);
+  lines.push('end');
+  return lines;
+}
+
 function declarationLine(info, indentLevel = 0) {
   const pad = '  '.repeat(indentLevel);
+  const source = info.source;
+  let scope = '';
+  if (source.isCloud) scope = 'shared ';
+  else if (source.isRealTime) scope = 'realtime ';
+  const named = displayNamePart(info.identifier, source.name);
   if (info.isList) {
-    const items = (info.source.array ?? []).map((item) => tessLiteral(item.data));
-    return [`${pad}list ${info.identifier} = [${items.join(', ')}]`];
+    const items = (source.array ?? []).map((item) => tessLiteral(item.data));
+    return [`${pad}${scope}list ${info.identifier}${named} = [${items.join(', ')}]`];
   }
-  return [`${pad}var ${info.identifier} = ${tessLiteral(info.source.value)}`];
+  return [`${pad}${scope}var ${info.identifier}${named} = ${tessLiteral(source.value)}`];
 }
 
 // ---------------------------------------------------------------------------
@@ -498,16 +600,18 @@ function objectFragmentLines(object, ctx, isText) {
       ? ''
       : ` size ${tessNumber(picture.dimension?.width ?? 100)} ${tessNumber(picture.dimension?.height ?? 100)}`;
     const filePart = picInfo.relativePath ?? (picture.fileurl ?? `${picInfo.identifier}.png`);
+    const namePart = displayNamePart(picInfo.identifier, picture.name);
     const forcePart = ctx.forcedIds.has(picture.id) ? ` force id ${tessString(picture.id)}` : '';
-    lines.push(`${isDefault ? 'default costume' : 'costume'} ${picInfo.identifier} ${tessString(filePart)}${sizePart}${forcePart}`);
+    lines.push(`${isDefault ? 'default costume' : 'costume'} ${picInfo.identifier} ${tessString(filePart)}${sizePart}${namePart}${forcePart}`);
   }
   for (const sound of object.sprite?.sounds ?? []) {
     const sndInfo = ctx.soundsById.get(sound.id);
     if (!sndInfo) continue;
     const durationPart = sndInfo.relativePath ? '' : ` for ${tessNumber(sound.duration ?? 1)}`;
     const filePart = sndInfo.relativePath ?? (sound.fileurl ?? `${sndInfo.identifier}.mp3`);
+    const namePart = displayNamePart(sndInfo.identifier, sound.name);
     const forcePart = ctx.forcedIds.has(sound.id) ? ` force id ${tessString(sound.id)}` : '';
-    lines.push(`sound ${sndInfo.identifier} ${tessString(filePart)}${durationPart}${forcePart}`);
+    lines.push(`sound ${sndInfo.identifier} ${tessString(filePart)}${durationPart}${namePart}${forcePart}`);
   }
 
   lines.push(...objectPropertyLines(object, isText, 0));

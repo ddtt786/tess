@@ -82,6 +82,20 @@ function summarizeParams(params) {
 }
 
 // eslint-disable-next-line complexity
+/** ROW/COL — which way a table block works. */
+function tableLine(property) {
+  return String(property) === 'COL' ? 'column' : 'row';
+}
+
+/**
+ * The `x y` pair of a `go` statement. A name directly followed by `(` reads as
+ * a call, which would swallow the y coordinate, so such an x gets parentheses.
+ */
+function point(x, y) {
+  const looksLikeCall = /[\p{L}\p{N}_]$/u.test(x) && y.startsWith('(');
+  return `${looksLikeCall ? `(${x})` : x} ${y}`;
+}
+
 function statementLines(block, ctx) {
   if (!block || typeof block !== "object" || !block.type) return [];
   const p = block.params ?? [];
@@ -159,7 +173,13 @@ function statementLines(block, ctx) {
       return ["del clones"];
     case "start_scene": {
       const scene = ctx.scenesById.get(at(0));
-      return [`jump ${tessString(scene ? scene.identifier : at(0))}`];
+      // A scene deleted while blocks still pointed at it leaves a jump that can
+      // never run. Keeping it would only fail the build, so note it instead.
+      if (!scene) {
+        ctx.warnings.add(`장면 id '${at(0)}' 이(가) 작품에 없어 그 자리로 가는 'jump' 를 주석으로 남겼습니다.`);
+        return [`# [decompile] jump ${tessString(String(at(0)))} — 작품에 없는 장면입니다`];
+      }
+      return [`jump ${tessString(scene.identifier)}`];
     }
     case "start_neighbor_scene":
       return [`jump ${at(0) === "next" ? "next" : "back"}`];
@@ -196,9 +216,9 @@ function statementLines(block, ctx) {
     case "locate_y":
       return [`y = ${e(0)}`];
     case "locate_xy":
-      return [`go ${e(0)} ${e(1)}`];
+      return [`go ${point(e(0), e(1))}`];
     case "locate_xy_time":
-      return [`go ${e(1)} ${e(2)} in ${e(0)}`];
+      return [`go ${point(e(1), e(2))} in ${e(0)}`];
     case "rotate_relative":
       return [`turn ${e(0)}`];
     case "rotate_by_time":
@@ -381,6 +401,31 @@ function statementLines(block, ctx) {
           `speed ${tessString(String(at(1)))} pitch ${tessString(String(at(2)))}`,
       ];
     }
+
+    // --- 테이블 ---------------------------------------------------------------
+    case "append_row_to_table":
+      return [`in ${ctx.tableName(at(0))} add ${tableLine(at(1))}`];
+    case "insert_row_to_table":
+      return [
+        `in ${ctx.tableName(at(0))} insert ${tableLine(at(2))} at ${exprOf(at(1), ctx)}`,
+      ];
+    case "delete_row_from_table":
+      return [`remove ${ctx.tableName(at(0))} ${tableLine(at(2))} ${exprOf(at(1), ctx)}`];
+    case "set_value_from_table":
+      return [`${ctx.tableName(at(0))}[${exprOf(at(1), ctx)}, ${exprOf(at(2), ctx)}] = ${e(3)}`];
+    case "set_value_from_cell":
+      return [`${ctx.tableName(at(0))}[${exprOf(at(1), ctx)}] = ${e(2)}`];
+    case "save_current_table":
+      return [`save ${ctx.tableName(at(0))}`];
+    case "open_table":
+      return [`show ${ctx.tableName(at(0))}`];
+    case "open_table_wait":
+      return [`show ${ctx.tableName(at(0))} for ${e(1)}`];
+    case "open_table_chart":
+      // 엔트리는 차트 번호를 0부터 세고, Tess 는 다른 번호들처럼 1부터 센다
+      return [`show ${ctx.tableName(at(0))} chart ${tessNumber(Number(at(1) ?? 0) + 1)}`];
+    case "close_table_chart":
+      return ['hide chart'];
 
     // --- 자료 -----------------------------------------------------------------
     case "ask_and_wait":

@@ -231,6 +231,12 @@ export function validate(program, source = '', sources = null) {
         break;
     }
 
+    // `hide chart` 는 열려 있는 테이블·차트 창을 닫는다 — chart 는 변수 이름이 아니다
+    if (statement.type === 'Hide' && statement.target?.name === 'chart'
+      && !ctx.scope.has('chart')) {
+      return;
+    }
+
     // 자식 문장 블록
     const blocks = childBlocks(statement);
     const innerCtx = LOOP_TYPES.has(statement.type)
@@ -319,7 +325,9 @@ export function validate(program, source = '', sources = null) {
 function declaredNames(body) {
   const names = new Set();
   for (const member of body) {
-    if (member.type === 'VarDecl' || member.type === 'ListDecl') names.add(member.name);
+    if (member.type === 'VarDecl' || member.type === 'ListDecl' || member.type === 'TableDecl') {
+      names.add(member.name);
+    }
   }
   return names;
 }

@@ -63,6 +63,9 @@ export class Context {
     this.globals = new Map();   // name -> variable 항목
     this.messages = [];
     this.messageByName = new Map();
+    this.tables = [];           // 엔트리 project.tables 항목
+    this.tableByName = new Map();
+    this.expansionBlocks = new Set(); // project.expansionBlocks — 확장 블록을 쓰면 켠다
     this.functions = [];        // { id, name, node, params, isValue, owner }
     this.functionByName = new Map();
     this.runtimeFunctions = new Map(); // 컴파일러가 만들어 넣는 함수 (scale_x/scale_y)

@@ -291,6 +291,7 @@ export class TessAstVisitor extends BaseVisitor {
     return {
       type: 'Costume',
       id: this.visit(ctx.id).name,
+      displayName: ctx.displayName ? this.visit(ctx.displayName) : null,
       file: decodeString(ctx.file[0].image),
       isDefault: Boolean(ctx.isDefault),
       width: ctx.width ? numberNode(ctx.width[0]).value : null,
@@ -304,11 +305,16 @@ export class TessAstVisitor extends BaseVisitor {
     return {
       type: 'Sound',
       id: this.visit(ctx.id).name,
+      displayName: ctx.displayName ? this.visit(ctx.displayName) : null,
       file: decodeString(ctx.file[0].image),
       duration: ctx.duration ? numberNode(ctx.duration[0]).value : null,
       forceId: ctx.forceId ? this.visit(ctx.forceId) : null,
       loc: nodeLoc(node),
     };
+  }
+
+  displayName(ctx) {
+    return decodeString(ctx.text[0].image);
   }
 
   forceId(ctx) {
@@ -338,10 +344,39 @@ export class TessAstVisitor extends BaseVisitor {
     return { name: this.visit(ctx.name).name, boolean: Boolean(ctx.boolean) };
   }
 
+  tableDecl(ctx, node) {
+    return {
+      type: 'TableDecl',
+      name: this.visit(ctx.name).name,
+      displayName: ctx.displayName ? this.visit(ctx.displayName) : null,
+      columns: this.visit(ctx.columns),
+      rows: (ctx.rows ?? []).map((row) => this.visit(row)),
+      loc: nodeLoc(node),
+    };
+  }
+
+  tableColumns(ctx) {
+    return this.visit(ctx.cells);
+  }
+
+  tableRow(ctx) {
+    return this.visit(ctx.cells);
+  }
+
+  tableCells(ctx) {
+    return (ctx.cell ?? []).map((cell) => this.visit(cell));
+  }
+
+  storageScope(ctx) {
+    return ctx.shared ? 'shared' : 'realtime';
+  }
+
   varDecl(ctx, node) {
     return {
       type: 'VarDecl',
       name: this.visit(ctx.name).name,
+      displayName: ctx.displayName ? this.visit(ctx.displayName) : null,
+      scope: ctx.scope ? this.visit(ctx.scope) : null,
       value: this.visit(ctx.value),
       loc: nodeLoc(node),
     };
@@ -351,6 +386,8 @@ export class TessAstVisitor extends BaseVisitor {
     return {
       type: 'ListDecl',
       name: this.visit(ctx.name).name,
+      displayName: ctx.displayName ? this.visit(ctx.displayName) : null,
+      scope: ctx.scope ? this.visit(ctx.scope) : null,
       value: this.visit(ctx.value),
       loc: nodeLoc(node),
     };
@@ -566,6 +603,8 @@ export class TessAstVisitor extends BaseVisitor {
     return {
       type: ctx.kind[0].image === 'show' ? 'Show' : 'Hide',
       target: ctx.target ? this.visit(ctx.target) : null,
+      seconds: ctx.seconds ? this.visit(ctx.seconds) : null,
+      chart: ctx.chart ? this.visit(ctx.chart) : null,
       loc: nodeLoc(node),
     };
   }
@@ -650,6 +689,15 @@ export class TessAstVisitor extends BaseVisitor {
   listAddStatement(ctx, node) {
     const loc = nodeLoc(node);
     const list = this.visit(ctx.list);
+    if (ctx.line) {
+      return {
+        type: ctx.addLine ? 'TableAddLine' : 'TableInsertLine',
+        table: list,
+        line: this.visit(ctx.line),
+        index: ctx.index ? this.visit(ctx.index) : null,
+        loc,
+      };
+    }
     if (ctx.add) return { type: 'ListAdd', list, value: this.visit(ctx.value), loc };
     return {
       type: 'ListInsert',
@@ -660,12 +708,30 @@ export class TessAstVisitor extends BaseVisitor {
     };
   }
 
+  tableLine(ctx) {
+    return ctx.row ? 'row' : 'column';
+  }
+
+  saveStatement(ctx, node) {
+    return { type: 'TableSave', table: this.visit(ctx.table), loc: nodeLoc(node) };
+  }
+
   listRemoveStatement(ctx, node) {
+    const loc = nodeLoc(node);
+    if (ctx.line) {
+      return {
+        type: 'TableRemoveLine',
+        table: this.visit(ctx.list),
+        line: this.visit(ctx.line),
+        index: this.visit(ctx.index),
+        loc,
+      };
+    }
     return {
       type: 'ListRemove',
       list: this.visit(ctx.list),
       index: this.visit(ctx.index),
-      loc: nodeLoc(node),
+      loc,
     };
   }
 
@@ -700,6 +766,7 @@ export class TessAstVisitor extends BaseVisitor {
       type: 'Index',
       target: name,
       index: this.visit(ctx.index),
+      column: ctx.column ? this.visit(ctx.column) : null,
       loc: nodeLoc(node),
     };
   }
@@ -794,6 +861,7 @@ export class TessAstVisitor extends BaseVisitor {
       type: 'Index',
       target: this.visit(ctx.target),
       index: this.visit(ctx.index),
+      column: ctx.column ? this.visit(ctx.column) : null,
       loc: nodeLoc(node),
     };
   }

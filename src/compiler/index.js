@@ -197,19 +197,59 @@ function collectGlobals(program, ctx) {
         ctx.globals.set(item.name, entry);
       }
     }
+    if (item.type === 'TableDecl') collectTable(item, ctx);
   }
+}
+
+/** table 선언 -> 엔트리 project.tables 항목 */
+function collectTable(node, ctx) {
+  if (ctx.tableByName.has(node.name)) {
+    return ctx.error(node, `'${node.name}' 테이블이 이미 있습니다.`);
+  }
+  const cells = (row) => {
+    const values = row.map((cell) => constantOf(cell, ctx));
+    return values.some((value) => value === null) ? null : values.map((value) => String(value));
+  };
+
+  const fields = cells(node.columns);
+  if (!fields) return null;
+  const data = [];
+  for (const row of node.rows) {
+    const values = cells(row);
+    if (!values) return null;
+    if (values.length !== fields.length) {
+      return ctx.error(node, `테이블 '${node.name}' 의 줄은 열 개수(${fields.length})와 같아야 합니다. 이 줄은 ${values.length}개입니다.`);
+    }
+    data.push(values);
+  }
+
+  const entry = {
+    id: ctx.newId(),
+    name: node.displayName ?? node.name,
+    object: null,
+    fields,
+    data,
+    chart: [],
+  };
+  ctx.tables.push(entry);
+  ctx.tableByName.set(node.name, entry);
+  return entry;
 }
 
 /** var/list 선언 -> 엔트리 variables 항목 */
 function makeVariable(node, ctx, objectId) {
+  // Entry offers cloud/real-time storage on global variables only.
+  if (node.scope && objectId) {
+    ctx.error(node, `'${node.scope}' 는 오브젝트 안의 변수·리스트에는 쓸 수 없습니다. 전역 선언에만 붙일 수 있습니다.`);
+  }
   const base = {
-    name: node.name,
+    name: node.displayName ?? node.name,
     id: ctx.newId(),
     visible: false,
     value: 0,
     variableType: 'variable',
-    isCloud: false,
-    isRealTime: false,
+    isCloud: node.scope === 'shared',
+    isRealTime: node.scope === 'realtime',
     cloudDate: false,
     object: objectId,
     x: 0,
@@ -318,7 +358,7 @@ function collectObjectMembers(object, ctx) {
     switch (member.type) {
       case 'Costume': {
         const asset = makeAsset('image', {
-          id: resourceId(member, ctx), file: member.file, name: member.id,
+          id: resourceId(member, ctx), file: member.file, name: member.displayName ?? member.id,
           width: member.width, height: member.height,
         }, ctx, member);
         object.pictures.set(member.id, asset);
@@ -327,7 +367,10 @@ function collectObjectMembers(object, ctx) {
       }
       case 'Sound': {
         const asset = makeAsset('sound', {
-          id: resourceId(member, ctx), file: member.file, name: member.id, duration: member.duration,
+          id: resourceId(member, ctx),
+          file: member.file,
+          name: member.displayName ?? member.id,
+          duration: member.duration,
         }, ctx, member);
         object.sounds.set(member.id, asset);
         break;
@@ -351,6 +394,16 @@ function collectObjectMembers(object, ctx) {
       }
       default: break;
     }
+  }
+
+  // A costume/sound whose Entry name is not a Tess identifier answers to both
+  // spellings, because Entry resolves a name written into a block against the
+  // name the work carries, not the identifier the source uses.
+  for (const member of object.node.body) {
+    if (member.type !== 'Costume' && member.type !== 'Sound') continue;
+    if (!member.displayName || member.displayName === member.id) continue;
+    const shelf = member.type === 'Costume' ? object.pictures : object.sounds;
+    if (!shelf.has(member.displayName)) shelf.set(member.displayName, shelf.get(member.id));
   }
 
   // 이벤트 핸들러 안에서 처음 나오는 var/list 도 이 오브젝트의 변수로 등록한다
@@ -644,10 +697,10 @@ function assemble(program, ctx, options) {
       useLocalVariables: (fn.localVariables ?? []).length > 0,
       content: JSON.stringify(fn.content ?? []),
     })),
-    tables: [],
+    tables: ctx.tables,
     speed: fields.get('fps')?.value ?? 60,
     interface: { menuWidth: 280, canvasWidth: 480, object: objects[0]?.id ?? null },
-    expansionBlocks: [],
+    expansionBlocks: [...ctx.expansionBlocks],
     // read / tts 문을 쓰면 엔트리가 '읽어주기(TTS)' 확장 블록을 실행할 수 있게 켠다
     // (entryjs 는 project.aiUtilizeBlocks 에 이름이 있어야 Entry.AI_UTILIZE_BLOCK[type].init() 을 부른다)
     aiUtilizeBlocks: ctx.usesTts ? ['tts'] : [],
@@ -738,8 +791,9 @@ function buildObject(object, ctx) {
     rotateMethod: string('rotation', 'free'),
     scene: object.scene.id,
     sprite: {
-      pictures: [...object.pictures.values()],
-      sounds: [...object.sounds.values()],
+      // Both spellings of a renamed resource share one asset, so drop the repeat.
+      pictures: [...new Set(object.pictures.values())],
+      sounds: [...new Set(object.sounds.values())],
     },
     lock: boolean('lock', false),
     entity,

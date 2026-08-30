@@ -9,6 +9,7 @@ import { KEY_CODES, keyCodeOf } from './keycodes.js';
 import { didYouMean, orHint } from './suggest.js';
 import { requirePowerRefiner } from './runtime.js';
 import { BUILTIN_FUNCTIONS, OPTION_KEYWORDS, STATE_VALUES } from '../builtins.js';
+import { expansionBlock } from './expansion.js';
 
 /** 결과가 엔트리 "판단(boolean)" 블록인 타입들 */
 const BOOLEAN_TYPES = new Set([
@@ -77,6 +78,7 @@ const PROPERTY_COORDINATES = {
 
 export function isBooleanBlock(node) {
   if (!node || typeof node !== 'object') return false;
+  if (expansionBlock(node.type)?.kind === 'boolean') return true;
   // 판단 매개변수(`이름?`)를 가리키는 블록은 함수마다 타입 이름이 다르므로 접두사로 가린다
   return BOOLEAN_TYPES.has(node.type) || String(node.type).startsWith('booleanParam_');
 }
@@ -144,8 +146,12 @@ function compileIdentifier(node, ctx) {
       return ctx.block(type, type.startsWith('booleanParam_') ? [null] : []);
     }
     if (found.kind === 'funcLocal') return ctx.block('get_func_variable', [found.id, null]);
+    // Entry keeps variables and lists in separate containers, so a variable
+    // block holding a list id finds nothing at run time. Works that renamed a
+    // variable into a list still carry such blocks; they compile back as they
+    // were, under a warning, rather than failing the whole build.
     if (found.entry.variableType === 'list') {
-      return ctx.error(node, `리스트 '${name}' 은(는) 값으로 바로 쓸 수 없습니다. ${name}[i] 처럼 항목을 지정하세요.`);
+      ctx.warn(node, `리스트 '${name}' 을(를) 값으로 바로 썼습니다. 실행할 때 값을 찾지 못합니다 — ${name}[i] 처럼 항목을 지정하세요.`);
     }
     return ctx.block('get_variable', [found.entry.id, null]);
   }
@@ -436,6 +442,20 @@ function compileUnary(node, ctx) {
 //  인덱스 (리스트 · 문자열)
 // ---------------------------------------------------------------------------
 function compileIndex(node, ctx) {
+  // On a table, `표[2, "점수"]` reads one cell by row and column, and
+  // `표["B2"]` reads it by the spreadsheet-style name Entry shows in its editor.
+  const table = node.target.type === 'Identifier' && ctx.tableByName.get(node.target.name);
+  if (table) {
+    const first = compileValue(node.index, ctx);
+    if (!first) return null;
+    if (!node.column) return ctx.block('get_value_from_cell', [table.id, first, null]);
+    const column = compileValue(node.column, ctx);
+    return column && ctx.block('get_value_from_table', [table.id, first, column, null]);
+  }
+  if (node.column) {
+    return ctx.error(node, `'${node.target.name ?? ''}' 은(는) 테이블이 아니라서 [행, 열] 로 읽을 수 없습니다.`);
+  }
+
   const list = resolveList(node.target, ctx);
   const index = compileValue(node.index, ctx);
   if (!index) return null;
@@ -470,18 +490,16 @@ function resolveSoundValue(node, ctx) {
   // force id 로 고정해 둔 진짜 엔트리 id 면 그대로 흘려보낸다 (resolveSound 와 같은 이유)
   if (ctx.forcedResourceIds.has(node.value)) return node.value;
   // 전역 함수는 기준 오브젝트가 없다 — 이 이름을 가진 오브젝트가 하나뿐이면 그대로 가리킨다.
+  // A global function has no one object to resolve against. Entry reads this
+  // field as id, then name, then index, so leaving the name is what works when
+  // several objects — or none yet — carry a sound by that name.
   if (!ctx.object) {
     const found = ctx.lookupObjectResource('sounds', node.value);
     if (found?.kind === 'found') return found.asset.id;
-    if (found?.kind === 'ambiguous') {
-      return ctx.error(
-        node,
-        `'${node.value}' 은(는) ${found.owners.join(', ')} 가 저마다 가진 소리라 어느 것인지 알 수 없습니다. `
-        + '이 함수를 그 오브젝트 안에 선언하거나, force id 로 고정하세요.',
-      );
-    }
+    if (!found) ctx.warn(node, `'${node.value}' 소리가 어느 오브젝트에도 없습니다. 실행할 때 이름으로 찾습니다.`);
+    return node.value;
   }
-  return ctx.error(node, `'${node.value}' 소리가 ${ctx.object ? '이 오브젝트에' : '어느 오브젝트에도'} 없습니다.`
+  return ctx.error(node, `'${node.value}' 소리가 이 오브젝트에 없습니다.`
     + orHint(node.value, ctx.object?.sounds.keys() ?? [],
       `sound ${node.value} "파일명" 으로 먼저 등록하세요.`));
 }
@@ -497,6 +515,44 @@ export function resolveList(node, ctx) {
 // ---------------------------------------------------------------------------
 //  내장 함수 호출
 // ---------------------------------------------------------------------------
+/** Column summaries Entry's "테이블의 () 값" block can compute. */
+const TABLE_CALCULATIONS = {
+  sum: 'SUM', average: 'AVG', maximum: 'MAX', minimum: 'MIN',
+  stdev: 'STDEV', median: 'MEDIAN',
+};
+
+/** The table a value function was called on, or an error when the name is not one. */
+function tableArgument(node, callee, ctx) {
+  const table = node.type === 'Identifier' && ctx.tableByName.get(node.name);
+  return table || ctx.error(node, `${callee}() 의 첫 번째 인자는 테이블이어야 합니다.`
+    + didYouMean(node.name ?? '', ctx.tableByName.keys()));
+}
+
+/**
+ * 확장 블록 하나. 드롭다운 칸은 골라 둔 값이 그대로 들어가야 하므로 문자열로 직접
+ * 적어야 하고, 값 칸만 식을 받는다. 쓰인 확장은 project.expansionBlocks 에 적어
+ * 둬야 엔트리가 실행할 때 그 모듈을 켠다.
+ */
+function compileExpansion(node, ctx) {
+  const { callee, arguments: args } = node;
+  const { module, kind, slots } = expansionBlock(callee);
+  if (args.length !== slots.length) {
+    return ctx.error(node, `${callee}() 는 인자가 ${slots.length}개여야 합니다. (${args.length}개를 받았습니다)`);
+  }
+
+  const params = slots.map((slot, index) => {
+    const argument = args[index];
+    if (slot === 'value') return compileValue(argument, ctx);
+    if (argument.type === 'String') return argument.value;
+    if (argument.type === 'Number') return String(argument.value);
+    return ctx.error(argument, `${callee}() 의 ${index + 1}번째 칸은 목록에서 고르는 자리라 "..." 로 직접 적어야 합니다.`);
+  });
+  if (params.some((param) => param === null)) return null;
+
+  ctx.expansionBlocks.add(module);
+  return ctx.block(callee, params);
+}
+
 function compileCall(node, ctx) {
   const { callee, arguments: args } = node;
   const arity = (count) => {
@@ -713,7 +769,45 @@ function compileCall(node, ctx) {
     case 'random_color':
       return ctx.error(node, 'random_color() 는 draw_color = random_color() 형태로만 쓸 수 있습니다.');
 
+    // --- 테이블 -----------------------------------------------------------
+    case 'row_count':
+    case 'column_count': {
+      if (!arity(1)) return null;
+      const table = tableArgument(args[0], callee, ctx);
+      return table && ctx.block('get_table_count', [table.id, callee === 'row_count' ? 'ROW' : 'COL', null]);
+    }
+
+    case 'last_row': {
+      if (!arity(2)) return null;
+      const table = tableArgument(args[0], callee, ctx);
+      const column = value(1);
+      return table && column && ctx.block('get_value_from_last_row', [table.id, column, null]);
+    }
+
+    case 'correlation': {
+      if (!arity(3)) return null;
+      const table = tableArgument(args[0], callee, ctx);
+      const [x, y] = [value(1), value(2)];
+      return table && x && y && ctx.block('get_coefficient', [table.id, x, y, null]);
+    }
+
+    case 'lookup': {
+      if (!arity(4)) return null;
+      const table = tableArgument(args[0], callee, ctx);
+      const [field, wanted, back] = [value(1), value(2), value(3)];
+      return table && field && wanted && back
+        && ctx.block('get_value_v_lookup', [table.id, field, wanted, back, null]);
+    }
+
     default:
+      if (expansionBlock(callee)) return compileExpansion(node, ctx);
+      if (TABLE_CALCULATIONS[callee]) {
+        if (!arity(2)) return null;
+        const table = tableArgument(args[0], callee, ctx);
+        const column = value(1);
+        return table && column
+          && ctx.block('calc_values_from_table', [table.id, column, TABLE_CALCULATIONS[callee], null]);
+      }
       return ctx.error(node, `알 수 없는 함수 '${callee}' 입니다.`
         + didYouMean(callee, [...BUILTIN_FUNCTIONS, ...ctx.functionByName.keys()]));
   }

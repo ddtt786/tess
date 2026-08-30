@@ -526,7 +526,7 @@ test('엔트리 기본 오브젝트의 모양·소리는 entryjs 에서 꺼내 �
   // 사람이 그림을 바꿔 넣을 때 숫자까지 같이 고치지 않아도 된다.
   assert.match(fragment, /^default costume 엔트리봇_걷기1 "assets\/image\/엔트리봇_엔트리봇_걷기1\.svg"$/m);
   assert.match(fragment, /^costume 엔트리봇_걷기2 "assets\/image\/엔트리봇_엔트리봇_걷기2\.svg"$/m);
-  assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3"$/m);
+  assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3" as "강아지 짖는 소리"$/m);
 
   for (const relative of ['assets/image/엔트리봇_엔트리봇_걷기1.svg', 'assets/image/엔트리봇_엔트리봇_걷기2.svg', 'assets/sound/엔트리봇_강아지_짖는_소리.mp3']) {
     const asset = result.assets.find((a) => a.path === relative);
@@ -727,7 +727,7 @@ test('파일을 담은 모양·소리는 크기·길이를 적지 않고, 1×1 �
   const result = decompileProject(project, []);
   const fragment = result.assets.find((a) => a.path === 'objects/엔트리봇.tess').data.toString('utf-8');
   assert.match(fragment, /^default costume 엔트리봇_걷기1 "assets\/image\/엔트리봇_엔트리봇_걷기1\.svg"$/m);
-  assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3"$/m);
+  assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3" as "강아지 짖는 소리"$/m);
   assert.match(fragment, /^costume 새그림 "assets\/image\/엔트리봇_새그림\.png" size 960 540$/m);
 });
 
@@ -740,7 +740,7 @@ test('sizes 옵션을 켜면 모든 모양에 size 가로 세로 를 적는다',
   assert.match(fragment, /^default costume 엔트리봇_걷기1 "assets\/image\/엔트리봇_엔트리봇_걷기1\.svg" size 144 246$/m);
   assert.match(fragment, /^costume 엔트리봇_걷기2 "assets\/image\/엔트리봇_엔트리봇_걷기2\.svg" size 144 246$/m);
   // 소리 길이는 이 옵션과 상관없다 — 컴파일러가 파일에서 잰다
-  assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3"$/m);
+  assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3" as "강아지 짖는 소리"$/m);
 });
 
 // ---------------------------------------------------------------------------
@@ -1355,4 +1355,175 @@ test('함수 정의 앞에 주석 블록이 놓여 있어도 정의를 찾아낸
   const result = decompileProject(project, []);
 
   assert.match(result.source, /^function 계산\(a\):\n {2}var 누적 = 0\n {2}누적 = 3\nend$/m);
+});
+
+// --- 이름 · 저장 범위 -----------------------------------------------------------
+// 엔트리 이름은 Tess 식별자로 못 적는 글자를 담을 수 있는데, "모양으로 바꾸기" 같은
+// 블록은 실행할 때 그 이름으로 모양을 찾는다. 이름을 식별자로 바꿔 버리면 그런 조회가
+// 전부 빗나가므로, 원래 이름을 `as` 로 남기고 다시 컴파일할 때 되돌려 놓아야 한다.
+function namedResourceProject() {
+  const project = minimalProject();
+  project.objects[0].sprite.pictures = [
+    { id: 'pic1', name: '상호작용1*1', filename: 'a', fileurl: 'a.png', dimension: { width: 4, height: 4 } },
+  ];
+  project.objects[0].sprite.sounds = [
+    { id: 'snd1', name: 'snd_select.mp3', filename: 'b', fileurl: 'b.mp3', duration: 1 },
+  ];
+  project.objects[0].selectedPictureId = 'pic1';
+  project.objects[0].script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    {
+      type: 'change_to_some_shape',
+      params: [{ type: 'text', params: ['상호작용1*1'], statements: [] }, null],
+      statements: [],
+    },
+  ]]);
+  return project;
+}
+
+/** 오브젝트 조각 파일 하나의 내용 */
+function fragmentOf(result, name = '주인공') {
+  return result.assets.find((a) => a.path === `objects/${name}.tess`).data.toString('utf-8');
+}
+
+test('식별자로 적을 수 없는 모양 · 소리 이름은 as 로 남긴다', () => {
+  const fragment = fragmentOf(decompileProject(namedResourceProject(), []));
+  assert.match(fragment, /costume 상호작용1_1 "[^"]+"( size \d+ \d+)? as "상호작용1\*1"/);
+  assert.match(fragment, /sound snd_select "[^"]+"( for \d+)? as "snd_select\.mp3"/);
+});
+
+test('as 로 남긴 이름은 다시 컴파일해도 그대로 붙는다', () => {
+  const result = decompileProject(namedResourceProject(), []);
+  const recompiled = recompileResult(result, 'tess-decompile-asname-');
+  assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
+
+  const object = recompiled.project.objects.find((o) => o.name === '주인공');
+  assert.deepEqual(object.sprite.pictures.map((p) => p.name), ['상호작용1*1']);
+  assert.deepEqual(object.sprite.sounds.map((s) => s.name), ['snd_select.mp3']);
+  // 이름이 하나뿐이라 두 철자가 같은 모양 하나를 가리켜야 한다 — 목록이 늘어나면 안 된다
+  assert.equal(object.sprite.pictures.length, 1);
+});
+
+test('공유 · 실시간 변수는 shared · realtime 로 적고 그대로 되돌아온다', () => {
+  const project = minimalProject();
+  project.variables = [
+    {
+      id: 'v1', name: '순위(공유)', variableType: 'list', array: [], object: null,
+      isCloud: true, isRealTime: false, cloudDate: false, visible: false, value: 0, x: 0, y: 0,
+    },
+    {
+      id: 'v2', name: '접속자', variableType: 'variable', object: null,
+      isCloud: false, isRealTime: true, cloudDate: false, visible: false, value: 0, x: 0, y: 0,
+    },
+  ];
+  const result = decompileProject(project, []);
+  assert.match(result.source, /^shared list 순위_공유 as "순위\(공유\)" = \[\]$/m);
+  assert.match(result.source, /^realtime var 접속자 = 0$/m);
+
+  const recompiled = recompileResult(result, 'tess-decompile-cloud-');
+  assert.deepEqual(recompiled.errors, []);
+  const list = recompiled.project.variables.find((v) => v.name === '순위(공유)');
+  const variable = recompiled.project.variables.find((v) => v.name === '접속자');
+  assert.equal(list.isCloud, true);
+  assert.equal(list.isRealTime, false);
+  assert.equal(variable.isRealTime, true);
+  assert.equal(variable.isCloud, false);
+});
+
+test('공유 · 실시간은 오브젝트 안의 변수에는 붙일 수 없다', () => {
+  const source = 'scene "s":\n  object "o":\n    shared var 점수 = 0\n  end\nend';
+  const result = compileProject(source, { path: 'main.tess' });
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0].message, /전역 선언에만 붙일 수 있습니다/);
+});
+
+test('작품에 없는 변수 id 를 가리키는 블록은 선언을 되살려서 컴파일된다', () => {
+  const project = minimalProject();
+  project.objects[0].script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    { type: 'set_variable', params: ['지워진id', { type: 'number', params: ['1'], statements: [] }, null], statements: [] },
+  ]]);
+  const result = decompileProject(project, []);
+  assert.match(result.source, /^var missing_var_지워진id = 0$/m);
+
+  const recompiled = recompileResult(result, 'tess-decompile-missing-');
+  assert.deepEqual(recompiled.errors, []);
+});
+
+// --- 테이블 -------------------------------------------------------------------
+test('테이블 블록은 컴파일한 뒤 되돌려도 글자 하나까지 그대로다', () => {
+  const body = [
+    'in 점수표 add row',
+    'in 점수표 add column',
+    'in 점수표 insert row at 2',
+    'in 점수표 insert column at 2',
+    'remove 점수표 row 1',
+    'remove 점수표 column 1',
+    '점수표[1, "점수"] = 5',
+    '점수표["B2"] = 6',
+    'save 점수표',
+    'show 점수표',
+    'show 점수표 for 3',
+    'show 점수표 chart 1',
+    'hide chart',
+    'say 점수표[1, "점수"]',
+    'say 점수표["B2"]',
+    'say row_count(점수표)',
+    'say column_count(점수표)',
+    'say last_row(점수표, "점수")',
+    'say sum(점수표, "점수")',
+    'say average(점수표, "점수")',
+    'say maximum(점수표, "점수")',
+    'say minimum(점수표, "점수")',
+    'say stdev(점수표, "점수")',
+    'say median(점수표, "점수")',
+    'say correlation(점수표, "이름", "점수")',
+    'say lookup(점수표, "이름", "철수", "점수")',
+  ];
+  const source = `table 점수표:
+  columns "이름", "점수"
+  row "철수", 10
+end
+
+scene "s":
+  object "o":
+    when start do
+${body.map((line) => `      ${line}`).join('\n')}
+    end
+  end
+end`;
+
+  const compiled = compileProject(source, { path: 'main.tess' });
+  assert.deepEqual(compiled.errors, [], compiled.errors.map((e) => e.message).join('\n'));
+
+  const back = decompileProject(compiled.project, []);
+  assert.deepEqual(back.warnings, []);
+  assert.match(back.source, /^table 점수표:\n {2}columns "이름", "점수"\n {2}row "철수", 10\nend$/m);
+  const fragment = back.assets.find((a) => a.path === 'objects/o.tess').data.toString('utf-8');
+  assert.equal(
+    fragment.trim(),
+    ['when start do', ...body.map((line) => `  ${line}`), 'end'].join('\n'),
+  );
+});
+
+test('테이블 선언은 엔트리 project.tables 항목이 된다', () => {
+  const { project, errors } = compileProject(
+    'table 점수표 as "점수 표":\n  columns "이름", "점수"\n  row "철수", 10\n  row "영희", 20\nend',
+    { path: 'main.tess' },
+  );
+  assert.deepEqual(errors, []);
+  assert.equal(project.tables.length, 1);
+  const [table] = project.tables;
+  assert.equal(table.name, '점수 표');
+  assert.deepEqual(table.fields, ['이름', '점수']);
+  assert.deepEqual(table.data, [['철수', '10'], ['영희', '20']]);
+});
+
+test('테이블 줄의 칸 수가 열 개수와 다르면 에러다', () => {
+  const result = compileProject(
+    'table T:\n  columns "a", "b"\n  row 1\nend',
+    { path: 'main.tess' },
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0].message, /열 개수\(2\)와 같아야 합니다/);
 });

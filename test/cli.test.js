@@ -35,13 +35,13 @@ function project(t, files) {
 }
 
 test('check 는 문법만 맞으면 통과하는 코드도 컴파일 단계까지 검사한다', (t) => {
-  // 문법은 완벽하다. 하지만 이 오브젝트에는 "없는모양" 이라는 모양이 없다.
+  // 문법은 완벽하다. 하지만 이 작품에는 "없는장면" 이라는 장면이 없다.
   const dir = project(t, {
     'main.tess': `scene "s":
   object "주인공":
     default costume 기본 "a.png" size 10 10
     when start do
-      costume = "없는모양"
+      jump "없는장면"
     end
   end
 end`,
@@ -49,7 +49,7 @@ end`,
 
   const result = cli('check', path.join(dir, 'main.tess'));
   assert.equal(result.code, 1);
-  assert.match(result.output, /없는모양/);
+  assert.match(result.output, /없는장면/);
   assert.doesNotMatch(result.output, /OK/);
 });
 
@@ -60,7 +60,7 @@ test('check 는 useobject 로 불러오는 조각 파일 안까지 검사한다'
     'objects/주인공.tess': `default costume 기본 "a.png" size 10 10
 
 when start do
-  costume = "없는모양"
+  jump "없는장면"
 end`,
   });
 
@@ -68,7 +68,7 @@ end`,
   assert.equal(result.code, 1);
   // 에러 위치는 main.tess 가 아니라 진짜 그 코드가 있는 조각 파일로 알려 준다
   assert.match(result.output, /주인공\.tess:\d+:\d+/);
-  assert.match(result.output, /없는모양/);
+  assert.match(result.output, /없는장면/);
 });
 
 test('멀쩡한 작품은 check 가 OK 로 통과시킨다', () => {

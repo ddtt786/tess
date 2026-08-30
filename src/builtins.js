@@ -1,3 +1,5 @@
+import { EXPANSION_BLOCKS } from './compiler/expansion.js';
+
 // ============================================================================
 //  spec 에 정의된 내장 이름 목록
 //  (문법은 이 이름들을 특별 취급하지 않는다. 파싱 이후 검증/변환 단계에서 쓴다.)
@@ -30,6 +32,11 @@ export const BUILTIN_FUNCTIONS = new Set([
   'sound_duration',
   // 시간 · 색상
   'now', 'to_hex', 'from_hex', 'random_color',
+  // 테이블
+  'row_count', 'column_count', 'last_row', 'correlation', 'lookup',
+  'sum', 'average', 'maximum', 'minimum', 'stdev', 'median',
+  // 확장 (날씨 · 축제 · 재난문자 · 국민행동요령) — 이름은 엔트리 블록 타입 그대로다
+  ...Object.keys(EXPANSION_BLOCKS),
 ]);
 
 /** 옵션 식별자 (spec 의 `Keyword` 타입) — 괄호 없는 이름이지만 변수가 아니다 */

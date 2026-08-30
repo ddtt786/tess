@@ -43,7 +43,7 @@ const STATEMENT_LEADERS = idxSet(
   kw.move, kw.go, kw.turn, kw.steer, kw.look, kw.show, kw.hide, kw.next,
   kw.prev, kw.say, kw.think, kw.flip, kw.order, kw.write, kw.append,
   kw.prepend, kw.stamp, kw.play, kw.read, kw.tts, kw.in, kw.remove, kw.ask,
-  kw.var, kw.list,
+  kw.var, kw.list, kw.save,
 );
 
 // Statements that are complete on their own. The grammar commits to these as
@@ -106,7 +106,37 @@ export class TessParser extends CstParser {
         { ALT: () => $.SUBRULE($.useDecl) },
         { ALT: () => $.SUBRULE($.varDecl) },
         { ALT: () => $.SUBRULE($.listDecl) },
+        { ALT: () => $.SUBRULE($.tableDecl) },
       ]);
+    });
+
+    // A table (엔트리 "테이블") — a named grid with one header row.
+    $.RULE('tableDecl', () => {
+      $.CONSUME(kw.table);
+      $.SUBRULE($.identifier, { LABEL: 'name' });
+      $.OPTION(() => $.SUBRULE($.displayName, { LABEL: 'displayName' }));
+      $.CONSUME(Colon);
+      $.SUBRULE($.tableColumns, { LABEL: 'columns' });
+      $.MANY(() => $.SUBRULE($.tableRow, { LABEL: 'rows' }));
+      $.CONSUME(kw.end);
+    });
+
+    $.RULE('tableColumns', () => {
+      $.CONSUME(kw.columns);
+      $.SUBRULE($.tableCells, { LABEL: 'cells' });
+    });
+
+    $.RULE('tableRow', () => {
+      $.CONSUME(kw.row);
+      $.SUBRULE($.tableCells, { LABEL: 'cells' });
+    });
+
+    $.RULE('tableCells', () => {
+      $.SUBRULE($.expr, { LABEL: 'cell' });
+      $.MANY(() => {
+        $.CONSUME(Comma);
+        $.SUBRULE2($.expr, { LABEL: 'cell' });
+      });
     });
 
     $.RULE('useDecl', () => {
@@ -283,6 +313,7 @@ export class TessParser extends CstParser {
         $.CONSUME(NumberLiteral, { LABEL: 'width' });
         $.CONSUME2(NumberLiteral, { LABEL: 'height' });
       });
+      $.OPTION4(() => $.SUBRULE($.displayName, { LABEL: 'displayName' }));
       $.OPTION3(() => $.SUBRULE($.forceId, { LABEL: 'forceId' }));
     });
 
@@ -294,7 +325,15 @@ export class TessParser extends CstParser {
         $.CONSUME(kw.for);
         $.CONSUME(NumberLiteral, { LABEL: 'duration' });
       });
+      $.OPTION3(() => $.SUBRULE($.displayName, { LABEL: 'displayName' }));
       $.OPTION2(() => $.SUBRULE($.forceId, { LABEL: 'forceId' }));
+    });
+
+    // The Entry name a resource actually carries, when it cannot be spelled as
+    // a Tess identifier. Runtime lookups by name ("모양으로 바꾸기") use it.
+    $.RULE('displayName', () => {
+      $.CONSUME(kw.as);
+      $.CONSUME(StringLiteral, { LABEL: 'text' });
     });
 
     // Pins an asset to a fixed Entry id instead of deriving one from a seed.
@@ -335,16 +374,28 @@ export class TessParser extends CstParser {
       $.OPTION(() => $.CONSUME(Question, { LABEL: 'boolean' }));
     });
 
+    // `shared` marks an Entry cloud variable, `realtime` a real-time one.
+    $.RULE('storageScope', () => {
+      $.OR([
+        { ALT: () => $.CONSUME(kw.shared, { LABEL: 'shared' }) },
+        { ALT: () => $.CONSUME(kw.realtime, { LABEL: 'realtime' }) },
+      ]);
+    });
+
     $.RULE('varDecl', () => {
+      $.OPTION(() => $.SUBRULE($.storageScope, { LABEL: 'scope' }));
       $.CONSUME(kw.var);
       $.SUBRULE($.identifier, { LABEL: 'name' });
+      $.OPTION2(() => $.SUBRULE($.displayName, { LABEL: 'displayName' }));
       $.CONSUME(Assign);
       $.SUBRULE($.expr, { LABEL: 'value' });
     });
 
     $.RULE('listDecl', () => {
+      $.OPTION(() => $.SUBRULE($.storageScope, { LABEL: 'scope' }));
       $.CONSUME(kw.list);
       $.SUBRULE($.identifier, { LABEL: 'name' });
+      $.OPTION2(() => $.SUBRULE($.displayName, { LABEL: 'displayName' }));
       $.CONSUME(Assign);
       $.SUBRULE($.listLiteral, { LABEL: 'value' });
     });
@@ -454,8 +505,9 @@ export class TessParser extends CstParser {
           { GATE: () => $.leads(kw.in), ALT: () => $.SUBRULE($.listAddStatement) },
           { GATE: () => $.leads(kw.remove), ALT: () => $.SUBRULE($.listRemoveStatement) },
           { GATE: () => $.leads(kw.ask), ALT: () => $.SUBRULE($.askStatement) },
-          { GATE: () => $.leads(kw.var), ALT: () => $.SUBRULE($.varDecl) },
-          { GATE: () => $.leads(kw.list), ALT: () => $.SUBRULE($.listDecl) },
+          { GATE: () => $.leads(kw.save), ALT: () => $.SUBRULE($.saveStatement) },
+          { GATE: () => $.leadsDecl(kw.var), ALT: () => $.SUBRULE($.varDecl) },
+          { GATE: () => $.leadsDecl(kw.list), ALT: () => $.SUBRULE($.listDecl) },
           { ALT: () => $.SUBRULE($.assignOrCall) },
         ],
       });
@@ -695,6 +747,25 @@ export class TessParser extends CstParser {
         GATE: () => $.sameLine() && $.isIdentLike($.LA(1)),
         DEF: () => $.SUBRULE($.identifier, { LABEL: 'target' }),
       });
+      // `show 표 for 3` closes the table again after N seconds, and
+      // `show 표 chart 1` opens one of the table's saved charts instead.
+      $.OPTION2({
+        GATE: () => $.sameLine(),
+        DEF: () => $.OR2([
+          {
+            ALT: () => {
+              $.CONSUME(kw.for);
+              $.SUBRULE($.expr, { LABEL: 'seconds' });
+            },
+          },
+          {
+            ALT: () => {
+              $.CONSUME(kw.chart);
+              $.SUBRULE2($.expr, { LABEL: 'chart' });
+            },
+          },
+        ]),
+      });
     });
 
     $.RULE('costumeStepStatement', () => {
@@ -816,12 +887,16 @@ export class TessParser extends CstParser {
       $.SUBRULE($.identifier, { LABEL: 'list' });
       $.OR([
         {
+          GATE: () => $.leadsAny(kw.add) && $.LA(2).tokenTypeIdx !== idx(kw.row)
+            && $.LA(2).tokenTypeIdx !== idx(kw.column),
           ALT: () => {
             $.CONSUME(kw.add, { LABEL: 'add' });
             $.SUBRULE($.expr, { LABEL: 'value' });
           },
         },
         {
+          GATE: () => $.LA(1).tokenTypeIdx === idx(kw.insert)
+            && $.LA(2).tokenTypeIdx !== idx(kw.row) && $.LA(2).tokenTypeIdx !== idx(kw.column),
           ALT: () => {
             $.CONSUME(kw.insert, { LABEL: 'insert' });
             $.SUBRULE2($.expr, { LABEL: 'value' });
@@ -829,20 +904,59 @@ export class TessParser extends CstParser {
             $.SUBRULE3($.expr, { LABEL: 'index' });
           },
         },
+        {
+          ALT: () => {
+            $.OR2([
+              { ALT: () => $.CONSUME2(kw.add, { LABEL: 'addLine' }) },
+              { ALT: () => $.CONSUME2(kw.insert, { LABEL: 'insertLine' }) },
+            ]);
+            $.SUBRULE($.tableLine, { LABEL: 'line' });
+            $.OPTION(() => {
+              $.CONSUME2(kw.at);
+              $.SUBRULE4($.expr, { LABEL: 'index' });
+            });
+          },
+        },
+      ]);
+    });
+
+    /** `row` or `column` — which way a table grows or shrinks. */
+    $.RULE('tableLine', () => {
+      $.OR([
+        { ALT: () => $.CONSUME(kw.row, { LABEL: 'row' }) },
+        { ALT: () => $.CONSUME(kw.column, { LABEL: 'column' }) },
       ]);
     });
 
     $.RULE('listRemoveStatement', () => {
       $.CONSUME(kw.remove);
       $.SUBRULE($.identifier, { LABEL: 'list' });
-      $.CONSUME(LSquare);
-      $.SUBRULE($.expr, { LABEL: 'index' });
-      $.CONSUME(RSquare);
+      $.OR([
+        {
+          ALT: () => {
+            $.CONSUME(LSquare);
+            $.SUBRULE($.expr, { LABEL: 'index' });
+            $.CONSUME(RSquare);
+          },
+        },
+        {
+          ALT: () => {
+            $.SUBRULE($.tableLine, { LABEL: 'line' });
+            $.SUBRULE2($.expr, { LABEL: 'index' });
+          },
+        },
+      ]);
     });
 
     $.RULE('askStatement', () => {
       $.CONSUME(kw.ask);
       $.SUBRULE($.expr, { LABEL: 'question' });
+    });
+
+    /** `save 표` — writes the table's current contents back over the saved one. */
+    $.RULE('saveStatement', () => {
+      $.CONSUME(kw.save);
+      $.SUBRULE($.identifier, { LABEL: 'table' });
     });
 
     // ========================================================================
@@ -872,6 +986,10 @@ export class TessParser extends CstParser {
       $.OPTION(() => {
         $.CONSUME(LSquare);
         $.SUBRULE($.expr, { LABEL: 'index' });
+        $.OPTION2(() => {
+          $.CONSUME(Comma);
+          $.SUBRULE2($.expr, { LABEL: 'column' });
+        });
         $.CONSUME(RSquare);
       });
     });
@@ -1005,10 +1123,16 @@ export class TessParser extends CstParser {
       $.CONSUME(RParen);
     });
 
+    // `표[2, "점수"]` reads a table cell; one index reads a list item or, on a
+    // table, a spreadsheet cell reference such as `표["B2"]`.
     $.RULE('indexExpr', () => {
       $.SUBRULE($.identifier, { LABEL: 'target' });
       $.CONSUME(LSquare);
       $.SUBRULE($.expr, { LABEL: 'index' });
+      $.OPTION(() => {
+        $.CONSUME(Comma);
+        $.SUBRULE2($.expr, { LABEL: 'column' });
+      });
       $.CONSUME(RSquare);
     });
 
@@ -1088,6 +1212,18 @@ export class TessParser extends CstParser {
     return tokenTypes.some((tokenType) => this.leads(tokenType));
   }
 
+  /**
+   * True where a `var`/`list` declaration begins, including one prefixed by a
+   * `shared`/`realtime` storage scope. Both prefixes stay usable as names, so
+   * they only lead when the declaration keyword follows.
+   */
+  leadsDecl(tokenType) {
+    if (this.leads(tokenType)) return true;
+    const token = this.LA(1);
+    if (token.tokenTypeIdx !== idx(kw.shared) && token.tokenTypeIdx !== idx(kw.realtime)) return false;
+    return this.LA(2).tokenTypeIdx === idx(tokenType);
+  }
+
   atBlockEnd() {
     const token = this.LA(1);
     return token.tokenTypeIdx === idx(kw.end) || token.tokenTypeIdx === idx(EOF);
@@ -1097,7 +1233,8 @@ export class TessParser extends CstParser {
     const token = this.LA(1);
     if (token.tokenTypeIdx === idx(EOF)) return false;
     return [kw.project, kw.scene, kw.object, kw.text, kw.function, kw.useobject,
-      kw.usetext, kw.use, kw.var, kw.list].some((type) => token.tokenTypeIdx === idx(type));
+      kw.usetext, kw.use, kw.var, kw.list, kw.shared, kw.realtime, kw.table]
+      .some((type) => token.tokenTypeIdx === idx(type));
   }
 
   /**

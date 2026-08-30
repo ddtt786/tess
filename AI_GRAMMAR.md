@@ -84,7 +84,7 @@ Program = TopLevelItem*
 
 TopLevelItem
   = ProjectDecl | SceneDecl | ObjectDecl | TextDecl
-  | FunctionDecl | UseObjectDecl | UseDecl | VarDecl | ListDecl
+  | FunctionDecl | UseObjectDecl | UseDecl | VarDecl | ListDecl | TableDecl
 ```
 
 `use "파일"`은 파일 내용을 그 자리에 그대로 이어붙이는 방식이라, `use`로
@@ -115,8 +115,13 @@ ObjectFragment = ObjectMember*  // object/text 안에 use 로 끼워 넣을 때
 | `rotateMethod`            | `free \| vertical \| none`                                                       | 회전 방식                                                                |
 | `FunctionDecl`            | `function id "(" ListOf<FunctionParam, ","> ")" blockOpen Block end_`            | 함수 선언. 매개변수는 콤마로 나열                                        |
 | `FunctionParam`           | `identifier "?"?`                                                                | 매개변수 하나. 뒤의 `?` 는 "엔트리에서도 판단 칸" (SPEC-ADDENDUM.md 4.6) |
-| `VarDecl`                 | `var id "=" ~"=" Expr`                                                           | 변수 선언(대입 연산자 `==`와 헷갈리지 않게 `~"="`로 막음)                |
-| `ListDecl`                | `list id "=" ~"=" ListLiteral`                                                   | 리스트 선언. 초기값은 반드시 `[...]` 리터럴                              |
+| `VarDecl`                 | `storageScope? var id DisplayName? "=" ~"=" Expr`                                | 변수 선언(대입 연산자 `==`와 헷갈리지 않게 `~"="`로 막음)                |
+| `ListDecl`                | `storageScope? list id DisplayName? "=" ~"=" ListLiteral`                        | 리스트 선언. 초기값은 반드시 `[...]` 리터럴                              |
+| `storageScope`            | `shared \| realtime`                                                             | 공유 변수(`isCloud`) · 실시간 변수(`isRealTime`). 전역 선언에만 붙는다   |
+| `DisplayName`             | `as stringLiteral`                                                               | 식별자로 못 적는 엔트리 이름을 그대로 남긴다 (SPEC-ADDENDUM.md 1.5)      |
+| `TableDecl`               | `table id DisplayName? ":" TableColumns TableRow* end_`                          | 테이블(엔트리 '자료 분석'). `project.tables` 항목이 된다                 |
+| `TableColumns`            | `columns NonemptyListOf<Expr, ",">`                                              | 열 이름 줄. 딱 한 번 온다                                                |
+| `TableRow`                | `row NonemptyListOf<Expr, ",">`                                                  | 자료 한 줄. 칸 수가 열 개수와 같아야 한다(컴파일러가 검사)               |
 
 `PropertyDecl`의 케이스는 **선언 순서가 그대로 우선순위**다 (PEG의 순서 있는
 선택은 처음 성공하는 대안을 채택하므로, 더 긴/더 구체적인 형태를 먼저 둬야
@@ -138,6 +143,9 @@ PropertyDecl
   | center sN sN                    -- center                  // 무게중심(중심점)
   | propertyName "=" ~"=" Expr      -- assign                  // 그 외 전부(`x = 10` 등)
 ```
+
+`costume`/`sound` 는 위 형태들 뒤에 `DisplayName?`(`as "원래 이름"`)과
+`ForceId?`(`force id "..."`)를 순서대로 더 받는다. 둘 다 선택이고, `as` 가 먼저다.
 
 `center` 의 두 값은 `signedNumberLiteral`(`"-"? numberLiteral`)이다 — 중심점은 그림
 밖으로도 끌어낼 수 있어서 음수가 된다. 렉시컬 규칙이라 붙여 쓴 부호만 받는다
@@ -291,7 +299,7 @@ RotateStatement
 
 ```ohm
 LooksStatement
-  = show #sameLine id -- showTarget | show -- show
+  = show #sameLine id #sameLine tableWindow? -- showTarget | show -- show
   | hide #sameLine id -- hideTarget | hide -- hide
   | next costume -- nextCostume | prev costume -- prevCostume
   | say E for E -- sayFor | say E -- say
@@ -302,6 +310,13 @@ LooksStatement
 TextStatement = write E -- write | append E -- append | prepend E -- prepend
 PenStatement  = stamp
 ```
+
+`show`/`hide` 의 대상이 테이블이면 표 창을 여닫는 블록이 되고, 뒤에 꼬리를 더
+받는다 — `tableWindow = for E -- seconds | chart E -- chart`. `show 표 for 3` 은
+3초 뒤 닫고(`open_table_wait`), `show 표 chart 1` 은 저장해 둔 차트를
+연다(`open_table_chart`). `hide chart` 는 열려 있는 표·차트 창을
+닫는다(`close_table_chart`) — `chart` 라는 이름의 변수가 따로 없을 때만 그렇게
+읽는다. 대상이 테이블인지 변수인지는 문법이 아니라 컴파일러가 심볼을 보고 정한다.
 
 `show`/`hide`도 `#sameLine`으로 인자를 같은 줄로 제한한다. 그렇지 않으면
 
@@ -332,15 +347,31 @@ SoundStatement
 
 ```ohm
 DataStatement
-  = in id add E             -- listAdd
-  | in id insert E at E     -- listInsert
-  | remove id "[" E "]"     -- listRemove
-  | ask E                   -- ask
+  = in id add tableLine            -- tableAddLine     // 테이블: 행/열 추가
+  | in id insert tableLine at E    -- tableInsertLine
+  | remove id tableLine E          -- tableRemoveLine
+  | in id add E                    -- listAdd
+  | in id insert E at E            -- listInsert
+  | remove id "[" E "]"            -- listRemove
+  | save id                        -- tableSave
+  | ask E                          -- ask
+
+tableLine = row | column
 
 AssignStatement = LValue assignOperator Expr
-LValue = id "[" E "]" -- index | id -- name
+LValue = id "[" E "," E "]" -- cell | id "[" E "]" -- index | id -- name
 CallStatement = CallExpr
 ```
+
+`in`/`remove` 는 리스트와 테이블이 같은 키워드를 나눠 쓴다. 갈라지는 자리는
+`add`/`insert` 바로 뒤 토큰 하나다 — `row`/`column` 이면 테이블, 아니면 리스트의
+값 표현식이다. 파서(`parser.js`)는 이걸 게이트로 확인하고 대안을 고른다.
+`remove` 는 뒤에 `[` 가 오면 리스트, `row`/`column` 이 오면 테이블이라 게이트가
+필요 없다.
+
+`LValue` 의 두 자리 인덱스(`표[행, 열]`)는 테이블 칸이다. 한 자리 인덱스는
+가리키는 이름이 무엇이냐에 따라 리스트 항목 · 테이블의 `"B2"` 칸 · 문자열의
+글자로 갈리는데, 이건 문법이 아니라 컴파일러가 심볼을 보고 정한다.
 
 ## 7. 4부 — 표현식과 연산자 우선순위
 

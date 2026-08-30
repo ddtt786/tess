@@ -39,7 +39,7 @@ test('작품과 실행 페이지를 내보낸다', async () => {
   await withServer({}, async (server, result) => {
     const page = await (await fetch(server.url)).text();
     assert.match(page, /블록 검증/);
-    assert.match(page, /장면 2 · 오브젝트 4 · 블록 \d+/);
+    assert.match(page, /장면 3 · 오브젝트 5 · 블록 \d+/);
     assert.match(page, /Entry\.loadProject/);
 
     const project = await (await fetch(`${server.url}project.json`)).json();

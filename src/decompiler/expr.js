@@ -7,11 +7,16 @@
 // ============================================================================
 import { KEY_CODES } from '../compiler/keycodes.js';
 import { tessNumber, tessString, ownsResource, isExactNumber } from './ident.js';
+import { expansionBlock } from '../compiler/expansion.js';
 
 const REVERSE_COMPARE = {
   EQUAL: '==', NOT_EQUAL: '!=', GREATER: '>', LESS: '<', GREATER_OR_EQUAL: '>=', LESS_OR_EQUAL: '<=',
 };
 const REVERSE_ARITHMETIC = { PLUS: '+', MINUS: '-', MULTI: '*', DIVIDE: '/' };
+const TABLE_CALCULATION_NAMES = {
+  SUM: 'sum', AVG: 'average', MAX: 'maximum', MIN: 'minimum',
+  STDEV: 'stdev', MEDIAN: 'median',
+};
 const REVERSE_MATH = {
   sin: 'sin', cos: 'cos', tan: 'tan', asin_radian: 'asin', acos_radian: 'acos', atan_radian: 'atan',
   ln: 'ln', log: 'log10', floor: 'floor', ceil: 'ceil', round: 'round', abs: 'abs',
@@ -195,6 +200,26 @@ export function exprOf(block, ctx) {
     }
     case 'text_read': return `text_content(${tessString(targetName(ctx, at(0)))})`;
 
+    // --- 테이블 --------------------------------------------------------------
+    case 'get_table_count':
+      return `${String(at(1)) === 'COL' ? 'column_count' : 'row_count'}(${ctx.tableName(at(0))})`;
+    case 'get_value_from_table':
+      return `${ctx.tableName(at(0))}[${exprOf(at(1), ctx)}, ${exprOf(at(2), ctx)}]`;
+    case 'get_value_from_cell':
+      return `${ctx.tableName(at(0))}[${exprOf(at(1), ctx)}]`;
+    case 'get_value_from_last_row':
+      return `last_row(${ctx.tableName(at(0))}, ${exprOf(at(1), ctx)})`;
+    case 'calc_values_from_table': {
+      const calc = TABLE_CALCULATION_NAMES[String(at(2))];
+      if (!calc) return placeholder(ctx, block);
+      return `${calc}(${ctx.tableName(at(0))}, ${exprOf(at(1), ctx)})`;
+    }
+    case 'get_coefficient':
+      return `correlation(${ctx.tableName(at(0))}, ${exprOf(at(1), ctx)}, ${exprOf(at(2), ctx)})`;
+    case 'get_value_v_lookup':
+      return `lookup(${ctx.tableName(at(0))}, ${exprOf(at(1), ctx)}, `
+        + `${exprOf(at(2), ctx)}, ${exprOf(at(3), ctx)})`;
+
     case 'get_pictures': return resourceRef(ctx, at(0), ctx.picturesById, ctx.pictureName);
     case 'get_sounds': return resourceRef(ctx, at(0), ctx.soundsById, ctx.soundName);
     // 소리 길이 — VALUE 는 블록이 아니라 드롭다운 칸이라 소리 id 가 그대로 들어 있다
@@ -205,6 +230,16 @@ export function exprOf(block, ctx) {
 
     // 사용자 정의 함수 호출(값을 돌려주는 것) — func_<함수id>
     default: {
+      // 확장 블록(날씨 · 축제 · 재난문자 · 국민행동요령). 드롭다운 칸은 고른 값이
+      // 그대로 들어 있으므로 문자열로 적고, 값 칸만 식으로 되돌린다.
+      const expansion = expansionBlock(block.type);
+      if (expansion) {
+        const args = expansion.slots.map((slot, i) => (slot === 'value'
+          ? exprOf(at(i), ctx)
+          : tessString(String(at(i) ?? ''))));
+        return `${block.type}(${args.join(', ')})`;
+      }
+
       // 함수 본문에서 매개변수를 가리키는 블록 — stringParam_xxxx / booleanParam_xxxx
       const paramName = ctx.funcParamName?.(block.type);
       if (paramName) return paramName;

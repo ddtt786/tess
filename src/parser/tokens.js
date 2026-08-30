@@ -24,17 +24,18 @@ function unicodePattern(source) {
 
 /** Keyword literals, in the order the language reference declares them. */
 export const KEYWORDS = [
-  'add', 'all', 'and', 'append', 'ask', 'at', 'back', 'bgm', 'bounce', 'break',
+  'add', 'all', 'and', 'append', 'as', 'ask', 'at', 'back', 'bgm', 'bounce', 'break',
   'bubble', 'call', 'center', 'clear', 'click', 'clone', 'cloned', 'clones',
-  'costume', 'default', 'del', 'description', 'do', 'draw', 'effects', 'else',
+  'chart', 'column', 'columns', 'costume', 'default', 'del', 'description', 'do', 'draw', 'effects', 'else',
   'end', 'false', 'fill', 'flip', 'for', 'force', 'forever', 'forward', 'fps',
   'free', 'from', 'front', 'first', 'function', 'go', 'hide', 'id', 'if', 'in',
   'insert', 'jump', 'key', 'kill', 'last', 'list', 'lock', 'look', 'me', 'move',
   'name', 'next', 'none', 'not', 'object', 'or', 'order', 'other', 'pitch',
-  'play', 'prepend', 'prev', 'project', 'read', 'remove', 'repeat', 'reset',
-  'restart', 'return', 'rotation', 'say', 'scene', 'send', 'signal', 'show',
+  'play', 'prepend', 'prev', 'project', 'read', 'realtime', 'remove', 'repeat',
+  'reset', 'restart', 'return', 'rotation', 'row', 'save', 'say', 'scene', 'send',
+  'shared', 'signal', 'show',
   'size', 'skip', 'sound', 'speed', 'stage', 'stamp', 'start', 'steer', 'stop',
-  'text', 'them', 'then', 'think', 'this', 'timer', 'title', 'to', 'transparent',
+  'table', 'text', 'them', 'then', 'think', 'this', 'timer', 'title', 'to', 'transparent',
   'true', 'tts', 'turn', 'until', 'up', 'use', 'useobject', 'usetext', 'var',
   'vertical', 'visible', 'voice', 'wait', 'when', 'while', 'write', 'x', 'y',
 ];

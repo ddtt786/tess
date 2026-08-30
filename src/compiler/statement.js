@@ -487,9 +487,22 @@ function compile(node, ctx) {
       );
     }
 
+    case "TableAddLine":
+    case "TableInsertLine":
+    case "TableRemoveLine":
+      return compileTableLine(node, ctx);
+
+    case "TableSave": {
+      const table = requireTable(node.table, ctx);
+      return table ? one(ctx.block("save_current_table", [table.id, null])) : [];
+    }
+
     case "VarDecl":
     case "ListDecl":
       return compileDeclaration(node, ctx);
+
+    case "TableDecl":
+      return []; // 선언은 collectTable 이 미리 모아 두었다
     case "Assign":
       return compileAssign(node, ctx);
     case "ExpressionStatement":
@@ -537,6 +550,18 @@ function compileClear(node, ctx) {
 
 function compileVisibility(node, ctx) {
   const showing = node.type === "Show";
+  // `hide chart` closes whichever table or chart window is open.
+  if (node.target?.name === "chart" && !ctx.lookupVariable("chart")) {
+    if (showing) {
+      return [ctx.error(node, "show chart 는 없습니다. 'show 테이블 chart 1' 처럼 어떤 테이블의 차트인지 적으세요.")]
+        .filter(Boolean);
+    }
+    return [ctx.block("close_table_chart", [null])];
+  }
+
+  const table = node.target && ctx.tableByName.get(node.target.name);
+  if (table) return compileTableWindow(node, table, showing, ctx);
+
   if (!node.target) return [ctx.block(showing ? "show" : "hide", [null])];
 
   const name = node.target.name;
@@ -575,6 +600,71 @@ function compileVisibility(node, ctx) {
       ? "show_variable"
       : "hide_variable";
   return [ctx.block(type, [found.entry.id, null])];
+}
+
+// ---------------------------------------------------------------------------
+//  테이블 (엔트리 '자료 분석' 블록)
+// ---------------------------------------------------------------------------
+/** `show 표` · `show 표 for N` · `show 표 chart N`, and `hide 표`. */
+function compileTableWindow(node, table, showing, ctx) {
+  if (!showing) return [ctx.block("close_table_chart", [null])];
+  if (node.seconds) {
+    const seconds = compileValue(node.seconds, ctx);
+    return seconds ? [ctx.block("open_table_wait", [table.id, seconds, null])] : [];
+  }
+  if (node.chart) {
+    const chart = literalIndex(node.chart, ctx);
+    return chart === null ? [] : [ctx.block("open_table_chart", [table.id, chart, null])];
+  }
+  return [ctx.block("open_table", [table.id, "0", null])];
+}
+
+/**
+ * A chart number, which Entry keeps as a dropdown field rather than a value
+ * slot, so it has to be written out at compile time.
+ */
+function literalIndex(node, ctx) {
+  if (node.type === "Number") return String(node.value - 1);
+  if (node.type === "String") return node.value;
+  return ctx.error(node, "차트 번호는 숫자로 직접 적어야 합니다.");
+}
+
+/** The table a statement names, or an error when the name is not one. */
+function requireTable(node, ctx) {
+  const table = ctx.tableByName.get(node.name);
+  if (table) return table;
+  return ctx.error(
+    node,
+    `'${node.name}' 은(는) 테이블이 아닙니다.${didYouMean(node.name, ctx.tableByName.keys())}`,
+  );
+}
+
+function compileTableLine(node, ctx) {
+  const table = requireTable(node.table, ctx);
+  if (!table) return [];
+  const property = node.line === "row" ? "ROW" : "COL";
+
+  if (node.type === "TableAddLine") {
+    return [ctx.block("append_row_to_table", [table.id, property, null])];
+  }
+  const index = compileValue(node.index, ctx);
+  if (!index) return [];
+  const type = node.type === "TableInsertLine" ? "insert_row_to_table" : "delete_row_from_table";
+  return [ctx.block(type, [table.id, index, property, null])];
+}
+
+/** `표[행, "열"] = 값` and `표["B2"] = 값`. */
+function compileTableAssign(node, table, ctx) {
+  const value = compileValue(node.value, ctx);
+  if (!value) return [];
+  if (!node.target.column) {
+    const cell = compileValue(node.target.index, ctx);
+    return cell ? [ctx.block("set_value_from_cell", [table.id, cell, value, null])] : [];
+  }
+  const row = compileValue(node.target.index, ctx);
+  const column = compileValue(node.target.column, ctx);
+  if (!row || !column) return [];
+  return [ctx.block("set_value_from_table", [table.id, row, column, value, null])];
 }
 
 function compilePlaySound(node, ctx) {
@@ -618,6 +708,28 @@ function compilePlaySound(node, ctx) {
  * 실행할 때 그 값을 1) 소리 id, 2) 소리 이름, 3) 순번 순으로 찾기 때문에,
  * 그 값이 실행 시점에 이 오브젝트의 소리 이름과 같기만 하면 정상 동작한다.
  */
+/**
+ * A costume/sound name Tess cannot tie to one resource, left as the plain
+ * string it already is. Entry matches such a value against the resources of
+ * whichever object runs the block — by id, then name, then position — so no
+ * one object's id is the right answer, and a name that matches nothing here
+ * may still be the id of a resource the work no longer carries. Neither can be
+ * settled before the block runs, so both only warn.
+ */
+function byNameAtRuntime(node, ctx, found, kind) {
+  if (found) return compileValue(node, ctx);
+  const isPicture = kind === 'pictures';
+  const shelf = isPicture ? ctx.object?.pictures : ctx.object?.sounds;
+  const label = isPicture ? '모양을' : '소리를';
+  const declare = isPicture ? 'costume' : 'sound';
+  ctx.warn(
+    node,
+    `'${node.value}' ${label} ${ctx.object ? '이 오브젝트에서' : '어느 오브젝트에서도'} 찾지 못했습니다. `
+    + `실행할 때 이름으로 찾습니다.${orHint(node.value, shelf?.keys() ?? [], `${declare} ${node.value} "파일명" 으로 먼저 등록하세요.`)}`,
+  );
+  return compileValue(node, ctx);
+}
+
 function resolveSound(node, ctx) {
   if (node.type === "String") {
     const sound = ctx.object?.sounds.get(node.value);
@@ -630,23 +742,9 @@ function resolveSound(node, ctx) {
     if (ctx.forcedResourceIds.has(node.value)) return node.value;
     // 전역 함수에는 기준 오브젝트가 없다 — 이 이름을 가진 오브젝트가 단 하나뿐이면
     // 오브젝트 로컬 변수와 같은 이유로 그 소리를 그대로 가리킨다.
-    if (!ctx.object) {
-      const found = ctx.lookupObjectResource('sounds', node.value);
-      if (found?.kind === 'found') return ctx.block("get_sounds", [found.asset.id]);
-      if (found?.kind === 'ambiguous') {
-        return ctx.error(
-          node,
-          `'${node.value}' 은(는) ${found.owners.join(', ')} 가 저마다 가진 소리라 어느 것인지 알 수 없습니다. `
-          + '이 함수를 그 오브젝트 안에 선언하거나, force id 로 고정하세요.',
-        );
-      }
-    }
-    return ctx.error(
-      node,
-      `'${node.value}' 소리가 ${ctx.object ? '이 오브젝트에' : '어느 오브젝트에도'} 없습니다.`
-      + orHint(node.value, ctx.object?.sounds.keys() ?? [],
-        `sound ${node.value} "파일명" 으로 먼저 등록하세요.`),
-    );
+    const found = ctx.object ? null : ctx.lookupObjectResource('sounds', node.value);
+    if (found?.kind === 'found') return ctx.block("get_sounds", [found.asset.id]);
+    return byNameAtRuntime(node, ctx, found, 'sounds');
   }
   return compileValue(node, ctx);
 }
@@ -657,23 +755,9 @@ function resolvePicture(node, ctx) {
     const picture = ctx.object?.pictures.get(node.value);
     if (picture) return ctx.block("get_pictures", [picture.id]);
     if (ctx.forcedResourceIds.has(node.value)) return node.value;
-    if (!ctx.object) {
-      const found = ctx.lookupObjectResource('pictures', node.value);
-      if (found?.kind === 'found') return ctx.block("get_pictures", [found.asset.id]);
-      if (found?.kind === 'ambiguous') {
-        return ctx.error(
-          node,
-          `'${node.value}' 은(는) ${found.owners.join(', ')} 가 저마다 가진 모양이라 어느 것인지 알 수 없습니다. `
-          + '이 함수를 그 오브젝트 안에 선언하거나, force id 로 고정하세요.',
-        );
-      }
-    }
-    return ctx.error(
-      node,
-      `'${node.value}' 모양이 ${ctx.object ? '이 오브젝트에' : '어느 오브젝트에도'} 없습니다.`
-      + orHint(node.value, ctx.object?.pictures.keys() ?? [],
-        `costume ${node.value} "파일명" 으로 먼저 등록하세요.`),
-    );
+    const found = ctx.object ? null : ctx.lookupObjectResource('pictures', node.value);
+    if (found?.kind === 'found') return ctx.block("get_pictures", [found.asset.id]);
+    return byNameAtRuntime(node, ctx, found, 'pictures');
   }
   return compileValue(node, ctx);
 }
@@ -756,6 +840,18 @@ function compileVariableAssign(node, found, ctx) {
 }
 
 function compileListElementAssign(node, ctx) {
+  const table = node.target.target.type === "Identifier"
+    && ctx.tableByName.get(node.target.target.name);
+  if (table) {
+    if (node.operator !== "=") {
+      return [ctx.error(node, `테이블 칸에는 '=' 로만 값을 넣을 수 있습니다.`)].filter(Boolean);
+    }
+    return compileTableAssign(node, table, ctx);
+  }
+  if (node.target.column) {
+    return [ctx.error(node, `'${node.target.target.name}' 은(는) 테이블이 아니라서 [행, 열] 로 쓸 수 없습니다.`)]
+      .filter(Boolean);
+  }
   const list = requireList(node.target.target, ctx);
   const index = compileValue(node.target.index, ctx);
   if (!list || !index) return [];

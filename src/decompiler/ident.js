@@ -68,7 +68,10 @@ export function tessNumber(value) {
  * 리터럴만 숫자로 옮긴다.
  */
 export function isExactNumber(literal) {
-  return literal !== '' && String(Number(literal)) === literal;
+  const value = Number(literal);
+  // "NaN" and "Infinity" round-trip through Number as text, but Tess has no
+  // literal for either, so they have to stay strings.
+  return literal !== '' && Number.isFinite(value) && String(value) === literal;
 }
 
 /**

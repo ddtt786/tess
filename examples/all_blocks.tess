@@ -11,6 +11,18 @@ var 점수 = 0
 var 속도 = 5
 list 기록 = [1, 2, 3]
 
+# 공유 변수 · 실시간 변수는 전역 선언 앞에 shared / realtime 을 붙인다
+shared var 최고기록 = 0
+realtime var 접속자수 = 0
+shared list 명예의전당 as "명예의 전당" = []
+
+# 테이블 (엔트리 '자료 분석')
+table 성적표 as "성적 표":
+  columns "이름", "점수"
+  row "철수", 90
+  row "영희", 95
+end
+
 function 알리기(내용):
   say 내용 for 1
 end
@@ -326,6 +338,59 @@ scene "무대2":
 
     when scene start do
       알리기("끝!")
+    end
+  end
+end
+
+scene "표와 확장":
+  object "분석기":
+    costume 기본 "end.png" size 480 270
+
+    when start do
+      # 테이블 — 자료 분석 블록 전부
+      in 성적표 add row
+      in 성적표 add column
+      in 성적표 insert row at 2
+      in 성적표 insert column at 2
+      remove 성적표 row 1
+      remove 성적표 column 1
+      성적표[1, "점수"] = 100
+      성적표["B2"] = 80
+      save 성적표
+      show 성적표
+      show 성적표 for 3
+      show 성적표 chart 1
+      hide chart
+      점수 = 성적표[1, "점수"]
+      점수 = 성적표["B2"]
+      점수 = row_count(성적표)
+      점수 = column_count(성적표)
+      점수 = last_row(성적표, "점수")
+      점수 = sum(성적표, "점수")
+      점수 = average(성적표, "점수")
+      점수 = maximum(성적표, "점수")
+      점수 = minimum(성적표, "점수")
+      점수 = stdev(성적표, "점수")
+      점수 = median(성적표, "점수")
+      점수 = correlation(성적표, "이름", "점수")
+      점수 = lookup(성적표, "이름", "철수", "점수")
+
+      # 확장 — 날씨 · 축제 · 재난문자 · 국민행동요령
+      say get_cur_weather(get_korea_area_code("Seoul", "Jung-gu"))
+      say get_cur_wind(get_korea_area_code("Seoul", "Jung-gu"))
+      say get_weather_data("오늘", "서울", "기온")
+      if check_weather("오늘", "서울", "맑음"):
+        say get_today_temperature("서울", "12")
+      end
+      if check_finedust("서울", "좋음"):
+        say count_festival("서울", "5월")
+      end
+      say get_festival_info("서울", "5월", 1, "축제명")
+      if check_disaster_alert("호우"):
+        say get_disaster_alert("호우", 1, "내용")
+      end
+      say count_disaster_guideline("자연재난", "태풍")
+      say get_disaster_guideline("자연재난", "태풍", 1)
     end
   end
 end

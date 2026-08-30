@@ -10,6 +10,8 @@ import { parse } from '../src/parse.js';
 
 const object = (body) => `scene "s":\n  object "o":\n${body}\n  end\nend`;
 const firstError = (source) => compileProject(source, { path: 't.tess' }).errors[0]?.message ?? '';
+// 엔트리가 실행할 때 이름으로 찾는 자리(모양·소리)는 경고로만 짚어 준다
+const firstWarning = (source) => compileProject(source, { path: 't.tess' }).warnings[0]?.message ?? '';
 
 test('붙어 있는 두 글자가 바뀐 것은 한 번으로 센다', () => {
   // 손으로 칠 때 가장 흔한 실수다. 두 번으로 세면 정작 찾아 줘야 할 오타를 놓친다.
@@ -50,12 +52,12 @@ test('변수 이름 오타를 짚어 준다', () => {
 });
 
 test('모양 · 소리 · 오브젝트 · 장면 이름 오타를 짚어 준다', () => {
-  const costume = firstError(object(
+  const costume = firstWarning(object(
     '    costume 점프 "a.png" size 1 1\n    when start do\n      costume = "점푸"\n    end',
   ));
   assert.match(costume, /혹시 '점프' 인가요\?/);
 
-  const sound = firstError(object(
+  const sound = firstWarning(object(
     '    sound 효과음 "a.mp3" for 1\n    when start do\n      play sound "효과응"\n    end',
   ));
   assert.match(sound, /혹시 '효과음' 인가요\?/);
@@ -75,7 +77,7 @@ test('키 이름 오타를 짚어 준다', () => {
 test('오타로 볼 수 없으면 원래 안내를 그대로 낸다', () => {
   // 가까운 이름이 있는데 "그 이름으로 새로 등록하세요" 라고 하면 서로 어긋난 말이 된다.
   // 반대로 가까운 이름이 없으면 등록 방법을 알려 주는 쪽이 도움이 된다.
-  const message = firstError(object(
+  const message = firstWarning(object(
     '    costume 점프 "a.png" size 1 1\n    when start do\n      costume = "전혀다른모양"\n    end',
   ));
   assert.match(message, /costume 전혀다른모양 "파일명" 으로 먼저 등록하세요/);

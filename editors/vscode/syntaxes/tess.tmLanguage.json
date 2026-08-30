@@ -89,7 +89,7 @@
       "patterns": [
         {
           "name": "support.function.builtin.tess",
-          "match": "(?<![A-Za-z0-9_])(?:costume_number|sound_duration|text_content|random_color|block_count|uppercase|lowercase|key_down|touching|distance|index_of|contains|from_hex|costume|replace|reverse|random|length|to_hex|log10|floor|round|angle|slice|count|type|asin|acos|atan|log2|ceil|root|size|join|sin|cos|tan|abs|way|now|ln|x|y)(?![A-Za-z0-9_])(?=\\s*\\()"
+          "match": "(?<![A-Za-z0-9_])(?:count_social_disaster_guideline|count_safety_accident_guideline|get_social_disaster_guideline|get_safety_accident_guideline|get_current_city_weather_data|get_today_city_temperature|count_lifeSafety_behavior|count_disaster_guideline|get_current_weather_data|count_disaster_behavior|get_lifeSafety_behavior|get_disaster_guideline|get_disaster_behavior|get_city_weather_data|get_today_temperature|get_time_weather_data|count_disaster_alert|check_disaster_alert|get_cur_weather_data|get_day_weather_data|check_city_finedust|get_korea_area_code|get_disaster_alert|check_city_weather|check_cur_finddust|check_time_weather|get_festival_info|check_cur_weather|check_day_weather|get_weather_data|get_time_weather|get_cur_weather|get_day_weather|costume_number|sound_duration|count_festival|check_finedust|check_weather|text_content|random_color|column_count|get_cur_wind|block_count|correlation|uppercase|lowercase|row_count|key_down|touching|distance|index_of|contains|from_hex|last_row|costume|replace|reverse|average|maximum|minimum|random|length|to_hex|lookup|median|log10|floor|round|angle|slice|count|stdev|type|asin|acos|atan|log2|ceil|root|size|join|sin|cos|tan|abs|way|now|sum|ln|x|y)(?![A-Za-z0-9_])(?=\\s*\\()"
         },
         {
           "match": "([A-Za-z_\\p{L}][A-Za-z0-9_\\p{L}]*)(?=\\s*\\()",
@@ -121,7 +121,7 @@
         },
         {
           "name": "keyword.other.command.tess",
-          "match": "(?<![A-Za-z0-9_])(?:description|rotation|costume|default|effects|forward|prepend|visible|append|bounce|bubble|center|clones|insert|remove|clear|clone|force|first|order|pitch|reset|sound|speed|stamp|steer|think|timer|title|voice|write|call|draw|fill|flip|hide|jump|kill|last|lock|look|move|name|play|prev|read|send|show|size|turn|add|ask|bgm|del|fps|say|tts|go|id|x|y)(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_])(?:description|realtime|rotation|columns|costume|default|effects|forward|prepend|visible|append|bounce|bubble|center|clones|column|insert|remove|shared|clear|clone|chart|force|first|order|pitch|reset|sound|speed|stamp|steer|table|think|timer|title|voice|write|call|draw|fill|flip|hide|jump|kill|last|lock|look|move|name|play|prev|read|save|send|show|size|turn|add|ask|bgm|del|fps|row|say|tts|as|go|id|x|y)(?![A-Za-z0-9_])"
         },
         {
           "name": "support.variable.property.tess",

@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from '../src/parse.js';
+import { compileProject } from '../src/compiler/index.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'examples');
 const FRAGMENT_RULES = [undefined, 'SceneFragment', 'ObjectFragment'];
@@ -62,7 +63,21 @@ for (const file of files) {
     continue;
   }
 
+  // An entry point that pulls in fragments only makes sense once they are
+  // loaded — on its own it cannot see the objects that own the locals its
+  // functions name — so it is compiled rather than parsed. The pieces have to
+  // be on disk for that; examples that only show the syntax are parsed.
+  const parsed = parse(source, { validate: false });
+  const included = parsed.ast ? [...usedFiles(parsed.ast, file)] : [];
+  const buildable = included.length > 0 && included.every((used) => fs.existsSync(used));
+
   test(`예제: ${label}`, () => {
+    if (buildable) {
+      const result = compileProject(source, { path: file });
+      const errors = result.errors.map((e) => ({ ...e, message: `${e.file ?? label} ${e.message}` }));
+      assert.deepEqual(errors, [], `\n${show(errors)}`);
+      return;
+    }
     const result = parse(source);
     assert.deepEqual(result.errors, [], `\n${show(result.errors)}`);
     assert.deepEqual(result.warnings, [], `\n${show(result.warnings)}`);

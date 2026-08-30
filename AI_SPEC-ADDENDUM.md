@@ -160,6 +160,53 @@ end
 문법에서 원래 됩니다 — [14.2절](./SPEC.md#142-객체-정보--거리)의 `costume`/
 `costume_number` 참고.
 
+## 1.5 `as` — 엔트리 이름을 그대로 남기기
+
+엔트리의 모양·소리·변수·리스트·테이블 이름에는 아무 글자나 들어갈 수 있지만, Tess
+식별자는 `letter (letter | digit | '_')*` 만 허용합니다. 되돌리기는 이름을 안전한
+식별자로 바꾸는데, 이때 원래 이름을 함께 적어 두지 않으면 **컴파일한 작품의 이름이
+바뀌어 버립니다.**
+
+이름이 바뀌면 화면 표시만 달라지는 게 아니라 **실행 결과가 달라집니다.** 엔트리의
+"() 모양으로 바꾸기" · "소리 () 재생하기" 는 값을 **1) id → 2) 이름 → 3) 등록 순번**
+순으로 찾습니다(`Entry.Sprite.prototype.getPicture`). 그래서 `costume = join("pillow", n)`
+처럼 실행할 때 이름을 만들어 쓰는 코드는 이름이 한 글자만 달라져도 아무것도 못 찾고,
+복제본이 직전 모양을 그대로 달고 남습니다.
+
+```tess
+costume 상호작용1_1 "assets/image/O건물_상호작용1_1.png" as "상호작용1*1"
+sound snd_select "assets/sound/snd_select.mp3" as "snd_select.mp3"
+var 현재_TP as "현재 TP" = 0
+list 순위_공유 as "순위(공유)" = []
+table 성적_표 as "성적 표":
+  columns "이름", "점수"
+end
+```
+
+- `as "..."` 를 적으면 그 문자열이 `project.json` 의 `name` 이 되고, 식별자는 소스에서
+  가리키는 이름으로만 씁니다.
+- 컴파일러는 **두 철자 모두**로 그 모양·소리를 찾을 수 있게 등록합니다 — 소스에
+  `costume = "상호작용1_1"` 이라고 적어도, `costume = "상호작용1*1"` 이라고 적어도
+  같은 모양 하나를 가리킵니다(모양 목록이 늘어나지는 않습니다).
+- 되돌리기는 식별자와 엔트리 이름이 다를 때만 `as` 를 붙입니다.
+
+`costume`/`sound` 에서는 `size`/`for` 뒤, `force id` 앞에 옵니다.
+
+## 1.6 `shared` · `realtime` — 공유 변수와 실시간 변수
+
+엔트리 변수 만들기 창의 "공유 변수로 사용"(`isCloud`)과 "실시간 변수"(`isRealTime`)
+입니다. 둘은 서로 배타적이고, **전역 선언에만** 붙습니다(엔트리도 오브젝트 지역
+변수에는 이 옵션을 주지 않습니다).
+
+```tess
+shared   var 최고기록 = 0        # isCloud: true
+realtime var 접속자수 = 0        # isRealTime: true
+shared   list 명예의전당 = []
+```
+
+오브젝트 안에 쓰면 컴파일 에러가 납니다.
+
+
 ## 2. `return` 의 위치 제한
 
 엔트리의 "값을 돌려주는 함수"는 **함수가 끝난 뒤 계산할 식 하나**를 가집니다.
@@ -415,6 +462,84 @@ end
 `?` 는 이름의 일부가 아니라 표시일 뿐이라, 자동 이름 규칙에는 그대로 `a`, `b` … 로
 셉니다(`function 스폰(a?, 체력?)` 이면 `a` 는 라벨 없이, `체력` 은 라벨을 달고 나갑니다).
 되돌릴 때도 판단 칸은 `이름?` 으로 적히므로 왕복해도 그대로입니다.
+
+## 4.7 테이블 (엔트리 '자료 분석')
+
+엔트리의 테이블은 변수·리스트와 달리 작품 하나에 딸린 표(`project.tables`)입니다.
+첫 줄이 열 이름이고, 그 아래가 자료입니다.
+
+```tess
+table 성적표 as "성적 표":
+  columns "이름", "점수"
+  row "철수", 90
+  row "영희", 95
+end
+```
+
+`columns` 는 반드시 한 번 오고, `row` 는 몇 줄이든 옵니다. 각 줄의 칸 수는 열 개수와
+같아야 합니다(다르면 컴파일 에러). 칸에는 컴파일할 때 값이 정해지는 리터럴만 옵니다.
+엔트리가 표의 모든 칸을 문자열로 담으므로 숫자도 문자열로 기록됩니다.
+
+문장 — 엔트리 블록 18개가 전부 대응합니다.
+
+| Tess | 엔트리 블록 |
+| --- | --- |
+| `in 성적표 add row` / `add column` | `append_row_to_table` |
+| `in 성적표 insert row at 2` / `insert column at 2` | `insert_row_to_table` |
+| `remove 성적표 row 1` / `column 1` | `delete_row_from_table` |
+| `성적표[1, "점수"] = 100` | `set_value_from_table` |
+| `성적표["B2"] = 80` | `set_value_from_cell` |
+| `save 성적표` | `save_current_table` |
+| `show 성적표` | `open_table` |
+| `show 성적표 for 3` | `open_table_wait` |
+| `show 성적표 chart 1` | `open_table_chart` |
+| `hide chart` | `close_table_chart` |
+
+값 —
+
+| Tess | 엔트리 블록 |
+| --- | --- |
+| `성적표[1, "점수"]` | `get_value_from_table` |
+| `성적표["B2"]` | `get_value_from_cell` |
+| `row_count(성적표)` / `column_count(성적표)` | `get_table_count` |
+| `last_row(성적표, "점수")` | `get_value_from_last_row` |
+| `sum` `average` `maximum` `minimum` `stdev` `median` `(성적표, "점수")` | `calc_values_from_table` |
+| `correlation(성적표, "이름", "점수")` | `get_coefficient` |
+| `lookup(성적표, "이름", "철수", "점수")` | `get_value_v_lookup` |
+
+두 자리 인덱스 `표[행, 열]` 은 테이블에만 쓸 수 있고, 한 자리 인덱스는 가리키는
+이름이 리스트면 항목, 테이블이면 `"B2"` 꼴의 칸 이름, 그 밖이면 문자열의 글자입니다.
+`show 성적표 chart N` 의 차트 번호는 다른 번호들처럼 1부터 세고, 엔트리의 0부터 세는
+값으로 바꿔 넣습니다.
+
+## 4.8 확장 블록 (날씨 · 축제 · 재난문자 · 국민행동요령)
+
+확장 카테고리 블록은 전부 값이나 판단 하나짜리이고, 칸은 목록에서 고르는 드롭다운
+아니면 값 자리입니다. 그래서 **엔트리 블록 타입 이름을 그대로** Tess 내장 함수 이름으로
+씁니다 — 바깥 서비스를 그대로 비추는 API 라, 엔트리 문서에 적힌 이름과 어긋나지 않는
+편이 찾아보기 쉽습니다. 표 하나(`src/compiler/expansion.js`)가 컴파일과 되돌리기를
+함께 처리합니다.
+
+```tess
+say get_weather_data("오늘", "서울", "기온")
+if check_weather("오늘", "서울", "맑음"):
+  say get_cur_weather(get_korea_area_code("Seoul", "Jung-gu"))
+end
+say get_festival_info("서울", "5월", 1, "축제명")
+if check_disaster_alert("호우"):
+  say get_disaster_alert("호우", 1, "내용")
+end
+```
+
+- 드롭다운 칸은 **문자열로 직접** 적어야 합니다(엔트리가 고른 값을 필드에 그대로
+  담기 때문에 계산한 값을 넣을 수 없습니다). 식을 적으면 컴파일 에러가 납니다.
+- 값 칸(`NUMBER`, 새 날씨 블록의 `LOCATION` 등)에는 아무 식이나 옵니다.
+- `check_*` 는 판단 블록이라 `if` 조건에 그대로 들어갑니다.
+- 쓴 블록이 속한 확장 묶음(`weather` · `festival` · `disasterAlert` ·
+  `emergencyActionGuidelines` · `behaviorConductDisaster` · `behaviorConductLifeSafety`)이
+  `project.expansionBlocks` 에 자동으로 들어갑니다 — 엔트리가 이 목록을 보고 그 확장을
+  켭니다.
+
 
 ## 5. TTS 읽어주기 (addendum)
 
