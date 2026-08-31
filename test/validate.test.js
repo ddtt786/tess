@@ -1,7 +1,7 @@
 // 문법만으로는 잡을 수 없는 spec 의 의미 규칙을 검사한다.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parse } from '../src/parse.js';
+import { parse } from '@tess/parser';
 
 const messages = (source) => parse(source).errors.map((e) => e.message);
 const warnings = (source) => parse(source).warnings.map((w) => w.message);

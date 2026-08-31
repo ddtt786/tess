@@ -5,14 +5,23 @@
   "version": "1.0.0",
   "publisher": "tess",
   "license": "ISC",
-  "engines": { "vscode": "^1.60.0" },
-  "categories": ["Programming Languages"],
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
   "contributes": {
     "languages": [
       {
         "id": "tess",
-        "aliases": ["Tess", "tess"],
-        "extensions": [".tess"],
+        "aliases": [
+          "Tess",
+          "tess"
+        ],
+        "extensions": [
+          ".tess"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -23,5 +32,13 @@
         "path": "./syntaxes/tess.tmLanguage.json"
       }
     ]
+  },
+  "private": true,
+  "scripts": {
+    "build:grammar": "node build-grammar.mjs"
+  },
+  "devDependencies": {
+    "@tess/core": "workspace:*",
+    "@tess/parser": "workspace:*"
   }
 }

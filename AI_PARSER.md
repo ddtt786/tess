@@ -1,6 +1,6 @@
 # Tess 파서 — chevrotain 구현 노트
 
-Ohm(`src/legacy/tess.ohm`)으로 쓰여 있던 파서를 [chevrotain](https://chevrotain.io/)
+Ohm(`packages/parser/legacy/tess.ohm`)으로 쓰여 있던 파서를 [chevrotain](https://chevrotain.io/)
 으로 옮긴 기록이다. **언어 문법은 한 글자도 바꾸지 않았다.** 내부 구현만 교체했고,
 그 사실을 아래 "동등성 검증" 절의 방법으로 확인했다.
 
@@ -10,12 +10,12 @@ Ohm(`src/legacy/tess.ohm`)으로 쓰여 있던 파서를 [chevrotain](https://ch
 
 | 파일 | 역할 |
 | --- | --- |
-| `src/parser/tokens.js` | 토큰 정의, 키워드 목록, 예약어, 렉서 |
-| `src/parser/parser.js` | 문법 규칙 (`CstParser`) |
-| `src/parser/visitor.js` | CST → AST 변환 |
-| `src/parser/index.js` | `parseSource` / `checkSource`, 에러 렌더링 |
-| `src/parse.js` | 공개 API (`parse`, `parseOrThrow`, `check`) |
-| `src/legacy/tess.ohm` | 옛 Ohm 문법. **참고용이며 아무도 읽지 않는다** |
+| `packages/parser/src/parser/tokens.js` | 토큰 정의, 키워드 목록, 예약어, 렉서 |
+| `packages/parser/src/parser/parser.js` | 문법 규칙 (`CstParser`) |
+| `packages/parser/src/parser/visitor.js` | CST → AST 변환 |
+| `packages/parser/src/parser/index.js` | `parseSource` / `checkSource`, 에러 렌더링 |
+| `packages/parser/src/parse.js` | 공개 API (`parse`, `parseOrThrow`, `check`) |
+| `packages/parser/legacy/tess.ohm` | 옛 Ohm 문법. **참고용이며 아무도 읽지 않는다** |
 
 없어진 파일: `src/grammar.js`, `src/ast.js`(Ohm 시맨틱), 의존성 `ohm-js`.
 
@@ -212,4 +212,4 @@ mismatches: 0
   규칙의 *의미*는 그대로 유효하지만 파일 경로와 Ohm 표기는 이 문서로 대체됐다.
 - `.ohm/` 폴더는 Ohm 사용법 튜토리얼이다. 이제 쓰이지 않는다.
 - `editors/vscode/build-grammar.mjs`는 `tess.ohm`을 정규식으로 긁는 대신
-  `src/parser/tokens.js`의 `KEYWORDS`를 import한다. 생성 결과는 바이트 단위로 동일하다.
+  `packages/parser/src/parser/tokens.js`의 `KEYWORDS`를 import한다. 생성 결과는 바이트 단위로 동일하다.

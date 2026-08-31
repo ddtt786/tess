@@ -1,0 +1,17 @@
+{
+  "name": "@tess/parser",
+  "version": "1.0.0",
+  "description": "Tess 소스를 AST 로 읽고 의미를 검사한다",
+  "license": "ISC",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": ["index.js", "src"],
+  "dependencies": {
+    "@tess/core": "workspace:*",
+    "@babel/code-frame": "^8.0.0",
+    "chevrotain": "^13.2.0"
+  }
+}

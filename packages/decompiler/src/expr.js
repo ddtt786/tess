@@ -1,13 +1,13 @@
 // ============================================================================
 //  엔트리 값(value)/판단(boolean) 블록 -> Tess 표현식 문자열
 //
-//  src/compiler/expression.js 가 Tess 표현식을 엔트리 블록으로 바꾸는 정확한
+//  packages/compiler/src/expression.js 가 Tess 표현식을 엔트리 블록으로 바꾸는 정확한
 //  대응표를 그대로 뒤집어서 쓴다. 모르는 블록은 죽지 않고 `??("타입", ...)`
 //  형태의 자리표시자를 남기고 ctx.warnings 에 기록한다.
 // ============================================================================
-import { KEY_CODES } from '../compiler/keycodes.js';
+import { KEY_CODES } from '@tess/core';
 import { tessNumber, tessString, ownsResource, isExactNumber } from './ident.js';
-import { expansionBlock } from '../compiler/expansion.js';
+import { expansionBlock } from '@tess/core';
 
 const REVERSE_COMPARE = {
   EQUAL: '==', NOT_EQUAL: '!=', GREATER: '>', LESS: '<', GREATER_OR_EQUAL: '>=', LESS_OR_EQUAL: '<=',

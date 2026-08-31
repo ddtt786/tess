@@ -48,7 +48,7 @@ export function makeTar(entries) {
  * 컴파일 결과를 .ent 묶음 바이트열로 만든다.
  *
  * 미리보기를 그리는 동안 기다려야 해서 비동기다. `run` 은 이 일을 하지 않는다 —
- * 내려받기를 눌렀을 때만 부른다 (src/player/server.js).
+ * 내려받기를 눌렀을 때만 부른다 (packages/player/src/server.js).
  *
  * @param {object} project compileProject() 가 만든 프로젝트 객체
  * @param {Array<{source: string, target: string}>} assets 함께 담을 리소스 파일

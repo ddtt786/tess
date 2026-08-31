@@ -6,9 +6,9 @@
 git clone https://github.com/ddtt786/tess.git
 cd tess
 pnpm install
-node index.js check examples/tour.tess
-node index.js run   examples/all_blocks.tess
-node index.js build examples/all_blocks.tess -o blocks.ent
+pnpm tess check examples/tour.tess
+pnpm tess run   examples/all_blocks.tess
+pnpm tess build examples/all_blocks.tess -o blocks.ent
 ```
 
 ## 라이브러리
@@ -16,7 +16,7 @@ node index.js build examples/all_blocks.tess -o blocks.ent
 내장 라이브러리를 활용하여 직접 파싱하거나 빌드할 수 있습니다.
 
 ```js
-import { parse } from "./index.js";
+import { parse } from "tess";
 
 const result = parse(`
   var score = 0
@@ -37,7 +37,7 @@ result.warnings; // [{ line, column, message }]
 ```
 
 ```js
-import { parse, compileProject, makeEntryBundle } from "./index.js";
+import { parse, compileProject, makeEntryBundle } from "tess";
 
 const result = compileProject(source, { path: "main.tess" });
 if (result.ok) {

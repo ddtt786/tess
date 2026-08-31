@@ -1,0 +1,21 @@
+{
+  "name": "@tess/decompiler",
+  "version": "1.0.0",
+  "description": "이미 있는 엔트리 작품을 Tess 소스로 되돌린다",
+  "license": "ISC",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "src"
+  ],
+  "dependencies": {
+    "@tess/core": "workspace:*",
+    "@tess/parser": "workspace:*",
+    "@tess/player": "workspace:*",
+    "tar": "^7.5.22"
+  }
+}

@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compileProject } from '../src/compiler/index.js';
-import { verifyEntryProject } from '../src/compiler/verify.js';
-import { makeEntryBundle } from '../src/compiler/bundle.js';
+import { compileProject } from '@tess/compiler';
+import { verifyEntryProject } from '@tess/compiler';
+import { makeEntryBundle } from '@tess/compiler';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 

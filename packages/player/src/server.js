@@ -22,7 +22,7 @@ import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { playerPage, DEBUG_UI_PATH, PREACT_PATH } from './template.js';
 import { assetRoutes, withServedAssets } from './asset-routes.js';
-import { makeEntryBundle } from '../compiler/bundle.js';
+import { makeEntryBundle } from '@tess/compiler';
 
 // entryjs 의 tts 읽어주기(block_ai_utilize_tts.js)는 `${Entry.baseUrl}/api/expansionBlock/tts/read.mp3?...`
 // 로 브라우저에서 직접 요청한다. Entry.baseUrl 기본값은 location.origin(우리 서버)이라

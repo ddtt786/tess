@@ -8,7 +8,7 @@
 //  찍힐 원래 이름(name 속성으로 되돌려 놓는다).
 // ============================================================================
 
-import { UNUSABLE_AS_NAME } from '../parser/tokens.js';
+import { UNUSABLE_AS_NAME } from '@tess/parser';
 
 /** Ohm 의 `letter` 는 유니코드 Letter 카테고리 전부(한글 포함)를 허용한다 */
 const IDENT_START = /[\p{L}_]/u;

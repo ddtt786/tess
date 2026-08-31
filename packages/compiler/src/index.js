@@ -15,10 +15,10 @@ import { buildCommentMap } from './comments.js';
 import { makeAsset } from './assets.js';
 import { compileStatements, compileStatement } from './statement.js';
 import { compileValue, BOOLEAN_TEXT } from './expression.js';
-import { KEY_CODES, keyCodeOf } from './keycodes.js';
-import { didYouMean } from './suggest.js';
-import { validate } from '../validate.js';
-import { isAutoParamName } from '../function-params.js';
+import { KEY_CODES, keyCodeOf } from '@tess/core';
+import { didYouMean } from '@tess/core';
+import { validate } from '@tess/parser';
+import { isAutoParamName } from '@tess/core';
 
 export { createCompileCache };
 

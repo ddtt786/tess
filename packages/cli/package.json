@@ -1,0 +1,24 @@
+{
+  "name": "tess",
+  "version": "1.0.0",
+  "description": "Tess 언어(엔트리 블록 코드로 변환되는 텍스트 언어) — 라이브러리와 CLI",
+  "license": "ISC",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "bin": {
+    "tess": "./index.js"
+  },
+  "files": ["index.js", "src"],
+  "keywords": ["tess", "chevrotain", "parser", "grammar", "entry"],
+  "dependencies": {
+    "@tess/compiler": "workspace:*",
+    "@tess/core": "workspace:*",
+    "@tess/decompiler": "workspace:*",
+    "@tess/parser": "workspace:*",
+    "@tess/player": "workspace:*",
+    "@clack/prompts": "^1.7.0"
+  }
+}

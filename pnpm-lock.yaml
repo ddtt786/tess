@@ -206,38 +206,124 @@ settings:
 importers:
 
   .:
-    dependencies:
-      '@babel/code-frame':
-        specifier: ^8.0.0
-        version: 8.0.0
-      '@clack/prompts':
-        specifier: ^1.7.0
-        version: 1.7.0
-      chevrotain:
-        specifier: ^13.2.0
-        version: 13.2.0
-      preact:
-        specifier: ^10.29.8
-        version: 10.29.8
-      sharp:
-        specifier: ^0.35.4
-        version: 0.35.4(@types/node@26.3.0)
-      tar:
-        specifier: ^7.5.22
-        version: 7.5.22
     devDependencies:
       '@entrylabs/entry':
         specifier: ^4.0.22
         version: 4.0.22(clean-css@5.3.3)(encoding@0.1.13)(html-minifier-terser@6.1.0)(postcss@7.0.39)(seedrandom@3.0.5)(supports-color@8.1.1)
+      '@tess/compiler':
+        specifier: workspace:*
+        version: link:packages/compiler
+      '@tess/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@tess/decompiler':
+        specifier: workspace:*
+        version: link:packages/decompiler
+      '@tess/parser':
+        specifier: workspace:*
+        version: link:packages/parser
+      '@tess/player':
+        specifier: workspace:*
+        version: link:packages/player
       jsdom:
         specifier: ^30.0.1
         version: 30.0.1
+      tess:
+        specifier: workspace:*
+        version: link:packages/cli
       vscode-oniguruma:
         specifier: ^2.0.1
         version: 2.0.1
       vscode-textmate:
         specifier: ^9.3.2
         version: 9.3.2
+
+  editors/vscode:
+    devDependencies:
+      '@tess/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@tess/parser':
+        specifier: workspace:*
+        version: link:../../packages/parser
+
+  packages/cli:
+    dependencies:
+      '@clack/prompts':
+        specifier: ^1.7.0
+        version: 1.7.0
+      '@tess/compiler':
+        specifier: workspace:*
+        version: link:../compiler
+      '@tess/core':
+        specifier: workspace:*
+        version: link:../core
+      '@tess/decompiler':
+        specifier: workspace:*
+        version: link:../decompiler
+      '@tess/parser':
+        specifier: workspace:*
+        version: link:../parser
+      '@tess/player':
+        specifier: workspace:*
+        version: link:../player
+
+  packages/compiler:
+    dependencies:
+      '@tess/core':
+        specifier: workspace:*
+        version: link:../core
+      '@tess/parser':
+        specifier: workspace:*
+        version: link:../parser
+      sharp:
+        specifier: ^0.35.4
+        version: 0.35.4(@types/node@26.3.0)
+      tar:
+        specifier: ^7.5.22
+        version: 7.5.22
+
+  packages/core: {}
+
+  packages/decompiler:
+    dependencies:
+      '@tess/core':
+        specifier: workspace:*
+        version: link:../core
+      '@tess/parser':
+        specifier: workspace:*
+        version: link:../parser
+      '@tess/player':
+        specifier: workspace:*
+        version: link:../player
+      tar:
+        specifier: ^7.5.22
+        version: 7.5.22
+
+  packages/parser:
+    dependencies:
+      '@babel/code-frame':
+        specifier: ^8.0.0
+        version: 8.0.0
+      '@tess/core':
+        specifier: workspace:*
+        version: link:../core
+      chevrotain:
+        specifier: ^13.2.0
+        version: 13.2.0
+
+  packages/player:
+    dependencies:
+      '@tess/compiler':
+        specifier: workspace:*
+        version: link:../compiler
+      preact:
+        specifier: ^10.29.8
+        version: 10.29.8
+    devDependencies:
+      '@entrylabs/entry':
+        specifier: ^4.0.22
+        version: 4.0.22(clean-css@5.3.3)(encoding@0.1.13)(html-minifier-terser@6.1.0)(postcss@7.0.39)(seedrandom@3.0.5)(supports-color@8.1.1)
 
 packages:
 

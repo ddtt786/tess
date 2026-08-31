@@ -9,14 +9,14 @@
 //   4) 반복문 밖의 break / skip
 //   5) project 블록 중복 선언                  (spec 3.2)
 // ============================================================================
-import { didYouMean } from './compiler/suggest.js';
+import { didYouMean } from '@tess/core';
 import {
   BUILTIN_FUNCTIONS,
   OBJECT_PROPERTIES,
   OPTION_KEYWORDS,
   STATE_VALUES,
   TEXT_ONLY_PROPERTIES,
-} from './builtins.js';
+} from '@tess/core';
 
 const LOOP_TYPES = new Set(['Repeat', 'While', 'Until', 'Forever']);
 

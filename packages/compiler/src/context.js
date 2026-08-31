@@ -6,7 +6,7 @@
 // ============================================================================
 import { createIdFactory, seedFrom } from './ids.js';
 import { commentKey, makeComment } from './comments.js';
-import { lineIndex } from '../validate.js';
+import { lineIndex } from '@tess/parser';
 
 /** 엔트리 블록 한 개의 기본 뼈대 */
 export function makeBlock(id, type, params = [], statements = []) {

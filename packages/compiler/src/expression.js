@@ -5,11 +5,11 @@
 //   - 리스트/문자열 인덱스, slice, index_of: Tess 도 엔트리처럼 1부터다.
 //     둘 다 1부터이므로 그대로 옮긴다 — 못 찾으면 0(index_of), 양끝 포함(slice).
 // ============================================================================
-import { KEY_CODES, keyCodeOf } from './keycodes.js';
-import { didYouMean, orHint } from './suggest.js';
+import { KEY_CODES, keyCodeOf } from '@tess/core';
+import { didYouMean, orHint } from '@tess/core';
 import { requirePowerRefiner } from './runtime.js';
-import { BUILTIN_FUNCTIONS, OPTION_KEYWORDS, STATE_VALUES } from '../builtins.js';
-import { expansionBlock } from './expansion.js';
+import { BUILTIN_FUNCTIONS, OPTION_KEYWORDS, STATE_VALUES } from '@tess/core';
+import { expansionBlock } from '@tess/core';
 
 /** 결과가 엔트리 "판단(boolean)" 블록인 타입들 */
 const BOOLEAN_TYPES = new Set([

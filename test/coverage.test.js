@@ -66,9 +66,10 @@ function loadPalette() {
   return sandbox.EntryStatic.getAllBlocks();
 }
 
-/** src/ 와 index.js 에 적힌 글자 전부 — 블록 타입이 어딘가에 나오는지 볼 용도다 */
-function toolSource(dir = path.join(root, 'src'), text = { value: '' }) {
+/** packages/ 아래 소스에 적힌 글자 전부 — 블록 타입이 어딘가에 나오는지 볼 용도다 */
+function toolSource(dir = path.join(root, 'packages'), text = { value: '' }) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules') continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) toolSource(full, text);
     else if (entry.name.endsWith('.js')) text.value += fs.readFileSync(full, 'utf8');
@@ -76,7 +77,7 @@ function toolSource(dir = path.join(root, 'src'), text = { value: '' }) {
   return text.value;
 }
 
-const source = `${toolSource()}${fs.readFileSync(path.join(root, 'index.js'), 'utf8')}`;
+const source = toolSource();
 const mentions = (type) => new RegExp(`["'\`]${type}["'\`]|^ {2}${type}: \\{`, 'm').test(source);
 
 // 사진에 있는 카테고리(시작 · 흐름 · 움직임 · 생김새 · 붓 · 소리 · 판단 · 계산 ·

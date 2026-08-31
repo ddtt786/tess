@@ -1,0 +1,18 @@
+{
+  "name": "@tess/compiler",
+  "version": "1.0.0",
+  "description": "Tess AST 를 엔트리 작품(project.json · .ent) 으로 컴파일한다",
+  "license": "ISC",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": ["index.js", "src"],
+  "dependencies": {
+    "@tess/core": "workspace:*",
+    "@tess/parser": "workspace:*",
+    "sharp": "^0.35.4",
+    "tar": "^7.5.22"
+  }
+}

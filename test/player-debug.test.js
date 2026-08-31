@@ -1,15 +1,16 @@
-// 디버그 패널 UI(src/player/debug-ui.js)를 jsdom 에 올리고 가짜 엔트리 실행기로 눌러 본다.
+// 디버그 패널 UI(packages/player/src/debug-ui.js)를 jsdom 에 올리고 가짜 엔트리 실행기로 눌러 본다.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { playerPage } from '../src/player/template.js';
-import { compileProject } from '../src/compiler/index.js';
+import { playerPage, findPreactDir } from '@tess/player';
+import { compileProject } from '@tess/compiler';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const preactDist = () => path.dirname(fileURLToPath(import.meta.resolve('preact')));
+// preact 는 @tess/player 의 의존성이다 — 실행 서버가 내보내는 것과 같은 파일을 쓴다.
+const preactDist = () => findPreactDir();
 
 /** 디버그 UI 모듈을 jsdom 에 올린다. import 는 떼고 preact 를 직접 넣어 준다. */
 async function mountDebugPanel(t) {
@@ -117,7 +118,7 @@ async function mountDebugPanel(t) {
 
   // 브라우저가 실제로 받는 preact 파일을 그대로 쓴다. 패키지 기본 진입점을 쓰면
   // 서버가 내보내는 파일과 달라져서, 그 파일만 깨져 있어도 테스트가 통과해 버린다.
-  const source = fs.readFileSync(path.join(root, 'src/player/debug-ui.js'), 'utf-8');
+  const source = fs.readFileSync(path.join(root, 'packages/player/src/debug-ui.js'), 'utf-8');
   const preactFile = source.match(/from ["']\/preact\/([^"']+)["']/)[1];
   const preact = await import(path.join(preactDist(), preactFile));
   window.h = preact.h;

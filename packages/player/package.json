@@ -1,0 +1,22 @@
+{
+  "name": "@tess/player",
+  "version": "1.0.0",
+  "description": "컴파일한 작품을 브라우저에서 돌리는 실행 서버와 디버그 패널",
+  "license": "ISC",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "src"
+  ],
+  "dependencies": {
+    "@tess/compiler": "workspace:*",
+    "preact": "^10.29.8"
+  },
+  "devDependencies": {
+    "@entrylabs/entry": "^4.0.22"
+  }
+}

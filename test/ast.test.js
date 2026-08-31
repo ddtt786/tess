@@ -152,7 +152,7 @@ test('stop 계열은 서로 다른 노드가 된다', () => {
 });
 
 test('노드에 소스 위치(loc)가 붙는다', async () => {
-  const { parse } = await import('../src/parse.js');
+  const { parse } = await import('@tess/parser');
   const { ast } = parse('var a = 1\n');
   assert.deepEqual(ast.body[0].loc, { start: 0, end: 9 });
 });

@@ -7,8 +7,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BUILTIN_FUNCTIONS, OPTION_KEYWORDS, STATE_VALUES, OBJECT_PROPERTIES, TEXT_ONLY_PROPERTIES } from '../../src/builtins.js';
-import { KEYWORDS } from '../../src/parser/tokens.js';
+import { BUILTIN_FUNCTIONS, OPTION_KEYWORDS, STATE_VALUES, OBJECT_PROPERTIES, TEXT_ONLY_PROPERTIES } from '@tess/core/builtins';
+import { KEYWORDS } from '@tess/parser';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 

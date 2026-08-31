@@ -1,0 +1,16 @@
+{
+  "name": "@tess/core",
+  "version": "1.0.0",
+  "description": "Tess 언어의 공용 정의 — 내장 함수 목록, 키 코드, 확장 블록, 이름 추천",
+  "license": "ISC",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./builtins": "./src/builtins.js"
+  },
+  "files": [
+    "index.js",
+    "src"
+  ]
+}

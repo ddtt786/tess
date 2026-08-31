@@ -12,12 +12,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { imageSize } from '../src/compiler/assets.js';
-import { audioDuration } from '../src/compiler/audio.js';
-import { compileProject } from '../src/compiler/index.js';
-import { makeEntryBundle } from '../src/compiler/bundle.js';
-import { makeThumbnail } from '../src/compiler/thumbnail.js';
-import { readTar } from '../src/decompiler/tar.js';
+import { imageSize } from '@tess/compiler';
+import { audioDuration } from '@tess/compiler';
+import { compileProject } from '@tess/compiler';
+import { makeEntryBundle } from '@tess/compiler';
+import { makeThumbnail } from '@tess/compiler';
+import { readTar } from '@tess/decompiler';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 

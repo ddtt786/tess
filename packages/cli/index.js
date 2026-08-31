@@ -12,24 +12,27 @@ export {
   parseOrThrow,
   check,
   validate,
-} from "./src/parse.js";
-export { compileProject, createCompileCache } from "./src/compiler/index.js";
-export { makeEntryBundle, makeTar } from "./src/compiler/bundle.js";
-export { verifyEntryProject } from "./src/compiler/verify.js";
-export { serveProject } from "./src/player/server.js";
-export { decompileEnt, decompileProject } from "./src/decompiler/index.js";
-export * as builtins from "./src/builtins.js";
+} from "@tess/parser";
+export {
+  compileProject,
+  createCompileCache,
+  makeEntryBundle,
+  makeTar,
+  verifyEntryProject,
+} from "@tess/compiler";
+export { serveProject } from "@tess/player";
+export { decompileEnt, decompileProject } from "@tess/decompiler";
+export * as builtins from "@tess/core/builtins";
 
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { parse } from "./src/parse.js";
-import { compileProject, createCompileCache } from "./src/compiler/index.js";
-import { makeEntryBundle } from "./src/compiler/bundle.js";
-import { serveProject } from "./src/player/server.js";
-import * as out from "./src/cli/output.js";
+import { parse } from "@tess/parser";
+import { compileProject, createCompileCache, makeEntryBundle } from "@tess/compiler";
+import { serveProject } from "@tess/player";
+import * as out from "./src/output.js";
 
 const USAGE = `사용법
   node index.js check      <파일.tess>          문법 · 의미 검사 (컴파일까지 해 본다)
@@ -366,7 +369,7 @@ function countBlocks(node) {
 
 /** 이미 있는 .ent(엔트리 작품)를 Tess 소스로 되돌린다 */
 async function runDecompile(file, options) {
-  const { decompileEnt } = await import("./src/decompiler/index.js");
+  const { decompileEnt } = await import("@tess/decompiler");
   const label = path.basename(file);
   const bytes = fs.readFileSync(file);
 

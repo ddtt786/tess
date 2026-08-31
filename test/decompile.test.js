@@ -10,8 +10,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { decompileProject } from '../src/decompiler/index.js';
-import { compileProject } from '../src/compiler/index.js';
+import { decompileProject } from '@tess/decompiler';
+import { compileProject } from '@tess/compiler';
 
 /** 스프라이트 하나짜리, 스크립트도 아주 단순한 최소 project.json. sceneCount 로 장면 수를 고른다 */
 function minimalProject(sceneCount = 1) {

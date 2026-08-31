@@ -1,2 +1,6 @@
+packages:
+  - packages/*
+  - editors/*
+
 allowBuilds:
   core-js: true

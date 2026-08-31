@@ -15,7 +15,7 @@ import {
   resolveTarget,
 } from "./expression.js";
 import { requireScaleSetter } from "./runtime.js";
-import { didYouMean, orHint } from "./suggest.js";
+import { didYouMean, orHint } from '@tess/core';
 
 const STOP_TARGETS = {
   this: "thisThread", // 현재 스크립트만

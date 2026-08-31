@@ -11,7 +11,7 @@
 // ============================================================================
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compileProject } from '../src/compiler/index.js';
+import { compileProject } from '@tess/compiler';
 
 /** 엔트리 오브젝트 하나를 흉내 낸다 */
 function makeEntity({ width, height, originX, originY, scaleX = originX, scaleY = originY }) {

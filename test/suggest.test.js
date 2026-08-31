@@ -4,9 +4,9 @@
 // 글자 하나가 자음·모음이 뭉친 덩어리라 '체력' 과 '체렄' 이 눈에 잘 안 띈다.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { editDistance, nearestName, didYouMean } from '../src/compiler/suggest.js';
-import { compileProject } from '../src/compiler/index.js';
-import { parse } from '../src/parse.js';
+import { editDistance, nearestName, didYouMean } from '@tess/core';
+import { compileProject } from '@tess/compiler';
+import { parse } from '@tess/parser';
 
 const object = (body) => `scene "s":\n  object "o":\n${body}\n  end\nend`;
 const firstError = (source) => compileProject(source, { path: 't.tess' }).errors[0]?.message ?? '';

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parse } from '../src/parse.js';
+import { parse } from '@tess/parser';
 
 /** 문장 목록을 오브젝트의 when 블록으로 감싼다. */
 export function inObject(code, kind = 'object') {

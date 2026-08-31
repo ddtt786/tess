@@ -517,7 +517,7 @@ end
 확장 카테고리 블록은 전부 값이나 판단 하나짜리이고, 칸은 목록에서 고르는 드롭다운
 아니면 값 자리입니다. 그래서 **엔트리 블록 타입 이름을 그대로** Tess 내장 함수 이름으로
 씁니다 — 바깥 서비스를 그대로 비추는 API 라, 엔트리 문서에 적힌 이름과 어긋나지 않는
-편이 찾아보기 쉽습니다. 표 하나(`src/compiler/expansion.js`)가 컴파일과 되돌리기를
+편이 찾아보기 쉽습니다. 표 하나(`packages/core/src/expansion.js`)가 컴파일과 되돌리기를
 함께 처리합니다.
 
 ```tess
@@ -587,7 +587,7 @@ Tess 가 붙인 것입니다. 모르는 값이면 컴파일 에러로 쓸 수 �
 `read_text`/`read_text_wait_with_block` 은 실행될 때 **엔트리 서버(`/api/expansionBlock/tts/read`,
 네이버 클로바)** 에 문장을 보내 mp3 를 받아 재생합니다. 이 API 는 `playentry.org` 에만
 있으므로, `node index.js run` 으로 여는 미리보기는 이 서버 요청을 대신 중계합니다
-(`src/player/server.js`, 브라우저가 우리 로컬 서버로 요청하면 그걸 playentry.org 로 다시
+(`packages/player/src/server.js`, 브라우저가 우리 로컬 서버로 요청하면 그걸 playentry.org 로 다시
 보내 mp3 를 그대로 돌려줍니다 — 브라우저가 playentry.org 로 직접 요청하면 CORS 로
 막히기 때문입니다). `.ent` 로 내보내 playentry.org 에서 직접 열어도 물론 정상 동작합니다.
 

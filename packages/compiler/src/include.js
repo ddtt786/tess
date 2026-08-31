@@ -10,8 +10,8 @@
 // ============================================================================
 import fs from 'node:fs';
 import path from 'node:path';
-import { parse } from '../parse.js';
-import { lineAndColumn } from '../validate.js';
+import { parse } from '@tess/parser';
+import { lineAndColumn } from '@tess/parser';
 
 const START_RULES = { top: undefined, scene: 'SceneFragment', object: 'ObjectFragment' };
 

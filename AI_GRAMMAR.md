@@ -3,8 +3,8 @@
 > **주의 — 이 문서는 옛 Ohm 구현을 설명한다.**
 > 파서는 chevrotain으로 교체됐고 `ohm-js`는 더 이상 의존성이 아니다. 규칙의
 > *의미*는 그대로 유효하지만, 파일 경로와 Ohm 표기는 현재 코드와 맞지 않는다.
-> 지금 돌아가는 문법은 `src/parser/`이고, 구현 노트는 `AI_PARSER.md`에 있다.
-> 아래에서 말하는 `src/tess.ohm`은 `src/legacy/tess.ohm`에 참고용으로 남아 있다.
+> 지금 돌아가는 문법은 `packages/parser/src/parser/`이고, 구현 노트는 `AI_PARSER.md`에 있다.
+> 아래에서 말하는 `src/tess.ohm`은 `packages/parser/legacy/tess.ohm`에 참고용으로 남아 있다.
 
 `src/tess.ohm`에 정의된 [Ohm](https://ohmjs.org/) 문법을 규칙 단위로 정리한 문서다.
 "이 텍스트가 Tess 코드로서 올바른가"를 판단하는 층만 다룬다 — 그 코드가 실제로

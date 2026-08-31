@@ -10,11 +10,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readTar } from './tar.js';
-import { findLocalRuntime } from '../player/server.js';
+import { findLocalRuntime } from '@tess/player';
 import { safeIdentifier, tessString, tessNumber, tessLiteral } from './ident.js';
-import { autoParamName } from '../function-params.js';
+import { autoParamName } from '@tess/core';
 import { blocksToLines, indent, functionDeclarationLines, colorExpr } from './stmt.js';
-import { KEY_CODES } from '../compiler/keycodes.js';
+import { KEY_CODES } from '@tess/core';
 
 const REVERSE_KEY_NAME = {};
 for (const [name, code] of Object.entries(KEY_CODES)) {
@@ -688,7 +688,7 @@ function objectPropertyLines(object, isText, indentLevel) {
     }
 
     const font = parseFont(entity.font);
-    // 컴파일러의 기본값(src/compiler/index.js buildObject)과 같을 때는 생략한다
+    // 컴파일러의 기본값(packages/compiler/src/index.js buildObject)과 같을 때는 생략한다
     if (font.family && font.family !== 'Nanum Gothic') lines.push(`${pad}font = ${tessString(font.family)}`);
     if (font.bold) lines.push(`${pad}text_bold = true`);
     if (font.italic) lines.push(`${pad}text_italic = true`);

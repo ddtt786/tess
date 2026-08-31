@@ -15,7 +15,7 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 /** `node index.js ...` 를 돌리고 종료 코드와 출력을 돌려준다 */
 function cli(...args) {
   try {
-    const stdout = execFileSync('node', [path.join(root, 'index.js'), ...args], { encoding: 'utf-8' });
+    const stdout = execFileSync('node', [path.join(root, 'packages/cli/index.js'), ...args], { encoding: 'utf-8' });
     return { code: 0, output: stdout };
   } catch (error) {
     return { code: error.status, output: (error.stdout ?? '') + (error.stderr ?? '') };

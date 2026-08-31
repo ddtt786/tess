@@ -6,8 +6,8 @@
 // ============================================================================
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compileProject } from '../src/compiler/index.js';
-import { verifyEntryProject } from '../src/compiler/verify.js';
+import { compileProject } from '@tess/compiler';
+import { verifyEntryProject } from '@tess/compiler';
 
 /** 식 하나를 컴파일해서 블록 트리와 프로젝트를 돌려준다 */
 function build(expression) {

@@ -26,46 +26,65 @@ all_blocks.tess -> build/blocks.ent
 
 ## 구성
 
-| 파일               | 역할                                                                                            |
-| ------------------ | ----------------------------------------------------------------------------------------------- |
-| `src/tess.ohm`     | **문법 정의** — "이 코드가 Tess 로 올바른가" 만 판단 (규칙별 상세는 [GRAMMAR.md](./GRAMMAR.md)) |
-| `src/ast.js`       | **시맨틱** — 파스 트리(CST) → AST 변환 (`addOperation('ast')`)                                  |
-| `src/validate.js`  | **의미 검증** — 문법으로 표현할 수 없는 spec 규칙 검사                                          |
-| `src/builtins.js`  | spec 의 상태 값 · 내장 함수 · 속성 이름 목록                                                    |
-| `src/parse.js`     | 파서 공개 API (`parse`, `parseOrThrow`, `check`, `trace`)                                       |
-| `src/compiler/`    | **엔트리 컴파일러** (아래 표 참고)                                                              |
-| `index.js`         | 라이브러리 재export + CLI                                                                       |
-| `examples/`        | spec 예제 · 언어 한 바퀴 · 컴파일되는 작품                                                      |
-| `SPEC.md`          | **Tess 언어 가이드** — 문법·문장·표현식·내장 함수를 처음부터 설명(일반 사용자용)                |
-| `SPEC-ADDENDUM.md` | 엔트리에는 없는 Tess 전용 문법과, 컴파일러가 알아서 다르게 만드는 부분                          |
-| `GRAMMAR.md`       | Ohm 문법(`tess.ohm`) 규칙별 상세 명세 — 우선순위, PEG 기법, AST 대응표(파서/컴파일러 기여자용)  |
+pnpm 워크스페이스 모노레포입니다. 패키지는 아래로만 의존합니다 —
+`cli → decompiler → player → compiler → parser → core`. 순환은 없습니다.
 
-| 컴파일러 파일                  | 역할                                                                                                            |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `src/compiler/index.js`        | 심볼 수집 → 스크립트 컴파일 → 프로젝트 조립                                                                     |
-| `src/compiler/statement.js`    | Tess 문장 → 엔트리 블록                                                                                         |
-| `src/compiler/expression.js`   | Tess 표현식 → 엔트리 값·판단 블록                                                                               |
-| `src/compiler/include.js`      | `use` · `useobject` · `usetext` 를 그 자리에 펼치기                                                             |
-| `src/compiler/comments.js`     | Tess 주석 → 엔트리 블록 주석                                                                                    |
-| `src/compiler/runtime.js`      | 엔트리에 없는 동작을 대신할 함수 만들어 넣기                                                                    |
-| `src/player/`                  | `run` 이 띄우는 미리보기 서버와 실행 페이지                                                                     |
-| `src/player/debug-ui.js`       | 디버그 패널 UI ([arrow-js](https://github.com/standardagents/arrow-js) 로 만든 브라우저 모듈)                   |
-| `src/decompiler/`              | `decompile` — `.ent` → Tess 소스(기본적으로 오브젝트마다 `objects/이름.tess` 조각 파일 + `useobject`/`usetext`) |
-| `editors/vscode/`              | VS Code 문법 강조 (설치법은 그 폴더의 README)                                                                   |
-| `src/compiler/assets.js`       | 모양·소리 파일 → 엔트리 리소스 경로, 그림 원본 크기 재기                                                        |
-| `src/compiler/audio.js`        | 소리 파일 헤더에서 재생 길이 재기 (mp3 · wav · ogg · m4a)                                                       |
-| `src/compiler/bundle.js`       | `.ent` (tar) 묶기 — 의존성 없이 직접                                                                            |
-| `src/compiler/verify.js`       | 만든 프로젝트가 엔트리 구조에 맞는지 검사                                                                       |
-| `src/compiler/block-params.js` | 엔트리 블록별 파라미터 자리 개수표                                                                              |
+| 패키지              | 이름               | 외부 의존성                  | 역할                                                    |
+| ------------------- | ------------------ | ---------------------------- | ------------------------------------------------------- |
+| `packages/core`     | `@tess/core`       | 없음                         | 모든 패키지가 함께 쓰는 표: 내장 함수·상태 값·속성 이름, 키 코드, 확장 블록, 이름 추천 |
+| `packages/parser`   | `@tess/parser`     | chevrotain, @babel/code-frame | 소스 → 토큰 → CST → AST, 그리고 의미 검증               |
+| `packages/compiler` | `@tess/compiler`   | sharp, tar                   | AST → 엔트리 작품(project.json · `.ent`)                |
+| `packages/player`   | `@tess/player`     | preact                       | `run` 이 띄우는 미리보기 서버와 실행 페이지             |
+| `packages/decompiler` | `@tess/decompiler` | tar                        | `.ent` → Tess 소스                                      |
+| `packages/cli`      | `tess`             | @clack/prompts               | 라이브러리 재export + CLI (`bin: tess`)                 |
+| `editors/vscode`    | `tess-lang`        | —                            | VS Code 문법 강조 (설치법은 그 폴더의 README)           |
 
-Ohm 의 철학대로 **문법과 동작을 완전히 분리**했습니다. `tess.ohm` 에는 로직이 한 줄도 없고,
-"그래서 이게 무슨 뜻인가" 는 `ast.js`·`validate.js` 가, "엔트리로 어떻게 옮기나" 는
+`core` 는 의존성이 없다는 점이 중요합니다. `didYouMean` · `KEY_CODES` · `EXPANSION_BLOCKS` ·
+`BUILTIN_FUNCTIONS` 는 파서와 컴파일러가 모두 쓰기 때문에, 한쪽에 두면 두 패키지가 서로를
+부르게 됩니다. 이것들을 `core` 로 내려서 의존 방향을 한쪽으로 폈습니다.
+
+테스트는 루트 `test/` 하나에 모여 있습니다. 여러 패키지를 가로지르는 경우(컴파일 → 검증 →
+실행 페이지)가 많아 패키지별로 쪼개지 않았고, 각 테스트는 내부 파일이 아니라 패키지 이름
+(`@tess/compiler` 등)으로 import 합니다 — 패키지 경계가 실제로 닫혀 있는지 같이 확인됩니다.
+
+| 파서 파일                                  | 역할                                                       |
+| ------------------------------------------ | ---------------------------------------------------------- |
+| `packages/parser/src/parser/tokens.js`     | 토큰 정의와 어휘 분석(chevrotain `Lexer`)                  |
+| `packages/parser/src/parser/parser.js`     | 구문 규칙(`CstParser`)                                     |
+| `packages/parser/src/parser/visitor.js`    | 파스 트리(CST) → AST 변환                                  |
+| `packages/parser/src/parser/index.js`      | 토큰화 → 파싱 → AST 를 묶고 에러 위치를 코드 프레임으로    |
+| `packages/parser/src/validate.js`          | **의미 검증** — 문법으로 표현할 수 없는 spec 규칙 검사     |
+| `packages/parser/src/parse.js`             | 파서 공개 API (`parse`, `parseOrThrow`, `check`)           |
+| `packages/parser/legacy/tess.ohm`          | 초기 Ohm 문법 정의. 참고용으로만 남아 있고 아무도 읽지 않는다 |
+
+| 컴파일러 파일                                   | 역할                                                     |
+| ----------------------------------------------- | -------------------------------------------------------- |
+| `packages/compiler/src/index.js`                | 심볼 수집 → 스크립트 컴파일 → 프로젝트 조립              |
+| `packages/compiler/src/statement.js`            | Tess 문장 → 엔트리 블록                                  |
+| `packages/compiler/src/expression.js`           | Tess 표현식 → 엔트리 값·판단 블록                        |
+| `packages/compiler/src/include.js`              | `use` · `useobject` · `usetext` 를 그 자리에 펼치기      |
+| `packages/compiler/src/comments.js`             | Tess 주석 → 엔트리 블록 주석                             |
+| `packages/compiler/src/runtime.js`              | 엔트리에 없는 동작을 대신할 함수 만들어 넣기             |
+| `packages/compiler/src/assets.js`               | 모양·소리 파일 → 엔트리 리소스 경로, 그림 원본 크기 재기 |
+| `packages/compiler/src/audio.js`                | 소리 파일 헤더에서 재생 길이 재기 (mp3 · wav · ogg · m4a) |
+| `packages/compiler/src/bundle.js`               | `.ent` (tar) 묶기 — 의존성 없이 직접                     |
+| `packages/compiler/src/verify.js`               | 만든 프로젝트가 엔트리 구조에 맞는지 검사                |
+| `packages/compiler/src/block-params.js`         | 엔트리 블록별 파라미터 자리 개수표                       |
+| `packages/core/src/expansion.js`                | 엔트리 확장 블록표 — 컴파일러와 디컴파일러가 함께 쓴다   |
+| `packages/core/src/keycodes.js`                 | 키 이름 → 엔트리 키 코드                                 |
+| `packages/core/src/suggest.js`                  | 편집 거리 기반 오타 추천(`didYouMean`)                   |
+| `packages/player/src/server.js`                 | 미리보기 서버 — 실행기·에셋·자동 새로고침                |
+| `packages/player/src/debug-ui.js`               | 디버그 패널 UI (preact 로 만든 브라우저 모듈)            |
+| `packages/decompiler/src/index.js`              | `.ent` → Tess 소스(오브젝트마다 `objects/이름.tess` 조각 파일 + `useobject`/`usetext`) |
+
+**문법과 동작을 완전히 분리**했습니다. `parser/` 에는 "엔트리" 라는 말이 한 줄도 없고,
+"그래서 이게 무슨 뜻인가" 는 `validate.js` 가, "엔트리로 어떻게 옮기나" 는
 `compiler/` 가 담당합니다.
 
 ## 사용법
 
 ```js
-import { parse, compileProject, makeEntryBundle } from "./index.js";
+import { parse, compileProject, makeEntryBundle } from "tess";
 
 const result = compileProject(source, { path: "main.tess" });
 if (result.ok) {
@@ -74,7 +93,7 @@ if (result.ok) {
 ```
 
 ```js
-import { parse } from "./index.js";
+import { parse } from "tess";
 
 const result = parse(`
   var score = 0
@@ -1260,10 +1279,10 @@ pnpm test
 `judgement` `calc` `variable` `func` `analysis` `expansion` 13개입니다.
 `ai_utilize` 와 하드웨어 카테고리는 아직 대상이 아닙니다.
 
-문법을 고칠 때는 [Ohm 온라인 에디터](https://ohmjs.org/editor)에 `src/tess.ohm` 을 붙여넣고
+문법을 고칠 때는 [Ohm 온라인 에디터](https://ohmjs.org/editor)에 `packages/parser/legacy/tess.ohm` 을 붙여넣고
 실험하거나, `trace()` 로 파서의 판단 과정을 확인하세요.
 
 ```js
-import { trace } from "./index.js";
+import { trace } from "tess";
 console.log(trace("forward 10 at 90", "Statement"));
 ```

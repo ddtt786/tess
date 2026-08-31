@@ -7,8 +7,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parse } from '../src/parse.js';
-import { compileProject } from '../src/compiler/index.js';
+import { parse } from '@tess/parser';
+import { compileProject } from '@tess/compiler';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'examples');
 const FRAGMENT_RULES = [undefined, 'SceneFragment', 'ObjectFragment'];

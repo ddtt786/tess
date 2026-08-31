@@ -1,7 +1,7 @@
 // ============================================================================
 //  엔트리 문장(statement) 블록 -> Tess 소스 줄
 //
-//  src/compiler/statement.js 의 정확한 대응표를 뒤집는다. 한 스레드(블록
+//  packages/compiler/src/statement.js 의 정확한 대응표를 뒤집는다. 한 스레드(블록
 //  이어붙임)를 받아서 들여쓰기 없는 텍스트 줄 배열을 돌려준다 — 호출한 쪽이
 //  `indent()` 로 필요한 만큼 들여쓴다. 모르는 블록은 주석으로 남기고 계속
 //  진행한다 (하나 때문에 전체를 못 옮기면 안 되니까).
@@ -33,7 +33,7 @@ const REVERSE_TEXT_EFFECT = {
   underLine: "text_underline",
   strike: "text_strikethrough",
 };
-// set_tts_property 의 코드값 -> src/compiler/statement.js 의 TTS_SPEAKERS/TTS_LEVELS 별명으로
+// set_tts_property 의 코드값 -> packages/compiler/src/statement.js 의 TTS_SPEAKERS/TTS_LEVELS 별명으로
 const REVERSE_TTS_SPEAKER = {
   kyuri: "female",
   jinho: "male",

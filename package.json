@@ -1,20 +1,15 @@
 {
-  "name": "tess",
+  "name": "tess-monorepo",
   "version": "1.0.0",
-  "description": "Tess 언어(엔트리 블록 코드로 변환되는 텍스트 언어)의 문법 구현",
-  "main": "index.js",
-  "scripts": {
-    "test": "node --test test/*.test.js"
-  },
-  "keywords": [
-    "tess",
-    "chevrotain",
-    "parser",
-    "grammar",
-    "entry"
-  ],
-  "author": "",
+  "description": "Tess 언어(엔트리 블록 코드로 변환되는 텍스트 언어) 모노레포",
+  "private": true,
   "license": "ISC",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "tess": "node packages/cli/index.js",
+    "build:grammar": "node editors/vscode/build-grammar.mjs"
+  },
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
@@ -22,18 +17,15 @@
       "onFail": "download"
     }
   },
-  "type": "module",
-  "dependencies": {
-    "@babel/code-frame": "^8.0.0",
-    "@clack/prompts": "^1.7.0",
-    "chevrotain": "^13.2.0",
-    "preact": "^10.29.8",
-    "sharp": "^0.35.4",
-    "tar": "^7.5.22"
-  },
   "devDependencies": {
     "@entrylabs/entry": "^4.0.22",
+    "@tess/compiler": "workspace:*",
+    "@tess/core": "workspace:*",
+    "@tess/decompiler": "workspace:*",
+    "@tess/parser": "workspace:*",
+    "@tess/player": "workspace:*",
     "jsdom": "^30.0.1",
+    "tess": "workspace:*",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
   }

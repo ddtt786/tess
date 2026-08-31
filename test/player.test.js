@@ -5,9 +5,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compileProject } from '../src/compiler/index.js';
-import { serveProject, findLocalRuntime } from '../src/player/server.js';
-import { assetRoutes } from '../src/player/asset-routes.js';
+import { compileProject } from '@tess/compiler';
+import { serveProject, findLocalRuntime } from '@tess/player';
+import { assetRoutes } from '@tess/player';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
