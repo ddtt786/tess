@@ -4,9 +4,9 @@
 //  엔트리 실행기(entryjs)는 서드파티 라이브러리가 많아서 통째로 담지 않고
 //  다음 순서로 찾는다.
 //    1. 프로젝트에 설치된 node_modules/@entrylabs/entry  (오프라인)
-//    2. unpkg CDN                                          (기본, server.js 의 CDN 상수)
+//    2. unpkg CDN                                          (기본, server.ts 의 CDN 상수)
 //  @entrylabs/entry 자체는 jsDelivr 로는 못 받는다 — 패키지 전체 크기가 jsDelivr 의
-//  150MB 한도를 넘어서 entry.min.js 조차 403 으로 막힌다(server.js CDN 상수 주석 참고).
+//  150MB 한도를 넘어서 entry.min.js 조차 403 으로 막힌다(server.ts CDN 상수 주석 참고).
 //  나머지 서드파티 라이브러리(THIRD_PARTY_SCRIPTS)는 각각 크기가 작아 jsDelivr 로도 잘 받아진다.
 //  둘 다 못 쓰면 페이지가 그 사실을 알려 주고, 작품 파일을 내려받아
 //  playentry.org 에서 여는 길을 안내한다.
@@ -75,7 +75,7 @@ export const RUNTIME_STYLE = 'dist/entry.css';
 export const DEBUG_UI_PATH = '/debug-ui.js';
 export const PREACT_PATH = '/preact/';
 
-const escapeHtml = (text) => String(text)
+const escapeHtml = (text: unknown) => String(text)
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
   .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 
@@ -83,19 +83,31 @@ const escapeHtml = (text) => String(text)
  * 값을 `<script>` 안에 넣어도 되는 JS 리터럴로 바꾼다.
  * 스크립트 안에서는 HTML 이스케이프가 통하지 않고, 문자열 속 `</script` 가 스크립트를 끊는다.
  */
-const jsValue = (value) => JSON.stringify(value ?? null)
+const jsValue = (value: unknown) => JSON.stringify(value ?? null)
   .replaceAll('<', '\\u003c').replaceAll('>', '\\u003e').replaceAll('&', '\\u0026')
   .replaceAll('\u2028', '\\u2028').replaceAll('\u2029', '\\u2029');
 
-/**
- * @param {{name: string, base: string, mediaBase?: string, summary: object, entName: string, reload?: boolean, boost?: boolean}} options
- *   base 는 entryjs 파일들을 가져올 곳 (`/lib` 또는 CDN 주소)
- *   mediaBase 는 엔트리 기본 그림·소리를 가져올 곳. 부스트 모드에서는 반드시 같은
- *   origin(`/lib`)이어야 한다 — WebGL 은 다른 origin 의 그림을 텍스처로 못 올린다
- *   reload 가 true 면 서버가 다시 컴파일할 때마다 페이지를 자동으로 새로고침한다
- *   boost 가 true 면 엔트리를 부스트 모드(WebGL/PIXI 렌더러)로 띄운다
- */
-export function playerPage({ name, base, mediaBase = base, summary, entName, reload = true, boost = false }) {
+/** 실행 페이지가 무엇을 어디서 가져올지. */
+export interface PlayerPageOptions {
+  name: string;
+  /** entryjs 파일들을 가져올 곳 (`/lib` 또는 CDN 주소) */
+  base: string;
+  /**
+   * 엔트리 기본 그림·소리를 가져올 곳. 부스트 모드에서는 반드시 같은
+   * origin(`/lib`)이어야 한다 — WebGL 은 다른 origin 의 그림을 텍스처로 못 올린다.
+   */
+  mediaBase?: string;
+  summary: { scenes: number; objects: number; blocks: number };
+  entName: string;
+  /** 서버가 다시 컴파일할 때마다 페이지를 자동으로 새로고침한다 */
+  reload?: boolean;
+  /** 엔트리를 부스트 모드(WebGL/PIXI 렌더러)로 띄운다 */
+  boost?: boolean;
+}
+
+export function playerPage({
+  name, base, mediaBase = base, summary, entName, reload = true, boost = false,
+}: PlayerPageOptions): string {
   // crossorigin="anonymous" 가 없으면, 실행 중 이 스크립트들(cross-origin CDN 이면)
   // 안에서 던진 오류는 브라우저가 보안상 진짜 메시지·스택을 숨기고 그냥 "Script error."
   // 라고만 알려준다 — 디버그 패널에 그렇게 뜨면 원인을 전혀 알 수 없다. jsDelivr·unpkg

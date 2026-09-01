@@ -12,18 +12,19 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** `node index.js ...` 를 돌리고 종료 코드와 출력을 돌려준다 */
-function cli(...args) {
+/** `node index.ts ...` 를 돌리고 종료 코드와 출력을 돌려준다 */
+function cli(...args: string[]) {
   try {
-    const stdout = execFileSync('node', [path.join(root, 'packages/cli/index.js'), ...args], { encoding: 'utf-8' });
+    const stdout = execFileSync('node', [path.join(root, 'packages/cli/index.ts'), ...args], { encoding: 'utf-8' });
     return { code: 0, output: stdout };
   } catch (error) {
-    return { code: error.status, output: (error.stdout ?? '') + (error.stderr ?? '') };
+    const failure = error as { status: number; stdout?: string; stderr?: string };
+    return { code: failure.status, output: (failure.stdout ?? '') + (failure.stderr ?? '') };
   }
 }
 
 /** 파일 여러 개를 담은 임시 폴더를 만든다 */
-function project(t, files) {
+function project(t: any, files: Record<string, string>) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-cli-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   for (const [name, content] of Object.entries(files)) {

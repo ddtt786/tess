@@ -9,6 +9,7 @@
 // ============================================================================
 
 import { UNUSABLE_AS_NAME } from '@tess/parser';
+import type { DecompileContext, ResourceInfo } from './types.ts';
 
 /** Ohm 의 `letter` 는 유니코드 Letter 카테고리 전부(한글 포함)를 허용한다 */
 const IDENT_START = /[\p{L}_]/u;
@@ -18,7 +19,7 @@ const IDENT_PART = /[\p{L}\p{N}_]/u;
  * 임의의 문자열을 안전한 Tess 식별자로 만든다. 같은 네임스페이스(usedNames)
  * 안에서 겹치면 숫자를 붙여 구분한다.
  */
-export function safeIdentifier(raw, usedNames, fallback = 'item') {
+export function safeIdentifier(raw: unknown, usedNames: Set<string>, fallback = 'item'): string {
   // 글자 고르기는 자리를 가리지 않는다. 맨 앞에서 IDENT_START 로 걸러 버리면 "3.png"
   // 처럼 숫자로 시작하는 이름의 그 숫자가 통째로 사라져서("png"), "1.png"·"2.png" 가
   // 죄다 같은 이름이 된 뒤 뒤에 번호가 붙어 원래 순서와 어긋났다. 숫자도 그대로 두고,
@@ -26,7 +27,7 @@ export function safeIdentifier(raw, usedNames, fallback = 'item') {
   let cleaned = '';
   for (const ch of String(raw ?? '')) cleaned += IDENT_PART.test(ch) ? ch : '_';
   cleaned = cleaned.replace(/_+/g, '_').replace(/^_+|_+$/g, '');
-  if (!cleaned || !IDENT_START.test(cleaned[0])) cleaned = `${fallback}${cleaned ? `_${cleaned}` : ''}`;
+  if (!cleaned || !IDENT_START.test(cleaned[0]!)) cleaned = `${fallback}${cleaned ? `_${cleaned}` : ''}`;
   cleaned = cleaned.slice(0, 40) || fallback;
   // A few keywords read as a statement before they read as a name, so `skip = 0`
   // never parses as an assignment. Trailing '_' keeps such a name usable.
@@ -43,7 +44,7 @@ export function safeIdentifier(raw, usedNames, fallback = 'item') {
 }
 
 /** Tess 문자열 리터럴로 안전하게 넣는다 (따옴표 · 역슬래시 · 줄바꿈 이스케이프) */
-export function tessString(value) {
+export function tessString(value: unknown): string {
   const escaped = String(value)
     .replaceAll('\\', '\\\\')
     .replaceAll('"', '\\"')
@@ -54,7 +55,7 @@ export function tessString(value) {
 }
 
 /** 숫자를 Tess 소스에 그대로 적을 수 있는 형태로 */
-export function tessNumber(value) {
+export function tessNumber(value: unknown): string {
   if (!Number.isFinite(value)) return '0';
   return String(value);
 }
@@ -67,7 +68,7 @@ export function tessNumber(value) {
  * 같기만 하면 어느 쪽으로 옮겨도 실행 결과가 똑같다. 그래서 이 검사를 통과하는
  * 리터럴만 숫자로 옮긴다.
  */
-export function isExactNumber(literal) {
+export function isExactNumber(literal: string): boolean {
   const value = Number(literal);
   // "NaN" and "Infinity" round-trip through Number as text, but Tess has no
   // literal for either, so they have to stay strings.
@@ -77,9 +78,9 @@ export function isExactNumber(literal) {
 /**
  * Whether the function currently being written belongs to the object that owns
  * this costume/sound. Inside such a function the resource name is unambiguous,
- * so it can be written by name instead of by raw entry id (index.js).
+ * so it can be written by name instead of by raw entry id (index.ts).
  */
-export function ownsResource(ctx, info) {
+export function ownsResource(ctx: DecompileContext, info: ResourceInfo | undefined): boolean {
   return Boolean(ctx.functionOwnerId) && info?.owner?.id === ctx.functionOwnerId;
 }
 
@@ -87,11 +88,11 @@ export function ownsResource(ctx, info) {
  * Entry stores every field value as a string; turn one back into the Tess
  * literal that compiles to the same value.
  */
-export function tessLiteral(value) {
+export function tessLiteral(value: unknown): string {
   if (typeof value === 'number') return tessNumber(value);
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   const text = String(value ?? '');
-  // 엔트리에서 참·거짓을 값으로 쓰면 "TRUE"/"FALSE" 가 된다(compiler/expression.js 참고).
+  // 엔트리에서 참·거짓을 값으로 쓰면 "TRUE"/"FALSE" 가 된다(compiler/expression.ts 참고).
   // 예전 작품에는 소문자로 적혀 있기도 하므로 둘 다 받아들인다.
   if (text === 'TRUE' || text === 'true') return 'true';
   if (text === 'FALSE' || text === 'false') return 'false';

@@ -4,12 +4,12 @@
   "description": "컴파일한 작품을 브라우저에서 돌리는 실행 서버와 디버그 패널",
   "license": "ISC",
   "type": "module",
-  "main": "index.js",
+  "main": "index.ts",
   "exports": {
-    ".": "./index.js"
+    ".": "./index.ts"
   },
   "files": [
-    "index.js",
+    "index.ts",
     "src"
   ],
   "dependencies": {

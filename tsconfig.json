@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2023"],
+    "types": ["node"]
+  },
+  "include": [
+    "packages/*/index.ts",
+    "packages/*/src/**/*.ts",
+    "test/**/*.ts",
+    "editors/vscode/**/*.ts"
+  ],
+  "exclude": ["**/node_modules", "packages/player/src/debug-ui.ts"]
+}

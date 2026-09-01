@@ -4,7 +4,23 @@
 //  컴파일 결과가 엔트리가 실제로 읽을 수 있는 모양인지 확인한다.
 //  (실제 엔트리 작품의 project.json 을 기준으로 규칙을 맞췄다.)
 // ============================================================================
-import { BLOCK_PARAM_COUNTS } from './block-params.js';
+import { BLOCK_PARAM_COUNTS } from './block-params.ts';
+import type { EntryProject } from './types.ts';
+
+/**
+ * The verifier checks a project it cannot assume is well formed, so it reads
+ * blocks through this rather than through `EntryBlock`.
+ */
+type AnyBlock = Record<string, any>;
+
+/** Which entry entity a parameter slot points at. */
+type ReferenceKind = 'variable' | 'list' | 'message' | 'scene' | 'picture' | 'sound' | 'objectOrSelf';
+
+/** The picture and sound ids the object holding a block owns. */
+interface BlockOwner {
+  pictures: Set<string>;
+  sounds: Set<string>;
+}
 
 const BLOCK_FIELDS = ['id', 'x', 'y', 'type', 'params', 'statements'];
 
@@ -13,7 +29,7 @@ const PROJECT_KEYS = [
 ];
 
 /** 참조 무결성 규칙: 블록 타입 -> [파라미터 위치, 참조 종류] */
-const REFERENCES = {
+const REFERENCES: Record<string, Array<[number, ReferenceKind]>> = {
   get_variable: [[0, 'variable']],
   set_variable: [[0, 'variable']],
   change_variable: [[0, 'variable']],
@@ -40,13 +56,10 @@ const REFERENCES = {
   text_read: [[0, 'objectOrSelf']],
 };
 
-/**
- * @param {object} project
- * @returns {string[]} 발견한 문제 목록 (비어 있으면 정상)
- */
-export function verifyEntryProject(project) {
-  const problems = [];
-  const add = (message) => problems.push(message);
+/** 발견한 문제 목록을 돌려준다 (비어 있으면 정상) */
+export function verifyEntryProject(project: EntryProject): string[] {
+  const problems: string[] = [];
+  const add = (message: string) => problems.push(message);
 
   for (const key of PROJECT_KEYS) {
     if (!(key in project)) add(`프로젝트에 '${key}' 항목이 없습니다.`);
@@ -56,8 +69,8 @@ export function verifyEntryProject(project) {
   const sceneIds = new Set(project.scenes.map((scene) => scene.id));
   const messageIds = new Set(project.messages.map((message) => message.id));
   const functionIds = new Set(project.functions.map((fn) => fn.id));
-  const variableIds = new Set();
-  const listIds = new Set();
+  const variableIds = new Set<string>();
+  const listIds = new Set<string>();
   for (const variable of project.variables) {
     (variable.variableType === 'list' ? listIds : variableIds).add(variable.id);
   }
@@ -65,9 +78,9 @@ export function verifyEntryProject(project) {
 
   // 블록 id 는 오브젝트(또는 함수) 안에서만 유일하면 된다.
   // 실제 엔트리 작품도 오브젝트를 복제하면 블록 id 가 그대로 복사된다.
-  let blockIds = new Set();
+  let blockIds = new Set<string>();
 
-  const checkBlock = (block, owner, path) => {
+  const checkBlock = (block: AnyBlock | null | undefined, owner: BlockOwner | null, path: string) => {
     if (!block || typeof block !== 'object') {
       add(`${path}: 블록이 객체가 아닙니다.`);
       return;
@@ -102,27 +115,28 @@ export function verifyEntryProject(project) {
       if (typeof value !== 'string') continue;
       // 함수 안의 모양·소리는 호출한 오브젝트의 것이라 여기서 확인할 수 없다
       if (!owner && (kind === 'picture' || kind === 'sound')) continue;
-      const ok = {
+      const checks: Record<ReferenceKind, () => boolean> = {
         variable: () => variableIds.has(value),
         list: () => listIds.has(value),
         message: () => messageIds.has(value),
         scene: () => sceneIds.has(value),
-        picture: () => owner?.pictures.has(value),
-        sound: () => owner?.sounds.has(value),
+        picture: () => Boolean(owner?.pictures.has(value)),
+        sound: () => Boolean(owner?.sounds.has(value)),
         objectOrSelf: () => value === 'self' || value === 'mouse' || objectIds.has(value),
-      }[kind]();
+      };
+      const ok = checks[kind]();
       if (!ok) add(`${path}: ${block.type} 이(가) 없는 ${kind} '${value}' 를 가리킵니다.`);
     }
 
-    (block.params ?? []).forEach((param, index) => {
-      if (param && typeof param === 'object') checkBlock(param, owner, `${path}>params[${index}]`);
+    (block.params ?? []).forEach((param: unknown, index: number) => {
+      if (param && typeof param === 'object') checkBlock(param as AnyBlock, owner, `${path}>params[${index}]`);
     });
-    (block.statements ?? []).forEach((statement, index) => {
+    (block.statements ?? []).forEach((statement: unknown, index: number) => {
       if (!Array.isArray(statement)) {
         add(`${path}: statements[${index}] 가 배열이 아닙니다.`);
         return;
       }
-      statement.forEach((child, i) => checkBlock(child, owner, `${path}>do[${index}][${i}]`));
+      statement.forEach((child: AnyBlock, i: number) => checkBlock(child, owner, `${path}>do[${index}][${i}]`));
     });
   };
 
@@ -202,14 +216,15 @@ export function verifyEntryProject(project) {
   return problems;
 }
 
-function collectParamTypes(node, found = new Set()) {
+function collectParamTypes(node: unknown, found = new Set<string>()): Set<string> {
   if (Array.isArray(node)) {
     node.forEach((child) => collectParamTypes(child, found));
     return found;
   }
   if (!node || typeof node !== 'object') return found;
-  if (typeof node.type === 'string' && /^(string|boolean)Param_/.test(node.type)) found.add(node.type);
-  collectParamTypes(node.params ?? [], found);
-  collectParamTypes(node.statements ?? [], found);
+  const block = node as AnyBlock;
+  if (typeof block.type === 'string' && /^(string|boolean)Param_/.test(block.type)) found.add(block.type);
+  collectParamTypes(block.params ?? [], found);
+  collectParamTypes(block.statements ?? [], found);
   return found;
 }

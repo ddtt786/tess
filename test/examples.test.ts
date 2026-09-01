@@ -9,11 +9,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from '@tess/parser';
 import { compileProject } from '@tess/compiler';
+import type { StartRule } from '@tess/parser';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'examples');
-const FRAGMENT_RULES = [undefined, 'SceneFragment', 'ObjectFragment'];
+const FRAGMENT_RULES: Array<StartRule | undefined> = [undefined, 'SceneFragment', 'ObjectFragment'];
 
-function tessFiles(dir) {
+function tessFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) return tessFiles(full);
@@ -22,7 +23,7 @@ function tessFiles(dir) {
 }
 
 /** AST 안의 use / useobject 경로를 절대 경로로 모은다 */
-function usedFiles(node, base, found = new Set()) {
+function usedFiles(node: any, base: string, found = new Set<string>()): Set<string> {
   if (node === null || typeof node !== 'object') return found;
   if (Array.isArray(node)) {
     node.forEach((child) => usedFiles(child, base, found));
@@ -38,7 +39,7 @@ function usedFiles(node, base, found = new Set()) {
 }
 
 const files = tessFiles(root);
-const fragments = new Set();
+const fragments = new Set<string>();
 for (const file of files) {
   const result = parse(fs.readFileSync(file, 'utf-8'));
   if (result.ast) usedFiles(result.ast, file, fragments);
@@ -48,7 +49,7 @@ test('예제 파일이 있다', () => {
   assert.ok(files.length > 0);
 });
 
-const show = (list) => list.map((d) => `${d.line}:${d.column} ${d.message}`).join('\n');
+const show = (list: any) => list.map((d: any) => `${d.line}:${d.column} ${d.message}`).join('\n');
 
 for (const file of files) {
   const label = path.relative(root, file);

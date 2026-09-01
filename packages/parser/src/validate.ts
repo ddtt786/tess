@@ -17,6 +17,24 @@ import {
   STATE_VALUES,
   TEXT_ONLY_PROPERTIES,
 } from '@tess/core';
+import type {
+  Diagnostic, EventNode, Expr, FunctionDeclNode, Identifier, CallNode, Node,
+  ObjectMember, ObjectNode, ProgramNode, SceneMember, Stmt, TopLevelItem,
+  ValidationResult,
+} from './ast.ts';
+
+/** What the walk knows about the place a statement sits in. */
+interface WalkContext {
+  isText: boolean;
+  inFunction: boolean;
+  loopDepth: number;
+  scope: Set<string>;
+  objectLocals: Set<string>;
+  functions: Set<string>;
+}
+
+/** A node reached by the generic walk, which reads fields it cannot name ahead. */
+type AnyNode = Record<string, unknown>;
 
 const LOOP_TYPES = new Set(['Repeat', 'While', 'Until', 'Forever']);
 
@@ -28,29 +46,27 @@ const LOOP_TYPES = new Set(['Repeat', 'While', 'Until', 'Forever']);
  * 훑으면 비용이 (블록 수 × 파일 길이)로 늘어난다. 줄 시작 위치를 한 번만 모아 두고
  * 이분 탐색한다.
  *
- * @param {string} source
- * @returns {(offset: number) => {line: number, column: number}}
  */
-export function lineIndex(source) {
+export function lineIndex(source: string): (offset: number) => { line: number; column: number } {
   const starts = [0];
   for (let i = 0; i < source.length; i += 1) {
     if (source.charCodeAt(i) === 10) starts.push(i + 1);
   }
-  return (offset) => {
+  return (offset: number) => {
     const target = Math.min(Math.max(offset, 0), source.length);
     let low = 0;
     let high = starts.length - 1;
     while (low < high) {
       const mid = (low + high + 1) >> 1;
-      if (starts[mid] <= target) low = mid;
+      if (starts[mid]! <= target) low = mid;
       else high = mid - 1;
     }
-    return { line: low + 1, column: target - starts[low] + 1 };
+    return { line: low + 1, column: target - starts[low]! + 1 };
   };
 }
 
 /** 오프셋을 사람이 읽는 줄/열로 변환 */
-export function lineAndColumn(source, offset) {
+export function lineAndColumn(source: string, offset: number): { line: number; column: number } {
   let line = 1;
   let column = 1;
   for (let i = 0; i < offset && i < source.length; i += 1) {
@@ -65,30 +81,33 @@ export function lineAndColumn(source, offset) {
 }
 
 /**
- * @param {object} program  ast() 로 만든 Program 노드
- * @param {string} source   원본 소스 (에러 위치 계산용)
- * @param {Map<string,string>} [sources] use 로 불러온 파일들의 소스
- * @returns {{errors: Array, warnings: Array}}
+ * @param program  ast() 로 만든 Program 노드
+ * @param source   원본 소스 (에러 위치 계산용)
+ * @param sources  use 로 불러온 파일들의 소스
  */
-export function validate(program, source = '', sources = null) {
-  const errors = [];
-  const warnings = [];
+export function validate(
+  program: ProgramNode,
+  source = '',
+  sources: Map<string, string> | null = null,
+): ValidationResult {
+  const errors: Diagnostic[] = [];
+  const warnings: Diagnostic[] = [];
 
-  const report = (bucket, node, message) => {
+  const report = (bucket: Diagnostic[], node: Node | null | undefined, message: string) => {
     // `use` 로 불러온 노드는 자기 파일 기준으로 위치를 계산해야 한다
     const file = node?.loc?.file;
     const text = (file && sources?.get(file)) ?? source;
     const { line, column } = lineAndColumn(text, node?.loc?.start ?? 0);
     bucket.push({ line, column, file, message, offset: node?.loc?.start ?? 0 });
   };
-  const error = (node, message) => report(errors, node, message);
-  const warn = (node, message) => report(warnings, node, message);
+  const error = (node: Node, message: string) => report(errors, node, message);
+  const warn = (node: Node, message: string) => report(warnings, node, message);
 
   // --- 사전 수집 -----------------------------------------------------------
   const globals = declaredNames(program.body);
   const knownFunctions = new Set(collectFunctionNames(program.body));
   // name -> objects that declare it as a local. A global function may name one,
-  // and then it means that object's variable (compiler/context.js).
+  // and then it means that object's variable (compiler/context.ts).
   const localOwners = collectLocalOwners(program.body, globals);
   // `use` 로 다른 파일을 불러오는 프로그램은 이 파일만 봐서는 알 수 없는 이름이
   // 생기므로, 이름 기반 경고는 끈다.
@@ -99,7 +118,7 @@ export function validate(program, source = '', sources = null) {
   for (const item of program.body) visitTopLevel(item);
 
   // --- 방문자 ---------------------------------------------------------------
-  function visitTopLevel(item) {
+  function visitTopLevel(item: TopLevelItem | SceneMember) {
     switch (item.type) {
       case 'Project':
         projectCount += 1;
@@ -121,7 +140,7 @@ export function validate(program, source = '', sources = null) {
     }
   }
 
-  function visitObject(object) {
+  function visitObject(object: ObjectNode) {
     const isText = object.kind === 'text';
     const locals = declaredNames(object.body);
     const objectFunctions = new Set(collectFunctionNames(object.body));
@@ -166,7 +185,7 @@ export function validate(program, source = '', sources = null) {
     }
   }
 
-  function visitFunction(fn, objectLocals) {
+  function visitFunction(fn: FunctionDeclNode, objectLocals: Set<string>) {
     // spec 14.2: 함수는 자신의 매개변수 · 지역 변수 · 전역 변수만 볼 수 있다.
     walkStatements(fn.body, {
       isText: true, // 함수는 오브젝트 종류와 무관하므로 글상자 검사는 하지 않는다
@@ -178,11 +197,11 @@ export function validate(program, source = '', sources = null) {
     });
   }
 
-  function walkStatements(statements, ctx) {
+  function walkStatements(statements: Stmt[], ctx: WalkContext) {
     for (const statement of statements) walkStatement(statement, ctx);
   }
 
-  function walkStatement(statement, ctx) {
+  function walkStatement(statement: Stmt, ctx: WalkContext) {
     switch (statement.type) {
       case 'VarDecl':
       case 'ListDecl':
@@ -232,7 +251,7 @@ export function validate(program, source = '', sources = null) {
     }
 
     // `hide chart` 는 열려 있는 테이블·차트 창을 닫는다 — chart 는 변수 이름이 아니다
-    if (statement.type === 'Hide' && statement.target?.name === 'chart'
+    if (statement.type === 'Hide' && (statement.target as Identifier | null)?.name === 'chart'
       && !ctx.scope.has('chart')) {
       return;
     }
@@ -243,33 +262,36 @@ export function validate(program, source = '', sources = null) {
       ? { ...ctx, loopDepth: ctx.loopDepth + 1 }
       : ctx;
 
-    for (const [key, value] of Object.entries(statement)) {
+    const fields = statement as unknown as AnyNode;
+    for (const [key, value] of Object.entries(fields)) {
       if (key === 'loc' || key === 'type') continue;
       if (blocks.includes(key)) continue;
       walkExpressions(value, ctx);
     }
     for (const key of blocks) {
-      if (Array.isArray(statement[key])) walkStatements(statement[key], innerCtx);
+      const block = fields[key];
+      if (Array.isArray(block)) walkStatements(block as Stmt[], innerCtx);
     }
   }
 
-  function walkExpressions(value, ctx) {
+  function walkExpressions(value: unknown, ctx: WalkContext) {
     if (value === null || typeof value !== 'object') return;
     if (Array.isArray(value)) {
       value.forEach((v) => walkExpressions(v, ctx));
       return;
     }
 
-    if (value.type === 'Identifier') checkIdentifier(value, ctx);
-    if (value.type === 'Call') checkCall(value, ctx);
+    const node = value as AnyNode;
+    if (node.type === 'Identifier') checkIdentifier(node as unknown as Identifier, ctx);
+    if (node.type === 'Call') checkCall(node as unknown as CallNode, ctx);
 
-    for (const [key, child] of Object.entries(value)) {
+    for (const [key, child] of Object.entries(node)) {
       if (key === 'loc' || key === 'type') continue;
       walkExpressions(child, ctx);
     }
   }
 
-  function checkIdentifier(identifier, ctx) {
+  function checkIdentifier(identifier: Identifier, ctx: WalkContext) {
     const { name } = identifier;
     if (ctx.scope.has(name)) return;
     // 상태 값 · 옵션 키워드 · 오브젝트 속성은 선언 없이 쓰는 이름이다.
@@ -283,7 +305,7 @@ export function validate(program, source = '', sources = null) {
     // id, so it means that one object's variable. Keeping the function inside
     // that object says so in the source, and keeps the name unambiguous.
     if (ctx.inFunction && localOwners.has(name)) {
-      const owners = localOwners.get(name);
+      const owners = localOwners.get(name)!;
       if (owners.length === 1) {
         warn(
           identifier,
@@ -305,7 +327,7 @@ export function validate(program, source = '', sources = null) {
     }
   }
 
-  function checkCall(call, ctx) {
+  function checkCall(call: CallNode, ctx: WalkContext) {
     if (BUILTIN_FUNCTIONS.has(call.callee)) return;
     if (ctx.functions.has(call.callee)) return;
     if (!hasUse) {
@@ -322,8 +344,8 @@ export function validate(program, source = '', sources = null) {
 // ---------------------------------------------------------------------------
 
 /** 블록 목록에서 직접 선언된 var/list 이름 */
-function declaredNames(body) {
-  const names = new Set();
+function declaredNames(body: Array<ObjectMember | TopLevelItem | SceneMember>): Set<string> {
+  const names = new Set<string>();
   for (const member of body) {
     if (member.type === 'VarDecl' || member.type === 'ListDecl' || member.type === 'TableDecl') {
       names.add(member.name);
@@ -337,36 +359,42 @@ function declaredNames(body) {
  * compiler registers: object-level declarations plus the first one inside an
  * event handler, minus anything the program already declares globally.
  */
-function collectLocalOwners(body, globals, owners = new Map()) {
+function collectLocalOwners(
+  body: Array<TopLevelItem | SceneMember>,
+  globals: Set<string>,
+  owners = new Map<string, string[]>(),
+): Map<string, string[]> {
   for (const item of body) {
     if (item.type === 'Scene') collectLocalOwners(item.body, globals, owners);
     if (item.type !== 'Object') continue;
     for (const name of objectLocalNames(item)) {
       if (globals.has(name)) continue;
       if (!owners.has(name)) owners.set(name, []);
-      if (!owners.get(name).includes(item.name)) owners.get(name).push(item.name);
+      if (!owners.get(name)!.includes(item.name)) owners.get(name)!.push(item.name);
     }
   }
   return owners;
 }
 
 /** Every name an object declares, in its body or inside its event handlers. */
-function objectLocalNames(object) {
+function objectLocalNames(object: ObjectNode): Set<string> {
   const names = declaredNames(object.body);
-  const walk = (statements) => {
+  const walk = (statements: Stmt[]) => {
     for (const statement of statements) {
       if (statement.type === 'VarDecl' || statement.type === 'ListDecl') names.add(statement.name);
+      const fields = statement as unknown as AnyNode;
       for (const key of ['consequent', 'alternate', 'body']) {
-        if (Array.isArray(statement[key])) walk(statement[key]);
+        const block = fields[key];
+        if (Array.isArray(block)) walk(block as Stmt[]);
       }
     }
   };
-  for (const member of object.body) if (member.type === 'Event') walk(member.body);
+  for (const member of object.body) if (member.type === 'Event') walk((member as EventNode).body);
   return names;
 }
 
-function collectFunctionNames(body) {
-  const names = [];
+function collectFunctionNames(body: Array<TopLevelItem | SceneMember | ObjectMember>): string[] {
+  const names: string[] = [];
   for (const member of body) {
     if (member.type === 'FunctionDecl') names.push(member.name);
     if (member.type === 'Scene' || member.type === 'Object') {
@@ -377,7 +405,7 @@ function collectFunctionNames(body) {
 }
 
 /** 문장이 품고 있는 하위 문장 블록의 키 이름 */
-function childBlocks(statement) {
+function childBlocks(statement: Stmt): string[] {
   switch (statement.type) {
     case 'If':
       return statement.alternate ? ['consequent', 'alternate'] : ['consequent'];
@@ -391,9 +419,9 @@ function childBlocks(statement) {
   }
 }
 
-function containsUse(node) {
+function containsUse(node: unknown): boolean {
   if (node === null || typeof node !== 'object') return false;
   if (Array.isArray(node)) return node.some(containsUse);
-  if (node.type === 'Use') return true;
+  if ((node as AnyNode).type === 'Use') return true;
   return Object.entries(node).some(([key, value]) => key !== 'loc' && containsUse(value));
 }

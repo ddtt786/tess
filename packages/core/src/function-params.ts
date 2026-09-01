@@ -11,11 +11,11 @@
 const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
 
 /** 라벨이 없는 i 번째(0부터 센다) 매개변수의 자동 이름: a, b, … z, a1, a2, … */
-export function autoParamName(index) {
+export function autoParamName(index: number): string {
   return index < LETTERS.length ? LETTERS[index] : `a${index - LETTERS.length + 1}`;
 }
 
 /** 이 이름이 그 자리의 자동 이름과 같은지 확인한다. 같으면 라벨이 없는 매개변수이다. */
-export function isAutoParamName(name, index) {
+export function isAutoParamName(name: string, index: number): boolean {
   return name === autoParamName(index);
 }

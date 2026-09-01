@@ -46,16 +46,18 @@ function loadBlockTraits() {
 const traits = loadBlockTraits();
 
 /** 작품 안에 나올 수 없는 블록인가 */
-function editorOnly(type) {
+function editorOnly(type: string) {
   const trait = traits.get(type);
   if (!trait) return false;
   return EDITOR_ONLY_CLASSES.has(trait.blockClass)
-    || trait.notFor.some((target) => EDITOR_ONLY_TARGETS.has(target));
+    || trait.notFor.some((target: any) => EDITOR_ONLY_TARGETS.has(target));
 }
 
 /** 설치된 entryjs 가 쓰는 실제 블록 팔레트 */
-function loadPalette() {
-  const sandbox = {
+function loadPalette(): Array<{ category: string; blocks?: string[] }> {
+  // The palette script runs in its own realm, so the sandbox is shaped by what
+  // that script reaches for rather than by anything declared here.
+  const sandbox: Record<string, any> = {
     console,
     Lang: new Proxy({}, { get: () => new Proxy({}, { get: () => '' }) }),
   };
@@ -67,18 +69,18 @@ function loadPalette() {
 }
 
 /** packages/ 아래 소스에 적힌 글자 전부 — 블록 타입이 어딘가에 나오는지 볼 용도다 */
-function toolSource(dir = path.join(root, 'packages'), text = { value: '' }) {
+function toolSource(dir = path.join(root, 'packages'), text = { value: '' }): string {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === 'node_modules') continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) toolSource(full, text);
-    else if (entry.name.endsWith('.js')) text.value += fs.readFileSync(full, 'utf8');
+    else if (entry.name.endsWith('.ts')) text.value += fs.readFileSync(full, 'utf8');
   }
   return text.value;
 }
 
 const source = toolSource();
-const mentions = (type) => new RegExp(`["'\`]${type}["'\`]|^ {2}${type}: \\{`, 'm').test(source);
+const mentions = (type: string) => new RegExp(`["'\`]${type}["'\`]|^ {2}${type}: \\{`, 'm').test(source);
 
 // 사진에 있는 카테고리(시작 · 흐름 · 움직임 · 생김새 · 붓 · 소리 · 판단 · 계산 ·
 // 자료 · 함수)와 글상자 · 테이블 · 확장까지.

@@ -6,6 +6,10 @@
 //    3. 위젯          — 고쳐 쓰는 칸 · 고르는 칸 · 켜고 끄는 칸 · 블록 트리
 //    4. 탭            — 실행 · 자료 · 오브젝트 · 오류
 //    5. 바깥 연결     — 실행 페이지가 부르는 window.tess* 들
+// The url the player server serves preact at. TypeScript resolves a rooted
+// specifier as a filesystem path, so it cannot find it; `h` and `render` are
+// declared in globals.d.ts instead.
+// @ts-ignore -- resolved by the browser, not by the type checker
 import { h, render } from "/preact/preact.mjs";
 
 const TABS = [
@@ -14,18 +18,19 @@ const TABS = [
   { id: "objects", label: "오브젝트" },
   { id: "errors", label: "오류" },
 ];
-const STATE_TEXT = { run: "실행 중", pause: "일시정지됨", stop: "멈춰 있음" };
+const STATE_TEXT: Record<string, string> = { run: "실행 중", pause: "일시정지됨", stop: "멈춰 있음" };
 const DEFAULT_SECTION_HEIGHT = 200;
 
 // 이 크기 아래로 끌면 창이 딱 붙어서 0 이 되고, 다시 이만큼 끌어내면 딱 하고 펴진다.
 // 접혀도 손잡이는 있던 자리에 그대로 남아서 다시 끌 수 있다.
 const STICKY = 56;
-const sticky = (size) => (size < STICKY ? 0 : size);
+const sticky = (size: number) => (size < STICKY ? 0 : size);
 
 // ============================================================================
 //  1. 상태
 // ============================================================================
-const panel = document.getElementById("debug-panel");
+// The player page always renders the panel shell, so these lookups cannot miss.
+const panel = document.getElementById("debug-panel")!;
 
 let scheduled = false;
 
@@ -55,7 +60,7 @@ const proxies = new WeakMap();
  * 원래는 arrow-js 의 reactive 가 표현식 하나하나를 따로 따라갔다. preact 는 통째로
  * 다시 그리고 실제로 달라진 DOM 만 고치므로, 여기서는 "바뀌었다" 는 사실만 알면 된다.
  */
-function observable(target) {
+function observable(target: any) {
   const cached = proxies.get(target);
   if (cached) return cached;
   const proxy = new Proxy(target, {
@@ -106,12 +111,12 @@ const touch = () => {
 };
 
 // 반응형 밖에 두는 큰 데이터
-let project = null;
-const blockOwner = new Map();
-const blockById = new Map();
-const functionContentById = new Map();
-let currentThreads = [];
-let highlighted = [];
+let project: any = null;
+const blockOwner = new Map<string, any>();
+const blockById = new Map<string, any>();
+const functionContentById = new Map<string, any>();
+let currentThreads: any[] = [];
+let highlighted: string[] = [];
 
 // --- 패널 열고 닫기 ---------------------------------------------------------
 const syncPanelWidth = () => {
@@ -122,14 +127,14 @@ const syncPanelWidth = () => {
   );
   window.tessLayoutCanvas();
 };
-const setOpen = (open, tab) => {
+const setOpen = (open: boolean, tab?: string) => {
   state.open = open;
   if (tab) state.tab = tab;
   panel.classList.toggle("open", open);
   panel.setAttribute("aria-hidden", open ? "false" : "true");
   syncPanelWidth();
 };
-const openPanel = (tab) => {
+const openPanel = (tab?: string) => {
   // 딱 붙여 접어 둔 상태로 다시 열면 아무것도 안 보이므로 폭을 되살린다
   if (panel.style.width === "0px") panel.style.width = "";
   setOpen(true, tab);
@@ -153,9 +158,9 @@ const engineState = () => {
   return "";
 };
 
-const failed = (what, error) => window.tessReportError(what, error);
+const failed = (what: string, error: any) => window.tessReportError(what, error);
 
-const control = (action) => {
+const control = (action: any) => {
   try {
     action(engine());
   } catch (error) {
@@ -167,17 +172,17 @@ const control = (action) => {
   }, 60);
 };
 const doRun = () =>
-  control((e) => {
+  control((e: any) => {
     if (!e) return;
     if (engineState() === "pause") e.togglePause();
     else e.toggleRun();
   });
-const doPause = () => control((e) => e && e.togglePause());
-const doStop = () => control((e) => e && e.toggleStop());
+const doPause = () => control((e: any) => e && e.togglePause());
+const doStop = () => control((e: any) => e && e.toggleStop());
 
 // --- 실행 환경 흉내내기 -------------------------------------------------------
 // 브라우저에 직접 묻는 판단 블록들이라, func 을 감싸 패널에서 고른 값을 돌려준다.
-const choice = (value) => (value === "" ? null : value === "true");
+const choice = (value: any) => (value === "" ? null : value === "true");
 
 /** Renderer entry actually runs on — what "실제 값 그대로" resolves to for boost mode. */
 const realBoostLabel = () => (state.realBoost ? "켜짐 (WebGL)" : "꺼짐 (2D)");
@@ -186,11 +191,11 @@ window.tessPatchEnvironmentBlocks = function patchEnvironmentBlocks() {
   const blocks = window.Entry && Entry.block;
   if (!blocks) return;
   state.realBoost = Boolean(Entry.options && Entry.options.useWebGL);
-  const wrap = (type, forced) => {
+  const wrap = (type: string, forced: (args: any[]) => any) => {
     const spec = blocks[type];
     if (!spec || typeof spec.func !== "function" || spec.tessWrapped) return;
     const original = spec.func;
-    spec.func = function (...args) {
+    spec.func = function (this: any, ...args: any[]) {
       const value = forced(args);
       return value === null ? original.apply(this, args) : value;
     };
@@ -209,14 +214,14 @@ window.tessPatchEnvironmentBlocks = function patchEnvironmentBlocks() {
 };
 
 // --- 자료 -------------------------------------------------------------------
-const preview = (value) => {
+const preview = (value: any) => {
   if (value === null || value === undefined) return "(없음)";
   const text = typeof value === "string" ? value : JSON.stringify(value);
   return text.length > 80 ? text.slice(0, 80) + "…" : text;
 };
 
 const container = () => (window.Entry && Entry.variableContainer) || null;
-const liveVariable = (id) => {
+const liveVariable = (id: string) => {
   const box = container();
   try {
     return box && box.getVariable ? box.getVariable(id) : null;
@@ -224,7 +229,7 @@ const liveVariable = (id) => {
     return null;
   }
 };
-const liveList = (id) => {
+const liveList = (id: string) => {
   const box = container();
   try {
     return box && box.getList ? box.getList(id) : null;
@@ -234,7 +239,7 @@ const liveList = (id) => {
 };
 
 /** 리스트 항목들을 [{data}] 모양 그대로. 실행 전이면 project.json 의 초기값 */
-const listArray = (entry) => {
+const listArray = (entry: any) => {
   const list = liveList(entry.id);
   try {
     if (list && typeof list.getArray === "function") return list.getArray();
@@ -245,7 +250,7 @@ const listArray = (entry) => {
 };
 
 /** 실행 중이면 지금 값을, 아니면 project.json 의 초기값을 돌려준다 */
-const rawValue = (entry) => {
+const rawValue = (entry: any) => {
   const variable = liveVariable(entry.id);
   try {
     if (variable && typeof variable.getValue === "function")
@@ -256,27 +261,27 @@ const rawValue = (entry) => {
   return entry.value;
 };
 
-const liveValue = (entry) => {
+const liveValue = (entry: any) => {
   if (entry.variableType === "list") {
     const array = listArray(entry);
     return (
       "[" +
       array.length +
       "개] " +
-      preview(array.map((item) => item && item.data))
+      preview(array.map((item: any) => item && item.data))
     );
   }
   return preview(rawValue(entry));
 };
 
 /** 엔트리 변수는 숫자도 글자도 담는다. 숫자로 읽히면 숫자로 넣어야 계산 블록이 제대로 돈다. */
-const coerce = (text) => {
+const coerce = (text: string) => {
   const trimmed = String(text).trim();
   if (trimmed === "" || !Number.isFinite(Number(trimmed))) return text;
   return Number(trimmed);
 };
 
-const setVariable = (id, text) => {
+const setVariable = (id: string, text: string) => {
   try {
     const variable = liveVariable(id);
     if (variable && typeof variable.setValue === "function")
@@ -287,7 +292,7 @@ const setVariable = (id, text) => {
   touch();
 };
 
-const setListItem = (id, index, text) => {
+const setListItem = (id: string, index: number, text: string) => {
   try {
     const list = liveList(id);
     // 엔트리 리스트 API 는 1 부터 센다
@@ -299,7 +304,7 @@ const setListItem = (id, index, text) => {
   touch();
 };
 
-const addListItem = (id) => {
+const addListItem = (id: string) => {
   try {
     const list = liveList(id);
     if (list && typeof list.appendValue === "function") list.appendValue("");
@@ -309,7 +314,7 @@ const addListItem = (id) => {
   touch();
 };
 
-const removeListItem = (id, index) => {
+const removeListItem = (id: string, index: number) => {
   try {
     const list = liveList(id);
     if (list && typeof list.deleteValue === "function")
@@ -321,10 +326,10 @@ const removeListItem = (id, index) => {
 };
 
 /** 무대에 값이 보이는지 — 변수·리스트 모두 같은 API 를 쓴다 */
-const liveEntryOf = (entry) =>
+const liveEntryOf = (entry: any) =>
   entry.variableType === "list" ? liveList(entry.id) : liveVariable(entry.id);
 
-const entryVisible = (entry) => {
+const entryVisible = (entry: any) => {
   const live = liveEntryOf(entry);
   try {
     if (live && typeof live.isVisible === "function") return live.isVisible();
@@ -334,7 +339,7 @@ const entryVisible = (entry) => {
   return Boolean(entry.visible);
 };
 
-const setEntryVisible = (entry, visible) => {
+const setEntryVisible = (entry: any, visible: boolean) => {
   const live = liveEntryOf(entry);
   try {
     if (live && typeof live.setVisible === "function")
@@ -345,7 +350,7 @@ const setEntryVisible = (entry, visible) => {
   touch();
 };
 
-const sendSignal = (id) => {
+const sendSignal = (id: string) => {
   try {
     Entry.engine.fireEvent("when_message_cast", id);
   } catch (error) {
@@ -354,7 +359,7 @@ const sendSignal = (id) => {
 };
 
 /** 함수 머리 사슬에서 이름·인자 개수·종류를 읽는다 */
-const describeFunction = (fn) => {
+const describeFunction = (fn: any) => {
   let name = fn.id;
   let params = 0;
   let kind = "일반 함수";
@@ -382,7 +387,7 @@ const describeFunction = (fn) => {
 };
 
 // --- 오브젝트 ----------------------------------------------------------------
-const liveEntity = (objectId) => {
+const liveEntity = (objectId: string) => {
   try {
     const object =
       window.Entry && Entry.container && Entry.container.getObject
@@ -394,9 +399,9 @@ const liveEntity = (objectId) => {
   }
 };
 
-const round = (value) =>
+const round = (value: any) =>
   typeof value === "number" ? Math.round(value * 100) / 100 : value;
-const call = (target, name, fallback) => {
+const call = (target: any, name: string, fallback: any) => {
   try {
     return target && typeof target[name] === "function"
       ? round(target[name]())
@@ -406,7 +411,7 @@ const call = (target, name, fallback) => {
   }
 };
 
-const setEntityNumber = (name) => (objectId, text) => {
+const setEntityNumber = (name: string) => (objectId: string, text: string) => {
   const live = liveEntity(objectId);
   const value = Number(String(text).trim());
   if (!live || !Number.isFinite(value)) {
@@ -427,55 +432,55 @@ const ENTITY_FIELDS = [
   {
     key: "x",
     label: "x 좌표",
-    get: (e) => call(e, "getX", 0),
+    get: (e: any) => call(e, "getX", 0),
     set: setEntityNumber("setX"),
   },
   {
     key: "y",
     label: "y 좌표",
-    get: (e) => call(e, "getY", 0),
+    get: (e: any) => call(e, "getY", 0),
     set: setEntityNumber("setY"),
   },
   {
     key: "size",
     label: "크기",
-    get: (e) => call(e, "getSize", 100),
+    get: (e: any) => call(e, "getSize", 100),
     set: setEntityNumber("setSize"),
   },
   {
     key: "direction",
     label: "방향",
-    get: (e) => call(e, "getRotation", 0),
+    get: (e: any) => call(e, "getRotation", 0),
     set: setEntityNumber("setRotation"),
   },
   {
     key: "way",
     label: "이동 방향",
-    get: (e) => call(e, "getDirection", 90),
+    get: (e: any) => call(e, "getDirection", 90),
     set: setEntityNumber("setDirection"),
   },
-  { key: "scaleX", label: "가로 배율", get: (e) => call(e, "getScaleX", 1) },
-  { key: "scaleY", label: "세로 배율", get: (e) => call(e, "getScaleY", 1) },
+  { key: "scaleX", label: "가로 배율", get: (e: any) => call(e, "getScaleX", 1) },
+  { key: "scaleY", label: "세로 배율", get: (e: any) => call(e, "getScaleY", 1) },
 ];
 
-const pictureInfo = (live) => {
+const pictureInfo = (live: any) => {
   const pictures = (live.object && live.object.pictures) || [];
   const current = live.entity.picture;
   if (!current) return { name: "(없음)", index: "-" };
-  const at = pictures.findIndex((picture) => picture.id === current.id);
+  const at = pictures.findIndex((picture: any) => picture.id === current.id);
   return {
     name: current.name || current.id,
     index: at < 0 ? "-" : String(at + 1) + " / " + pictures.length,
   };
 };
 
-const setPicture = (objectId, pictureId) => {
+const setPicture = (objectId: string, pictureId: any) => {
   const live = liveEntity(objectId);
   try {
     // 엔트리의 "모양으로 바꾸기" 와 같은 길이다 (entryjs block_looks.js)
     const picture =
       live && live.object.getPicture ? live.object.getPicture(pictureId) : null;
-    if (picture) live.entity.setImage(picture);
+    if (picture) live!.entity.setImage(picture);
     if (window.Entry) Entry.requestUpdate = true;
   } catch (error) {
     failed("모양 바꾸기", error);
@@ -483,7 +488,7 @@ const setPicture = (objectId, pictureId) => {
   touch();
 };
 
-const setRotateMethod = (objectId, method) => {
+const setRotateMethod = (objectId: string, method: any) => {
   const live = liveEntity(objectId);
   try {
     if (live && typeof live.object.setRotateMethod === "function")
@@ -495,7 +500,7 @@ const setRotateMethod = (objectId, method) => {
   touch();
 };
 
-const setEntityVisible = (objectId, visible) => {
+const setEntityVisible = (objectId: string, visible: boolean) => {
   const live = liveEntity(objectId);
   try {
     if (live && typeof live.entity.setVisible === "function")
@@ -507,7 +512,7 @@ const setEntityVisible = (objectId, visible) => {
   touch();
 };
 
-const setEntityText = (objectId, text) => {
+const setEntityText = (objectId: string, text: string) => {
   const live = liveEntity(objectId);
   try {
     if (live && typeof live.entity.setText === "function")
@@ -525,7 +530,7 @@ const ROTATE_METHODS = [
   { value: "none", label: "회전 안 함" },
 ];
 
-const showObject = (object) => {
+const showObject = (object: any) => {
   state.currentId = object.id;
   state.currentName = object.name;
   try {
@@ -544,7 +549,7 @@ const showObject = (object) => {
  * "when scene starts" scripts never run, so the scene opens frozen. The engine
  * drops every event unless it is running, so it is started or resumed first.
  */
-const goToScene = (sceneId) => {
+const goToScene = (sceneId: string) => {
   try {
     const scene = Entry.scene.getSceneById(sceneId);
     const runner = engine();
@@ -563,7 +568,7 @@ const goToScene = (sceneId) => {
 };
 
 /** 이름을 눌러 펼치고 접는다. 같은 것을 다시 누르면 접힌다. */
-const toggleExpanded = (key) => {
+const toggleExpanded = (key: string) => {
   state.expanded = state.expanded === key ? "" : key;
 };
 
@@ -577,7 +582,7 @@ const toggleExpanded = (key) => {
  * 값을 늘 <input> 으로 두면 0.4초마다 도는 새로고침이 타이핑을 덮어써 버린다.
  * 그래서 평소엔 글자만 보여 주고, 누른 칸 하나만 잠깐 입력칸으로 바꾼다.
  */
-function editable(key, value, commit) {
+function editable(key: string, value: any, commit: any) {
   if (state.editing !== key) {
     const text = preview(value);
     return h(
@@ -597,7 +602,7 @@ function editable(key, value, commit) {
 
   // Enter 로 끝내면 입력칸이 사라지면서 blur 까지 이어 나므로 한 번만 반영한다
   let settled = false;
-  const done = (event) => {
+  const done = (event: any) => {
     if (settled) return;
     settled = true;
     state.editing = "";
@@ -608,7 +613,7 @@ function editable(key, value, commit) {
     type: "text",
     value: String(value ?? ""),
     // 막 나타난 입력칸에 바로 커서를 둔다
-    ref: (node) => {
+    ref: (node: any) => {
       if (!node || node.dataset.ready) return;
       node.dataset.ready = "1";
       node.value = String(value ?? "");
@@ -616,7 +621,7 @@ function editable(key, value, commit) {
       node.select();
     },
     onBlur: done,
-    onKeyDown: (event) => {
+    onKeyDown: (event: any) => {
       if (event.key === "Enter") done(event);
       if (event.key === "Escape") {
         settled = true;
@@ -627,15 +632,15 @@ function editable(key, value, commit) {
 }
 
 /** 골라 쓰는 칸 */
-function chooser(options, value, commit) {
+function chooser(options: any, value: any, commit: any) {
   return h(
     "select",
     {
       class: "val debug-select",
       value: String(value),
-      onChange: (event) => commit(event.target.value),
+      onChange: (event: any) => commit(event.target.value),
     },
-    options.map((option) =>
+    options.map((option: any) =>
       h(
         "option",
         {
@@ -650,7 +655,7 @@ function chooser(options, value, commit) {
 }
 
 /** 켜고 끄는 칸 */
-function toggle(on, commit, labels) {
+function toggle(on: boolean, commit: any, labels: any) {
   return h(
     "button",
     {
@@ -663,33 +668,33 @@ function toggle(on, commit, labels) {
 }
 
 // --- 블록 트리 --------------------------------------------------------------
-const blockLabel = (block) => {
+const blockLabel = (block: any) => {
   const params = (block.params || [])
-    .filter((p) => p !== null && p !== undefined && typeof p !== "object")
-    .map((p) => JSON.stringify(p));
+    .filter((p: any) => p !== null && p !== undefined && typeof p !== "object")
+    .map((p: any) => JSON.stringify(p));
   return block.type + (params.length ? " (" + params.join(", ") + ")" : "");
 };
 
-const blockClass = (block) => {
+const blockClass = (block: any) => {
   const at = highlighted.indexOf(block.id);
   if (at === 0) return "block-highlight";
   return at > 0 ? "block-highlight-child" : "";
 };
 
-function blockNode(block) {
+function blockNode(block: any) {
   return h(
     "li",
     { key: block.id, "data-block-id": block.id, class: blockClass(block) },
     [
       h("span", { class: "block-type" }, blockLabel(block)),
       ...(block.params || [])
-        .filter((param) => param && typeof param === "object" && param.type)
-        .map((param, i) =>
+        .filter((param: any) => param && typeof param === "object" && param.type)
+        .map((param: any, i: number) =>
           h("ul", { key: "p" + i, class: "block-param" }, blockNode(param)),
         ),
       ...(block.statements || [])
-        .filter((branch) => Array.isArray(branch) && branch.length > 0)
-        .map((branch, i) =>
+        .filter((branch: any) => Array.isArray(branch) && branch.length > 0)
+        .map((branch: any, i: number) =>
           h("ul", { key: "s" + i, class: "block-body" }, branch.map(blockNode)),
         ),
     ],
@@ -697,14 +702,14 @@ function blockNode(block) {
 }
 
 // --- 섹션 (위아래 크기 조절 · 딱 붙이기) ------------------------------------------
-const startVerticalResize = (event, id) => {
+const startVerticalResize = (event: any, id: string) => {
   const section = event.currentTarget.closest(".debug-section");
   const startY = event.clientY;
   const startHeight = section.getBoundingClientRect().height;
   event.preventDefault();
   document.body.style.userSelect = "none";
 
-  const move = (e) => {
+  const move = (e: any) => {
     state.heights[id] = sticky(startHeight + (e.clientY - startY));
   };
   const up = () => {
@@ -717,8 +722,8 @@ const startVerticalResize = (event, id) => {
 };
 
 /** 마지막을 뺀 섹션마다 아래쪽에 높이 조절 손잡이를 붙인다 */
-function sections(list) {
-  return list.map((section, index) => {
+function sections(list: any) {
+  return list.map((section: any, index: number) => {
     const last = index === list.length - 1;
     const height = state.heights[section.id] ?? DEFAULT_SECTION_HEIGHT;
     let name = "debug-section";
@@ -740,22 +745,22 @@ function sections(list) {
           : h("div", {
               class: "debug-vresize",
               title: "드래그해서 높이 조절 (끝까지 줄이면 접힙니다)",
-              onMouseDown: (e) => startVerticalResize(e, section.id),
+              onMouseDown: (e: any) => startVerticalResize(e, section.id),
             }),
       ],
     );
   });
 }
 
-const empty = (text) => h("p", { class: "debug-empty" }, text);
-const emptyRow = (text) =>
+const empty = (text: string) => h("p", { class: "debug-empty" }, text);
+const emptyRow = (text: string) =>
   h("li", { key: "empty", class: "debug-empty" }, text);
 
 // ============================================================================
 //  4. 탭
 // ============================================================================
 function RunTab() {
-  const field = (id, label, value, options) =>
+  const field = (id: string, label: string, value: any, options: any) =>
     h("div", { class: "debug-field" }, [
       h("label", { for: id }, label),
       h(
@@ -763,11 +768,11 @@ function RunTab() {
         {
           id,
           value,
-          onChange: (event) => {
+          onChange: (event: any) => {
             state.env[id.replace("env-", "")] = event.target.value;
           },
         },
-        options.map(([v, text]) =>
+        options.map(([v, text]: [string, string]) =>
           h("option", { key: v, value: v, selected: v === value }, text),
         ),
       ),
@@ -872,23 +877,23 @@ function RunTab() {
 }
 
 /** 무대에 값을 띄울지 말지 (엔트리의 "변수 보이기/숨기기" 와 같은 것) */
-const visibleToggle = (entry) =>
+const visibleToggle = (entry: any) =>
   toggle(
     entryVisible(entry.source),
-    (next) => setEntryVisible(entry.source, next),
+    (next: any) => setEntryVisible(entry.source, next),
     ["보임", "숨김"],
   );
 
-const expandClass = (key) =>
+const expandClass = (key: string) =>
   "key debug-expand" + (state.expanded === key ? " open" : "");
 
-function variableRow(entry) {
+function variableRow(entry: any) {
   return h("li", { key: entry.id }, [
     h("span", { class: "key" }, entry.name),
     " ",
     h("span", { class: "tag" }, entry.scope + " · " + entry.kind),
     " ",
-    editable("var:" + entry.id, rawValue(entry.source), (text) =>
+    editable("var:" + entry.id, rawValue(entry.source), (text: string) =>
       setVariable(entry.id, text),
     ),
     " ",
@@ -896,7 +901,7 @@ function variableRow(entry) {
   ]);
 }
 
-function listRow(entry) {
+function listRow(entry: any) {
   const key = "list:" + entry.id;
   return h("li", { key: entry.id, class: "debug-list-head" }, [
     h(
@@ -918,7 +923,7 @@ function listRow(entry) {
 }
 
 /** 펼친 리스트 항목들 — 이름 줄이 아니라 그 다음 줄로 따로 낸다 */
-function listItemsRow(entry) {
+function listItemsRow(entry: any) {
   const key = "list:" + entry.id;
   const array = listArray(entry.source);
   return h(
@@ -939,10 +944,10 @@ function listItemsRow(entry) {
         : h(
             "ol",
             { class: "debug-list-ol" },
-            array.map((item, index) =>
+            array.map((item: any, index: number) =>
               h("li", { key: index }, [
                 h("span", { class: "debug-list-index" }, index + 1),
-                editable(key + ":" + index, (array[index] || {}).data, (text) =>
+                editable(key + ":" + index, (array[index] || {}).data, (text: string) =>
                   setListItem(entry.id, index, text),
                 ),
                 h(
@@ -962,7 +967,7 @@ function listItemsRow(entry) {
   );
 }
 
-function functionRow(fn) {
+function functionRow(fn: any) {
   const key = "func:" + fn.id;
   return h("li", { key: fn.id, class: "debug-list-head" }, [
     h(
@@ -981,7 +986,7 @@ function functionRow(fn) {
   ]);
 }
 
-function functionCodeRow(fn) {
+function functionCodeRow(fn: any) {
   const content = functionContentById.get(fn.id);
   return h(
     "li",
@@ -1042,7 +1047,7 @@ function DataTab() {
           : h(
               "ul",
               { class: "debug-rows" },
-              state.messages.map((message) =>
+              state.messages.map((message: any) =>
                 h("li", { key: message.id }, [
                   h("span", { class: "key" }, message.name),
                   h(
@@ -1077,7 +1082,7 @@ const currentLive = () =>
 
 function objectInfoRows() {
   const live = currentLive();
-  const infoRow = (label, body) =>
+  const infoRow = (label: string, body: any) =>
     h("li", { key: label }, [h("span", { class: "key" }, label), " ", body]);
 
   if (!live) {
@@ -1103,7 +1108,7 @@ function objectInfoRows() {
       infoRow(
         field.label,
         field.set
-          ? editable("entity:" + field.key, value, (text) =>
+          ? editable("entity:" + field.key, value, (text: string) =>
               field.set(state.currentId, text),
             )
           : h("span", { class: "val" }, String(value)),
@@ -1112,7 +1117,7 @@ function objectInfoRows() {
   }
 
   if (!isText) {
-    const pictures = ((live.object && live.object.pictures) || []).map((p) => ({
+    const pictures = ((live.object && live.object.pictures) || []).map((p: any) => ({
       value: p.id,
       label: p.name || p.id,
     }));
@@ -1122,7 +1127,7 @@ function objectInfoRows() {
         chooser(
           pictures,
           live.entity.picture ? live.entity.picture.id : "",
-          (id) => setPicture(state.currentId, id),
+          (id: string) => setPicture(state.currentId, id),
         ),
       ),
     );
@@ -1139,7 +1144,7 @@ function objectInfoRows() {
       "보이기",
       toggle(
         call(live.entity, "getVisible", true),
-        (next) => setEntityVisible(state.currentId, next),
+        (next: any) => setEntityVisible(state.currentId, next),
         ["보임", "숨김"],
       ),
     ),
@@ -1152,7 +1157,7 @@ function objectInfoRows() {
         chooser(
           ROTATE_METHODS,
           (live.object && live.object.rotateMethod) || "free",
-          (method) => setRotateMethod(state.currentId, method),
+          (method: any) => setRotateMethod(state.currentId, method),
         ),
       ),
     );
@@ -1161,7 +1166,7 @@ function objectInfoRows() {
     rows.push(
       infoRow(
         "글 내용",
-        editable("entity:text", live.entity.text, (text) =>
+        editable("entity:text", live.entity.text, (text: string) =>
           setEntityText(state.currentId, text),
         ),
       ),
@@ -1181,7 +1186,7 @@ function ObjectsTab() {
         { id: "scene-tree" },
         state.scenes.length === 0
           ? empty("불러오는 중…")
-          : state.scenes.map((scene) =>
+          : state.scenes.map((scene: any) =>
               h("div", { key: scene.id }, [
                 h("div", { class: "debug-scene-title" }, [
                   h("span", null, scene.name),
@@ -1202,7 +1207,7 @@ function ObjectsTab() {
                   { class: "debug-object-list" },
                   scene.objects.length === 0
                     ? h("li", { class: "debug-empty" }, "(오브젝트 없음)")
-                    : scene.objects.map((object) =>
+                    : scene.objects.map((object: any) =>
                         h(
                           "li",
                           { key: object.id },
@@ -1268,7 +1273,7 @@ function ErrorsTab() {
           ? empty(
               "아직 오류가 없습니다. entryjs 가 실행 중 panic 을 내면 여기와 이 서버를 띄운 터미널에 같이 찍힙니다.",
             )
-          : state.errors.map((error, index) =>
+          : state.errors.map((error: any, index: number) =>
               h(
                 "details",
                 {
@@ -1291,7 +1296,7 @@ function ErrorsTab() {
   ]);
 }
 
-const TAB_BODY = {
+const TAB_BODY: Record<string, () => any> = {
   run: RunTab,
   data: DataTab,
   objects: ObjectsTab,
@@ -1299,10 +1304,10 @@ const TAB_BODY = {
 };
 
 // --- 패널 폭 조절 (딱 붙이기) ----------------------------------------------------
-const startHorizontalResize = (event) => {
+const startHorizontalResize = (event: any) => {
   event.preventDefault();
   document.body.style.userSelect = "none";
-  const move = (e) => {
+  const move = (e: any) => {
     const max = Math.max(STICKY, window.innerWidth - 240);
     const width = sticky(Math.min(window.innerWidth - e.clientX, max));
     panel.style.width = width + "px";
@@ -1396,8 +1401,8 @@ render(h(Panel, null), panel);
 // ============================================================================
 //  5. 바깥 연결
 // ============================================================================
-const toggleBtn = document.getElementById("debug-toggle");
-const badge = document.getElementById("debug-badge");
+const toggleBtn = document.getElementById("debug-toggle")!;
+const badge = document.getElementById("debug-badge")!;
 toggleBtn.addEventListener("click", () =>
   state.open ? closePanel() : openPanel(),
 );
@@ -1415,7 +1420,7 @@ window.tessDebugSink((item) => {
   if (state.errors.length === 1) openPanel("errors");
 });
 
-const indexBlocks = (node, object) => {
+const indexBlocks = (node: any, object: any) => {
   if (Array.isArray(node)) {
     for (const item of node) indexBlocks(item, object);
     return;
@@ -1430,15 +1435,15 @@ const indexBlocks = (node, object) => {
 window.tessRenderProjectDebug = function renderProjectDebug(loaded) {
   project = loaded;
   const nameById = new Map(
-    project.objects.map((object) => [object.id, object.name]),
+    project.objects.map((object: any) => [object.id, object.name]),
   );
 
-  state.scenes = project.scenes.map((scene) => ({
+  state.scenes = project.scenes.map((scene: any) => ({
     id: scene.id,
     name: scene.name,
     objects: project.objects
-      .filter((object) => object.scene === scene.id)
-      .map((object) => ({
+      .filter((object: any) => object.scene === scene.id)
+      .map((object: any) => ({
         id: object.id,
         name: object.name,
         script: object.script,
@@ -1447,17 +1452,17 @@ window.tessRenderProjectDebug = function renderProjectDebug(loaded) {
 
   state.variables = (project.variables || [])
     .filter(
-      (entry) =>
+      (entry: any) =>
         entry.variableType !== "timer" && entry.variableType !== "answer",
     )
-    .map((entry) => ({
+    .map((entry: any) => ({
       id: entry.id,
       name: entry.name,
       scope: entry.object ? nameById.get(entry.object) || "오브젝트" : "전역",
       kind: entry.variableType === "list" ? "리스트" : "변수",
       source: entry,
     }));
-  state.messages = (project.messages || []).map((message) => ({
+  state.messages = (project.messages || []).map((message: any) => ({
     id: message.id,
     name: message.name,
   }));
@@ -1517,11 +1522,11 @@ window.tessHighlightBlock = function highlightBlock(blockId) {
 };
 
 /** 실행 화면에서 고른 오브젝트를 디버거에서 연다 */
-const selectObjectById = (objectId) => {
+const selectObjectById = (objectId: string) => {
   const found =
     (project &&
       project.objects &&
-      project.objects.find((o) => o.id === objectId)) ||
+      project.objects.find((o: any) => o.id === objectId)) ||
     blockOwner.get(objectId);
   if (!found || !found.script) return;
   showObject(found);
@@ -1582,7 +1587,7 @@ function stageCanvas() {
 }
 
 /** 화면 좌표를 무대 좌표로. 무대는 가운데가 (0,0) 이고 y 가 위로 자란다. */
-function toStagePoint(clientX, clientY) {
+function toStagePoint(clientX: number, clientY: number) {
   const canvas = stageCanvas();
   if (!canvas) return null;
   const rect = canvas.getBoundingClientRect();
@@ -1600,7 +1605,7 @@ function toStagePoint(clientX, clientY) {
  * 덮어 두는 "눌러서 시작" 판은 `#workspace` **바깥**에 붙어서, 정작 오브젝트를
  * 살펴보고 싶은 그때 이 판정이 늘 빗나갔다. 캔버스가 놓인 자리로 따진다.
  */
-function insideStage(event) {
+function insideStage(event: any) {
   const canvas = stageCanvas();
   if (!canvas) {
     // 캔버스가 아직 없으면(또는 테스트라면) 무대 상자 안인지로 본다
@@ -1646,12 +1651,12 @@ function stageObjects() {
   }
 
   const all = Array.isArray(container.objects_) ? container.objects_ : [];
-  const sceneId = window.Entry.scene?.selectedScene?.id;
+  const sceneId = window.Entry?.scene?.selectedScene?.id;
   if (!sceneId) return all;
-  return all.filter((object) => (object.scene?.id ?? object.scene) === sceneId);
+  return all.filter((object: any) => (object.scene?.id ?? object.scene) === sceneId);
 }
 
-function objectAtPoint(clientX, clientY) {
+function objectAtPoint(clientX: number, clientY: number) {
   const point = toStagePoint(clientX, clientY);
   const objects = stageObjects();
   if (!point) return null;
@@ -1681,9 +1686,12 @@ function objectAtPoint(clientX, clientY) {
   return null;
 }
 
+/** The stage-pick listeners are installed once, however often this is called. */
+let stagePicksArmed = false;
+
 window.tessWatchStagePicks = function watchStagePicks() {
-  if (watchStagePicks.armed) return;
-  watchStagePicks.armed = true;
+  if (stagePicksArmed) return;
+  stagePicksArmed = true;
 
   /**
    * Ctrl+Shift 로 무대를 누른 것인가.
@@ -1692,11 +1700,11 @@ window.tessWatchStagePicks = function watchStagePicks() {
    * 판단한다. 예전에는 "고르는 중" 플래그와 실행기 함수 바꿔치기를 걸어 뒀는데,
    * 그 중 하나라도 되돌아오지 못하면 그 뒤로는 영영 안 먹었다.
    */
-  const isPick = (event) =>
+  const isPick = (event: any) =>
     event.ctrlKey && event.shiftKey && event.button === 0 && insideStage(event);
 
   // 눌렀다는 표시만 잠깐 켠다. 화면에 보이기만 할 뿐 고르는 일에는 관여하지 않는다.
-  let hintTimer = null;
+  let hintTimer: ReturnType<typeof setTimeout> | undefined;
   const flashHint = () => {
     state.picking = true;
     clearTimeout(hintTimer);
@@ -1705,7 +1713,7 @@ window.tessWatchStagePicks = function watchStagePicks() {
     }, PICK_WINDOW);
   };
 
-  const onDown = (event) => {
+  const onDown = (event: any) => {
     if (!isPick(event)) return;
     // 이 클릭은 디버깅하려고 누른 것이다. 작품을 시작시키거나 진행시키면 안 되므로
     // 덮개도 캔버스도 이 이벤트를 보지 못하게 여기서 끊는다. 실행기까지 못 가므로
@@ -1721,7 +1729,7 @@ window.tessWatchStagePicks = function watchStagePicks() {
   // 누른 뒤에 잇따라 오는 것들도 같은 기준으로 삼킨다. 멈춰 있는 작품 위에 덮인
   // "눌러서 시작" 판은 click 으로 시작하므로, 이걸 막지 않으면 오브젝트를 살펴보려던
   // 클릭이 작품을 시작시켜 버린다.
-  const swallow = (event) => {
+  const swallow = (event: any) => {
     if (!isPick(event)) return;
     event.preventDefault();
     event.stopPropagation();
@@ -1741,7 +1749,7 @@ window.tessDescribeListIndexError = function describeListIndexError(
   err,
 ) {
   if (!err || err.message !== "can not insert value to array") return null;
-  const find = (node) => {
+  const find = (node: any): any => {
     if (!node || typeof node !== "object") return null;
     if (node.type === "value_of_index_from_list") return node;
     for (const param of node.params || []) {
@@ -1810,13 +1818,13 @@ const wantedBufferWidth = () => {
  * top-left corner. The stage-local submit button and the hit test both stay in
  * entry coordinates, so scaling every length by the same ratio lines them up.
  */
-const scaleInputFieldToBuffer = (bufferW) => {
+const scaleInputFieldToBuffer = (bufferW: any) => {
   const stage = window.Entry && Entry.stage;
   const ratio = bufferW / ENTRY_BUFFER_WIDTH;
   if (!stage || typeof stage.showInputField !== "function" || ratio === 1)
     return;
   const showInputField = stage.showInputField;
-  stage.showInputField = function tessShowInputField(...args) {
+  stage.showInputField = function tessShowInputField(this: any, ...args: any[]) {
     showInputField.apply(this, args);
     const field = this.inputField;
     if (!field || field.tessScaled || typeof field.width !== "function") return;

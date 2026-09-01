@@ -7,7 +7,7 @@
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
 /** FNV-1a 32비트 해시 — 소스 문자열에서 시드를 만든다 */
-export function seedFrom(text) {
+export function seedFrom(text: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < text.length; i += 1) {
     hash ^= text.charCodeAt(i);
@@ -16,10 +16,17 @@ export function seedFrom(text) {
   return hash >>> 0;
 }
 
+/** Hands out unique four-character ids, and remembers the ones taken already. */
+export interface IdFactory {
+  (): string;
+  reserve(id: string): void;
+  has(id: string): boolean;
+}
+
 /** 중복 없는 4글자 id 를 계속 뽑아주는 함수를 만든다 */
-export function createIdFactory(seed = 0) {
+export function createIdFactory(seed = 0): IdFactory {
   let state = (seed || 0x9e3779b9) >>> 0;
-  const used = new Set();
+  const used = new Set<string>();
 
   // mulberry32
   const random = () => {
@@ -29,7 +36,7 @@ export function createIdFactory(seed = 0) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 
-  const next = () => {
+  const next = (() => {
     for (;;) {
       let id = '';
       for (let i = 0; i < 4; i += 1) id += ALPHABET[Math.floor(random() * ALPHABET.length)];
@@ -38,9 +45,9 @@ export function createIdFactory(seed = 0) {
         return id;
       }
     }
-  };
+  }) as IdFactory;
 
-  next.reserve = (id) => used.add(id);
-  next.has = (id) => used.has(id);
+  next.reserve = (id: string) => { used.add(id); };
+  next.has = (id: string) => used.has(id);
   return next;
 }

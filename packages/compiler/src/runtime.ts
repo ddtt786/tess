@@ -18,8 +18,11 @@
 //  "크기를 정하기" 로 한 축을 복원하고 "늘리기" 로 다른 축을 목표에 맞춘다.
 // ============================================================================
 
+import type { Context } from './context.ts';
+import type { CompiledFunction, EntryBlock, EntryParam, FuncLocalVariable } from './types.ts';
+
 const MEASURE = 100000;
-const AXES = {
+const AXES: Record<string, { setter: string; probe: string; label: string }> = {
   scale_x: { setter: 'WIDTH', probe: 'HEIGHT', label: '[Tess] 가로 비율 정하기' },
   scale_y: { setter: 'HEIGHT', probe: 'WIDTH', label: '[Tess] 세로 비율 정하기' },
 };
@@ -32,7 +35,7 @@ const AXES = {
  *   비율      – 목표 비율(%). 100 이면 원본 크기
  *   원래 배율 – 그 오브젝트의 시작 배율(entity.scaleX/scaleY). 오브젝트마다 다르므로 인자로 받는다
  */
-export function requireScaleSetter(property, ctx) {
+export function requireScaleSetter(property: string, ctx: Context): CompiledFunction {
   const existing = ctx.runtimeFunctions.get(property);
   if (existing) return existing;
 
@@ -42,23 +45,23 @@ export function requireScaleSetter(property, ctx) {
   const paramTypes = new Map(params.map((name) => [name, `stringParam_${ctx.newId()}`]));
 
   // 지역 변수: 잰 값들을 담아 둔다 (호출마다 따로 생기므로 복제본에서도 안전하다)
-  const locals = {};
-  const localVariables = ['현재 크기', '지금 축', '원래 크기', '원래 축'].map((name) => {
+  const locals: Record<string, string> = {};
+  const localVariables: FuncLocalVariable[] = ['현재 크기', '지금 축', '원래 크기', '원래 축'].map((name) => {
     const variable = { id: `${id}_${ctx.newId()}`, name, value: 0 };
     locals[name] = variable.id;
     return variable;
   });
 
   const size = () => ctx.block('coordinate_object', [null, 'self', null, 'size']);
-  const local = (name) => ctx.block('get_func_variable', [locals[name], null]);
-  const setLocal = (name, value) => ctx.block('set_func_variable', [locals[name], value, null]);
-  const param = (name) => ctx.block(paramTypes.get(name), []);
-  const number = (value) => ctx.number(value);
-  const calc = (left, operator, right) => ctx.block('calc_basic', [left, operator, right]);
-  const stretch = (dimension, value) => ctx.block('stretch_scale_size', [dimension, value, null]);
+  const local = (name: string) => ctx.block('get_func_variable', [locals[name]!, null]);
+  const setLocal = (name: string, value: EntryParam) => ctx.block('set_func_variable', [locals[name]!, value, null]);
+  const param = (name: string) => ctx.block(paramTypes.get(name)!, []);
+  const number = (value: number) => ctx.number(value);
+  const calc = (left: EntryParam, operator: string, right: EntryParam) => ctx.block('calc_basic', [left, operator, right]);
+  const stretch = (dimension: string, value: EntryParam) => ctx.block('stretch_scale_size', [dimension, value, null]);
 
   //  잰 축 = 2 × 기준크기 × (지금크기 − 기준크기) × 0.00001
-  const measured = (baseline) => calc(
+  const measured = (baseline: string) => calc(
     calc(calc(number(2), 'MULTI', local(baseline)), 'MULTI', calc(size(), 'MINUS', local(baseline))),
     'MULTI',
     number(1 / MEASURE),
@@ -102,8 +105,8 @@ export function requireScaleSetter(property, ctx) {
 
   const field = ctx.block('function_field_label', [
     axis.label,
-    params.reduceRight(
-      (next, name) => ctx.block('function_field_string', [ctx.block(paramTypes.get(name), []), next]),
+    params.reduceRight<EntryParam>(
+      (next, name) => ctx.block('function_field_string', [ctx.block(paramTypes.get(name)!, []), next]),
       null,
     ),
   ]);
@@ -146,16 +149,16 @@ export function requireScaleSetter(property, ctx) {
  * 어림값을 두 번 써야 하는데, 식을 그대로 복사하면 블록이 두 배가 된다.
  * 그래서 매개변수로 받는 함수로 만들어 어림값 블록 하나만 넘긴다.
  */
-export function requirePowerRefiner(ctx) {
+export function requirePowerRefiner(ctx: Context): CompiledFunction {
   const existing = ctx.runtimeFunctions.get('power');
   if (existing) return existing;
 
   const id = ctx.newId();
   const params = ['어림값', '밑', '지수'];
   const paramTypes = new Map(params.map((name) => [name, `stringParam_${ctx.newId()}`]));
-  const param = (name) => ctx.block(paramTypes.get(name), []);
-  const calc = (left, operator, right) => ctx.block('calc_basic', [left, operator, right]);
-  const ln = (value) => ctx.block('calc_operation', [null, value, null, 'ln']);
+  const param = (name: string) => ctx.block(paramTypes.get(name)!, []);
+  const calc = (left: EntryParam, operator: string, right: EntryParam) => ctx.block('calc_basic', [left, operator, right]);
+  const ln = (value: EntryParam) => ctx.block('calc_operation', [null, value, null, 'ln']);
 
   //  어림값 × (1 + 지수 × ln(밑) − ln(어림값))
   const refined = calc(
@@ -170,8 +173,8 @@ export function requirePowerRefiner(ctx) {
 
   const field = ctx.block('function_field_label', [
     '[Tess] 거듭제곱 다듬기',
-    params.reduceRight(
-      (next, name) => ctx.block('function_field_string', [ctx.block(paramTypes.get(name), []), next]),
+    params.reduceRight<EntryParam>(
+      (next, name) => ctx.block('function_field_string', [ctx.block(paramTypes.get(name)!, []), next]),
       null,
     ),
   ]);

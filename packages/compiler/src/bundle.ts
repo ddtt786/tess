@@ -12,17 +12,24 @@
 // ============================================================================
 import fs from 'node:fs';
 import { Header } from 'tar';
-import { makeThumbnail } from './thumbnail.js';
+import { makeThumbnail } from './thumbnail.ts';
+import type { AssetFile, EntryProject } from './types.ts';
+
+/** One file on its way into the tar. */
+interface TarEntry {
+  name: string;
+  data: Buffer;
+}
 
 const BLOCK_SIZE = 512;
 
-function padding(size) {
+function padding(size: number): Buffer {
   const remainder = size % BLOCK_SIZE;
   return remainder === 0 ? Buffer.alloc(0) : Buffer.alloc(BLOCK_SIZE - remainder);
 }
 
 /** tar 엔트리 하나의 헤더(512바이트) */
-function header(name, size, mtime) {
+function header(name: string, size: number, mtime: Date): Buffer {
   const block = Buffer.alloc(BLOCK_SIZE);
   new Header({
     path: name, size, mtime, type: 'File', mode: 0o644, uid: 0, gid: 0,
@@ -30,13 +37,10 @@ function header(name, size, mtime) {
   return block;
 }
 
-/**
- * @param {Array<{name: string, data: Buffer}>} entries
- * @returns {Buffer} tar 바이트열
- */
-export function makeTar(entries) {
+/** tar 바이트열로 묶는다 */
+export function makeTar(entries: TarEntry[]): Buffer {
   const mtime = new Date();
-  const chunks = [];
+  const chunks: Buffer[] = [];
   for (const { name, data } of entries) {
     chunks.push(header(name, data.length, mtime), data, padding(data.length));
   }
@@ -48,20 +52,22 @@ export function makeTar(entries) {
  * 컴파일 결과를 .ent 묶음 바이트열로 만든다.
  *
  * 미리보기를 그리는 동안 기다려야 해서 비동기다. `run` 은 이 일을 하지 않는다 —
- * 내려받기를 눌렀을 때만 부른다 (packages/player/src/server.js).
+ * 내려받기를 눌렀을 때만 부른다 (packages/player/src/server.ts).
  *
- * @param {object} project compileProject() 가 만든 프로젝트 객체
- * @param {Array<{source: string, target: string}>} assets 함께 담을 리소스 파일
- * @returns {Promise<Buffer>}
+ * @param project compileProject() 가 만든 프로젝트 객체
+ * @param assets  함께 담을 리소스 파일
  */
-export async function makeEntryBundle(project, assets = []) {
-  const entries = [{
+export async function makeEntryBundle(
+  project: EntryProject,
+  assets: AssetFile[] = [],
+): Promise<Buffer> {
+  const entries: TarEntry[] = [{
     name: 'temp/project.json',
     data: Buffer.from(JSON.stringify(project), 'utf-8'),
   }];
 
-  const packed = new Set();
-  const pending = [];
+  const packed = new Set<string>();
+  const pending: Array<{ index: number; name: string; data: Buffer }> = [];
   for (const asset of assets) {
     if (packed.has(asset.target)) continue;
     packed.add(asset.target);
@@ -83,7 +89,7 @@ export async function makeEntryBundle(project, assets = []) {
   for (let i = pending.length - 1; i >= 0; i -= 1) {
     const thumb = thumbs[i];
     if (!thumb) continue; // SVG 처럼 못 그리는 형식은 엔트리도 미리보기를 안 만든다
-    entries.splice(pending[i].index + 1, 0, { name: pending[i].name, data: thumb });
+    entries.splice(pending[i]!.index + 1, 0, { name: pending[i]!.name, data: thumb });
   }
   return makeTar(entries);
 }

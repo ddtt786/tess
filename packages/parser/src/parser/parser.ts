@@ -13,15 +13,18 @@
 //      wins exactly as it does in a PEG.
 // ============================================================================
 import { CstParser, EOF, tokenLabel } from 'chevrotain';
+import type {
+  CstNode, IParserErrorMessageProvider, IToken, ParserMethod, TokenType,
+} from 'chevrotain';
 import {
   ALL_TOKENS, ASSIGN_OPERATORS, Assign, ColorLiteral, Colon, Comma, Eq, Ge, Gt,
   IdentLike, Identifier, IntDiv, LParen, LSquare, Le, Lt, Minus, Ne,
   NumberLiteral, Percent, Plus, Pow, Question, RParen, RSquare, Slash, Star,
   STANDALONE_STATEMENTS, StringLiteral, kw,
-} from './tokens.js';
+} from './tokens.ts';
 
-const idx = (tokenType) => tokenType.tokenTypeIdx;
-const idxSet = (...tokenTypes) => new Set(tokenTypes.map(idx));
+const idx = (tokenType: TokenType) => tokenType.tokenTypeIdx!;
+const idxSet = (...tokenTypes: TokenType[]) => new Set(tokenTypes.map(idx));
 
 /** Names that may take an initial value with `=` in an object body. */
 const PROPERTY_NAMES = new Set([
@@ -58,19 +61,115 @@ const EXPR_STARTERS = idxSet(
 );
 
 /** What the reader actually sees at the point the parse stopped. */
-const found = (token) => (!token || token.tokenTypeIdx === idx(EOF)
+const found = (token: IToken | undefined) => (!token || token.tokenTypeIdx === idx(EOF)
   ? '입력이 끝났습니다'
   : `'${token.image}' 이(가) 있습니다`);
 
 /** Messages the parser reports, in the language the rest of the tool speaks. */
-const errorMessageProvider = {
+const errorMessageProvider: IParserErrorMessageProvider = {
   buildMismatchTokenMessage: ({ expected, actual }) => `${tokenLabel(expected)} 이(가) 와야 하는데 ${found(actual)}.`,
   buildNoViableAltMessage: ({ actual }) => `여기서 시작할 수 있는 문법이 없습니다 — ${found(actual[0])}.`,
   buildEarlyExitMessage: ({ actual }) => `여기서 시작할 수 있는 문법이 없습니다 — ${found(actual[0])}.`,
   buildNotAllInputParsedMessage: ({ firstRedundant }) => `입력의 끝이 와야 하는데 ${found(firstRedundant)}.`,
 };
 
+/** A grammar rule as `$.RULE` installs it — no arguments, one CST node out. */
+type Rule = ParserMethod<[], CstNode>;
+
 export class TessParser extends CstParser {
+  // Every rule below is installed by `$.RULE` in the constructor.
+  declare readonly addExpr: Rule;
+  declare readonly andExpr: Rule;
+  declare readonly askStatement: Rule;
+  declare readonly assignOperator: Rule;
+  declare readonly assignOrCall: Rule;
+  declare readonly block: Rule;
+  declare readonly blockOpen: Rule;
+  declare readonly booleanLiteral: Rule;
+  declare readonly bounceStatement: Rule;
+  declare readonly callExpr: Rule;
+  declare readonly clearStatement: Rule;
+  declare readonly cloneStatement: Rule;
+  declare readonly compareExpr: Rule;
+  declare readonly costumeProperty: Rule;
+  declare readonly costumeStepStatement: Rule;
+  declare readonly deleteStatement: Rule;
+  declare readonly displayName: Rule;
+  declare readonly eventHandler: Rule;
+  declare readonly expr: Rule;
+  declare readonly flipStatement: Rule;
+  declare readonly flowStatement: Rule;
+  declare readonly forceId: Rule;
+  declare readonly foreverStatement: Rule;
+  declare readonly forwardStatement: Rule;
+  declare readonly functionDecl: Rule;
+  declare readonly functionParam: Rule;
+  declare readonly goStatement: Rule;
+  declare readonly identifier: Rule;
+  declare readonly ifStatement: Rule;
+  declare readonly indexExpr: Rule;
+  declare readonly jumpStatement: Rule;
+  declare readonly listAddStatement: Rule;
+  declare readonly listDecl: Rule;
+  declare readonly listLiteral: Rule;
+  declare readonly listRemoveStatement: Rule;
+  declare readonly lookStatement: Rule;
+  declare readonly lvalue: Rule;
+  declare readonly moveStatement: Rule;
+  declare readonly mulExpr: Rule;
+  declare readonly notExpr: Rule;
+  declare readonly objectDecl: Rule;
+  declare readonly objectFragment: Rule;
+  declare readonly objectMember: Rule;
+  declare readonly orExpr: Rule;
+  declare readonly orderStatement: Rule;
+  declare readonly penStatement: Rule;
+  declare readonly pointArgs: Rule;
+  declare readonly posExpr: Rule;
+  declare readonly powExpr: Rule;
+  declare readonly primaryExpr: Rule;
+  declare readonly program: Rule;
+  declare readonly projectDecl: Rule;
+  declare readonly projectField: Rule;
+  declare readonly propertyDecl: Rule;
+  declare readonly propertyName: Rule;
+  declare readonly readStatement: Rule;
+  declare readonly repeatStatement: Rule;
+  declare readonly resetStatement: Rule;
+  declare readonly returnStatement: Rule;
+  declare readonly rotateMethod: Rule;
+  declare readonly saveStatement: Rule;
+  declare readonly sayStatement: Rule;
+  declare readonly sceneDecl: Rule;
+  declare readonly sceneFragment: Rule;
+  declare readonly sceneMember: Rule;
+  declare readonly sceneNameDecl: Rule;
+  declare readonly showHideStatement: Rule;
+  declare readonly signalStatement: Rule;
+  declare readonly signedNumber: Rule;
+  declare readonly soundProperty: Rule;
+  declare readonly soundStatement: Rule;
+  declare readonly startStatement: Rule;
+  declare readonly statement: Rule;
+  declare readonly stopStatement: Rule;
+  declare readonly storageScope: Rule;
+  declare readonly tableCells: Rule;
+  declare readonly tableColumns: Rule;
+  declare readonly tableDecl: Rule;
+  declare readonly tableLine: Rule;
+  declare readonly tableRow: Rule;
+  declare readonly textStatement: Rule;
+  declare readonly topLevelItem: Rule;
+  declare readonly ttsStatement: Rule;
+  declare readonly turnStatement: Rule;
+  declare readonly unaryExpr: Rule;
+  declare readonly untilStatement: Rule;
+  declare readonly useDecl: Rule;
+  declare readonly useObjectDecl: Rule;
+  declare readonly varDecl: Rule;
+  declare readonly waitStatement: Rule;
+  declare readonly whileStatement: Rule;
+
   constructor() {
     super(ALL_TOKENS, {
       nodeLocationTracking: 'full',
@@ -526,7 +625,7 @@ export class TessParser extends CstParser {
       $.CONSUME(kw.end);
     });
 
-    const loopRule = (name, keyword) => $.RULE(name, () => {
+    const loopRule = (name: string, keyword: TokenType) => $.RULE(name, () => {
       $.CONSUME(keyword);
       $.SUBRULE($.expr, { LABEL: 'test' });
       $.SUBRULE($.blockOpen);
@@ -1162,7 +1261,7 @@ export class TessParser extends CstParser {
           const number = $.LA(2);
           return sign.tokenTypeIdx === idx(Minus)
             && number.tokenTypeIdx === idx(NumberLiteral)
-            && number.startOffset === sign.endOffset + 1;
+            && number.startOffset === sign.endOffset! + 1;
         },
         DEF: () => $.CONSUME(Minus, { LABEL: 'sign' }),
       });
@@ -1181,12 +1280,12 @@ export class TessParser extends CstParser {
     return this.LA(1).startLine === this.LA(0).endLine;
   }
 
-  isIdentLike(token) {
+  isIdentLike(token: IToken) {
     return token.tokenType?.CATEGORIES?.includes(IdentLike) ?? false;
   }
 
   /** True when the token `offset` ahead can begin an expression. */
-  startsExprAt(offset) {
+  startsExprAt(offset: number) {
     const token = this.LA(offset);
     return EXPR_STARTERS.has(token.tokenTypeIdx) || this.isIdentLike(token);
   }
@@ -1200,7 +1299,7 @@ export class TessParser extends CstParser {
    * works as a variable name gives way to assignment, unless its statement form
    * can stand alone — those commit before assignment is ever considered.
    */
-  leads(tokenType) {
+  leads(tokenType: TokenType) {
     const token = this.LA(1);
     if (token.tokenTypeIdx !== tokenType.tokenTypeIdx) return false;
     if (STANDALONE_LEADERS.has(token.tokenTypeIdx)) return true;
@@ -1208,7 +1307,7 @@ export class TessParser extends CstParser {
     return !(ASSIGN_OPERATOR_IDS.has(next.tokenTypeIdx) || next.tokenTypeIdx === idx(LSquare));
   }
 
-  leadsAny(...tokenTypes) {
+  leadsAny(...tokenTypes: TokenType[]) {
     return tokenTypes.some((tokenType) => this.leads(tokenType));
   }
 
@@ -1217,7 +1316,7 @@ export class TessParser extends CstParser {
    * `shared`/`realtime` storage scope. Both prefixes stay usable as names, so
    * they only lead when the declaration keyword follows.
    */
-  leadsDecl(tokenType) {
+  leadsDecl(tokenType: TokenType) {
     if (this.leads(tokenType)) return true;
     const token = this.LA(1);
     if (token.tokenTypeIdx !== idx(kw.shared) && token.tokenTypeIdx !== idx(kw.realtime)) return false;

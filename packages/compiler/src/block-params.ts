@@ -5,9 +5,9 @@
 //        params 스키마와 def.params, 그리고 실제 엔트리 작품의 project.json.
 //        (셋이 다를 때는 가장 긴 값 = 엔트리가 실제로 저장하는 길이를 썼다)
 //
-//  컴파일러가 만든 블록이 이 길이와 맞는지 verify.js 가 확인한다.
+//  컴파일러가 만든 블록이 이 길이와 맞는지 verify.ts 가 확인한다.
 // ============================================================================
-export const BLOCK_PARAM_COUNTS = {
+export const BLOCK_PARAM_COUNTS: Record<string, number> = {
   _if: 2,
   add_effect_amount: 3,
   add_value_to_list: 3,

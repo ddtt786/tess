@@ -6,23 +6,23 @@
 // ============================================================================
 
 /** 엔트리가 소리 길이를 적는 자릿수(소수점 한 자리)에 맞춘다 */
-const round = (seconds) => Math.round(seconds * 10) / 10;
+const round = (seconds: number) => Math.round(seconds * 10) / 10;
 
 /**
  * 소리 파일에서 재생 길이(초)를 잰다. 재지 못하면 null 을 돌려준다.
- * @param {Buffer} bytes
- * @param {string} ext 확장자 (`.mp3` 처럼 점을 포함한 소문자)
+ *
+ * @param ext 확장자 (`.mp3` 처럼 점을 포함한 소문자)
  */
-export function audioDuration(bytes, ext) {
+export function audioDuration(bytes: Buffer, ext: string): number | null {
   try {
     const seconds = measure(bytes, ext);
-    return Number.isFinite(seconds) && seconds > 0 ? round(seconds) : null;
+    return seconds !== null && Number.isFinite(seconds) && seconds > 0 ? round(seconds) : null;
   } catch {
     return null; // 파일 하나가 깨졌다고 컴파일이 멈추지는 않는다
   }
 }
 
-function measure(bytes, ext) {
+function measure(bytes: Buffer, ext: string): number | null {
   if (ext === '.wav') return wavDuration(bytes);
   if (ext === '.ogg') return oggDuration(bytes);
   if (ext === '.m4a' || ext === '.mp4') return mp4Duration(bytes);
@@ -36,7 +36,7 @@ function measure(bytes, ext) {
 // ---------------------------------------------------------------------------
 //  WAV — fmt 청크의 초당 바이트 수로 data 청크를 나눈다
 // ---------------------------------------------------------------------------
-function wavDuration(bytes) {
+function wavDuration(bytes: Buffer): number | null {
   if (bytes.length < 12 || bytes.toString('latin1', 8, 12) !== 'WAVE') return null;
 
   let byteRate = 0;
@@ -60,7 +60,7 @@ function wavDuration(bytes) {
 // ---------------------------------------------------------------------------
 //  Ogg (Vorbis · Opus) — 마지막 페이지의 granule position 이 총 샘플 수다
 // ---------------------------------------------------------------------------
-function oggDuration(bytes) {
+function oggDuration(bytes: Buffer): number | null {
   if (bytes.toString('latin1', 0, 4) !== 'OggS') return null;
 
   // 첫 페이지의 식별 헤더에서 표본율을 읽는다. Opus 는 언제나 48kHz 를 기준으로 센다.
@@ -91,7 +91,7 @@ function oggDuration(bytes) {
 // ---------------------------------------------------------------------------
 //  MP4 · M4A — moov > mvhd 의 duration / timescale
 // ---------------------------------------------------------------------------
-function mp4Duration(bytes, start = 0, end = bytes.length) {
+function mp4Duration(bytes: Buffer, start = 0, end = bytes.length): number | null {
   let offset = start;
   while (offset + 8 <= end) {
     let size = bytes.readUInt32BE(offset);
@@ -122,7 +122,18 @@ function mp4Duration(bytes, start = 0, end = bytes.length) {
 //  MP3 — 첫 프레임 헤더를 읽고, VBR 표(Xing/VBRI)가 있으면 프레임 수로,
 //  없으면 고정 비트레이트로 나눈다
 // ---------------------------------------------------------------------------
-const MP3_BITRATES = {
+/** One mp3 frame header, as far as the duration needs it. */
+interface Mp3Frame {
+  version: number;
+  layer: number;
+  bitrate: number;
+  sampleRate: number;
+  samples: number;
+  size: number;
+  mono: boolean;
+}
+
+const MP3_BITRATES: Record<number, Record<number, number[]>> = {
   // [MPEG 버전][레이어] 별 비트레이트 표(kbps). 인덱스 0 은 free, 15 는 예약값이라 쓰지 않는다.
   1: {
     1: [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448],
@@ -135,33 +146,34 @@ const MP3_BITRATES = {
     3: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
   },
 };
-const MP3_RATES = { 1: [44100, 48000, 32000], 2: [22050, 24000, 16000], 2.5: [11025, 12000, 8000] };
+const MP3_RATES: Record<number, number[]> = { 1: [44100, 48000, 32000], 2: [22050, 24000, 16000], 2.5: [11025, 12000, 8000] };
 
 /** 파일 앞에 붙은 ID3v2 태그를 건너뛴 위치 */
-function skipId3(bytes) {
+function skipId3(bytes: Buffer): number {
   if (bytes.length < 10 || bytes.toString('latin1', 0, 3) !== 'ID3') return 0;
   // 태그 크기는 바이트마다 7비트만 쓰는 synchsafe 정수로 적혀 있다
-  const size = ((bytes[6] & 0x7f) << 21) | ((bytes[7] & 0x7f) << 14)
-    | ((bytes[8] & 0x7f) << 7) | (bytes[9] & 0x7f);
-  return 10 + size + (bytes[5] & 0x10 ? 10 : 0); // 꼬리말(footer)이 있으면 10 바이트를 더 건너뛴다
+  const size = ((bytes[6]! & 0x7f) << 21) | ((bytes[7]! & 0x7f) << 14)
+    | ((bytes[8]! & 0x7f) << 7) | (bytes[9]! & 0x7f);
+  return 10 + size + (bytes[5]! & 0x10 ? 10 : 0); // 꼬리말(footer)이 있으면 10 바이트를 더 건너뛴다
 }
 
-function mp3FrameHeader(bytes, offset) {
+function mp3FrameHeader(bytes: Buffer, offset: number): Mp3Frame | null {
   if (offset + 4 > bytes.length) return null;
-  if (bytes[offset] !== 0xff || (bytes[offset + 1] & 0xe0) !== 0xe0) return null;
+  if (bytes[offset]! !== 0xff || (bytes[offset + 1]! & 0xe0) !== 0xe0) return null;
 
-  const versionBits = (bytes[offset + 1] >> 3) & 0x03;
-  const layerBits = (bytes[offset + 1] >> 1) & 0x03;
+  const versionBits = (bytes[offset + 1]! >> 3) & 0x03;
+  const layerBits = (bytes[offset + 1]! >> 1) & 0x03;
   if (versionBits === 1 || layerBits === 0) return null; // 쓰지 않는 예약값이다
 
-  const version = { 0: 2.5, 2: 2, 3: 1 }[versionBits];
-  const layer = { 1: 3, 2: 2, 3: 1 }[layerBits];
-  const bitrate = MP3_BITRATES[version === 1 ? 1 : 2][layer][(bytes[offset + 2] >> 4) & 0x0f];
-  const sampleRate = MP3_RATES[version][(bytes[offset + 2] >> 2) & 0x03];
+  const version = ({ 0: 2.5, 2: 2, 3: 1 } as Record<number, number>)[versionBits];
+  const layer = ({ 1: 3, 2: 2, 3: 1 } as Record<number, number>)[layerBits];
+  if (version === undefined || layer === undefined) return null;
+  const bitrate = MP3_BITRATES[version === 1 ? 1 : 2]![layer]![(bytes[offset + 2]!! >> 4) & 0x0f];
+  const sampleRate = MP3_RATES[version]![(bytes[offset + 2]!! >> 2) & 0x03];
   if (!bitrate || !sampleRate) return null;
 
-  const padding = (bytes[offset + 2] >> 1) & 0x01;
-  const mono = ((bytes[offset + 3] >> 6) & 0x03) === 3;
+  const padding = (bytes[offset + 2]! >> 1) & 0x01;
+  const mono = ((bytes[offset + 3]! >> 6) & 0x03) === 3;
   // 레이어 I 은 한 프레임이 384 표본이고 슬롯이 4바이트다. 레이어 III 은 MPEG2·2.5 에서 표본이 절반이다.
   const samples = layer === 1 ? 384 : (layer === 2 || version === 1 ? 1152 : 576);
   const size = layer === 1
@@ -171,7 +183,7 @@ function mp3FrameHeader(bytes, offset) {
   return { version, layer, bitrate, sampleRate, samples, size, mono };
 }
 
-function mp3Duration(bytes) {
+function mp3Duration(bytes: Buffer): number | null {
   const start = skipId3(bytes);
 
   // 첫 프레임을 찾는다. 태그 뒤에 알 수 없는 바이트가 조금 붙어 있는 파일도 있다.
@@ -194,7 +206,7 @@ function mp3Duration(bytes) {
   return (audioBytes * 8) / (frame.bitrate * 1000);
 }
 
-function xingFrames(bytes, frameStart, frame) {
+function xingFrames(bytes: Buffer, frameStart: number, frame: Mp3Frame): number | null {
   // Xing/Info 표는 프레임 헤더 뒤의 side info 다음에 온다. 그 자리는 버전과 채널 수에 따라 다르다.
   const skip = frame.version === 1 ? (frame.mono ? 21 : 36) : (frame.mono ? 13 : 21);
   const at = frameStart + skip;
@@ -205,7 +217,7 @@ function xingFrames(bytes, frameStart, frame) {
   return flags & 0x01 ? bytes.readUInt32BE(at + 8) : null;
 }
 
-function vbriFrames(bytes, frameStart) {
+function vbriFrames(bytes: Buffer, frameStart: number): number | null {
   const at = frameStart + 36;
   if (at + 18 > bytes.length) return null;
   if (bytes.toString('latin1', at, at + 4) !== 'VBRI') return null;

@@ -13,11 +13,20 @@ import {
   isBooleanBlock,
   resolveList,
   resolveTarget,
-} from "./expression.js";
-import { requireScaleSetter } from "./runtime.js";
+} from "./expression.ts";
+import { requireScaleSetter } from "./runtime.ts";
 import { didYouMean, orHint } from '@tess/core';
+import type {
+  AssignNode, Expr, ExpressionStatementNode, Identifier, IndexNode, PlaySoundNode,
+  ListDeclNode, Node, ShowHideNode, Stmt, TableAddLineNode, TableRemoveLineNode,
+  VarDeclNode,
+} from '@tess/parser';
+import type { Context } from './context.ts';
+import type {
+  EntryBlock, EntryParam, EntryTable, EntryVariable, ResourceRef, VariableRef,
+} from './types.ts';
 
-const STOP_TARGETS = {
+const STOP_TARGETS: Record<string, string> = {
   this: "thisThread", // 현재 스크립트만
   other: "otherThread", // 이 오브젝트의 다른 스크립트
   me: "thisOnly", // 이 오브젝트의 모든 스크립트
@@ -25,13 +34,13 @@ const STOP_TARGETS = {
   all: "all", // 프로젝트 전체
 };
 
-const EFFECTS = {
+const EFFECTS: Record<string, string> = {
   effect_color: "color",
   effect_brightness: "brightness",
   effect_alpha: "transparency",
 };
 
-const TEXT_EFFECTS = {
+const TEXT_EFFECTS: Record<string, string> = {
   text_bold: "fontBold",
   text_italic: "fontItalic",
   text_underline: "underLine",
@@ -41,7 +50,7 @@ const TEXT_EFFECTS = {
 // TTS(읽어주기) 목소리 · 속도 · 음높이 — 엔트리 `set_tts_property` 의 드롭다운 값 그대로다
 // (entryjs `src/playground/blocks/block_ai_utilize_tts.js`). 원래 코드값도 그대로 받고,
 // 사람이 읽기 좋은 영어 별명도 같이 받는다.
-const TTS_SPEAKERS = {
+const TTS_SPEAKERS: Record<string, string> = {
   kyuri: "kyuri",
   female: "kyuri",
   jinho: "jinho",
@@ -64,7 +73,7 @@ const TTS_SPEAKERS = {
   doggy: "nwoof",
 };
 // speed 는 느릴수록 +, pitch 는 낮을수록 + — 엔트리 코드값을 그대로 따른다
-const TTS_LEVELS = {
+const TTS_LEVELS: Record<string, string> = {
   veryslow: "5",
   verylow: "5",
   slow: "3",
@@ -82,7 +91,7 @@ const TTS_LEVELS = {
 };
 
 /** 값을 읽어올 수 있는 오브젝트 속성 (복합 대입을 풀 때 쓴다) */
-const READABLE_PROPERTIES = {
+const READABLE_PROPERTIES: Record<string, string> = {
   x: "x",
   y: "y",
   angle: "rotation",
@@ -90,14 +99,19 @@ const READABLE_PROPERTIES = {
   size: "size",
 };
 
-export function compileStatements(statements, ctx) {
-  const blocks = [];
+/** Drops the nulls a failed sub-compile leaves behind. */
+const blocksOf = (items: Array<EntryBlock | null>): EntryBlock[] => (
+  items.filter((item): item is EntryBlock => item !== null)
+);
+
+export function compileStatements(statements: Stmt[], ctx: Context): EntryBlock[] {
+  const blocks: EntryBlock[] = [];
   for (const statement of statements)
     blocks.push(...compileStatement(statement, ctx));
   return blocks;
 }
 
-export function compileStatement(node, ctx) {
+export function compileStatement(node: Stmt, ctx: Context): EntryBlock[] {
   // 이 문장을 컴파일하는 동안 만들어지는 모든 블록(중첩된 값·조건 블록 포함)에
   // 이 문장의 소스 위치를 붙인다 — 실행 중 panic 났을 때 되짚어 보려고.
   const previousNode = ctx.currentNode;
@@ -105,12 +119,12 @@ export function compileStatement(node, ctx) {
   // 하위 컴파일이 실패하면 null 이 올라올 수 있으므로 항상 배열로 맞춰 준다
   const blocks = compile(node, ctx) ?? [];
   ctx.currentNode = previousNode;
-  ctx.applyComment(node, blocks[0]);
+  ctx.applyComment(node, blocks[0] ?? null);
   return blocks;
 }
 
-function compile(node, ctx) {
-  const one = (block) => (block ? [block] : []);
+function compile(node: Stmt, ctx: Context): EntryBlock[] | null {
+  const one = (block: EntryBlock | null) => (block ? [block] : []);
 
   switch (node.type) {
     // --- 제어 흐름 ---------------------------------------------------------
@@ -213,19 +227,19 @@ function compile(node, ctx) {
       return one(ctx.block("stop_object", [STOP_TARGETS[node.target], null]));
 
     case "Return":
-      return [
+      return blocksOf([
         ctx.error(node, "return 은 함수의 마지막 문장에서만 쓸 수 있습니다."),
-      ].filter(Boolean);
+      ]);
 
     // --- 신호 · 복제 · 장면 -------------------------------------------------
     case "Send": {
       if (node.signal.type !== "String") {
-        return [
+        return blocksOf([
           ctx.error(
             node,
             '신호 이름은 "게임 시작" 처럼 문자열로 직접 적어야 합니다.',
           ),
-        ].filter(Boolean);
+        ]);
       }
       const id = ctx.messageId(node.signal.value);
       return one(
@@ -238,7 +252,7 @@ function compile(node, ctx) {
         node.target === null
           ? "self"
           : resolveTarget(node.target, ctx, { self: true });
-      return target && one(ctx.block("create_clone", [target, null]));
+      return target === null ? [] : one(ctx.block("create_clone", [target, null]));
     }
 
     case "DeleteClone":
@@ -251,16 +265,16 @@ function compile(node, ctx) {
         return one(ctx.block("start_neighbor_scene", ["next", null]));
       if (node.target === "back")
         return one(ctx.block("start_neighbor_scene", ["prev", null]));
-      if (node.target.type !== "String") {
-        return [
+      if (typeof node.target === "string" || node.target.type !== "String") {
+        return blocksOf([
           ctx.error(node, "장면 이름은 문자열로 직접 적어야 합니다."),
-        ].filter(Boolean);
+        ]);
       }
       const scene = ctx.sceneByName.get(node.target.value);
       if (!scene)
-        return [
+        return blocksOf([
           ctx.error(node, `'${node.target.value}' 이라는 장면이 없습니다.${didYouMean(node.target.value, ctx.sceneByName.keys())}`),
-        ].filter(Boolean);
+        ]);
       return one(ctx.block("start_scene", [scene.id, null]));
     }
 
@@ -336,7 +350,7 @@ function compile(node, ctx) {
 
     case "Look": {
       const target = resolveTarget(node.target, ctx, {});
-      return target && one(ctx.block("see_angle_object", [target, null]));
+      return target === null ? [] : one(ctx.block("see_angle_object", [target, null]));
     }
 
     // --- 모양 · 대화 ---------------------------------------------------------
@@ -368,9 +382,9 @@ function compile(node, ctx) {
     case "Order":
       return one(
         ctx.block("change_object_index", [
-          { first: "FRONT", front: "FORWARD", back: "BACKWARD", last: "BACK" }[
+          ({ first: "FRONT", front: "FORWARD", back: "BACKWARD", last: "BACK" } as Record<string, string>)[
             node.to
-          ],
+          ]!,
           null,
         ]),
       );
@@ -382,12 +396,12 @@ function compile(node, ctx) {
     // --- 글상자 -------------------------------------------------------------
     case "TextWrite": {
       const value = compileValue(node.value, ctx);
-      const types = {
+      const types: Record<string, string> = {
         write: "text_write",
         append: "text_append",
         prepend: "text_prepend",
       };
-      return value && one(ctx.block(types[node.mode], [value, null]));
+      return value && one(ctx.block(types[node.mode]!, [value, null]));
     }
 
     // --- 붓 -----------------------------------------------------------------
@@ -415,7 +429,7 @@ function compile(node, ctx) {
       return compilePlaySound(node, ctx);
     case "PlayBgm": {
       const sound = resolveSound(node.name, ctx);
-      return sound && one(ctx.block("play_bgm", [sound, null]));
+      return sound === null ? [] : one(ctx.block("play_bgm", [sound, null]));
     }
     case "StopBgm":
       return one(ctx.block("stop_bgm", [null]));
@@ -493,7 +507,7 @@ function compile(node, ctx) {
       return compileTableLine(node, ctx);
 
     case "TableSave": {
-      const table = requireTable(node.table, ctx);
+      const table = requireTable(node.table as Identifier, ctx);
       return table ? one(ctx.block("save_current_table", [table.id, null])) : [];
     }
 
@@ -501,32 +515,30 @@ function compile(node, ctx) {
     case "ListDecl":
       return compileDeclaration(node, ctx);
 
-    case "TableDecl":
-      return []; // 선언은 collectTable 이 미리 모아 두었다
     case "Assign":
       return compileAssign(node, ctx);
     case "ExpressionStatement":
       return compileCallStatement(node, ctx);
 
     default:
-      return [
+      return blocksOf([
         ctx.error(
           node,
           `'${node.type}' 문장은 아직 엔트리 블록으로 바꿀 수 없습니다.`,
         ),
-      ].filter(Boolean);
+      ]);
   }
 }
 
 // ---------------------------------------------------------------------------
 //  보조 컴파일러
 // ---------------------------------------------------------------------------
-function timerAction(action, ctx) {
+function timerAction(action: string, ctx: Context): EntryBlock {
   return ctx.block("choose_project_timer_action", [null, action, null, null]);
 }
 
 /** 회전 계열 블록은 각도 리터럴 블록(angle)을 쓴다 */
-function compileAngle(node, ctx) {
+function compileAngle(node: Expr, ctx: Context): EntryBlock | null {
   if (node.type === "Number") return ctx.angle(node.value);
   if (
     node.type === "Unary" &&
@@ -538,33 +550,33 @@ function compileAngle(node, ctx) {
   return compileValue(node, ctx);
 }
 
-function compileClear(node, ctx) {
-  const types = {
+function compileClear(node: Stmt & { target: string }, ctx: Context): EntryBlock[] {
+  const types: Record<string, string> = {
     effects: "erase_all_effects",
     bubble: "remove_dialog",
     draw: "brush_erase_all",
     text: "text_flush",
   };
-  return [ctx.block(types[node.target], [null])];
+  return [ctx.block(types[node.target]!, [null])];
 }
 
-function compileVisibility(node, ctx) {
+function compileVisibility(node: ShowHideNode, ctx: Context): EntryBlock[] {
   const showing = node.type === "Show";
   // `hide chart` closes whichever table or chart window is open.
-  if (node.target?.name === "chart" && !ctx.lookupVariable("chart")) {
+  if ((node.target as Identifier | null)?.name === "chart" && !ctx.lookupVariable("chart")) {
     if (showing) {
-      return [ctx.error(node, "show chart 는 없습니다. 'show 테이블 chart 1' 처럼 어떤 테이블의 차트인지 적으세요.")]
-        .filter(Boolean);
+      return blocksOf([ctx.error(node, "show chart 는 없습니다. 'show 테이블 chart 1' 처럼 어떤 테이블의 차트인지 적으세요.")]);
     }
     return [ctx.block("close_table_chart", [null])];
   }
 
-  const table = node.target && ctx.tableByName.get(node.target.name);
+  const target = node.target as Identifier | null;
+  const table = target && ctx.tableByName.get(target.name);
   if (table) return compileTableWindow(node, table, showing, ctx);
 
-  if (!node.target) return [ctx.block(showing ? "show" : "hide", [null])];
+  if (!target) return [ctx.block(showing ? "show" : "hide", [null])];
 
-  const name = node.target.name;
+  const { name } = target;
   if (name === "timer") {
     return [
       ctx.block("set_visible_project_timer", [
@@ -581,15 +593,15 @@ function compileVisibility(node, ctx) {
 
   const found = ctx.lookupVariable(name);
   if (found?.kind === "ambiguousLocal") {
-    return [ambiguousLocalError(node, found, ctx)].filter(Boolean);
+    return blocksOf([ambiguousLocalError(node, found, ctx)]);
   }
   if (found?.kind !== "variable") {
-    return [
+    return blocksOf([
       ctx.error(
         node,
         `'${name}' 은(는) 무대에 표시할 수 있는 변수나 리스트가 아닙니다.`,
       ),
-    ].filter(Boolean);
+    ]);
   }
   const isList = found.entry.variableType === "list";
   const type = isList
@@ -606,7 +618,12 @@ function compileVisibility(node, ctx) {
 //  테이블 (엔트리 '자료 분석' 블록)
 // ---------------------------------------------------------------------------
 /** `show 표` · `show 표 for N` · `show 표 chart N`, and `hide 표`. */
-function compileTableWindow(node, table, showing, ctx) {
+function compileTableWindow(
+  node: ShowHideNode,
+  table: EntryTable,
+  showing: boolean,
+  ctx: Context,
+): EntryBlock[] {
   if (!showing) return [ctx.block("close_table_chart", [null])];
   if (node.seconds) {
     const seconds = compileValue(node.seconds, ctx);
@@ -623,14 +640,14 @@ function compileTableWindow(node, table, showing, ctx) {
  * A chart number, which Entry keeps as a dropdown field rather than a value
  * slot, so it has to be written out at compile time.
  */
-function literalIndex(node, ctx) {
+function literalIndex(node: Expr, ctx: Context): string | null {
   if (node.type === "Number") return String(node.value - 1);
   if (node.type === "String") return node.value;
   return ctx.error(node, "차트 번호는 숫자로 직접 적어야 합니다.");
 }
 
 /** The table a statement names, or an error when the name is not one. */
-function requireTable(node, ctx) {
+function requireTable(node: Identifier, ctx: Context): EntryTable | null {
   const table = ctx.tableByName.get(node.name);
   if (table) return table;
   return ctx.error(
@@ -639,8 +656,8 @@ function requireTable(node, ctx) {
   );
 }
 
-function compileTableLine(node, ctx) {
-  const table = requireTable(node.table, ctx);
+function compileTableLine(node: TableAddLineNode | TableRemoveLineNode, ctx: Context): EntryBlock[] {
+  const table = requireTable(node.table as Identifier, ctx);
   if (!table) return [];
   const property = node.line === "row" ? "ROW" : "COL";
 
@@ -654,20 +671,21 @@ function compileTableLine(node, ctx) {
 }
 
 /** `표[행, "열"] = 값` and `표["B2"] = 값`. */
-function compileTableAssign(node, table, ctx) {
+function compileTableAssign(node: AssignNode, table: EntryTable, ctx: Context): EntryBlock[] {
+  const target = node.target as IndexNode;
   const value = compileValue(node.value, ctx);
   if (!value) return [];
-  if (!node.target.column) {
-    const cell = compileValue(node.target.index, ctx);
+  if (!target.column) {
+    const cell = compileValue(target.index, ctx);
     return cell ? [ctx.block("set_value_from_cell", [table.id, cell, value, null])] : [];
   }
-  const row = compileValue(node.target.index, ctx);
-  const column = compileValue(node.target.column, ctx);
+  const row = compileValue(target.index, ctx);
+  const column = compileValue(target.column, ctx);
   if (!row || !column) return [];
   return [ctx.block("set_value_from_table", [table.id, row, column, value, null])];
 }
 
-function compilePlaySound(node, ctx) {
+function compilePlaySound(node: PlaySoundNode, ctx: Context): EntryBlock[] {
   const sound = resolveSound(node.name, ctx);
   if (!sound) return [];
   const { wait } = node;
@@ -716,7 +734,12 @@ function compilePlaySound(node, ctx) {
  * may still be the id of a resource the work no longer carries. Neither can be
  * settled before the block runs, so both only warn.
  */
-function byNameAtRuntime(node, ctx, found, kind) {
+function byNameAtRuntime(
+  node: Expr & { value: string },
+  ctx: Context,
+  found: ResourceRef | null,
+  kind: 'pictures' | 'sounds',
+): EntryBlock | null {
   if (found) return compileValue(node, ctx);
   const isPicture = kind === 'pictures';
   const shelf = isPicture ? ctx.object?.pictures : ctx.object?.sounds;
@@ -730,7 +753,7 @@ function byNameAtRuntime(node, ctx, found, kind) {
   return compileValue(node, ctx);
 }
 
-function resolveSound(node, ctx) {
+function resolveSound(node: Expr, ctx: Context): EntryParam {
   if (node.type === "String") {
     const sound = ctx.object?.sounds.get(node.value);
     if (sound) return ctx.block("get_sounds", [sound.id]);
@@ -750,7 +773,7 @@ function resolveSound(node, ctx) {
 }
 
 /** 모양 이름 -> get_pictures 블록 (계산된 값은 resolveSound 와 같은 이유로 그대로 흘려보낸다) */
-function resolvePicture(node, ctx) {
+function resolvePicture(node: Expr, ctx: Context): EntryParam {
   if (node.type === "String") {
     const picture = ctx.object?.pictures.get(node.value);
     if (picture) return ctx.block("get_pictures", [picture.id]);
@@ -762,15 +785,16 @@ function resolvePicture(node, ctx) {
   return compileValue(node, ctx);
 }
 
-function requireList(node, ctx) {
+function requireList(node: Expr, ctx: Context): EntryVariable | null {
   const list = resolveList(node, ctx);
-  return list ?? ctx.error(node, `'${node.name}' 은(는) 리스트가 아닙니다.`);
+  const label = node.type === 'Identifier' ? node.name : '';
+  return list ?? ctx.error(node, `'${label}' 은(는) 리스트가 아닙니다.`);
 }
 
 // ---------------------------------------------------------------------------
 //  선언 · 대입
 // ---------------------------------------------------------------------------
-function compileDeclaration(node, ctx) {
+function compileDeclaration(node: VarDeclNode | ListDeclNode, ctx: Context): EntryBlock[] {
   // 선언 자체는 미리 수집해 두었고, 여기서는 초기값 대입만 만든다.
   if (node.type === "ListDecl") {
     const found = ctx.lookupVariable(node.name);
@@ -789,7 +813,7 @@ function compileDeclaration(node, ctx) {
   );
 }
 
-function compileAssign(node, ctx) {
+function compileAssign(node: AssignNode, ctx: Context): EntryBlock[] {
   if (node.target.type === "Index") return compileListElementAssign(node, ctx);
 
   const name = node.target.name;
@@ -798,27 +822,27 @@ function compileAssign(node, ctx) {
   return compilePropertyAssign(node, name, ctx);
 }
 
-function compileVariableAssign(node, found, ctx) {
+function compileVariableAssign(node: AssignNode, found: VariableRef, ctx: Context): EntryBlock[] {
   const { operator } = node;
 
   if (found.kind === "ambiguousLocal") {
-    return [ambiguousLocalError(node, found, ctx)].filter(Boolean);
+    return blocksOf([ambiguousLocalError(node, found, ctx)]);
   }
 
   if (found.kind === "param") {
-    return [
+    return blocksOf([
       ctx.error(
         node,
         `함수 매개변수 '${found.name}' 에는 값을 대입할 수 없습니다.`,
       ),
-    ].filter(Boolean);
+    ]);
   }
 
   const read = () =>
     found.kind === "funcLocal"
       ? ctx.block("get_func_variable", [found.id, null])
       : ctx.block("get_variable", [found.entry.id, null]);
-  const write = (value) =>
+  const write = (value: EntryParam) =>
     found.kind === "funcLocal"
       ? ctx.block("set_func_variable", [found.id, value, null])
       : ctx.block("set_variable", [found.entry.id, value, null]);
@@ -839,21 +863,22 @@ function compileVariableAssign(node, found, ctx) {
   return combined ? [write(combined)] : [];
 }
 
-function compileListElementAssign(node, ctx) {
-  const table = node.target.target.type === "Identifier"
-    && ctx.tableByName.get(node.target.target.name);
+function compileListElementAssign(node: AssignNode, ctx: Context): EntryBlock[] {
+  const target = node.target as IndexNode;
+  const table = target.target.type === "Identifier"
+    && ctx.tableByName.get(target.target.name);
   if (table) {
     if (node.operator !== "=") {
-      return [ctx.error(node, `테이블 칸에는 '=' 로만 값을 넣을 수 있습니다.`)].filter(Boolean);
+      return blocksOf([ctx.error(node, `테이블 칸에는 '=' 로만 값을 넣을 수 있습니다.`)]);
     }
     return compileTableAssign(node, table, ctx);
   }
-  if (node.target.column) {
-    return [ctx.error(node, `'${node.target.target.name}' 은(는) 테이블이 아니라서 [행, 열] 로 쓸 수 없습니다.`)]
-      .filter(Boolean);
+  if (target.column) {
+    const label = target.target.type === "Identifier" ? target.target.name : "";
+    return blocksOf([ctx.error(node, `'${label}' 은(는) 테이블이 아니라서 [행, 열] 로 쓸 수 없습니다.`)]);
   }
-  const list = requireList(node.target.target, ctx);
-  const index = compileValue(node.target.index, ctx);
+  const list = requireList(target.target, ctx);
+  const index = compileValue(target.index, ctx);
   if (!list || !index) return [];
 
   if (node.operator === "=") {
@@ -867,7 +892,7 @@ function compileListElementAssign(node, ctx) {
     null,
     list.id,
     null,
-    compileValue(node.target.index, ctx),
+    compileValue(target.index, ctx),
     null,
   ]);
   const combined = combine(current, node.operator, node.value, ctx);
@@ -877,17 +902,22 @@ function compileListElementAssign(node, ctx) {
 }
 
 /** `대상 op= 값` 을 `대상 op 값` 표현식으로 푼다 */
-function combine(current, operator, valueNode, ctx) {
+function combine(
+  current: EntryParam,
+  operator: string,
+  valueNode: Expr,
+  ctx: Context,
+): EntryBlock | null {
   const value = compileValue(valueNode, ctx);
   if (!value) return null;
-  const arithmetic = {
+  const arithmetic: Record<string, string> = {
     "+=": "PLUS",
     "-=": "MINUS",
     "*=": "MULTI",
     "/=": "DIVIDE",
   };
   if (arithmetic[operator])
-    return ctx.block("calc_basic", [current, arithmetic[operator], value]);
+    return ctx.block("calc_basic", [current, arithmetic[operator]!, value]);
   if (operator === "%=")
     return ctx.block("quotient_and_mod", [
       null,
@@ -916,7 +946,7 @@ function combine(current, operator, valueNode, ctx) {
 }
 
 /** 오브젝트 속성 대입 */
-function compilePropertyAssign(node, name, ctx) {
+function compilePropertyAssign(node: AssignNode, name: string, ctx: Context): EntryBlock[] {
   const { operator } = node;
   const relative = operator === "+=" || operator === "-=";
   const negate = operator === "-=";
@@ -935,7 +965,7 @@ function compilePropertyAssign(node, name, ctx) {
       compiled && ctx.block("calc_basic", [ctx.number(0), "MINUS", compiled])
     );
   };
-  const simple = (setType, addType, make = value) => {
+  const simple = (setType: string, addType: string, make = value) => {
     if (operator === "=") {
       const compiled = make();
       return compiled ? [ctx.block(setType, [compiled, null])] : [];
@@ -969,19 +999,19 @@ function compilePropertyAssign(node, name, ctx) {
           : [];
       }
       if (operator !== "=") {
-        return [
+        return blocksOf([
           ctx.error(node, `${name} 에는 = 과 +=, -= 만 쓸 수 있습니다.`),
-        ].filter(Boolean);
+        ]);
       }
       // 엔트리에는 한 축의 비율을 "정하는" 블록이 없다.
       // 컴파일러가 만들어 넣는 함수가 지금 크기를 재서 목표 비율로 맞춘다.
       if (ctx.funcScope) {
-        return [
+        return blocksOf([
           ctx.error(
             node,
             `${name} 을(를) 정하는 일은 함수 안에서 할 수 없습니다. 오브젝트마다 시작 배율이 다르기 때문입니다.`,
           ),
-        ].filter(Boolean);
+        ]);
       }
       const compiled = compileValue(node.value, ctx);
       if (!compiled) return [];
@@ -997,9 +1027,7 @@ function compilePropertyAssign(node, name, ctx) {
 
     case "costume": {
       if (operator !== "=")
-        return [ctx.error(node, "costume 은 = 로만 바꿀 수 있습니다.")].filter(
-          Boolean,
-        );
+        return blocksOf([ctx.error(node, "costume 은 = 로만 바꿀 수 있습니다.")]);
       const picture = resolvePicture(node.value, ctx);
       return picture
         ? [ctx.block("change_to_some_shape", [picture, null])]
@@ -1016,28 +1044,28 @@ function compilePropertyAssign(node, name, ctx) {
         return [ctx.block("change_effect_amount", [effect, compiled, null])];
       if (relative)
         return [ctx.block("add_effect_amount", [effect, compiled, null])];
-      return [
+      return blocksOf([
         ctx.error(node, `효과 값에는 = 과 +=, -= 만 쓸 수 있습니다.`),
-      ].filter(Boolean);
+      ]);
     }
 
     case "draw_color":
     case "fill_color": {
       if (operator !== "=")
-        return [
+        return blocksOf([
           ctx.error(node, `${name} 은(는) = 로만 정할 수 있습니다.`),
-        ].filter(Boolean);
+        ]);
       if (node.value.type === "Call" && node.value.callee === "random_color") {
         if (name === "fill_color") {
-          return [
+          return blocksOf([
             ctx.error(node, "엔트리에는 무작위 채우기 색 블록이 없습니다."),
-          ].filter(Boolean);
+          ]);
         }
         return [ctx.block("set_random_color", [null])];
       }
       const compiled = compileColor(node.value, ctx);
       if (compiled === "transparent")
-        return [rejectRuntimeTransparent(name, node, ctx)].filter(Boolean);
+        return blocksOf([rejectRuntimeTransparent(name, node, ctx)]);
       const type = name === "draw_color" ? "set_color" : "set_fill_color";
       return compiled ? [ctx.block(type, [compiled, null])] : [];
     }
@@ -1054,21 +1082,19 @@ function compilePropertyAssign(node, name, ctx) {
     // --- 글상자 -------------------------------------------------------------
     case "text_content": {
       if (operator !== "=")
-        return [
+        return blocksOf([
           ctx.error(
             node,
             "text_content 는 = 로만 바꿀 수 있습니다. 이어 붙이려면 append 를 쓰세요.",
           ),
-        ].filter(Boolean);
+        ]);
       const compiled = value();
       return compiled ? [ctx.block("text_write", [compiled, null])] : [];
     }
 
     case "font": {
       if (node.value.type !== "String")
-        return [ctx.error(node, "글씨체는 문자열로 적어야 합니다.")].filter(
-          Boolean,
-        );
+        return blocksOf([ctx.error(node, "글씨체는 문자열로 적어야 합니다.")]);
       return [ctx.block("text_change_font", [node.value.value, null])];
     }
 
@@ -1076,7 +1102,7 @@ function compilePropertyAssign(node, name, ctx) {
     case "bg_color": {
       const compiled = compileColor(node.value, ctx);
       if (compiled === "transparent")
-        return [rejectRuntimeTransparent(name, node, ctx)].filter(Boolean);
+        return blocksOf([rejectRuntimeTransparent(name, node, ctx)]);
       const type =
         name === "font_color"
           ? "text_change_font_color"
@@ -1089,9 +1115,9 @@ function compilePropertyAssign(node, name, ctx) {
     case "text_underline":
     case "text_strikethrough": {
       if (node.value.type !== "Boolean") {
-        return [
+        return blocksOf([
           ctx.error(node, `${name} 에는 true 또는 false 만 쓸 수 있습니다.`),
-        ].filter(Boolean);
+        ]);
       }
       const mode = node.value.value ? "on" : "off";
       return [
@@ -1100,20 +1126,20 @@ function compilePropertyAssign(node, name, ctx) {
     }
 
     default:
-      return [
+      return blocksOf([
         ctx.error(
           node,
           `선언되지 않은 이름 '${name}' 에 값을 대입했습니다.`
           + orHint(name, ctx.knownNames(), 'var 로 먼저 선언하세요.'),
         ),
-      ].filter(Boolean);
+      ]);
   }
 }
 
 /** 오브젝트가 시작할 때의 가로/세로 배율 (엔트리의 "원래 크기로 되돌리기" 가 돌아가는 값) */
-function originScale(name, ctx) {
+function originScale(name: string, ctx: Context): number {
   const properties = ctx.object?.properties;
-  const read = (key) => {
+  const read = (key: string) => {
     const value = properties?.get(key);
     return value?.type === "Number" ? value.value : null;
   };
@@ -1121,15 +1147,15 @@ function originScale(name, ctx) {
 }
 
 /** 값을 읽어서 계산한 뒤 다시 넣는 방식으로 복합 대입을 푼다 */
-function readModifyWrite(name, setType, node, ctx) {
+function readModifyWrite(name: string, setType: string, node: AssignNode, ctx: Context): EntryBlock[] {
   const coordinate = READABLE_PROPERTIES[name];
   if (!coordinate) {
-    return [
+    return blocksOf([
       ctx.error(
         node,
         `'${name}' 은(는) ${node.operator} 연산을 지원하지 않습니다.`,
       ),
-    ].filter(Boolean);
+    ]);
   }
   const current = ctx.block("coordinate_object", [
     null,
@@ -1142,7 +1168,12 @@ function readModifyWrite(name, setType, node, ctx) {
 }
 
 /** tts 문의 voice/speed/pitch 값을 엔트리 코드값으로 바꾼다 (SPEC-ADDENDUM.md 5 참고) */
-function ttsOption(table, node, label, ctx) {
+function ttsOption(
+  table: Record<string, string>,
+  node: Expr,
+  label: string,
+  ctx: Context,
+): string | null {
   if (node.type !== "String")
     return ctx.error(node, `tts ${label}은(는) 문자열로 적어야 합니다.`);
   const key = node.value.trim().toLowerCase();
@@ -1157,7 +1188,7 @@ function ttsOption(table, node, label, ctx) {
   return value;
 }
 
-function compileColor(node, ctx) {
+function compileColor(node: Expr, ctx: Context): EntryParam {
   if (node.type === "Color") return node.value;
   if (node.type === "Transparent") return "transparent";
   if (node.type === "String") return node.value;
@@ -1177,7 +1208,7 @@ function compileColor(node, ctx) {
  * 반면 오브젝트/글상자 선언 맨 위에 적는 정적 속성은 이 블록을 거치지 않고 엔트리
  * project.json 의 엔티티 값으로 바로 들어가므로 문제없이 동작한다.
  */
-function rejectRuntimeTransparent(name, node, ctx) {
+function rejectRuntimeTransparent(name: string, node: Node, ctx: Context): null {
   return ctx.error(
     node,
     `실행 중에는 ${name} 을(를) transparent 로 정할 수 없습니다. 엔트리의 색 블록은 '#' 로 시작하지 ` +
@@ -1190,32 +1221,32 @@ function rejectRuntimeTransparent(name, node, ctx) {
 // ---------------------------------------------------------------------------
 //  함수 호출 문장
 // ---------------------------------------------------------------------------
-function compileCallStatement(node, ctx) {
+function compileCallStatement(node: ExpressionStatementNode, ctx: Context): EntryBlock[] {
   const call = node.expression;
   const fn = ctx.functionByName.get(call.callee);
   if (!fn) {
-    return [
+    return blocksOf([
       ctx.error(
         node,
         `'${call.callee}' 함수를 찾을 수 없습니다. 내장 함수는 문장으로 쓸 수 없습니다.`,
       ),
-    ].filter(Boolean);
+    ]);
   }
   if (fn.isValue) {
-    return [
+    return blocksOf([
       ctx.error(
         node,
         `함수 '${call.callee}' 는 값을 돌려줍니다. var 결과 = ${call.callee}(...) 처럼 값으로 받아 쓰세요.`,
       ),
-    ].filter(Boolean);
+    ]);
   }
   if (call.arguments.length !== fn.params.length) {
-    return [
+    return blocksOf([
       ctx.error(
         node,
         `함수 '${call.callee}' 는 인자가 ${fn.params.length}개여야 합니다.`,
       ),
-    ].filter(Boolean);
+    ]);
   }
   const params = compileCallArguments(fn, call.arguments, ctx);
   if (params.some((param) => param === null)) return [];

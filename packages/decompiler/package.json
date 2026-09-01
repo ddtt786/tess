@@ -4,12 +4,12 @@
   "description": "이미 있는 엔트리 작품을 Tess 소스로 되돌린다",
   "license": "ISC",
   "type": "module",
-  "main": "index.js",
+  "main": "index.ts",
   "exports": {
-    ".": "./index.js"
+    ".": "./index.ts"
   },
   "files": [
-    "index.js",
+    "index.ts",
     "src"
   ],
   "dependencies": {

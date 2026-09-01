@@ -7,9 +7,24 @@
 // ============================================================================
 import { KEY_CODES, keyCodeOf } from '@tess/core';
 import { didYouMean, orHint } from '@tess/core';
-import { requirePowerRefiner } from './runtime.js';
+import { requirePowerRefiner } from './runtime.ts';
 import { BUILTIN_FUNCTIONS, OPTION_KEYWORDS, STATE_VALUES } from '@tess/core';
 import { expansionBlock } from '@tess/core';
+import type {
+  BinaryNode, CallNode, Expr, IndexNode, Node, UnaryNode,
+} from '@tess/parser';
+import type { Context } from './context.ts';
+import type {
+  CompiledFunction, EntryBlock, EntryParam, EntryVariable,
+} from './types.ts';
+
+/** What `resolveTarget` accepts besides an object's own name. */
+interface TargetOptions {
+  wall?: boolean;
+  self?: boolean;
+  all?: boolean;
+  mouse?: boolean;
+}
 
 /** 결과가 엔트리 "판단(boolean)" 블록인 타입들 */
 const BOOLEAN_TYPES = new Set([
@@ -28,18 +43,18 @@ const LITERAL_TYPES = new Set(['Number', 'String', 'Color', 'Transparent']);
  * 엔트리의 `(<판단>의 값)`(get_boolean_value) 블록이 그 글자를 돌려주기 때문이다.
  * 리터럴에서 왔든 비교식에서 왔든 항상 같은 글자가 나오도록 맞춘다.
  */
-export const BOOLEAN_TEXT = { true: 'TRUE', false: 'FALSE' };
+export const BOOLEAN_TEXT: Record<string, string> = { true: 'TRUE', false: 'FALSE' };
 
-const COMPARE_OPERATORS = {
+const COMPARE_OPERATORS: Record<string, string> = {
   '==': 'EQUAL', '!=': 'NOT_EQUAL',
   '>': 'GREATER', '<': 'LESS',
   '>=': 'GREATER_OR_EQUAL', '<=': 'LESS_OR_EQUAL',
 };
 
-const ARITHMETIC_OPERATORS = { '+': 'PLUS', '-': 'MINUS', '*': 'MULTI', '/': 'DIVIDE' };
+const ARITHMETIC_OPERATORS: Record<string, string> = { '+': 'PLUS', '-': 'MINUS', '*': 'MULTI', '/': 'DIVIDE' };
 
 /** calc_operation 으로 바로 가는 수학 함수 */
-const MATH_OPERATIONS = {
+const MATH_OPERATIONS: Record<string, string> = {
   sin: 'sin', cos: 'cos', tan: 'tan',
   asin: 'asin_radian', acos: 'acos_radian', atan: 'atan_radian',
   ln: 'ln', log10: 'log',
@@ -53,13 +68,13 @@ const MATH_OPERATIONS = {
  * (entryjs block_calc.js). costume/costume_number 로 다른 오브젝트의 모양도
  * 이름·번호로 읽을 수 있게 한다.
  */
-const OBJECT_COORDINATES = {
+const OBJECT_COORDINATES: Record<string, string> = {
   x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size',
   costume: 'picture_name', costume_number: 'picture_index',
 };
 
 /** 상태 값(괄호 없이 쓰는 읽기 전용 값) */
-const STATE_BLOCKS = {
+const STATE_BLOCKS: Record<string, string> = {
   mouse_down: 'is_clicked',
   clicked: 'is_object_clicked',
   boost_mode: 'is_boost_mode',
@@ -71,25 +86,26 @@ const STATE_BLOCKS = {
 };
 
 /** 오브젝트 속성을 읽는 coordinate_object 의 COORDINATE 값 (자기 자신, 괄호 없이) */
-const PROPERTY_COORDINATES = {
+const PROPERTY_COORDINATES: Record<string, string> = {
   x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size',
   costume: 'picture_name', costume_number: 'picture_index',
 };
 
-export function isBooleanBlock(node) {
+export function isBooleanBlock(node: EntryParam): boolean {
   if (!node || typeof node !== 'object') return false;
-  if (expansionBlock(node.type)?.kind === 'boolean') return true;
+  const { type } = node as EntryBlock;
+  if (expansionBlock(type)?.kind === 'boolean') return true;
   // 판단 매개변수(`이름?`)를 가리키는 블록은 함수마다 타입 이름이 다르므로 접두사로 가린다
-  return BOOLEAN_TYPES.has(node.type) || String(node.type).startsWith('booleanParam_');
+  return BOOLEAN_TYPES.has(type) || String(type).startsWith('booleanParam_');
 }
 
 /**
  * 판단 자리에 들어갈 블록. `true`/`false` 는 참·거짓 블록, 그 밖의 리터럴은 참,
  * 실행해 봐야 아는 값은 `== "TRUE"` 비교로 감싼다.
  */
-export function compileBoolean(node, ctx) {
+export function compileBoolean(node: Expr | null | undefined, ctx: Context): EntryBlock | null {
   if (node?.type === 'Boolean') return ctx.block(node.value ? 'True' : 'False', [null]);
-  if (LITERAL_TYPES.has(node?.type)) return ctx.block('True', [null]);
+  if (node && LITERAL_TYPES.has(node.type)) return ctx.block('True', [null]);
 
   const compiled = compileAnyValue(node, ctx);
   if (compiled === null) return null;
@@ -101,7 +117,7 @@ export function compileBoolean(node, ctx) {
  * 값 자리에 들어갈 블록. 판단이 오면 엔트리의 `(<판단>의 값)` 으로 감싼다
  * (결과는 "TRUE"/"FALSE" 문자열).
  */
-export function compileValue(node, ctx) {
+export function compileValue(node: Expr | null | undefined, ctx: Context): EntryBlock | null {
   const compiled = compileAnyValue(node, ctx);
   if (compiled === null) return null;
   return isBooleanBlock(compiled) ? ctx.block('get_boolean_value', [compiled]) : compiled;
@@ -111,7 +127,7 @@ export function compileValue(node, ctx) {
  * 감싸기 전의 블록을 그대로 돌려준다. 판단 블록이 나올 수도 있다.
  * 값이냐 판단이냐에 따라 다른 블록을 쓰는 자리(`wait` 이 대표적이다)에서 직접 부른다.
  */
-export function compileAnyValue(node, ctx) {
+export function compileAnyValue(node: Expr | null | undefined, ctx: Context): EntryBlock | null {
   if (!node) return null;
   switch (node.type) {
     case 'Number': return ctx.number(node.value);
@@ -134,14 +150,14 @@ export function compileAnyValue(node, ctx) {
 // ---------------------------------------------------------------------------
 //  식별자
 // ---------------------------------------------------------------------------
-function compileIdentifier(node, ctx) {
+function compileIdentifier(node: Node & { name: string }, ctx: Context): EntryBlock | null {
   const { name } = node;
 
   const found = ctx.lookupVariable(name);
   if (found) {
     if (found.kind === 'ambiguousLocal') return ambiguousLocalError(node, found, ctx);
     if (found.kind === 'param') {
-      const type = ctx.funcScope.params.get(name);
+      const type = ctx.funcScope!.params.get(name)!;
       // 판단 칸 매개변수 블록은 엔트리가 만든 원본에서도 빈 자리를 하나 갖는다
       return ctx.block(type, type.startsWith('booleanParam_') ? [null] : []);
     }
@@ -159,15 +175,15 @@ function compileIdentifier(node, ctx) {
   if (name === 'block_count') return ctx.block('get_block_count', ['all']);
   if (STATE_BLOCKS[name]) {
     // 블록마다 파라미터 자리 개수가 다르다 (엔트리 블록 스키마 기준)
-    const slots = { get_nickname: 0, get_user_name: 0, get_project_timer_value: 2 };
-    const count = slots[STATE_BLOCKS[name]] ?? 1;
-    return ctx.block(STATE_BLOCKS[name], new Array(count).fill(null));
+    const slots: Record<string, number> = { get_nickname: 0, get_user_name: 0, get_project_timer_value: 2 };
+    const count = slots[STATE_BLOCKS[name]!] ?? 1;
+    return ctx.block(STATE_BLOCKS[name]!, new Array(count).fill(null));
   }
   if (name === 'device') {
     return ctx.error(node, "device 는 홀로 쓸 수 없습니다. device == \"mobile\" 처럼 비교해서 쓰세요.");
   }
   if (PROPERTY_COORDINATES[name]) {
-    return ctx.block('coordinate_object', [null, 'self', null, PROPERTY_COORDINATES[name]]);
+    return ctx.block('coordinate_object', [null, 'self', null, PROPERTY_COORDINATES[name]!]);
   }
   if (name === 'sound_volume') return ctx.block('get_sound_volume', [null]);
   if (name === 'sound_speed') return ctx.block('get_sound_speed', [null]);
@@ -181,7 +197,7 @@ function compileIdentifier(node, ctx) {
  * Reports a local variable name that several objects declare, used from a place
  * that belongs to none of them.
  */
-export function ambiguousLocalError(node, found, ctx) {
+export function ambiguousLocalError(node: Node, found: { name: string; owners: string[] }, ctx: Context): null {
   return ctx.error(
     node,
     `'${found.name}' 은(는) ${found.owners.join(', ')} 가 저마다 가진 지역 변수라 어느 것인지 알 수 없습니다. `
@@ -192,7 +208,7 @@ export function ambiguousLocalError(node, found, ctx) {
 // ---------------------------------------------------------------------------
 //  연산자
 // ---------------------------------------------------------------------------
-function compileBinary(node, ctx) {
+function compileBinary(node: BinaryNode, ctx: Context): EntryBlock | null {
   const { operator } = node;
 
   if (operator === 'and' || operator === 'or') {
@@ -208,7 +224,7 @@ function compileBinary(node, ctx) {
     const left = compileValue(node.left, ctx);
     const right = compileValue(node.right, ctx);
     if (!left || !right) return null;
-    return ctx.block('calc_basic', [left, ARITHMETIC_OPERATORS[operator], right]);
+    return ctx.block('calc_basic', [left, ARITHMETIC_OPERATORS[operator]!, right]);
   }
 
   if (operator === '%' || operator === '//') {
@@ -228,7 +244,7 @@ function compileBinary(node, ctx) {
  * 상수만으로 이루어진 식이면 그 값을, 아니면 null 을 돌려준다.
  * (`x ** (1/3)` 처럼 지수를 계산해서 적을 수 있게 하기 위한 것)
  */
-export function foldConstant(node) {
+export function foldConstant(node: Expr | null | undefined): number | null {
   if (!node) return null;
   switch (node.type) {
     case 'Number': return node.value;
@@ -273,7 +289,7 @@ const FRACTION_BITS = 20;
  * 반복 블록을 쓰지 않는 이유: 엔트리 반복은 한 번 돌 때마다 프레임을 넘긴다.
  * 값을 구하는 식이 여러 프레임에 걸치면 안 되므로 컴파일할 때 펼쳐 둔다.
  */
-function compilePower(node, ctx) {
+function compilePower(node: BinaryNode, ctx: Context): EntryBlock | null {
   const exponent = foldConstant(node.right);
   if (exponent === null) {
     return ctx.error(
@@ -288,7 +304,12 @@ function compilePower(node, ctx) {
  * 밑(baseNode)의 exponent 제곱을 블록 트리로 만든다.
  * 지수에 따라 밑이 여러 번 들어가므로, 값이 매번 달라지는 random() 은 막는다.
  */
-export function buildPower(baseNode, exponent, node, ctx) {
+export function buildPower(
+  baseNode: Expr,
+  exponent: number,
+  node: Node,
+  ctx: Context,
+): EntryBlock | null {
   if (!Number.isFinite(exponent)) return ctx.error(node, '거듭제곱의 지수가 올바르지 않습니다.');
   if (exponent === 0) return ctx.number(1);
 
@@ -303,11 +324,12 @@ export function buildPower(baseNode, exponent, node, ctx) {
     uses += 1;
     const compiled = compileValue(baseNode, ctx);
     if (!compiled) failed = true;
-    return compiled;
+    // `failed` is what the caller checks; a placeholder keeps the tree building.
+    return compiled ?? ctx.number(1);
   };
-  const square = (value) => ctx.block('calc_operation', [null, value, null, 'square']);
-  const root = (value) => ctx.block('calc_operation', [null, value, null, 'root']);
-  const multiply = (left, right) => ctx.block('calc_basic', [left, 'MULTI', right]);
+  const square = (value: EntryBlock) => ctx.block('calc_operation', [null, value, null, 'square']);
+  const root = (value: EntryBlock) => ctx.block('calc_operation', [null, value, null, 'root']);
+  const multiply = (left: EntryBlock, right: EntryBlock) => ctx.block('calc_basic', [left, 'MULTI', right]);
 
   const whole = Math.floor(exponent);
   const { bits, exact } = fractionBits(exponent - whole);
@@ -334,16 +356,27 @@ export function buildPower(baseNode, exponent, node, ctx) {
 }
 
 /** x^n 을 제곱과 곱셈으로. n 이 0이면 null(=1) */
-function integerPower(n, base, square, multiply) {
+function integerPower(
+  n: number,
+  base: () => EntryBlock,
+  square: (value: EntryBlock) => EntryBlock,
+  multiply: (left: EntryBlock, right: EntryBlock) => EntryBlock,
+): EntryBlock | null {
   if (n <= 0) return null;
   if (n === 1) return base();
-  const half = integerPower(Math.floor(n / 2), base, square, multiply);
+  const half = integerPower(Math.floor(n / 2), base, square, multiply)!;
   const squared = square(half);
   return n % 2 === 1 ? multiply(squared, base()) : squared;
 }
 
 /** 소수부를 이진 전개해서 √ 중첩으로. 남은 자리가 모두 0이면 null(=1) */
-function fractionPower(bits, index, base, root, multiply) {
+function fractionPower(
+  bits: number[],
+  index: number,
+  base: () => EntryBlock,
+  root: (value: EntryBlock) => EntryBlock,
+  multiply: (left: EntryBlock, right: EntryBlock) => EntryBlock,
+): EntryBlock | null {
   if (index >= bits.length) return null;
   const rest = fractionPower(bits, index + 1, base, root, multiply);
   let inner = rest;
@@ -355,8 +388,8 @@ function fractionPower(bits, index, base, root, multiply) {
  * 0 <= fraction < 1 을 이진 소수로. 뒤쪽 0은 버린다.
  * 자릿수 안에서 딱 떨어졌으면 exact 가 true 다 (0.5, 0.25, 0.75 …).
  */
-function fractionBits(fraction) {
-  const bits = [];
+function fractionBits(fraction: number): { bits: number[]; exact: boolean } {
+  const bits: number[] = [];
   let rest = fraction;
   while (bits.length < FRACTION_BITS && rest > 0) {
     rest *= 2;
@@ -372,14 +405,15 @@ function fractionBits(fraction) {
 }
 
 /** 밑을 두 번 이상 쓰면 값이 달라지는 식인지 */
-function containsRandom(node) {
+function containsRandom(node: unknown): boolean {
   if (node === null || typeof node !== 'object') return false;
   if (Array.isArray(node)) return node.some(containsRandom);
-  if (node.type === 'Call' && (node.callee === 'random' || node.callee === 'random_color')) return true;
+  const call = node as { type?: string; callee?: string };
+  if (call.type === 'Call' && (call.callee === 'random' || call.callee === 'random_color')) return true;
   return Object.entries(node).some(([key, value]) => key !== 'loc' && containsRandom(value));
 }
 
-function compileComparison(node, ctx) {
+function compileComparison(node: BinaryNode, ctx: Context): EntryBlock | null {
   const operator = COMPARE_OPERATORS[node.operator];
 
   // type(x) == "number" -> 엔트리의 "~이 숫자인가?" 판단 블록
@@ -409,7 +443,7 @@ function compileComparison(node, ctx) {
   return ctx.block('boolean_basic_operator', [left, operator, right]);
 }
 
-function matchTypeCheck(node) {
+function matchTypeCheck(node: BinaryNode): { value: Expr; kind: string } | null {
   if (node.operator !== '==' && node.operator !== '!=') return null;
   for (const [call, other] of [[node.left, node.right], [node.right, node.left]]) {
     if (call.type === 'Call' && call.callee === 'type' && other.type === 'String') {
@@ -419,7 +453,7 @@ function matchTypeCheck(node) {
   return null;
 }
 
-function matchDeviceCheck(node) {
+function matchDeviceCheck(node: BinaryNode): string | null {
   if (node.operator !== '==' && node.operator !== '!=') return null;
   for (const [id, other] of [[node.left, node.right], [node.right, node.left]]) {
     if (id.type === 'Identifier' && id.name === 'device' && other.type === 'String') return other.value;
@@ -427,7 +461,7 @@ function matchDeviceCheck(node) {
   return null;
 }
 
-function compileUnary(node, ctx) {
+function compileUnary(node: UnaryNode, ctx: Context): EntryBlock | null {
   if (node.operator === 'not') {
     const value = compileBoolean(node.argument, ctx);
     return value && ctx.block('boolean_not', [null, value, null]);
@@ -441,7 +475,7 @@ function compileUnary(node, ctx) {
 // ---------------------------------------------------------------------------
 //  인덱스 (리스트 · 문자열)
 // ---------------------------------------------------------------------------
-function compileIndex(node, ctx) {
+function compileIndex(node: IndexNode, ctx: Context): EntryBlock | null {
   // On a table, `표[2, "점수"]` reads one cell by row and column, and
   // `표["B2"]` reads it by the spreadsheet-style name Entry shows in its editor.
   const table = node.target.type === 'Identifier' && ctx.tableByName.get(node.target.name);
@@ -450,10 +484,11 @@ function compileIndex(node, ctx) {
     if (!first) return null;
     if (!node.column) return ctx.block('get_value_from_cell', [table.id, first, null]);
     const column = compileValue(node.column, ctx);
-    return column && ctx.block('get_value_from_table', [table.id, first, column, null]);
+    return column === null ? null : ctx.block('get_value_from_table', [table.id, first, column, null]);
   }
   if (node.column) {
-    return ctx.error(node, `'${node.target.name ?? ''}' 은(는) 테이블이 아니라서 [행, 열] 로 읽을 수 없습니다.`);
+    const label = node.target.type === 'Identifier' ? node.target.name : '';
+    return ctx.error(node, `'${label}' 은(는) 테이블이 아니라서 [행, 열] 로 읽을 수 없습니다.`);
   }
 
   const list = resolveList(node.target, ctx);
@@ -463,7 +498,7 @@ function compileIndex(node, ctx) {
   if (list) return ctx.block('value_of_index_from_list', [null, list.id, null, index, null]);
 
   const target = compileValue(node.target, ctx);
-  return target && ctx.block('char_at', [null, target, null, index, null]);
+  return target === null ? null : ctx.block('char_at', [null, target, null, index, null]);
 }
 
 /**
@@ -471,8 +506,12 @@ function compileIndex(node, ctx) {
  * `이름?` 으로 선언한 자리는 판단 칸이라 판단 블록만 꽂을 수 있으므로 compileBoolean 을
  * 쓰고, 나머지 자리는 값으로 맞춰 넣는다.
  */
-export function compileCallArguments(fn, args, ctx) {
-  return args.map((arg, index) => (fn.booleanParams?.has(fn.params[index])
+export function compileCallArguments(
+  fn: CompiledFunction,
+  args: Expr[],
+  ctx: Context,
+): Array<EntryBlock | null> {
+  return args.map((arg, index) => (fn.booleanParams?.has(fn.params[index]!)
     ? compileBoolean(arg, ctx)
     : compileValue(arg, ctx)));
 }
@@ -481,7 +520,7 @@ export function compileCallArguments(fn, args, ctx) {
  * 소리 이름 -> 그 소리의 엔트리 id (블록이 아니라 드롭다운 칸 값이다).
  * `play sound` 와 달리 get_sound_duration 의 VALUE 는 필드라서 id 를 그대로 넣는다.
  */
-function resolveSoundValue(node, ctx) {
+function resolveSoundValue(node: Expr, ctx: Context): string | null {
   if (node.type !== 'String') {
     return ctx.error(node, 'sound_duration() 은 소리 이름을 문자열로 적어야 합니다.');
   }
@@ -505,7 +544,7 @@ function resolveSoundValue(node, ctx) {
 }
 
 /** 식별자가 리스트를 가리키면 그 엔트리 변수 항목을 돌려준다 */
-export function resolveList(node, ctx) {
+export function resolveList(node: Expr | null | undefined, ctx: Context): EntryVariable | null {
   if (!node || node.type !== 'Identifier') return null;
   const found = ctx.lookupVariable(node.name);
   if (found?.kind === 'variable' && found.entry.variableType === 'list') return found.entry;
@@ -516,16 +555,16 @@ export function resolveList(node, ctx) {
 //  내장 함수 호출
 // ---------------------------------------------------------------------------
 /** Column summaries Entry's "테이블의 () 값" block can compute. */
-const TABLE_CALCULATIONS = {
+const TABLE_CALCULATIONS: Record<string, string> = {
   sum: 'SUM', average: 'AVG', maximum: 'MAX', minimum: 'MIN',
   stdev: 'STDEV', median: 'MEDIAN',
 };
 
 /** The table a value function was called on, or an error when the name is not one. */
-function tableArgument(node, callee, ctx) {
+function tableArgument(node: Expr, callee: string, ctx: Context) {
   const table = node.type === 'Identifier' && ctx.tableByName.get(node.name);
   return table || ctx.error(node, `${callee}() 의 첫 번째 인자는 테이블이어야 합니다.`
-    + didYouMean(node.name ?? '', ctx.tableByName.keys()));
+    + didYouMean(node.type === 'Identifier' ? node.name : '', ctx.tableByName.keys()));
 }
 
 /**
@@ -533,15 +572,15 @@ function tableArgument(node, callee, ctx) {
  * 적어야 하고, 값 칸만 식을 받는다. 쓰인 확장은 project.expansionBlocks 에 적어
  * 둬야 엔트리가 실행할 때 그 모듈을 켠다.
  */
-function compileExpansion(node, ctx) {
+function compileExpansion(node: CallNode, ctx: Context): EntryBlock | null {
   const { callee, arguments: args } = node;
-  const { module, kind, slots } = expansionBlock(callee);
+  const { module, slots } = expansionBlock(callee)!;
   if (args.length !== slots.length) {
     return ctx.error(node, `${callee}() 는 인자가 ${slots.length}개여야 합니다. (${args.length}개를 받았습니다)`);
   }
 
-  const params = slots.map((slot, index) => {
-    const argument = args[index];
+  const params = slots.map((slot, index): EntryParam => {
+    const argument = args[index]!;
     if (slot === 'value') return compileValue(argument, ctx);
     if (argument.type === 'String') return argument.value;
     if (argument.type === 'Number') return String(argument.value);
@@ -553,14 +592,14 @@ function compileExpansion(node, ctx) {
   return ctx.block(callee, params);
 }
 
-function compileCall(node, ctx) {
+function compileCall(node: CallNode, ctx: Context): EntryBlock | null {
   const { callee, arguments: args } = node;
-  const arity = (count) => {
+  const arity = (count: number) => {
     if (args.length === count) return true;
     ctx.error(node, `${callee}() 는 인자가 ${count}개여야 합니다. (${args.length}개를 받았습니다)`);
     return false;
   };
-  const value = (index) => compileValue(args[index], ctx);
+  const value = (index: number) => compileValue(args[index], ctx);
 
   // 사용자 정의 함수
   const fn = ctx.functionByName.get(callee);
@@ -616,13 +655,13 @@ function compileCall(node, ctx) {
     case 'key_down': {
       if (!arity(1)) return null;
       const code = literalKeyCode(args[0], ctx, node);
-      return code && ctx.block('is_press_some_key', [code, null]);
+      return code === null ? null : ctx.block('is_press_some_key', [code, null]);
     }
 
     case 'touching': {
       if (!arity(1)) return null;
       const target = resolveTarget(args[0], ctx, { wall: true });
-      return target && ctx.block('reach_something', [null, target, null]);
+      return target === null ? null : ctx.block('reach_something', [null, target, null]);
     }
 
     case 'type':
@@ -631,7 +670,7 @@ function compileCall(node, ctx) {
     case 'distance': {
       if (!arity(1)) return null;
       const target = resolveTarget(args[0], ctx, { mouse: true });
-      return target && ctx.block('distance_something', [null, target, null]);
+      return target === null ? null : ctx.block('distance_something', [null, target, null]);
     }
 
     case 'x': case 'y': case 'angle': case 'way': case 'size':
@@ -645,19 +684,19 @@ function compileCall(node, ctx) {
         return ctx.block('coordinate_mouse', [null, coordinate, null]);
       }
       const target = resolveTarget(args[0], ctx, { self: true });
-      return target && ctx.block('coordinate_object', [null, target, null, coordinate]);
+      return target === null ? null : ctx.block('coordinate_object', [null, target, null, coordinate]);
     }
 
     case 'text_content': {
       if (!arity(1)) return null;
       const target = resolveTarget(args[0], ctx, { self: true });
-      return target && ctx.block('text_read', [target, null]);
+      return target === null ? null : ctx.block('text_read', [target, null]);
     }
 
     case 'block_count': {
       if (!arity(1)) return null;
       const target = resolveTarget(args[0], ctx, { self: true, all: true });
-      return target && ctx.block('get_block_count', [target]);
+      return target === null ? null : ctx.block('get_block_count', [target]);
     }
 
     // 이 오브젝트가 가진 소리의 재생 길이(초). 모양·소리 이름을 받는 다른 자리와
@@ -665,7 +704,7 @@ function compileCall(node, ctx) {
     case 'sound_duration': {
       if (!arity(1)) return null;
       const sound = resolveSoundValue(args[0], ctx);
-      return sound && ctx.block('get_sound_duration', [null, sound, null]);
+      return sound === null ? null : ctx.block('get_sound_duration', [null, sound, null]);
     }
 
     case 'length': {
@@ -739,14 +778,15 @@ function compileCall(node, ctx) {
 
     case 'now': {
       if (!arity(1)) return null;
-      const units = {
+      const units: Record<string, string> = {
         year: 'YEAR', month: 'MONTH', day: 'DAY', hour: 'HOUR',
         minute: 'MINUTE', second: 'SECOND', weekday: 'DAY_OF_WEEK',
       };
-      if (args[0].type !== 'String' || !units[args[0].value]) {
+      const unit = args[0].type === 'String' ? units[args[0].value] : undefined;
+      if (!unit) {
         return ctx.error(node, 'now() 는 "year", "month", "day", "hour", "minute", "second", "weekday" 만 받습니다.');
       }
-      return ctx.block('get_date', [null, units[args[0].value], null]);
+      return ctx.block('get_date', [null, unit, null]);
     }
 
     case 'to_hex': {
@@ -759,7 +799,7 @@ function compileCall(node, ctx) {
 
     case 'from_hex': {
       if (!arity(2)) return null;
-      const channels = { red: 'r', green: 'g', blue: 'b' };
+      const channels: Record<string, string> = { red: 'r', green: 'g', blue: 'b' };
       const channel = args[1].type === 'Identifier' ? channels[args[1].name] : null;
       if (!channel) return ctx.error(node, 'from_hex() 의 두 번째 인자는 red, green, blue 중 하나여야 합니다.');
       const color = value(0);
@@ -813,7 +853,7 @@ function compileCall(node, ctx) {
   }
 }
 
-function literalKeyCode(node, ctx, at) {
+function literalKeyCode(node: Expr, ctx: Context, at: Node): string | null {
   if (node.type !== 'String') return ctx.error(at, '키 이름은 "space" 처럼 문자열로 직접 적어야 합니다.');
   const code = keyCodeOf(node.value);
   return code ?? ctx.error(at, `알 수 없는 키 이름 "${node.value}" 입니다.`
@@ -824,9 +864,13 @@ function literalKeyCode(node, ctx, at) {
  * 오브젝트를 가리키는 인자를 엔트리 id 로 바꾼다.
  * "mouse"/"wall" 같은 특수 대상은 옵션으로 허용한다.
  */
-export function resolveTarget(node, ctx, options = {}) {
+export function resolveTarget(
+  node: Expr | null | undefined,
+  ctx: Context,
+  options: TargetOptions = {},
+): string | null {
   if (!node || node.type !== 'String') {
-    return ctx.error(node ?? { loc: null }, '오브젝트 이름은 "player" 처럼 문자열로 직접 적어야 합니다.');
+    return ctx.error(node ?? null, '오브젝트 이름은 "player" 처럼 문자열로 직접 적어야 합니다.');
   }
   const name = node.value;
 

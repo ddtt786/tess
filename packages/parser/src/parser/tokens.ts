@@ -6,6 +6,7 @@
 //  pattern ordering, and keeps every non-reserved keyword usable as a name.
 // ============================================================================
 import { createToken, Lexer } from 'chevrotain';
+import type { ILexingError, IToken, TokenType } from 'chevrotain';
 
 // Identifier shape follows the grammar: letters are Unicode, digits are ASCII.
 const IDENT_START = '[\\p{L}_]';
@@ -14,9 +15,9 @@ const IDENT_PART = '[\\p{L}0-9_]';
 // The lexer re-creates each pattern with a sticky flag and drops `u` doing so,
 // which would turn `\p{L}` into a literal character class. Matching by hand
 // keeps the Unicode property escapes working.
-function unicodePattern(source) {
+function unicodePattern(source: string) {
   const sticky = new RegExp(source, 'yu');
-  return (text, startOffset) => {
+  return (text: string, startOffset: number) => {
     sticky.lastIndex = startOffset;
     return sticky.exec(text);
   };
@@ -68,8 +69,7 @@ export const Identifier = createToken({
 });
 
 // Keyword tokens never match on their own; `retag` assigns them after lexing.
-/** @type {Record<string, import('chevrotain').TokenType>} */
-export const kw = {};
+export const kw: Record<string, TokenType> = {};
 for (const word of KEYWORDS) {
   kw[word] = createToken({
     name: `kw_${word}`,
@@ -80,7 +80,7 @@ for (const word of KEYWORDS) {
 }
 
 /** Maps a word to the keyword token it should carry. */
-const KEYWORD_TOKENS = new Map(KEYWORDS.map((word) => [word, kw[word]]));
+const KEYWORD_TOKENS = new Map<string, TokenType>(KEYWORDS.map((word) => [word, kw[word]!]));
 
 // --- literals ---------------------------------------------------------------
 // A color is six hex digits not followed by more name characters; anything else
@@ -123,7 +123,9 @@ export const Comment = createToken({
 // --- operators and punctuation ----------------------------------------------
 // Longest first, so `**=` beats `**` beats `*`. This is what makes the
 // grammar's `~"="` and `~"*"` guards unnecessary here.
-const operator = (name, literal) => createToken({ name, pattern: literal, label: `'${literal}'` });
+const operator = (name: string, literal: string) => (
+  createToken({ name, pattern: literal, label: `'${literal}'` })
+);
 
 export const PowAssign = operator('PowAssign', '**=');
 export const Pow = operator('Pow', '**');
@@ -171,28 +173,25 @@ export const ALL_TOKENS = [
   LParen, RParen, LSquare, RSquare, Comma, Colon, Question,
   Identifier,
   IdentLike,
-  ...KEYWORDS.map((word) => kw[word]),
+  ...KEYWORDS.map((word) => kw[word]!),
 ];
 
 const lexer = new Lexer(ALL_TOKENS, { positionTracking: 'full' });
 
 /** Retags identifier tokens whose image is a keyword. */
-function retag(tokens) {
+function retag(tokens: IToken[]) {
   for (const token of tokens) {
     if (token.tokenTypeIdx !== Identifier.tokenTypeIdx) continue;
     const type = KEYWORD_TOKENS.get(token.image);
     if (!type) continue;
     token.tokenType = type;
-    token.tokenTypeIdx = type.tokenTypeIdx;
+    // Chevrotain assigns the index when the lexer is built, so it is set here.
+    token.tokenTypeIdx = type.tokenTypeIdx!;
   }
   return tokens;
 }
 
-/**
- * @param {string} source
- * @returns {{tokens: Array, errors: Array}}
- */
-export function tokenize(source) {
+export function tokenize(source: string): { tokens: IToken[]; errors: ILexingError[] } {
   const result = lexer.tokenize(source);
   return { tokens: retag(result.tokens), errors: result.errors };
 }

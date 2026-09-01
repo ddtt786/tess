@@ -10,6 +10,19 @@
 //      movable, isOpened, deletable, type: 'comment' }
 // ============================================================================
 
+import type { Node } from '@tess/parser';
+import type { EntryComment } from './types.ts';
+
+/** One comment found in the source, and where it sits. */
+interface ScannedComment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+/** A node reached by the generic walk, which reads fields it cannot name ahead. */
+type AnyNode = Record<string, unknown> & { type?: string; loc?: { file?: string; start: number } };
+
 /** 주석이 붙을 수 있는 노드 (블록이 만들어지는 것들) */
 const ATTACHABLE = new Set([
   'Event',
@@ -25,7 +38,7 @@ const ATTACHABLE = new Set([
 ]);
 
 /** 엔트리 주석 한 개 만들기 */
-export function makeComment(value) {
+export function makeComment(value: string): EntryComment {
   return {
     x: 240,
     y: -10,
@@ -46,10 +59,10 @@ export function makeComment(value) {
  * 소스에서 주석을 찾는다. 문자열 안의 `#` 과 색상 리터럴(#ff0000)은 건너뛴다.
  * (문법의 comment 규칙과 같은 판단이다)
  */
-export function scanComments(source) {
-  const comments = [];
-  const isHex = (ch) => ch !== undefined && /[0-9a-fA-F]/.test(ch);
-  const isWord = (ch) => ch !== undefined && /[0-9a-zA-Z_]/.test(ch);
+export function scanComments(source: string): ScannedComment[] {
+  const comments: ScannedComment[] = [];
+  const isHex = (ch: string | undefined) => ch !== undefined && /[0-9a-fA-F]/.test(ch);
+  const isWord = (ch: string | undefined) => ch !== undefined && /[0-9a-zA-Z_]/.test(ch);
 
   for (let i = 0; i < source.length; i += 1) {
     const ch = source[i];
@@ -83,15 +96,15 @@ export function scanComments(source) {
 /**
  * AST 의 노드와 주석을 이어 준다.
  *
- * @param {object} ast     use 까지 펼친 Program
- * @param {Map<string,string>} sources  파일 -> 소스
- * @returns {Map<string,string>} `파일 시작오프셋` -> 주석 내용
+ * @param ast     use 까지 펼친 Program
+ * @param sources 파일 -> 소스
+ * @returns `파일 시작오프셋` -> 주석 내용
  */
-export function buildCommentMap(ast, sources) {
-  const nodesByFile = new Map();
+export function buildCommentMap(ast: Node, sources: Map<string, string>): Map<string, string> {
+  const nodesByFile = new Map<string, AnyNode[]>();
   collectNodes(ast, nodesByFile);
 
-  const map = new Map();
+  const map = new Map<string, string>();
   for (const [file, nodes] of nodesByFile) {
     const source = sources.get(file);
     if (!source) continue;
@@ -101,39 +114,42 @@ export function buildCommentMap(ast, sources) {
 }
 
 /** 주석 찾아보기 열쇠 */
-export function commentKey(node) {
-  return `${node?.loc?.file ?? ''} ${node?.loc?.start ?? -1}`;
+export function commentKey(node: Node | AnyNode | null | undefined): string {
+  const loc = (node as AnyNode | null | undefined)?.loc;
+  return `${loc?.file ?? ''} ${loc?.start ?? -1}`;
 }
 
-function collectNodes(node, out) {
+function collectNodes(node: unknown, out: Map<string, AnyNode[]>) {
   if (node === null || typeof node !== 'object') return;
   if (Array.isArray(node)) {
     node.forEach((child) => collectNodes(child, out));
     return;
   }
-  if (ATTACHABLE.has(node.type) && node.loc?.file) {
-    if (!out.has(node.loc.file)) out.set(node.loc.file, []);
-    out.get(node.loc.file).push(node);
+  const item = node as AnyNode;
+  const file = item.loc?.file;
+  if (item.type !== undefined && ATTACHABLE.has(item.type) && file) {
+    if (!out.has(file)) out.set(file, []);
+    out.get(file)!.push(item);
   }
-  for (const [key, value] of Object.entries(node)) {
+  for (const [key, value] of Object.entries(item)) {
     if (key !== 'loc') collectNodes(value, out);
   }
 }
 
-function attachInFile(source, file, nodes, map) {
+function attachInFile(source: string, file: string, nodes: AnyNode[], map: Map<string, string>) {
   const comments = scanComments(source);
   if (comments.length === 0) return;
 
   const lineOf = makeLineFinder(source);
-  const sorted = [...nodes].sort((a, b) => a.loc.start - b.loc.start);
-  const remaining = [];
+  const sorted = [...nodes].sort((a, b) => a.loc!.start - b.loc!.start);
+  const remaining: ScannedComment[] = [];
 
   // 1) 같은 줄 뒤쪽에 붙은 주석: 그 줄의 문장에 붙인다
   for (const comment of comments) {
     const line = lineOf(comment.start);
     const owner = lastWhere(
       sorted,
-      (node) => node.loc.start < comment.start && lineOf(node.loc.start) === line,
+      (node) => node.loc!.start < comment.start && lineOf(node.loc!.start) === line,
     );
     if (owner) append(map, commentKey(owner), comment.text);
     else remaining.push(comment);
@@ -141,44 +157,44 @@ function attachInFile(source, file, nodes, map) {
 
   // 2) 문장 바로 위에 있는 주석 묶음: 아래 문장에 붙인다
   for (let i = 0; i < remaining.length; i += 1) {
-    const group = [remaining[i]];
+    const group = [remaining[i]!];
     while (
       i + 1 < remaining.length
-      && onlySpaceBetween(source, group[group.length - 1].end, remaining[i + 1].start)
+      && onlySpaceBetween(source, group[group.length - 1]!.end, remaining[i + 1]!.start)
     ) {
-      group.push(remaining[i + 1]);
+      group.push(remaining[i + 1]!);
       i += 1;
     }
-    const last = group[group.length - 1];
-    const owner = sorted.find((node) => node.loc.start > last.end);
-    if (owner && onlySpaceBetween(source, last.end, owner.loc.start)) {
+    const last = group[group.length - 1]!;
+    const owner = sorted.find((node) => node.loc!.start > last.end);
+    if (owner && onlySpaceBetween(source, last.end, owner.loc!.start)) {
       append(map, commentKey(owner), group.map((comment) => comment.text).join('\n'));
     }
   }
 }
 
-function append(map, key, text) {
+function append(map: Map<string, string>, key: string, text: string) {
   map.set(key, map.has(key) ? `${map.get(key)}\n${text}` : text);
 }
 
-function lastWhere(list, predicate) {
-  for (let i = list.length - 1; i >= 0; i -= 1) if (predicate(list[i])) return list[i];
+function lastWhere<T>(list: T[], predicate: (item: T) => boolean): T | null {
+  for (let i = list.length - 1; i >= 0; i -= 1) if (predicate(list[i]!)) return list[i]!;
   return null;
 }
 
-function onlySpaceBetween(source, from, to) {
+function onlySpaceBetween(source: string, from: number, to: number) {
   return to >= from && /^\s*$/.test(source.slice(from, to));
 }
 
-function makeLineFinder(source) {
+function makeLineFinder(source: string) {
   const starts = [0];
   for (let i = 0; i < source.length; i += 1) if (source[i] === '\n') starts.push(i + 1);
-  return (offset) => {
+  return (offset: number) => {
     let low = 0;
     let high = starts.length - 1;
     while (low < high) {
       const mid = Math.ceil((low + high) / 2);
-      if (starts[mid] <= offset) low = mid;
+      if (starts[mid]! <= offset) low = mid;
       else high = mid - 1;
     }
     return low + 1;

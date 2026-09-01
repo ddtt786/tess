@@ -15,7 +15,7 @@ const MAIN = `scene "s":
   useobject "objects/나.tess"
 end`;
 
-const FRAGMENT = (message) => `default costume 기본 "a.png" size 10 10
+const FRAGMENT = (message: string) => `default costume 기본 "a.png" size 10 10
 when start do
   say "${message}"
 end`;
@@ -30,7 +30,7 @@ function makeProject() {
   return dir;
 }
 
-function build(dir, cache) {
+function build(dir: any, cache: any) {
   const mainFile = path.join(dir, 'main.tess');
   return compileProject(fs.readFileSync(mainFile, 'utf-8'), {
     path: mainFile, assetDirs: [dir], cache,
@@ -75,8 +75,8 @@ test('한 파일만 고치면 그 파일만 다시 파싱한다', () => {
   assert.equal(cache.parsed - before, 1);
 
   // 바뀐 내용이 실제로 반영됐는지 — 캐시가 옛 AST 를 붙들고 있으면 안 된다
-  const object = result.project.objects.find((o) => o.name === '가');
-  assert.match(object.script, /바뀐 인사/);
+  const object = result.project!.objects.find((o) => o.name === '가');
+  assert.match(object!.script, /바뀐 인사/);
 });
 
 test('main.tess 를 고치면 조각 파일은 그대로 다시 쓴다', () => {
@@ -110,7 +110,7 @@ test('문법 에러가 난 파일은 캐시에 남지 않고 매번 다시 알�
   fs.writeFileSync(broken, FRAGMENT('고침'));
   const fixed = build(dir, cache);
   assert.deepEqual(fixed.errors, []);
-  assert.match(fixed.project.objects.find((o) => o.name === '가').script, /고침/);
+  assert.match(fixed.project!.objects.find((o) => o.name === '가')!.script, /고침/);
 });
 
 test('두 오브젝트가 같은 조각을 use 하면 한 번만 파싱한다', () => {

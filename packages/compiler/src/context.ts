@@ -4,12 +4,24 @@
 //  블록 생성, 심볼 테이블(오브젝트 · 장면 · 변수 · 신호 · 함수), 진단 수집을
 //  한 곳에서 관리한다.
 // ============================================================================
-import { createIdFactory, seedFrom } from './ids.js';
-import { commentKey, makeComment } from './comments.js';
+import { createIdFactory, seedFrom } from './ids.ts';
+import type { IdFactory } from './ids.ts';
+import { commentKey, makeComment } from './comments.ts';
 import { lineIndex } from '@tess/parser';
+import type { Expr, Node } from '@tess/parser';
+import type {
+  CompileCache, CompileDiagnostic, CompiledFunction, CompiledObject,
+  CompileOptions, EntryBlock, EntryMessage, EntryParam, EntryScene, EntryTable,
+  EntryVariable, FunctionScope, ResourceRef, SourceMap, VariableRef,
+} from './types.ts';
 
 /** 엔트리 블록 한 개의 기본 뼈대 */
-export function makeBlock(id, type, params = [], statements = []) {
+export function makeBlock(
+  id: string,
+  type: string,
+  params: EntryParam[] = [],
+  statements: EntryBlock[][] = [],
+): EntryBlock {
   return {
     id,
     x: 0,
@@ -29,9 +41,67 @@ export function makeBlock(id, type, params = [], statements = []) {
 
 export class Context {
   /** 파일별 줄 찾기표. 블록마다 위치를 남기므로 파일당 한 번만 만든다. */
-  #lineLookups = new Map();
+  #lineLookups = new Map<string, (offset: number) => { line: number; column: number }>();
 
-  constructor(source, options = {}) {
+  source: string;
+
+  sources: Map<string, string> | null;
+
+  options: CompileOptions;
+
+  assetFiles: Array<{ source: string; target: string }>;
+
+  comments: Map<string, string>;
+
+  newId: IdFactory;
+
+  errors: CompileDiagnostic[];
+
+  warnings: CompileDiagnostic[];
+
+  sourceMap: SourceMap;
+
+  currentNode: Node | null;
+
+  usesTts: boolean;
+
+  forcedResourceIds: Set<string>;
+
+  scenes: EntryScene[];
+
+  sceneByName: Map<string, EntryScene>;
+
+  objects: CompiledObject[];
+
+  objectByName: Map<string, CompiledObject>;
+
+  variables: EntryVariable[];
+
+  globals: Map<string, EntryVariable>;
+
+  messages: EntryMessage[];
+
+  messageByName: Map<string, EntryMessage>;
+
+  tables: EntryTable[];
+
+  tableByName: Map<string, EntryTable>;
+
+  expansionBlocks: Set<string>;
+
+  functions: CompiledFunction[];
+
+  functionByName: Map<string, CompiledFunction>;
+
+  runtimeFunctions: Map<string, CompiledFunction>;
+
+  object: CompiledObject | null;
+
+  locals: Map<string, EntryVariable>;
+
+  funcScope: FunctionScope | null;
+
+  constructor(source: string, options: CompileOptions = {}) {
     this.source = source;
     this.sources = options.sources ?? null;
     this.options = options;
@@ -77,17 +147,17 @@ export class Context {
   }
 
   // --- 진단 ---------------------------------------------------------------
-  error(node, message) {
+  error(node: Node | null | undefined, message: string): null {
     this.#report(this.errors, node, message);
     return null;
   }
 
-  warn(node, message) {
+  warn(node: Node | null | undefined, message: string): null {
     this.#report(this.warnings, node, message);
     return null;
   }
 
-  #report(bucket, node, message) {
+  #report(bucket: CompileDiagnostic[], node: Node | null | undefined, message: string) {
     const offset = node?.loc?.start ?? 0;
     const file = node?.loc?.file;
     const { line, column } = this.#positionIn(file, offset);
@@ -100,7 +170,7 @@ export class Context {
    * Every block records where it came from, so this runs once per block. The
    * line table for each file is built the first time that file is asked about.
    */
-  #positionIn(file, offset) {
+  #positionIn(file: string | null | undefined, offset: number) {
     const key = file ?? '';
     let lookup = this.#lineLookups.get(key);
     if (lookup === undefined) {
@@ -111,14 +181,14 @@ export class Context {
   }
 
   // --- 블록 만들기 ---------------------------------------------------------
-  block(type, params = [], statements = []) {
+  block(type: string, params: EntryParam[] = [], statements: EntryBlock[][] = []): EntryBlock {
     const block = makeBlock(this.newId(), type, params, statements);
     this.#recordLocation(block);
     return block;
   }
 
   /** 지금 만든 블록이 소스의 어디서 왔는지 sourceMap 에 남긴다 */
-  #recordLocation(block) {
+  #recordLocation(block: EntryBlock) {
     const node = this.currentNode;
     if (!node?.loc) return;
     const file = node.loc.file ?? this.options.path ?? null;
@@ -130,7 +200,7 @@ export class Context {
   }
 
   /** 소스에 달린 주석을 엔트리 블록 주석으로 옮긴다 */
-  applyComment(node, block) {
+  applyComment<T extends EntryBlock | null>(node: Node, block: T): T {
     if (!block) return block;
     const text = this.comments.get(commentKey(node));
     if (text) block.comment = makeComment(text);
@@ -138,28 +208,28 @@ export class Context {
   }
 
   /** 숫자 리터럴 블록 */
-  number(value) {
+  number(value: number | string): EntryBlock {
     return this.block('number', [String(value)]);
   }
 
   /** 문자열 리터럴 블록 */
-  text(value) {
+  text(value: number | string): EntryBlock {
     return this.block('text', [String(value)]);
   }
 
   /** 각도 리터럴 블록 (회전 계열 블록 전용) */
-  angle(value) {
+  angle(value: number | string): EntryBlock {
     return this.block('angle', [String(value)]);
   }
 
   // --- 심볼 조회 -----------------------------------------------------------
   /** 이름으로 변수/리스트 찾기: 매개변수 -> 함수 지역 -> 오브젝트 로컬 -> 전역 */
-  lookupVariable(name) {
+  lookupVariable(name: string): VariableRef | null {
     if (this.funcScope) {
       if (this.funcScope.params.has(name)) return { kind: 'param', name };
       // 엔트리 함수 지역 변수는 이름이 아니라 `함수id_해시` 로 가리킨다
       if (this.funcScope.localVars.has(name)) {
-        return { kind: 'funcLocal', name, id: this.funcScope.localVars.get(name) };
+        return { kind: 'funcLocal', name, id: this.funcScope.localVars.get(name)! };
       }
       // A function declared inside an object sees that object's locals.
       const owned = this.locals.get(name);
@@ -181,13 +251,13 @@ export class Context {
    * Finds an object local from a place that belongs to no object. Several
    * objects owning the name leaves nothing to pick between them.
    */
-  lookupObjectLocal(name) {
+  lookupObjectLocal(name: string): VariableRef | null {
     const owners = this.objects.filter((object) => object.locals?.has(name));
     if (owners.length === 0) return null;
     if (owners.length > 1) {
       return { kind: 'ambiguousLocal', name, owners: owners.map((object) => object.name) };
     }
-    return { kind: 'variable', entry: owners[0].locals.get(name), owner: owners[0] };
+    return { kind: 'variable', entry: owners[0]!.locals.get(name)!, owner: owners[0] };
   }
 
   /**
@@ -195,23 +265,23 @@ export class Context {
    * that belongs to none (a global function). Several objects sharing the
    * name leaves nothing to pick between them — same shape as lookupObjectLocal.
    */
-  lookupObjectResource(kind, name) {
+  lookupObjectResource(kind: 'pictures' | 'sounds', name: string): ResourceRef | null {
     const owners = this.objects.filter((object) => object[kind].has(name));
     if (owners.length === 0) return null;
     if (owners.length > 1) return { kind: 'ambiguous', owners: owners.map((object) => object.name) };
-    return { kind: 'found', asset: owners[0][kind].get(name) };
+    return { kind: 'found', asset: owners[0]![kind].get(name)! };
   }
 
   /** 오브젝트 이름 -> 엔트리 오브젝트 id */
-  objectId(name) {
+  objectId(name: string): string | null {
     return this.objectByName.get(name)?.id ?? null;
   }
 
   /** 지금 자리에서 값으로 쓸 수 있는 이름들 — 오타를 짚어 줄 때 후보가 된다 */
-  knownNames() {
+  knownNames(): string[] {
     const names = [...this.globals.keys(), ...this.locals.keys()];
     if (this.funcScope) {
-      names.push(...this.funcScope.params, ...this.funcScope.localVars.keys());
+      names.push(...this.funcScope.params.keys(), ...this.funcScope.localVars.keys());
       // A global function can name an object's local, so those are candidates too.
       for (const object of this.objects) names.push(...(object.locals?.keys() ?? []));
     }
@@ -219,7 +289,7 @@ export class Context {
   }
 
   /** 신호 이름 -> 엔트리 메시지 id (없으면 만든다) */
-  messageId(name) {
+  messageId(name: string): string {
     let message = this.messageByName.get(name);
     if (!message) {
       message = { id: this.newId(), name };

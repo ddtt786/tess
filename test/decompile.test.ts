@@ -12,9 +12,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { decompileProject } from '@tess/decompiler';
 import { compileProject } from '@tess/compiler';
+import type { RawEntity } from '@tess/decompiler';
 
 /** 스프라이트 하나짜리, 스크립트도 아주 단순한 최소 project.json. sceneCount 로 장면 수를 고른다 */
-function minimalProject(sceneCount = 1) {
+function minimalProject(sceneCount = 1): RawEntity {
   const startHat = () => ({ type: 'when_run_button_click', params: [null], statements: [] });
   const waitOneSecond = () => ({
     type: 'wait_second',
@@ -79,7 +80,7 @@ test('되돌리기는 기본적으로 오브젝트마다 objects/이름.tess 조
   assert.deepEqual(fragmentPaths, ['objects/점수판.tess', 'objects/주인공.tess']);
 
   // 조각 파일 자체는 object/text 로 감싸지 않은 내용만 담는다 (들여쓰기 0에서 시작)
-  const heroFragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  const heroFragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
   assert.doesNotMatch(heroFragment, /^object /m);
   assert.match(heroFragment, /^when start do$/m);
   assert.match(heroFragment, /^ {2}wait 1$/m); // when 본문은 한 단 들여쓴다
@@ -111,9 +112,9 @@ test('되돌린 결과(main.tess + 조각 파일)는 다시 정상적으로 컴�
 
   const recompiled = compileProject(fs.readFileSync(mainFile, 'utf-8'), { path: mainFile, assetDirs: [dir] });
   assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
-  assert.equal(recompiled.project.objects.length, 2);
+  assert.equal(recompiled.project!.objects.length, 2);
   assert.deepEqual(
-    recompiled.project.objects.map((o) => o.objectType).sort(),
+    recompiled.project!.objects.map((o) => o.objectType).sort(),
     ['sprite', 'textBox'],
   );
 });
@@ -131,7 +132,7 @@ test('되돌린 결과(main.tess + 조각 파일)는 다시 정상적으로 컴�
 // ---------------------------------------------------------------------------
 function trickProject() {
   const startHat = () => ({ type: 'when_run_button_click', params: [null], statements: [] });
-  const literal = (value) => ({ type: 'text', params: [value] });
+  const literal = (value: any) => ({ type: 'text', params: [value] });
 
   return {
     name: '트릭 테스트',
@@ -174,7 +175,7 @@ function trickProject() {
 
 test('모양/소리 값에 진짜 엔트리 id 를 그대로 박아 넣은 트릭은 이름으로 되돌린다', () => {
   const result = decompileProject(trickProject(), []);
-  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
 
   assert.match(fragment, /^ {2}play sound "효과음"$/m);
   assert.match(fragment, /^ {2}costume = "점프"$/m);
@@ -211,15 +212,15 @@ test('되돌린 트릭 코드도 다시 정상적으로 컴파일된다', () => 
 // ---------------------------------------------------------------------------
 // 엔트리는 같은 순번을 문자열로도 숫자로도 담아 둔다 — text 블록 안이라도 그렇다.
 const NUMBER_VALUES = [
-  ['number 블록', (value) => ({ type: 'number', params: [value] })],
-  ['text 블록', (value) => ({ type: 'text', params: [value] })],
-  ['text 블록 · 숫자', (value) => ({ type: 'text', params: [Number(value)] })],
-  ['number 블록 · 숫자', (value) => ({ type: 'number', params: [Number(value)] })],
-  ['맨 문자열', (value) => value],
-  ['맨 숫자', (value) => Number(value)],
+  ['number 블록', (value: any) => ({ type: 'number', params: [value] })],
+  ['text 블록', (value: any) => ({ type: 'text', params: [value] })],
+  ['text 블록 · 숫자', (value: any) => ({ type: 'text', params: [Number(value)] })],
+  ['number 블록 · 숫자', (value: any) => ({ type: 'number', params: [Number(value)] })],
+  ['맨 문자열', (value: any) => value],
+  ['맨 숫자', (value: any) => Number(value)],
 ];
 
-function nthResourceProject(numberValue) {
+function nthResourceProject(numberValue: any) {
   const startHat = () => ({ type: 'when_run_button_click', params: [null], statements: [] });
 
   return {
@@ -257,7 +258,7 @@ function nthResourceProject(numberValue) {
 for (const [label, numberValue] of NUMBER_VALUES) {
   test(`모양·소리 순번(${label})은 문자열이 아니라 숫자로 되돌아온다`, () => {
     const result = decompileProject(nthResourceProject(numberValue), []);
-    const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+    const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
 
     assert.match(fragment, /^ {2}costume = 1$/m);
     assert.match(fragment, /^ {2}play sound 1$/m);
@@ -280,8 +281,8 @@ for (const [label, numberValue] of NUMBER_VALUES) {
     const recompiled = compileProject(fs.readFileSync(mainFile, 'utf-8'), { path: mainFile, assetDirs: [dir] });
     assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
 
-    const thread = JSON.parse(recompiled.project.objects[0].script)[0];
-    const shape = thread.find((b) => b.type === 'change_to_some_shape');
+    const thread = JSON.parse(recompiled.project!.objects[0].script)[0];
+    const shape = thread.find((b: any) => b.type === 'change_to_some_shape');
     assert.equal(shape.params[0].type, 'number');
     assert.deepEqual(shape.params[0].params, ['1']);
   });
@@ -290,7 +291,7 @@ for (const [label, numberValue] of NUMBER_VALUES) {
 // 다시 적으면 글자가 달라지는 숫자는 이름으로 찾을 때 어긋날 수 있어서 문자열로 둔다.
 test('"01" 처럼 다시 적으면 달라지는 값은 숫자로 바꾸지 않는다', () => {
   const result = decompileProject(nthResourceProject(() => ({ type: 'text', params: ['01'] })), []);
-  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
 
   assert.match(fragment, /^ {2}costume = "01"$/m);
 });
@@ -320,10 +321,10 @@ end`;
   const compiled = compileProject(source, { path: 'x.tess' });
   assert.deepEqual(compiled.errors, []);
 
-  const decompiled = decompileProject(compiled.project, []);
+  const decompiled = decompileProject(compiled.project!, []);
   assert.deepEqual(decompiled.warnings, []);
 
-  const fragment = decompiled.assets.find((a) => a.path === 'objects/o.tess').data.toString('utf-8');
+  const fragment = decompiled.assets.find((a) => a.path === 'objects/o.tess')!.data.toString('utf-8');
   assert.doesNotMatch(fragment, /\[decompile/);
   assert.match(fragment, /^ {2}이름 = costume\("다른"\)$/m);
   assert.match(fragment, /^ {2}번호 = costume_number\("다른"\)$/m);
@@ -347,14 +348,14 @@ end`;
 // 모양 자리에 id 가 들어가는 두 가지 모습 — 손으로 박아 넣은 문자열(text 블록)과,
 // 편집기 드롭다운으로 고른 get_pictures 블록. 함수 안에서는 둘 다 똑같이 다뤄야 한다.
 const SHAPE_VALUES = [
-  ['손으로 박아 넣은 id', (value) => ({ type: 'text', params: [value] })],
-  ['드롭다운으로 고른 모양', (value) => ({ type: 'get_pictures', params: [value] })],
+  ['손으로 박아 넣은 id', (value: any) => ({ type: 'text', params: [value] })],
+  ['드롭다운으로 고른 모양', (value: any) => ({ type: 'get_pictures', params: [value] })],
 ];
 
 /** `shared: true` 면 함수가 두 번째 오브젝트의 모양도 건드린다 */
-function hardcodedFunctionProject(shapeValue, { shared = false } = {}) {
+function hardcodedFunctionProject(shapeValue: any, { shared = false } = {}) {
   const startHat = () => ({ type: 'when_run_button_click', params: [null], statements: [] });
-  const sprite = (id, name, pictures) => ({
+  const sprite = (id: string, name: string, pictures: any) => ({
     id,
     name,
     objectType: 'sprite',
@@ -365,7 +366,7 @@ function hardcodedFunctionProject(shapeValue, { shared = false } = {}) {
     sprite: { pictures, sounds: [] },
     script: JSON.stringify([[startHat(), { type: 'func_fn1', params: [null], statements: [] }]]),
   });
-  const picture = (id, name) => ({ id, name, fileurl: null, dimension: { width: 10, height: 10 } });
+  const picture = (id: string, name: string) => ({ id, name, fileurl: null, dimension: { width: 10, height: 10 } });
 
   const body = [{ type: 'change_to_some_shape', params: [shapeValue('qio1'), null], statements: [] }];
   if (shared) body.push({ type: 'change_to_some_shape', params: [shapeValue('zzz1'), null], statements: [] });
@@ -394,7 +395,7 @@ function hardcodedFunctionProject(shapeValue, { shared = false } = {}) {
 }
 
 /** 되돌린 결과를 임시 폴더에 풀고 다시 컴파일한다 */
-function recompileResult(result, prefix) {
+function recompileResult(result: any, prefix: any) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   const mainFile = path.join(dir, 'main.tess');
   fs.writeFileSync(mainFile, result.source);
@@ -414,7 +415,7 @@ for (const [label, shapeValue] of SHAPE_VALUES) {
     // main.tess 에는 더 이상 함수 선언이 없다
     assert.doesNotMatch(result.source, /^function /m);
 
-    const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+    const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
     assert.match(fragment, /^function 점프하기\(\):$/m);
     assert.match(fragment, /^ {2}costume = "점프"$/m); // id 가 아니라 이름으로
     assert.doesNotMatch(fragment, /qio1/); // force id 도, 박아 넣은 id 도 사라진다
@@ -427,12 +428,12 @@ for (const [label, shapeValue] of SHAPE_VALUES) {
     const recompiled = recompileResult(result, 'tess-decompile-owned-');
     assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
 
-    const hero = recompiled.project.objects.find((o) => o.name === '주인공');
-    const jump = hero.sprite.pictures.find((p) => p.name === '점프');
-    const block = JSON.parse(recompiled.project.functions[0].content)[0][0].statements[0][0];
+    const hero = recompiled.project!.objects.find((o) => o.name === '주인공');
+    const jump = hero!.sprite.pictures.find((p) => p.name === '점프');
+    const block = JSON.parse(recompiled.project!.functions[0].content)[0][0].statements[0][0];
     assert.equal(block.type, 'change_to_some_shape');
     assert.equal(block.params[0].type, 'get_pictures');
-    assert.equal(block.params[0].params[0], jump.id);
+    assert.equal(block.params[0].params[0], jump!.id);
   });
 
   test(`두 오브젝트를 건드리는 함수(${label})는 전역에 남고 force id 를 쓴다`, () => {
@@ -443,8 +444,8 @@ for (const [label, shapeValue] of SHAPE_VALUES) {
     assert.match(result.source, /^ {2}costume = "qio1"$/m); // 이름으로 바꾸면 어긋난다
     assert.match(result.source, /^ {2}costume = "zzz1"$/m);
 
-    const hero = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
-    const other = result.assets.find((a) => a.path === 'objects/조연.tess').data.toString('utf-8');
+    const hero = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
+    const other = result.assets.find((a) => a.path === 'objects/조연.tess')!.data.toString('utf-8');
     assert.match(hero, /^costume 점프 "점프\.png" size 10 10 force id "qio1"$/m);
     assert.match(other, /^costume 구르기 "구르기\.png" size 10 10 force id "zzz1"$/m);
     assert.doesNotMatch(hero, /^function /m);
@@ -455,17 +456,17 @@ for (const [label, shapeValue] of SHAPE_VALUES) {
     const recompiled = recompileResult(result, 'tess-decompile-forceid-');
     assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
 
-    const hero = recompiled.project.objects.find((o) => o.name === '주인공');
-    assert.equal(hero.sprite.pictures.find((p) => p.name === '점프').id, 'qio1');
+    const hero = recompiled.project!.objects.find((o) => o.name === '주인공');
+    assert.equal(hero!.sprite.pictures.find((p) => p.name === '점프')!.id, 'qio1');
 
-    const block = JSON.parse(recompiled.project.functions[0].content)[0][0].statements[0][0];
+    const block = JSON.parse(recompiled.project!.functions[0].content)[0][0].statements[0][0];
     assert.equal(block.params[0], 'qio1'); // 함수를 누가 부르든 정확히 그 모양을 가리킨다
   });
 }
 
 // 리소스를 아예 안 건드리는 함수는 어느 오브젝트 것도 아니므로 전역에 남는다.
 test('모양·소리를 안 쓰는 함수는 전역에 그대로 둔다', () => {
-  const project = hardcodedFunctionProject((value) => ({ type: 'text', params: [value] }));
+  const project = hardcodedFunctionProject((value: any) => ({ type: 'text', params: [value] }));
   project.functions[0].content = JSON.stringify([[{
     type: 'function_create',
     params: [{ type: 'function_field_label', params: ['인사하기', null] }],
@@ -474,7 +475,7 @@ test('모양·소리를 안 쓰는 함수는 전역에 그대로 둔다', () => 
 
   const result = decompileProject(project, []);
   assert.match(result.source, /^function 인사하기\(\):$/m);
-  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
   assert.doesNotMatch(fragment, /^function /m);
 });
 
@@ -487,7 +488,7 @@ test('모양·소리를 안 쓰는 함수는 전역에 그대로 둔다', () => 
 //  모양이 통째로 비어 버린다 — 설치된 entryjs 에서 진짜 파일을 꺼내 와야 한다.
 // ---------------------------------------------------------------------------
 function builtinObjectProject() {
-  const media = (file) => `./bower_components/entry-js/images/media/${file}`;
+  const media = (file: string) => `./bower_components/entry-js/images/media/${file}`;
   return {
     name: '엔트리봇 테스트',
     speed: 60,
@@ -518,7 +519,7 @@ function builtinObjectProject() {
 
 test('엔트리 기본 오브젝트의 모양·소리는 entryjs 에서 꺼내 와 assets/ 에 담는다', () => {
   const result = decompileProject(builtinObjectProject(), []);
-  const fragment = result.assets.find((a) => a.path === 'objects/엔트리봇.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/엔트리봇.tess')!.data.toString('utf-8');
 
   // bower_components 경로가 소스에 새어 나오면 안 된다 — 그런 파일은 어디에도 없다
   assert.doesNotMatch(fragment, /bower_components/);
@@ -532,7 +533,7 @@ test('엔트리 기본 오브젝트의 모양·소리는 entryjs 에서 꺼내 �
     const asset = result.assets.find((a) => a.path === relative);
     assert.ok(asset && asset.data.length > 0, `${relative} 의 실제 파일이 담겨 있어야 한다`);
   }
-  assert.match(result.assets.find((a) => a.path === 'assets/image/엔트리봇_엔트리봇_걷기1.svg').data.toString('utf-8'), /<svg/);
+  assert.match(result.assets.find((a) => a.path === 'assets/image/엔트리봇_엔트리봇_걷기1.svg')!.data.toString('utf-8'), /<svg/);
 });
 
 test('되돌린 기본 오브젝트를 다시 컴파일하면 그림 파일에서 잰 원본 크기가 나온다', () => {
@@ -550,7 +551,7 @@ test('되돌린 기본 오브젝트를 다시 컴파일하면 그림 파일에�
   const recompiled = compileProject(fs.readFileSync(mainFile, 'utf-8'), { path: mainFile, assetDirs: [dir] });
   assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
 
-  const sprite = recompiled.project.objects[0].sprite;
+  const sprite = recompiled.project!.objects[0].sprite;
   // 엔트리는 렌더링 크기를 dimension 값 그대로 믿는다 — 파일을 못 찾아 100x100 으로
   // 뭉개지면 안 된다. entrybot1/2.svg 의 viewBox 가 그대로 잡혀야 한다.
   assert.deepEqual(sprite.pictures[0].dimension, { width: 144, height: 246 });
@@ -577,10 +578,10 @@ test('모양 없이 만든 "새 오브젝트"의 _1x1.png 도 꺼내 오고, 선
   project.objects[0].selectedPictureId = 'p1x1';
 
   const result = decompileProject(project, []);
-  const fragment = result.assets.find((a) => a.path === 'objects/새_오브젝트.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/새_오브젝트.tess')!.data.toString('utf-8');
   assert.doesNotMatch(fragment, /bower_components/);
   assert.match(fragment, /^default costume 새그림 "assets\/image\/새_오브젝트_새그림\.png" size 960 540$/m);
-  assert.ok(result.assets.find((a) => a.path === 'assets/image/새_오브젝트_새그림.png')?.data.length > 0);
+  assert.ok(result.assets.find((a) => a.path === 'assets/image/새_오브젝트_새그림.png')?.data.length! > 0);
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-decompile-1x1-'));
   fs.writeFileSync(path.join(dir, 'main.tess'), result.source);
@@ -591,7 +592,7 @@ test('모양 없이 만든 "새 오브젝트"의 _1x1.png 도 꺼내 오고, 선
   }
   const recompiled = compileProject(result.source, { path: path.join(dir, 'main.tess'), assetDirs: [dir] });
   assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
-  assert.deepEqual(recompiled.project.objects[0].sprite.pictures[0].dimension, { width: 960, height: 540 });
+  assert.deepEqual(recompiled.project!.objects[0].sprite.pictures[0].dimension, { width: 960, height: 540 });
 });
 
 // ---------------------------------------------------------------------------
@@ -602,16 +603,16 @@ test('모양 없이 만든 "새 오브젝트"의 _1x1.png 도 꺼내 오고, 선
 //  멈춰 버렸다 — 그 뒤 매개변수를 통째로 잃고, 본문에서 그 매개변수를 가리키는
 //  블록은 전부 '# [decompile]' 자리표시자가 됐다.
 // ---------------------------------------------------------------------------
-const fieldLabel = (text, next) => ({ type: 'function_field_label', params: [text, next] });
-const fieldString = (id, next) => ({
+const fieldLabel = (text: string, next: any) => ({ type: 'function_field_label', params: [text, next] });
+const fieldString = (id: string, next: any) => ({
   type: 'function_field_string', params: [{ type: `stringParam_${id}`, params: [] }, next],
 });
-const fieldBoolean = (id, next) => ({
+const fieldBoolean = (id: string, next: any) => ({
   type: 'function_field_boolean', params: [{ type: `booleanParam_${id}`, params: [null] }, next],
 });
 
 /** 머리 사슬 하나짜리 프로젝트. body 는 함수 본문 블록들 */
-function functionHeadProject(field, body = []) {
+function functionHeadProject(field: any, body: any[] = []): RawEntity {
   return {
     name: '함수 머리 테스트',
     speed: 60,
@@ -627,8 +628,8 @@ function functionHeadProject(field, body = []) {
   };
 }
 
-const declarationOf = (field, body) => decompileProject(functionHeadProject(field, body), [])
-  .source.match(/^function .*/m)[0];
+const declarationOf = (field: any, body?: any[]) => decompileProject(functionHeadProject(field, body), [])
+  .source.match(/^function .*/m)![0];
 
 test('함수 머리의 라벨·판단 칸을 지나서 매개변수를 끝까지 읽는다', () => {
   // 라벨-인수-인수: 맨 앞 라벨만 함수 이름, 인수는 자동 이름
@@ -683,7 +684,7 @@ test('되돌린 함수 머리는 다시 컴파일하면 원래 사슬로 돌아�
   assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
 
   const chain = [];
-  let node = JSON.parse(recompiled.project.functions[0].content)[0][0].params[0];
+  let node = JSON.parse(recompiled.project!.functions[0].content)[0][0].params[0];
   while (node && typeof node === 'object') {
     chain.push(node.type === 'function_field_label' ? `label:${node.params[0]}` : 'param');
     node = node.params[1];
@@ -707,7 +708,7 @@ test('when 본문은 한 단 들여쓰고, 선언 뭉치 뒤에는 두 줄을 �
   // 조각 파일에서는 when 헤더가 0단이라, 예전 들여쓰기 계산(헤더와 같은 단)은
   // 본문을 아예 안 들여썼다 — 되돌린 소스가 사람이 짠 것처럼 보이지 않았다.
   const result = decompileProject(minimalProject(1), []);
-  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
   assert.equal(fragment, 'x = 10\n\n\nwhen start do\n  wait 1\nend\n');
 });
 
@@ -725,7 +726,7 @@ test('파일을 담은 모양·소리는 크기·길이를 적지 않고, 1×1 �
   });
 
   const result = decompileProject(project, []);
-  const fragment = result.assets.find((a) => a.path === 'objects/엔트리봇.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/엔트리봇.tess')!.data.toString('utf-8');
   assert.match(fragment, /^default costume 엔트리봇_걷기1 "assets\/image\/엔트리봇_엔트리봇_걷기1\.svg"$/m);
   assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3" as "강아지 짖는 소리"$/m);
   assert.match(fragment, /^costume 새그림 "assets\/image\/엔트리봇_새그림\.png" size 960 540$/m);
@@ -735,7 +736,7 @@ test('파일을 담은 모양·소리는 크기·길이를 적지 않고, 1×1 �
 // 두고 싶을 때(그림 파일을 못 구했거나, 원본과 픽셀 하나까지 맞춰야 할 때)가 있다.
 test('sizes 옵션을 켜면 모든 모양에 size 가로 세로 를 적는다', () => {
   const result = decompileProject(builtinObjectProject(), [], { sizes: true });
-  const fragment = result.assets.find((a) => a.path === 'objects/엔트리봇.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/엔트리봇.tess')!.data.toString('utf-8');
 
   assert.match(fragment, /^default costume 엔트리봇_걷기1 "assets\/image\/엔트리봇_엔트리봇_걷기1\.svg" size 144 246$/m);
   assert.match(fragment, /^costume 엔트리봇_걷기2 "assets\/image\/엔트리봇_엔트리봇_걷기2\.svg" size 144 246$/m);
@@ -751,7 +752,7 @@ test('sizes 옵션을 켜면 모든 모양에 size 가로 세로 를 적는다',
 //  어림값과 크게 어긋난다(실제 작품에서 65×105 짜리가 95×15 로 납작해졌다).
 //  그래서 글상자만은 `size 가로 세로` 를 늘 적어 둔다.
 // ---------------------------------------------------------------------------
-function textBoxProject(entityExtra = {}) {
+function textBoxProject(entityExtra: RawEntity = {}): RawEntity {
   return {
     name: '글상자 크기 테스트',
     speed: 60,
@@ -780,7 +781,7 @@ function textBoxProject(entityExtra = {}) {
 
 test('글상자는 옵션 없이도 size 가로 세로 를 적는다', () => {
   const result = decompileProject(textBoxProject(), []);
-  const fragment = result.assets.find((a) => a.path === 'objects/안내문.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/안내문.tess')!.data.toString('utf-8');
 
   assert.match(fragment, /^size 65\.49 104\.65$/m);
 });
@@ -800,7 +801,7 @@ test('되돌린 글상자를 다시 컴파일하면 원본 틀 크기가 그대�
   const recompiled = compileProject(fs.readFileSync(mainFile, 'utf-8'), { path: mainFile, assetDirs: [dir] });
   assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
 
-  const { entity } = recompiled.project.objects[0];
+  const { entity } = recompiled.project!.objects[0];
   assert.equal(entity.width, 65.49);
   assert.equal(entity.height, 104.65);
   assert.equal(entity.lineBreak, true);
@@ -816,10 +817,10 @@ test('되돌린 글상자를 다시 컴파일하면 원본 틀 크기가 그대�
 // ---------------------------------------------------------------------------
 function numberShapeProject() {
   const startHat = () => ({ type: 'when_run_button_click', params: [null], statements: [] });
-  const text = (value) => ({ type: 'text', params: [value] });
-  const number = (value) => ({ type: 'number', params: [value] });
-  const compare = (left, op, right) => ({ type: 'boolean_basic_operator', params: [left, op, right] });
-  const calc = (left, op, right) => ({ type: 'calc_basic', params: [left, op, right] });
+  const text = (value: any) => ({ type: 'text', params: [value] });
+  const number = (value: any) => ({ type: 'number', params: [value] });
+  const compare = (left: any, op: any, right: any) => ({ type: 'boolean_basic_operator', params: [left, op, right] });
+  const calc = (left: any, op: any, right: any) => ({ type: 'calc_basic', params: [left, op, right] });
 
   return {
     name: '숫자 모양 테스트',
@@ -873,7 +874,7 @@ function numberShapeProject() {
 
 test('판단값 · 계산식 · 함수 인수 · 순번 안의 숫자는 숫자로 되돌아온다', () => {
   const result = decompileProject(numberShapeProject(), []);
-  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
 
   assert.match(fragment, /^ {2}if \(단계 == 14\):$/m);                 // 판단값
   assert.match(fragment, /^ {2}단계 = \(3 \* \(2 \+ 5\)\)$/m);         // 괄호 친 계산식
@@ -890,11 +891,11 @@ test('숫자로 되돌린 코드는 다시 컴파일해도 값이 그대로다',
   const recompiled = recompileResult(result, 'tess-decompile-number-');
   assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
 
-  const thread = JSON.parse(recompiled.project.objects[0].script)[0];
-  const condition = thread.find((b) => b.type === '_if').params[0];
+  const thread = JSON.parse(recompiled.project!.objects[0].script)[0];
+  const condition = thread.find((b: any) => b.type === '_if').params[0];
   // number 블록이든 text 블록이든 엔트리는 적어 둔 글자를 그대로 돌려준다 — 값이 같아야 한다
   assert.equal(condition.params[2].params[0], '14');
-  const assign = thread.find((b) => b.type === 'set_variable').params[1];
+  const assign = thread.find((b: any) => b.type === 'set_variable').params[1];
   assert.equal(assign.params[0].params[0], '3');
   assert.equal(assign.params[2].params[0].params[0], '2');
 });
@@ -935,19 +936,19 @@ test('소리 길이와 색 고르기 칸을 되돌리고 다시 컴파일한다'
 
   const result = decompileProject(project, []);
   assert.deepEqual([...result.warnings], []);
-  const fragment = result.assets.find((a) => a.path === 'objects/점수판.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/점수판.tess')!.data.toString('utf-8');
   assert.match(fragment, /^ {2}길이 = sound_duration\("점프음"\)$/m);
   assert.match(fragment, /^ {2}font_color = #16d8a3$/m);
   assert.doesNotMatch(fragment, /\[decompile/);
 
   const recompiled = recompileResult(result, 'tess-decompile-sound-');
   assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
-  const thread = JSON.parse(recompiled.project.objects[0].script)[0];
-  const duration = thread.find((b) => b.type === 'set_variable').params[1];
+  const thread = JSON.parse(recompiled.project!.objects[0].script)[0];
+  const duration = thread.find((b: any) => b.type === 'set_variable').params[1];
   assert.equal(duration.type, 'get_sound_duration');
   // 소리 id 는 다시 배정되지만 그 소리를 그대로 가리켜야 한다
-  assert.equal(duration.params[1], recompiled.project.objects[0].sprite.sounds[0].id);
-  assert.equal(thread.find((b) => b.type === 'text_change_font_color').params[0], '#16d8a3');
+  assert.equal(duration.params[1], recompiled.project!.objects[0].sprite.sounds[0].id);
+  assert.equal(thread.find((b: any) => b.type === 'text_change_font_color').params[0], '#16d8a3');
 });
 
 // get_sound_speed 에 대응하는 자리가 없어서 자리표시자로 남았고, 그 자리표시자가
@@ -963,20 +964,20 @@ test('sound_speed 를 되돌리고 다시 컴파일한다', () => {
 
   const result = decompileProject(project, []);
   assert.deepEqual([...result.warnings], []);
-  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
   assert.match(fragment, /^ {2}속도 = sound_speed$/m);
   assert.doesNotMatch(fragment, /\[decompile/);
 
   const recompiled = recompileResult(result, 'tess-decompile-soundspeed-');
   assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
-  const thread = JSON.parse(recompiled.project.objects[0].script)[0];
-  assert.equal(thread.find((b) => b.type === 'set_variable').params[1].type, 'get_sound_speed');
+  const thread = JSON.parse(recompiled.project!.objects[0].script)[0];
+  assert.equal(thread.find((b: any) => b.type === 'set_variable').params[1].type, 'get_sound_speed');
 });
 
 // 이름 맨 앞의 숫자를 지워 버리면 "1.png"·"2.png"·"3.png" 가 죄다 같은 이름이 된 뒤
 // 뒤에 번호가 붙어서, 원본과 짝이 어긋난 채로 되돌아왔다.
 test('숫자로 시작하는 모양 이름도 숫자를 잃지 않는다', () => {
-  const picture = (id, name) => ({ id, name, fileurl: null, dimension: { width: 10, height: 10 } });
+  const picture = (id: string, name: string) => ({ id, name, fileurl: null, dimension: { width: 10, height: 10 } });
   const project = {
     name: 't',
     speed: 60,
@@ -1002,7 +1003,7 @@ test('숫자로 시작하는 모양 이름도 숫자를 잃지 않는다', () =>
   };
 
   const result = decompileProject(project, []);
-  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
   assert.match(fragment, /^default costume costume_3_png /m);
   assert.match(fragment, /^costume costume_1_png /m);
   assert.match(fragment, /^costume costume_2_png /m);
@@ -1019,7 +1020,7 @@ test('숫자로 시작하는 모양 이름도 숫자를 잃지 않는다', () =>
 //  오브젝트가 엉뚱한 데 놓인다 — right_leaning.ent 는 `go 0 0` 하나뿐인데도
 //  중심점 덕분에 엔트리봇이 무대 맨 왼쪽에 선다.
 // ---------------------------------------------------------------------------
-function centerProject(regX, regY) {
+function centerProject(regX: any, regY: any) {
   return {
     name: '중심점 테스트',
     speed: 60,
@@ -1047,13 +1048,13 @@ function centerProject(regX, regY) {
 
 test('옮겨진 중심점은 center 가로 세로 로 되돌아온다', () => {
   const result = decompileProject(centerProject(461.84, 116.7), []);
-  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
   assert.match(fragment, /^center 461\.84 116\.7$/m);
 });
 
 test('중심점이 모양 한가운데면 center 줄을 적지 않는다', () => {
   const result = decompileProject(centerProject(72, 123), []);
-  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
   assert.doesNotMatch(fragment, /^center /m);
 });
 
@@ -1062,7 +1063,7 @@ test('되돌린 중심점을 다시 컴파일하면 regX/regY 가 그대로 나�
   const recompiled = recompileResult(result, 'tess-decompile-center-');
   assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
 
-  const { entity } = recompiled.project.objects[0];
+  const { entity } = recompiled.project!.objects[0];
   assert.equal(entity.regX, 461.84);
   assert.equal(entity.regY, 116.7);
   // 중심점을 안 적었을 때 나오던 기본값(모양 한가운데)이 아니어야 한다
@@ -1072,7 +1073,7 @@ test('되돌린 중심점을 다시 컴파일하면 regX/regY 가 그대로 나�
 test('center 를 안 적으면 모양 한가운데가 기본값이다', () => {
   const result = decompileProject(centerProject(72, 123), []);
   const recompiled = recompileResult(result, 'tess-decompile-center-default-');
-  const { entity } = recompiled.project.objects[0];
+  const { entity } = recompiled.project!.objects[0];
   assert.equal(entity.regX, 72);
   assert.equal(entity.regY, 123);
 });
@@ -1083,7 +1084,7 @@ test('크기를 모르는 글상자는 size 줄을 적지 않는다', () => {
   delete project.objects[0].entity.height;
 
   const result = decompileProject(project, []);
-  const fragment = result.assets.find((a) => a.path === 'objects/안내문.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/안내문.tess')!.data.toString('utf-8');
   assert.doesNotMatch(fragment, /^size /m);
 });
 
@@ -1097,7 +1098,7 @@ test('판단 매개변수는 이름? 로 되돌아오고, 다시 컴파일해도
   const recompiled = compileProject(result.source, { path: 'main.tess' });
   assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
   const chain = [];
-  let node = JSON.parse(recompiled.project.functions[0].content)[0][0].params[0];
+  let node = JSON.parse(recompiled.project!.functions[0].content)[0][0].params[0];
   while (node && typeof node === 'object') {
     chain.push(node.type === 'function_field_label' ? `label:${node.params[0]}` : node.type);
     node = node.params[1];
@@ -1118,7 +1119,7 @@ function samePictureNameProject(sceneCount = 1) {
     ? [{ id: 'scene1', name: '장면 1' }]
     : [{ id: 'scene1', name: '장면 1' }, { id: 'scene2', name: '장면 2' }];
 
-  const object = (id, name, sceneId, fileurl) => ({
+  const object = (id: string, name: string, sceneId: any, fileurl: any) => ({
     id,
     name,
     objectType: 'sprite',
@@ -1150,9 +1151,9 @@ function samePictureNameProject(sceneCount = 1) {
 }
 
 /** project.json 이 가리키는 fileurl 마다 내용이 다른 가짜 tar 항목 */
-const fakeEntries = (project) => (project.objects ?? []).flatMap((object) => [
-  ...(object.sprite.pictures ?? []).map((p) => ({ name: p.fileurl, data: Buffer.from(object.name + ' 그림') })),
-  ...(object.sprite.sounds ?? []).map((s) => ({ name: s.fileurl, data: Buffer.from(object.name + ' 소리') })),
+const fakeEntries = (project: any) => (project.objects ?? []).flatMap((object: any) => [
+  ...(object.sprite.pictures ?? []).map((p: any) => ({ name: p.fileurl, data: Buffer.from(object.name + ' 그림') })),
+  ...(object.sprite.sounds ?? []).map((s: any) => ({ name: s.fileurl, data: Buffer.from(object.name + ' 소리') })),
 ]);
 
 test('모양 이름이 겹쳐도 오브젝트 이름을 붙여서 파일이 안 덮인다', () => {
@@ -1169,7 +1170,7 @@ test('모양 이름이 겹쳐도 오브젝트 이름을 붙여서 파일이 안 
   assert.equal(new Set(contents).size, 2);
 
   // 각 오브젝트 조각 파일도 자기 파일을 가리켜야 한다
-  const chiro = result.assets.find((a) => a.path === 'objects/치로.tess').data.toString('utf-8');
+  const chiro = result.assets.find((a) => a.path === 'objects/치로.tess')!.data.toString('utf-8');
   assert.match(chiro, /"assets\/image\/치로_새그림\.png"/);
 });
 
@@ -1196,7 +1197,7 @@ test('여러 모양이 같은 파일을 쓰면 한 번만 저장한다', () => {
   assert.equal(images.length, 1);
   // 두 조각 파일 모두 그 하나를 가리킨다
   for (const name of ['치로', '엔트리봇']) {
-    const fragment = result.assets.find((a) => a.path === `objects/${name}.tess`).data.toString('utf-8');
+    const fragment = result.assets.find((a) => a.path === `objects/${name}.tess`)!.data.toString('utf-8');
     assert.match(fragment, new RegExp(images[0].path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
 });
@@ -1219,7 +1220,7 @@ test('경로가 그래도 겹치면 뒤에 번호를 붙인다', () => {
 // 뒤 다시 가운데로 옮겨 버려서, 맞춰 놓은 위치가 SVG 에는 남지 않는다.
 
 /** SVG 모양 하나짜리 project. `withPng` 면 엔트리가 같이 저장한 PNG 도 있는 것으로 친다 */
-function svgPictureProject() {
+function svgPictureProject(): RawEntity {
   const project = minimalProject(1);
   project.objects[0].sprite.pictures = [{
     id: 'pic1',
@@ -1233,7 +1234,7 @@ function svgPictureProject() {
   return project;
 }
 
-const svgEntries = (withPng) => [
+const svgEntries = (withPng: any) => [
   { name: 'temp/aa/aa/image/aaaa.svg', data: Buffer.from('<svg viewBox="0 0 1100 670"></svg>') },
   ...(withPng ? [{ name: 'temp/aa/aa/image/aaaa.png', data: Buffer.from('가운데로 안 옮겨진 그림') }] : []),
 ];
@@ -1245,7 +1246,7 @@ test('SVG 모양은 기본적으로 엔트리가 함께 저장한 PNG 로 가져
   assert.deepEqual(images.map((a) => a.path), ['assets/image/주인공_배경.png']);
   assert.equal(images[0].data.toString('utf-8'), '가운데로 안 옮겨진 그림');
 
-  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess').data.toString('utf-8');
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
   assert.match(fragment, /default costume 배경 "assets\/image\/주인공_배경\.png"/);
 });
 
@@ -1268,7 +1269,11 @@ test('함께 저장한 PNG 가 없으면 SVG 를 그대로 가져온다', () => 
 //  함수 지역 변수
 // ---------------------------------------------------------------------------
 /** 지역 변수를 가진 함수 하나짜리 project.json. globals 로 전역 변수도 함께 둔다 */
-function funcLocalProject(localVariables, body, globals = []) {
+function funcLocalProject(
+  localVariables: any[],
+  body: any[],
+  globals: RawEntity[] = [],
+): RawEntity {
   const field = fieldLabel('계산', fieldString('p1', null));
   return {
     name: '지역 변수 테스트',
@@ -1287,8 +1292,8 @@ function funcLocalProject(localVariables, body, globals = []) {
   };
 }
 
-const getLocal = (id) => ({ type: 'get_func_variable', params: [id, null], statements: [] });
-const setLocal = (id, value) => ({
+const getLocal = (id: string) => ({ type: 'get_func_variable', params: [id, null], statements: [] });
+const setLocal = (id: string, value: any) => ({
   type: 'set_func_variable',
   params: [id, { type: 'number', params: [String(value)] }, null],
   statements: [],
@@ -1337,7 +1342,7 @@ test('되돌린 지역 변수는 다시 컴파일해도 함수의 지역 변수�
 
   const recompiled = compileProject(result.source, { path: 'main.tess' });
   assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
-  assert.deepEqual(recompiled.project.functions[0].localVariables.map((v) => v.name), ['누적']);
+  assert.deepEqual(recompiled.project!.functions[0].localVariables.map((v) => v.name), ['누적']);
 });
 
 test('함수 정의 앞에 주석 블록이 놓여 있어도 정의를 찾아낸다', () => {
@@ -1382,8 +1387,8 @@ function namedResourceProject() {
 }
 
 /** 오브젝트 조각 파일 하나의 내용 */
-function fragmentOf(result, name = '주인공') {
-  return result.assets.find((a) => a.path === `objects/${name}.tess`).data.toString('utf-8');
+function fragmentOf(result: any, name = '주인공') {
+  return result.assets.find((a: any) => a.path === `objects/${name}.tess`).data.toString('utf-8');
 }
 
 test('식별자로 적을 수 없는 모양 · 소리 이름은 as 로 남긴다', () => {
@@ -1397,11 +1402,11 @@ test('as 로 남긴 이름은 다시 컴파일해도 그대로 붙는다', () =>
   const recompiled = recompileResult(result, 'tess-decompile-asname-');
   assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
 
-  const object = recompiled.project.objects.find((o) => o.name === '주인공');
-  assert.deepEqual(object.sprite.pictures.map((p) => p.name), ['상호작용1*1']);
-  assert.deepEqual(object.sprite.sounds.map((s) => s.name), ['snd_select.mp3']);
+  const object = recompiled.project!.objects.find((o) => o.name === '주인공');
+  assert.deepEqual(object!.sprite.pictures.map((p) => p.name), ['상호작용1*1']);
+  assert.deepEqual(object!.sprite.sounds.map((s) => s.name), ['snd_select.mp3']);
   // 이름이 하나뿐이라 두 철자가 같은 모양 하나를 가리켜야 한다 — 목록이 늘어나면 안 된다
-  assert.equal(object.sprite.pictures.length, 1);
+  assert.equal(object!.sprite.pictures.length, 1);
 });
 
 test('공유 · 실시간 변수는 shared · realtime 로 적고 그대로 되돌아온다', () => {
@@ -1422,12 +1427,12 @@ test('공유 · 실시간 변수는 shared · realtime 로 적고 그대로 되�
 
   const recompiled = recompileResult(result, 'tess-decompile-cloud-');
   assert.deepEqual(recompiled.errors, []);
-  const list = recompiled.project.variables.find((v) => v.name === '순위(공유)');
-  const variable = recompiled.project.variables.find((v) => v.name === '접속자');
-  assert.equal(list.isCloud, true);
-  assert.equal(list.isRealTime, false);
-  assert.equal(variable.isRealTime, true);
-  assert.equal(variable.isCloud, false);
+  const list = recompiled.project!.variables.find((v) => v.name === '순위(공유)');
+  const variable = recompiled.project!.variables.find((v) => v.name === '접속자');
+  assert.equal(list!.isCloud, true);
+  assert.equal(list!.isRealTime, false);
+  assert.equal(variable!.isRealTime, true);
+  assert.equal(variable!.isCloud, false);
 });
 
 test('공유 · 실시간은 오브젝트 안의 변수에는 붙일 수 없다', () => {
@@ -1496,10 +1501,10 @@ end`;
   const compiled = compileProject(source, { path: 'main.tess' });
   assert.deepEqual(compiled.errors, [], compiled.errors.map((e) => e.message).join('\n'));
 
-  const back = decompileProject(compiled.project, []);
+  const back = decompileProject(compiled.project!, []);
   assert.deepEqual(back.warnings, []);
   assert.match(back.source, /^table 점수표:\n {2}columns "이름", "점수"\n {2}row "철수", 10\nend$/m);
-  const fragment = back.assets.find((a) => a.path === 'objects/o.tess').data.toString('utf-8');
+  const fragment = back.assets.find((a) => a.path === 'objects/o.tess')!.data.toString('utf-8');
   assert.equal(
     fragment.trim(),
     ['when start do', ...body.map((line) => `  ${line}`), 'end'].join('\n'),
@@ -1512,8 +1517,8 @@ test('테이블 선언은 엔트리 project.tables 항목이 된다', () => {
     { path: 'main.tess' },
   );
   assert.deepEqual(errors, []);
-  assert.equal(project.tables.length, 1);
-  const [table] = project.tables;
+  assert.equal(project!.tables.length, 1);
+  const [table] = project!.tables;
   assert.equal(table.name, '점수 표');
   assert.deepEqual(table.fields, ['이름', '점수']);
   assert.deepEqual(table.data, [['철수', '10'], ['영희', '20']]);

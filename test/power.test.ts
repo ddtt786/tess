@@ -10,7 +10,7 @@ import { compileProject } from '@tess/compiler';
 import { verifyEntryProject } from '@tess/compiler';
 
 /** 식 하나를 컴파일해서 블록 트리와 프로젝트를 돌려준다 */
-function build(expression) {
+function build(expression: string) {
   const source = `scene "s":
   object "o":
     when start do
@@ -20,60 +20,64 @@ function build(expression) {
 end`;
   const result = compileProject(source, { path: 'x.tess' });
   assert.deepEqual(result.errors, [], result.errors.map((e) => e.message).join('\n'));
-  return { block: JSON.parse(result.project.objects[0].script)[0][1].params[1], project: result.project };
+  return { block: JSON.parse(result.project!.objects[0]!.script)[0][1].params[1], project: result.project! };
 }
 
 /** 엔트리 값 블록을 그대로 계산한다 (이 식이 쓰는 블록만) */
-function makeRunner(project) {
-  const definitions = new Map(project.functions.map((fn) => [fn.id, JSON.parse(fn.content)[0][0]]));
+function makeRunner(project: any) {
+  const definitions = new Map(project.functions.map((fn: any) => [fn.id, JSON.parse(fn.content)[0][0]]));
 
-  return function run(block, args = {}) {
+  return function run(block: any, args: Record<string, number> = {}): number {
     if (block === null || typeof block !== 'object') return Number(block);
     switch (block.type) {
       case 'number': case 'text':
         return Number(block.params[0]);
       case 'calc_operation': {
         const value = run(block.params[1], args);
-        return { square: value * value, root: Math.sqrt(value), ln: Math.log(value) }[block.params[3]];
+        const ops: Record<string, number> = { square: value * value, root: Math.sqrt(value), ln: Math.log(value) };
+        return ops[block.params[3]]!;
       }
       case 'calc_basic': {
         const left = run(block.params[0], args);
         const right = run(block.params[2], args);
-        return { PLUS: left + right, MINUS: left - right, MULTI: left * right, DIVIDE: left / right }[block.params[1]];
+        const ops: Record<string, number> = {
+          PLUS: left + right, MINUS: left - right, MULTI: left * right, DIVIDE: left / right,
+        };
+        return ops[block.params[1]]!;
       }
       default: {
         if (block.type.startsWith('func_')) {
-          const create = definitions.get(block.type.slice(5));
-          const names = [];
+          const create = definitions.get(block.type.slice(5)) as any;
+          const names: string[] = [];
           let field = create.params[0].params[1];
           while (field) { names.push(field.params[0].type); field = field.params[1]; }
           const inner = Object.fromEntries(names.map((type, i) => [type, run(block.params[i], args)]));
           return run(create.params[3], inner);
         }
-        if (block.type in args) return args[block.type];
+        if (block.type in args) return args[block.type]!;
         throw new Error(`계산할 수 없는 블록: ${block.type}`);
       }
     }
   };
 }
 
-function countBlocks(block) {
+function countBlocks(block: any): number {
   if (!block || typeof block !== 'object') return 0;
-  return 1 + (block.params ?? []).reduce((sum, param) => sum + countBlocks(param), 0);
+  return 1 + (block.params ?? []).reduce((sum: number, param: any) => sum + countBlocks(param), 0);
 }
 
-function value(expression) {
+function value(expression: string) {
   const { block, project } = build(expression);
   assert.deepEqual(verifyEntryProject(project), []);
   return { result: makeRunner(project)(block), blocks: countBlocks(block) };
 }
 
-const exact = (expression, expected) => test(`정확: ${expression}`, () => {
+const exact = (expression: string, expected: number) => test(`정확: ${expression}`, () => {
   const { result } = value(expression);
   assert.equal(result, expected);
 });
 
-const close = (expression, expected, tolerance = 1e-9) => test(`근사: ${expression}`, () => {
+const close = (expression: string, expected: number, tolerance = 1e-9) => test(`근사: ${expression}`, () => {
   const { result } = value(expression);
   const error = Math.abs(result - expected) / Math.abs(expected);
   assert.ok(error < tolerance, `${result} 의 상대오차가 ${error.toExponential(1)} 입니다.`);
@@ -120,8 +124,8 @@ test('다듬기 함수는 작품에 한 번만 생긴다', () => {
   end
 end`;
   const { project } = compileProject(source, { path: 'x.tess' });
-  assert.equal(project.functions.length, 1);
-  assert.deepEqual(verifyEntryProject(project), []);
+  assert.equal(project!.functions.length, 1);
+  assert.deepEqual(verifyEntryProject(project!), []);
 });
 
 test('변수를 밑으로 써도 된다', () => {
@@ -137,7 +141,7 @@ end`;
   const result = compileProject(source, { path: 'x.tess' });
   assert.deepEqual(result.errors, []);
 
-  const thread = JSON.parse(result.project.objects[0].script)[0];
+  const thread = JSON.parse(result.project!.objects[0].script)[0];
   const run = makeRunner(result.project);
   // get_variable 은 27 을 돌려준다고 치고 계산해 본다
   const patched = JSON.parse(JSON.stringify(thread[2].params[1])

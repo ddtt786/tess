@@ -5,7 +5,7 @@
 //    /                 실행 페이지
 //    /project.json     컴파일한 작품 (리소스 링크는 아래 실제 경로를 가리킨다)
 //    /assets/...       모양·소리 파일을 디스크에 있는 그대로
-//    /temp/...         같은 파일을 엔트리가 쓰는 주소로도 (asset-routes.js 참고)
+//    /temp/...         같은 파일을 엔트리가 쓰는 주소로도 (asset-routes.ts 참고)
 //    /<이름>.ent        내려받기용 묶음 — 요청받은 그때 처음 묶는다
 //    /lib/...          @entrylabs/entry 가 설치돼 있으면 그 파일들
 //    /debug-ui.js      디버그 패널 UI (모듈)
@@ -18,11 +18,39 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { stripTypeScriptTypes } from 'node:module';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { playerPage, DEBUG_UI_PATH, PREACT_PATH } from './template.js';
-import { assetRoutes, withServedAssets } from './asset-routes.js';
+import type { AddressInfo } from 'node:net';
+import { playerPage, DEBUG_UI_PATH, PREACT_PATH } from './template.ts';
+import { assetRoutes, withServedAssets } from './asset-routes.ts';
 import { makeEntryBundle } from '@tess/compiler';
+import type { AssetFile, EntryProject, SourceMap } from '@tess/compiler';
+
+/** How `serveProject` should serve one work. */
+export interface ServeOptions {
+  project: EntryProject;
+  assets?: AssetFile[];
+  assetDirs?: string[];
+  name: string;
+  port?: number;
+  cwd?: string;
+  reload?: boolean;
+  sourceMap?: SourceMap;
+  boost?: boolean;
+}
+
+/** The running server, and the handles the CLI drives it with. */
+export interface RunningServer {
+  url: string;
+  runtime: string;
+  close(): Promise<void>;
+  update(next: {
+    project: EntryProject;
+    assets?: AssetFile[];
+    sourceMap?: SourceMap;
+  }): void;
+}
 
 // entryjs 의 tts 읽어주기(block_ai_utilize_tts.js)는 `${Entry.baseUrl}/api/expansionBlock/tts/read.mp3?...`
 // 로 브라우저에서 직접 요청한다. Entry.baseUrl 기본값은 location.origin(우리 서버)이라
@@ -33,7 +61,7 @@ import { makeEntryBundle } from '@tess/compiler';
 // 이라 CORS 문제가 없다.
 const TTS_PROXY_PATH = '/api/expansionBlock/tts/read.mp3';
 
-const MIME = {
+const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
@@ -52,7 +80,14 @@ const MIME = {
 // unpkg 는 문제없이 준다(같은 npm 레지스트리에서 직접 서빙하며 패키지 전체 크기 제한이 없다).
 const CDN = 'https://unpkg.com/@entrylabs/entry@4.0.22';
 
-const DEBUG_UI_FILE = fileURLToPath(new URL('./debug-ui.js', import.meta.url));
+const DEBUG_UI_FILE = fileURLToPath(new URL('./debug-ui.ts', import.meta.url));
+
+// The debug panel is authored in TypeScript but served to a browser, so the
+// annotations are erased on the way out. Stripping replaces types with spaces,
+// keeping every line and column aligned with the source.
+function debugUiScript() {
+  return stripTypeScriptTypes(fs.readFileSync(DEBUG_UI_FILE, 'utf-8'), { mode: 'strip' });
+}
 
 /** `run` 이 기본으로 쓰는 포트 */
 export const DEFAULT_PORT = 2013;
@@ -85,13 +120,11 @@ export function findLocalRuntime(from = process.cwd()) {
  * 리소스는 디스크에 있는 파일을 그대로 내보낸다 — `run` 은 작품을 묶지 않는다.
  * .ent 는 내려받기를 눌렀을 때만 만든다.
  *
- * @param {{project: object, assets: Array, assetDirs?: string[], name: string, port?: number, reload?: boolean, sourceMap?: object, boost?: boolean}} options
- * @returns {Promise<{url: string, close: Function, runtime: string, update: Function}>}
  */
 export function serveProject({
   project, assets = [], assetDirs = [], name, port = DEFAULT_PORT, cwd = process.cwd(),
   reload = true, sourceMap = {}, boost = false,
-}) {
+}: ServeOptions): Promise<RunningServer> {
   const localRuntime = findLocalRuntime(cwd);
   const preactDir = findPreactDir();
   const base = localRuntime ? '/lib' : CDN;
@@ -105,14 +138,14 @@ export function serveProject({
   let currentAssets = assets;
   let currentSourceMap = sourceMap;
   // 주소 -> 실제 파일. 엔트리의 temp/… 주소와 디스크 그대로의 주소를 함께 담는다.
-  let assetFiles = new Map();
+  let assetFiles = new Map<string, string>();
   // fileurl 을 서빙 주소로 바꾼 사본. 내려받는 .ent 는 원본 쪽으로 만든다.
   let servedProject = project;
   // .ent 는 실제로 요청받기 전까지 만들지 않는다.
-  let cachedBundle = null;
-  const reloadClients = new Set();
+  let cachedBundle: Promise<Buffer> | null = null;
+  const reloadClients = new Set<http.ServerResponse>();
 
-  const useAssets = (nextProject, nextAssets) => {
+  const useAssets = (nextProject: EntryProject, nextAssets: AssetFile[]) => {
     const { files, rewrites } = assetRoutes(nextAssets, assetDirs, [`/${entName}`]);
     assetFiles = files;
     servedProject = withServedAssets(nextProject, rewrites);
@@ -124,7 +157,7 @@ export function serveProject({
     const summary = {
       scenes: currentProject.scenes.length,
       objects: currentProject.objects.length,
-      blocks: currentProject.objects.reduce((sum, object) => sum + countBlocks(JSON.parse(object.script)), 0),
+      blocks: currentProject.objects.reduce((sum: number, object) => sum + countBlocks(JSON.parse(object.script)), 0),
     };
     return playerPage({ name, base, mediaBase, summary, entName, reload, boost });
   };
@@ -154,12 +187,12 @@ export function serveProject({
       // 여기서 처음으로 작품을 묶는다 — 내려받기를 누르지 않으면 묶을 일이 없다.
       cachedBundle ??= makeEntryBundle(currentProject, currentAssets);
       return cachedBundle.then(
-        (bytes) => send(response, 200, '.ent', bytes),
-        (error) => send(response, 500, '.html', `<h1>작품을 묶지 못했습니다: ${error.message}</h1>`),
+        (bytes: Buffer) => send(response, 200, '.ent', bytes),
+        (error: Error) => send(response, 500, '.html', `<h1>작품을 묶지 못했습니다: ${error.message}</h1>`),
       );
     }
 
-    if (assetFiles.has(url)) return sendFile(response, assetFiles.get(url));
+    if (assetFiles.has(url)) return sendFile(response, assetFiles.get(url)!);
 
     if (localRuntime && url.startsWith('/lib/')) {
       const target = path.join(localRuntime, url.slice('/lib/'.length));
@@ -167,7 +200,7 @@ export function serveProject({
     }
     if (!localRuntime && boost && url.startsWith('/lib/')) return proxyRuntimeFile(url, response);
 
-    if (url === DEBUG_UI_PATH) return sendFile(response, DEBUG_UI_FILE);
+    if (url === DEBUG_UI_PATH) return send(response, 200, '.js', debugUiScript());
 
     // 디버그 패널 UI 가 import 하는 preact
     if (preactDir && url.startsWith(PREACT_PATH)) {
@@ -178,12 +211,12 @@ export function serveProject({
     return send(response, 404, '.html', '<h1>404</h1>');
   });
 
-  return new Promise((resolve, reject) => {
+  return new Promise<RunningServer>((resolve, reject) => {
     // The default port is a fixed one so the debugger keeps the same origin
     // between runs (devtools state, bookmarks). Fall back to any free port when
     // it is taken rather than refusing to start.
     let retried = port === DEFAULT_PORT;
-    server.on('error', (error) => {
+    server.on('error', (error: NodeJS.ErrnoException) => {
       if (error.code === 'EADDRINUSE' && retried) {
         retried = false;
         console.error(`포트 ${port} 가 이미 쓰이고 있어 비어 있는 포트로 대신 엽니다.`);
@@ -193,7 +226,7 @@ export function serveProject({
       reject(error);
     });
     server.listen(port, '127.0.0.1', () => {
-      const { port: actual } = server.address();
+      const { port: actual } = server.address() as AddressInfo;
       resolve({
         url: `http://127.0.0.1:${actual}/`,
         runtime: localRuntime ? '설치된 @entrylabs/entry' : `CDN ${CDN.replace(/^https:\/\//, '')}`,
@@ -205,7 +238,7 @@ export function serveProject({
           for (const client of reloadClients) client.end();
           reloadClients.clear();
           server.closeAllConnections?.();
-          return new Promise((done) => server.close(done));
+          return new Promise<void>((done) => { server.close(() => done()); });
         },
         /** 다시 컴파일한 작품으로 갈아 끼우고, 열려 있는 브라우저를 새로고침한다 */
         update({ project: nextProject, assets: nextAssets = [], sourceMap: nextSourceMap = {} }) {
@@ -221,9 +254,9 @@ export function serveProject({
 }
 
 /** 브라우저에서 실행하다 난 panic 을 받아서 이 서버를 띄운 터미널에 그대로 찍는다 */
-function receiveLog(request, response) {
+function receiveLog(request: http.IncomingMessage, response: http.ServerResponse) {
   let body = '';
-  request.on('data', (chunk) => {
+  request.on('data', (chunk: Buffer) => {
     body += chunk;
     if (body.length > 1_000_000) request.destroy();
   });
@@ -241,7 +274,7 @@ function receiveLog(request, response) {
 }
 
 /** tts 읽어주기 요청을 playentry.org 로 대신 보내고 mp3 응답을 그대로 돌려준다 (TTS_PROXY_PATH 주석 참고) */
-async function proxyTts(request, response) {
+async function proxyTts(request: http.IncomingMessage, response: http.ServerResponse) {
   const target = `https://playentry.org${request.url}`;
   try {
     const upstream = await fetch(target);
@@ -250,9 +283,9 @@ async function proxyTts(request, response) {
       return;
     }
     response.writeHead(200, { 'content-type': upstream.headers.get('content-type') ?? 'audio/mpeg' });
-    Readable.fromWeb(upstream.body).pipe(response);
+    Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]).pipe(response);
   } catch (error) {
-    send(response, 502, '.html', `<h1>tts 요청을 playentry.org 로 보내지 못했습니다: ${error.message}</h1>`);
+    send(response, 502, '.html', `<h1>tts 요청을 playentry.org 로 보내지 못했습니다: ${(error as Error).message}</h1>`);
   }
 }
 
@@ -264,7 +297,7 @@ async function proxyTts(request, response) {
  * 캔버스가 오염된 것으로 취급돼 `texImage2D` 가 SecurityError 로 막힌다 — 확인
  * 단추 같은 기본 그림이 통째로 안 보이고 그 프레임 렌더가 끊긴다.
  */
-async function proxyRuntimeFile(url, response) {
+async function proxyRuntimeFile(url: string, response: http.ServerResponse) {
   const rest = url.slice('/lib/'.length);
   // 남의 경로로 새어 나가지 않게 한다 — 이 프록시는 그 패키지 안만 내보낸다
   if (rest.split('/').includes('..')) return send(response, 404, '.html', '<h1>404</h1>');
@@ -274,11 +307,11 @@ async function proxyRuntimeFile(url, response) {
     const body = Buffer.from(await upstream.arrayBuffer());
     return send(response, 200, path.extname(rest).toLowerCase(), body);
   } catch (error) {
-    return send(response, 502, '.html', `<h1>실행기 파일을 CDN 에서 받지 못했습니다: ${error.message}</h1>`);
+    return send(response, 502, '.html', `<h1>실행기 파일을 CDN 에서 받지 못했습니다: ${(error as Error).message}</h1>`);
   }
 }
 
-function send(response, status, ext, body) {
+function send(response: http.ServerResponse, status: number, ext: string, body: string | Buffer) {
   response.writeHead(status, {
     'content-type': MIME[ext] ?? 'application/octet-stream',
     // 이 서버는 고칠 때마다 다시 띄우는 개발용이다. 브라우저가 한 번 받아 둔
@@ -288,7 +321,7 @@ function send(response, status, ext, body) {
   response.end(body);
 }
 
-function sendFile(response, file) {
+function sendFile(response: http.ServerResponse, file: string) {
   try {
     send(response, 200, path.extname(file).toLowerCase(), fs.readFileSync(file));
   } catch {
@@ -296,11 +329,11 @@ function sendFile(response, file) {
   }
 }
 
-function safeName(name) {
+function safeName(name: string) {
   return String(name).replace(/[^\p{L}\p{N}._-]+/gu, '_').slice(0, 60) || 'project';
 }
 
-function countBlocks(node) {
+function countBlocks(node: any): number {
   if (Array.isArray(node)) return node.reduce((sum, item) => sum + countBlocks(item), 0);
   if (!node || typeof node !== 'object' || !node.type) return 0;
   return 1 + countBlocks(node.params ?? []) + countBlocks(node.statements ?? []);

@@ -1,40 +1,43 @@
 // ============================================================================
 //  엔트리 문장(statement) 블록 -> Tess 소스 줄
 //
-//  packages/compiler/src/statement.js 의 정확한 대응표를 뒤집는다. 한 스레드(블록
+//  packages/compiler/src/statement.ts 의 정확한 대응표를 뒤집는다. 한 스레드(블록
 //  이어붙임)를 받아서 들여쓰기 없는 텍스트 줄 배열을 돌려준다 — 호출한 쪽이
 //  `indent()` 로 필요한 만큼 들여쓴다. 모르는 블록은 주석으로 남기고 계속
 //  진행한다 (하나 때문에 전체를 못 옮기면 안 되니까).
 // ============================================================================
-import { exprOf } from "./expr.js";
+import { exprOf } from "./expr.ts";
 import {
   tessString,
   tessNumber,
   ownsResource,
   isExactNumber,
   tessLiteral,
-} from "./ident.js";
+} from "./ident.ts";
+import type {
+  DecompileContext, FunctionInfo, RawBlock, ResourceInfo,
+} from './types.ts';
 
-const REVERSE_STOP_TARGET = {
+const REVERSE_STOP_TARGET: Record<string, string> = {
   thisThread: "",
   otherThread: "other",
   thisOnly: "me",
   other_objects: "them",
   all: "all",
 };
-const REVERSE_EFFECT = {
+const REVERSE_EFFECT: Record<string, string> = {
   color: "effect_color",
   brightness: "effect_brightness",
   transparency: "effect_alpha",
 };
-const REVERSE_TEXT_EFFECT = {
+const REVERSE_TEXT_EFFECT: Record<string, string> = {
   fontBold: "text_bold",
   fontItalic: "text_italic",
   underLine: "text_underline",
   strike: "text_strikethrough",
 };
-// set_tts_property 의 코드값 -> packages/compiler/src/statement.js 의 TTS_SPEAKERS/TTS_LEVELS 별명으로
-const REVERSE_TTS_SPEAKER = {
+// set_tts_property 의 코드값 -> packages/compiler/src/statement.ts 의 TTS_SPEAKERS/TTS_LEVELS 별명으로
+const REVERSE_TTS_SPEAKER: Record<string, string> = {
   kyuri: "female",
   jinho: "male",
   hana: "kind",
@@ -48,22 +51,22 @@ const REVERSE_TTS_SPEAKER = {
   nwoof: "doggy",
 };
 
-export function indent(lines) {
+export function indent(lines: string[]): string[] {
   return lines.map((line) => (line === "" ? line : `  ${line}`));
 }
 
 /** 스레드(블록 배열) 하나를 Tess 소스 줄들로 */
-export function blocksToLines(blocks, ctx) {
-  const lines = [];
+export function blocksToLines(blocks: RawBlock[] | undefined, ctx: DecompileContext): string[] {
+  const lines: string[] = [];
   for (const block of blocks ?? []) lines.push(...statementLines(block, ctx));
   return lines;
 }
 
-function branch(block, index, ctx) {
+function branch(block: RawBlock, index: number, ctx: DecompileContext): string[] {
   return indent(blocksToLines(block.statements?.[index] ?? [], ctx));
 }
 
-function unsupported(ctx, block) {
+function unsupported(ctx: DecompileContext, block: RawBlock | undefined): string[] {
   const type = block?.type ?? "(알 수 없음)";
   ctx.warnings.add(`문장 블록 '${type}' 은(는) 아직 옮길 수 없습니다.`);
   const paramsText = JSON.stringify(summarizeParams(block?.params)).slice(
@@ -73,7 +76,7 @@ function unsupported(ctx, block) {
   return [`# [decompile] 지원하지 않는 블록: ${type} params=${paramsText}`];
 }
 
-function summarizeParams(params) {
+function summarizeParams(params: any[] | undefined) {
   return (params ?? []).map((p) => {
     if (p === null || p === undefined) return null;
     if (typeof p !== "object") return p;
@@ -83,7 +86,7 @@ function summarizeParams(params) {
 
 // eslint-disable-next-line complexity
 /** ROW/COL — which way a table block works. */
-function tableLine(property) {
+function tableLine(property: unknown): string {
   return String(property) === 'COL' ? 'column' : 'row';
 }
 
@@ -91,16 +94,16 @@ function tableLine(property) {
  * The `x y` pair of a `go` statement. A name directly followed by `(` reads as
  * a call, which would swallow the y coordinate, so such an x gets parentheses.
  */
-function point(x, y) {
+function point(x: string, y: string): string {
   const looksLikeCall = /[\p{L}\p{N}_]$/u.test(x) && y.startsWith('(');
   return `${looksLikeCall ? `(${x})` : x} ${y}`;
 }
 
-function statementLines(block, ctx) {
+function statementLines(block: any, ctx: DecompileContext): string[] {
   if (!block || typeof block !== "object" || !block.type) return [];
   const p = block.params ?? [];
-  const at = (i) => p[i];
-  const e = (i) => exprOf(at(i), ctx);
+  const at = (i: number) => p[i];
+  const e = (i: number) => exprOf(at(i), ctx);
 
   switch (block.type) {
     // --- 이벤트 hat 블록은 흐름을 만드는 쪽(events.js)이 처리한다.
@@ -267,12 +270,12 @@ function statementLines(block, ctx) {
       return ["flip y"];
     case "change_object_index":
       return [
-        {
+        ({
           FRONT: "order first",
           FORWARD: "order front",
           BACKWARD: "order back",
           BACK: "order last",
-        }[at(0)],
+        } as Record<string, string>)[at(0)]!,
       ];
     case "reset_scale_size":
       return ["reset size"];
@@ -343,11 +346,11 @@ function statementLines(block, ctx) {
 
     // --- 초시계 ---------------------------------------------------------------
     case "choose_project_timer_action": {
-      const action = {
+      const action = ({
         START: "start timer",
         STOP: "stop timer",
         RESET: "reset timer",
-      }[at(1)];
+      } as Record<string, string>)[at(1)];
       return action ? [action] : unsupported(ctx, block);
     }
 
@@ -467,7 +470,7 @@ function statementLines(block, ctx) {
  * 리터럴로 남아 버린다(예전 버그). 리터럴이 아니라 변수·계산식처럼 진짜 계산되는
  * 값이면 ctx 를 받아 exprOf 로 제대로 된 Tess 표현식으로 옮긴다.
  */
-export function colorExpr(value, ctx) {
+export function colorExpr(value: any, ctx?: DecompileContext): string {
   const literal = literalStringOf(value);
   if (literal !== null) {
     if (/^#[0-9a-fA-F]{6}$/.test(literal)) return literal;
@@ -478,7 +481,7 @@ export function colorExpr(value, ctx) {
 }
 
 /** 값 블록(또는 원시값) 하나가 리터럴이면 그 문자열 값을, 계산되는 값이면 null 을 돌려준다 */
-function literalStringOf(value) {
+function literalStringOf(value: any): string | null {
   const raw = literalOf(value);
   return typeof raw === "string" ? raw : null;
 }
@@ -488,7 +491,7 @@ function literalStringOf(value) {
  * Entry stores the same literal as a string or as a number depending on how it
  * was entered — even inside a `text` block — so both come back.
  */
-function literalOf(value) {
+function literalOf(value: any): string | number | null {
   if (typeof value === "string" || typeof value === "number") return value;
   if (
     value &&
@@ -511,13 +514,13 @@ function literalOf(value) {
  * 가리키지 않게 되어 컴파일 에러가 난다 — 그래서 프로젝트에 실제로 있는 id 와
  * 맞는지 먼저 확인해서, 맞으면 get_pictures/get_sounds 와 똑같이 그 이름으로 옮긴다.
  */
-function resourceExpr(value, ctx, byId) {
+function resourceExpr(value: any, ctx: DecompileContext, byId: Map<string, ResourceInfo>): string {
   const raw = literalOf(value);
   const literal = raw === null ? null : String(raw);
   if (literal !== null && byId.has(literal)) {
-    const info = byId.get(literal);
+    const info = byId.get(literal)!;
     // 함수 안에서는 이름으로 바꾸지 않고 id 를 그대로 둔다. 그 모양·소리 선언에
-    // `force id` 가 붙으므로 다시 컴파일해도 같은 id 가 나온다(index.js 참고).
+    // `force id` 가 붙으므로 다시 컴파일해도 같은 id 가 나온다(index.ts 참고).
     // 그 오브젝트가 가진 함수 안이라면 이름이 어느 것을 가리키는지 분명하므로 이름을 쓴다.
     if (ctx.inFunction && !ownsResource(ctx, info)) return tessString(literal);
     return tessString(info.identifier);
@@ -533,16 +536,21 @@ function resourceExpr(value, ctx, byId) {
 /**
  * project.functions[i].content 의 최상위 블록(function_create[_value])을
  * `function 이름(a, b): ... end` 선언으로 바꾼다. 오브젝트 스크립트 안이
- * 아니라 함수 목록을 훑을 때 index.js 가 직접 부른다 — 함수 정의는 언제나
+ * 아니라 함수 목록을 훑을 때 index.ts 가 직접 부른다 — 함수 정의는 언제나
  * 이 자리에만 있고, 이름·매개변수 이름은 이미 ctx.functionsById 에 있다.
  */
-export function functionDeclarationLines(fn, createBlock, ctx, ownerId = null) {
+export function functionDeclarationLines(
+  fn: FunctionInfo,
+  createBlock: RawBlock,
+  ctx: DecompileContext,
+  ownerId: string | null = null,
+): string[] {
   const p = createBlock.params ?? [];
   const isValue = createBlock.type === "function_create_value";
   // 함수 안에서는 리터럴 모양·소리 id 를 이름으로 되짚지 않는다(resourceExpr) — 함수는
   // 엔트리에서 전역이라 여러 오브젝트가 같이 부를 수 있는데, id 로 하드코딩된 값을
   // "이 오브젝트의 이 이름" 으로 바꿔 버리면 다른 오브젝트가 불렀을 때 어긋난다
-  // (index.js buildContext 의 forcedIds 주석 참고). `ownerId` 가 있으면 이 선언이
+  // (index.ts buildContext 의 forcedIds 주석 참고). `ownerId` 가 있으면 이 선언이
   // 그 오브젝트 조각 파일 안으로 들어가므로, 그 오브젝트 리소스는 이름으로 적는다.
   const previousInFunction = ctx.inFunction;
   const previousOwner = ctx.functionOwnerId;
@@ -569,12 +577,12 @@ export function functionDeclarationLines(fn, createBlock, ctx, ownerId = null) {
   return lines;
 }
 
-function functionCallStatement(block, ctx) {
-  const fn = ctx.functionsById.get(block.type.slice("func_".length));
+function functionCallStatement(block: RawBlock, ctx: DecompileContext): string[] {
+  const fn = ctx.functionsById.get(block.type!.slice("func_".length));
   if (!fn) return unsupported(ctx, block);
   const p = block.params ?? [];
   const args = p
-    .filter((_, i) => i < fn.params.length)
-    .map((param) => exprOf(param, ctx));
+    .filter((_: unknown, i: number) => i < fn.params.length)
+    .map((param: unknown) => exprOf(param, ctx));
   return [`${fn.name}(${args.join(", ")})`];
 }

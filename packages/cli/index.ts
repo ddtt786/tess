@@ -3,9 +3,9 @@
 //
 //  라이브러리:  import { parse, compileProject } from 'tess'
 //  CLI:
-//    node index.js check examples/tour.tess
-//    node index.js build examples/all_blocks.tess -o build/blocks.ent
-//    node index.js build examples/all_blocks.tess -o build/project.json
+//    node index.ts check examples/tour.tess
+//    node index.ts build examples/all_blocks.tess -o build/blocks.ent
+//    node index.ts build examples/all_blocks.tess -o build/project.json
 // ============================================================================
 export {
   parse,
@@ -28,18 +28,37 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import type { CompileCache, CompileOptions, EntryProject } from "@tess/compiler";
+import type { RunningServer } from "@tess/player";
+
+/** Everything the command line can set. */
+interface CliOptions {
+  assets: string[];
+  out?: string;
+  name?: string;
+  port?: number;
+  noOpen?: boolean;
+  noReload?: boolean;
+  boost?: boolean;
+  warnings?: boolean;
+  sizes?: boolean;
+  keepSvg?: boolean;
+  force?: boolean;
+  /** Shared between rebuilds so a watch only re-parses what changed. */
+  cache?: CompileCache;
+}
 import { spawn } from "node:child_process";
 import { parse } from "@tess/parser";
 import { compileProject, createCompileCache, makeEntryBundle } from "@tess/compiler";
 import { serveProject } from "@tess/player";
-import * as out from "./src/output.js";
+import * as out from "./src/output.ts";
 
 const USAGE = `사용법
-  node index.js check      <파일.tess>          문법 · 의미 검사 (컴파일까지 해 본다)
-  node index.js build      <파일.tess> [-o 출력] 엔트리 작품으로 컴파일
-  node index.js run        <파일.tess>          컴파일해서 브라우저로 열기
-  node index.js ast        <파일.tess>          AST 출력
-  node index.js decompile  <파일.ent> [-o 폴더]  이미 있는 엔트리 작품을 Tess 소스로 되돌리기
+  node index.ts check      <파일.tess>          문법 · 의미 검사 (컴파일까지 해 본다)
+  node index.ts build      <파일.tess> [-o 출력] 엔트리 작품으로 컴파일
+  node index.ts run        <파일.tess>          컴파일해서 브라우저로 열기
+  node index.ts ast        <파일.tess>          AST 출력
+  node index.ts decompile  <파일.ent> [-o 폴더]  이미 있는 엔트리 작품을 Tess 소스로 되돌리기
 
 옵션
   -o, --out <경로>   출력 파일/폴더. build 는 확장자가 .json 이면 project.json,
@@ -69,13 +88,13 @@ const USAGE = `사용법
                      저장한 뒤 SVG 를 다시 가운데로 옮겨 버려서, 그림판 크기를 넘는
                      그림을 맞춰 놓은 위치가 SVG 에는 남지 않기 때문이다`;
 
-function parseArgs(argv) {
-  const options = { assets: [] };
-  const rest = [];
+function parseArgs(argv: string[]) {
+  const options: CliOptions = { assets: [] };
+  const rest: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "-o" || arg === "--out") options.out = argv[++i];
-    else if (arg === "--assets") options.assets.push(argv[++i]);
+    else if (arg === "--assets") options.assets.push(argv[++i]!);
     else if (arg === "--name") options.name = argv[++i];
     else if (arg === "--port") options.port = Number(argv[++i]);
     else if (arg === "--no-open") options.noOpen = true;
@@ -85,13 +104,13 @@ function parseArgs(argv) {
     else if (arg === "--sizes") options.sizes = true;
     else if (arg === "--keep-svg") options.keepSvg = true;
     else if (arg === "--force") options.force = true;
-    else rest.push(arg);
+    else rest.push(arg!);
   }
   return { options, rest };
 }
 
 /** build 와 똑같이 끝까지 컴파일해 보고 결과만 버린다. use 로 불러오는 파일까지 검사된다. */
-function runCheck(file, options = { assets: [] }) {
+function runCheck(file: string, options: CliOptions = { assets: [] }): number {
   const source = fs.readFileSync(file, "utf-8");
   const label = path.basename(file);
   const assetDirs = assetDirsFor(file, options);
@@ -116,13 +135,13 @@ function runCheck(file, options = { assets: [] }) {
 }
 
 /** 모양·소리를 찾을 폴더. --assets 가 없으면 소스 파일 옆이다. */
-function assetDirsFor(file, options) {
-  return options.assets?.length > 0
+function assetDirsFor(file: string, options: CliOptions): string[] {
+  return (options.assets?.length ?? 0) > 0
     ? options.assets.map((dir) => path.resolve(dir))
     : [path.dirname(path.resolve(file))];
 }
 
-function runAst(file) {
+function runAst(file: string): number {
   const source = fs.readFileSync(file, "utf-8");
   const result = parse(source);
   if (!result.ok) {
@@ -134,7 +153,7 @@ function runAst(file) {
   return 0;
 }
 
-async function runBuild(file, options) {
+async function runBuild(file: string, options: CliOptions): Promise<number> {
   const source = fs.readFileSync(file, "utf-8");
   const label = path.basename(file);
   const assetDirs = assetDirsFor(file, options);
@@ -169,28 +188,28 @@ async function runBuild(file, options) {
       outPath,
       asJson
         ? JSON.stringify(result.project, null, 2)
-        : await makeEntryBundle(result.project, result.assets),
+        : await makeEntryBundle(result.project!, result.assets),
     );
   } catch (error) {
-    spin.fail(`내보내지 못했습니다: ${error.message}`);
+    spin.fail(`내보내지 못했습니다: ${(error as Error).message}`);
     out.outro(out.red(`${label}: 실패`));
     return 1;
   }
   spin.done(asJson ? "파일 쓰기" : "묶기 · 파일 쓰기");
 
-  const { project } = result;
+  const project = result.project!;
   const blocks = project.objects.reduce(
-    (sum, o) => sum + countBlocks(JSON.parse(o.script)),
+    (sum: number, o) => sum + countBlocks(JSON.parse(o.script)),
     0,
   );
   out.note(
     out.details([
-      ["장면", project.scenes.length],
-      ["오브젝트", project.objects.length],
-      ["변수", project.variables.length],
-      ["신호", project.messages.length],
-      ["함수", project.functions.length],
-      ["블록", blocks],
+      ["장면", String(project.scenes.length)],
+      ["오브젝트", String(project.objects.length)],
+      ["변수", String(project.variables.length)],
+      ["신호", String(project.messages.length)],
+      ["함수", String(project.functions.length)],
+      ["블록", String(blocks)],
     ]),
     "요약",
   );
@@ -199,7 +218,7 @@ async function runBuild(file, options) {
 }
 
 /** 컴파일해서 브라우저에서 열어 본다 */
-async function runProject(file, options) {
+async function runProject(file: string, options: CliOptions): Promise<number | null> {
   const source = fs.readFileSync(file, "utf-8");
   const label = path.basename(file);
   const assetDirs = assetDirsFor(file, options);
@@ -226,10 +245,10 @@ async function runProject(file, options) {
   const reload = !options.noReload;
   const spin = out.working("서버 여는 중");
   const server = await serveProject({
-    project: result.project,
+    project: result.project!,
     assets: result.assets,
     assetDirs,
-    name: result.project.name,
+    name: result.project!.name,
     port: options.port,
     cwd: path.dirname(path.resolve(file)),
     reload,
@@ -239,7 +258,7 @@ async function runProject(file, options) {
 
   spin.done("서버 준비");
 
-  const rows = [
+  const rows: Array<[string, string]> = [
     ["주소", out.cyan(server.url)],
     ["실행기", server.runtime],
     ["새로고침", reload ? "켜짐  " + out.dim("--no-reload 로 끌 수 있습니다") : "꺼짐"],
@@ -271,10 +290,16 @@ async function runProject(file, options) {
  * Rebuilds share one compile cache, so an edit only re-parses the files it
  * touched — the rest of the `use` graph is reused from the previous build.
  */
-function watchAndReload(file, options, assetDirs, label, server) {
+function watchAndReload(
+  file: string,
+  options: CliOptions,
+  assetDirs: string[],
+  label: string,
+  server: RunningServer,
+) {
   const watchDirs = new Set([path.dirname(path.resolve(file)), ...assetDirs]);
   const cache = options.cache ?? createCompileCache();
-  let timer = null;
+  let timer: NodeJS.Timeout | null = null;
 
   const rebuild = () => {
     try {
@@ -297,8 +322,9 @@ function watchAndReload(file, options, assetDirs, label, server) {
         }
         out.log.warn(`--force — 에러 ${result.errors.length}개를 무시하고 그대로 반영합니다.`);
       }
+      // The guard above returned for every case that leaves `project` unset.
       server.update({
-        project: result.project,
+        project: result.project!,
         assets: result.assets,
         sourceMap: result.sourceMap,
       });
@@ -308,18 +334,18 @@ function watchAndReload(file, options, assetDirs, label, server) {
           out.dim(`파일 ${parsed}개 · ${out.duration(Date.now() - started)}`),
       );
     } catch (error) {
-      out.log.error(`다시 불러오기 실패 — ${error.message}`);
+      out.log.error(`다시 불러오기 실패 — ${(error as Error).message}`);
     }
   };
 
   const onChange = () => {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     timer = setTimeout(rebuild, 150);
   };
 
   // Object fragments live under objects/<scene>/, so a non-recursive watch never
   // fires for the files that are edited most.
-  const watchers = [];
+  const watchers: fs.FSWatcher[] = [];
   for (const dir of watchDirs) {
     try {
       watchers.push(fs.watch(dir, { recursive: true }, onChange));
@@ -332,13 +358,13 @@ function watchAndReload(file, options, assetDirs, label, server) {
     }
   }
   return () => {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     watchers.forEach((watcher) => watcher.close());
   };
 }
 
 /** 웹 브라우저로 열기 (열 수 없으면 조용히 넘어간다) */
-function openBrowser(url) {
+function openBrowser(url: string) {
   const command =
     process.platform === "darwin"
       ? "open"
@@ -358,7 +384,7 @@ function openBrowser(url) {
   }
 }
 
-function countBlocks(node) {
+function countBlocks(node: any): number {
   if (Array.isArray(node))
     return node.reduce((sum, item) => sum + countBlocks(item), 0);
   if (!node || typeof node !== "object" || !node.type) return 0;
@@ -368,7 +394,7 @@ function countBlocks(node) {
 }
 
 /** 이미 있는 .ent(엔트리 작품)를 Tess 소스로 되돌린다 */
-async function runDecompile(file, options) {
+async function runDecompile(file: string, options: CliOptions): Promise<number> {
   const { decompileEnt } = await import("@tess/decompiler");
   const label = path.basename(file);
   const bytes = fs.readFileSync(file);
@@ -382,7 +408,7 @@ async function runDecompile(file, options) {
       keepSvg: options.keepSvg,
     });
   } catch (error) {
-    reading.fail(`되돌리기 실패 — ${error.message}`);
+    reading.fail(`되돌리기 실패 — ${(error as Error).message}`);
     out.outro(out.red(`${label}: 실패`));
     return 1;
   }
@@ -404,7 +430,7 @@ async function runDecompile(file, options) {
     asset.path.endsWith(".tess"),
   ).length;
 
-  const rows = [
+  const rows: Array<[string, string]> = [
     ["오브젝트 조각", `${fragmentCount}개`],
     ["모양 · 소리", `${result.assets.length - fragmentCount}개`],
   ];
@@ -435,7 +461,7 @@ async function runDecompile(file, options) {
     else {
       out.log.warn(
         `되돌린 소스에 아직 컴파일 에러가 ${recheck.errors.length}개 있습니다.\n` +
-          out.dim(`node index.js check ${mainFile}`),
+          out.dim(`node index.ts check ${mainFile}`),
       );
     }
   } catch {
@@ -446,13 +472,13 @@ async function runDecompile(file, options) {
   return 0;
 }
 
-async function main(argv) {
+async function main(argv: string[]): Promise<number | null> {
   const { options, rest } = parseArgs(argv);
   // One cache for the whole run: files shared by several inputs are parsed once,
   // and `run` keeps reusing it for every rebuild.
   options.cache = createCompileCache();
   const [first, ...others] = rest;
-  const commands = {
+  const commands: Record<string, (file: string, options: CliOptions) => number | null | Promise<number | null>> = {
     check: runCheck,
     build: runBuild,
     run: runProject,
@@ -460,8 +486,8 @@ async function main(argv) {
     decompile: runDecompile,
   };
 
-  const command = commands[first] ? first : "check";
-  const files = commands[first] ? others : rest;
+  const command = first && commands[first] ? first : "check";
+  const files = first && commands[first] ? others : rest;
 
   if (files.length === 0) {
     console.error(USAGE);
@@ -475,7 +501,7 @@ async function main(argv) {
     if (command !== "decompile" && ext === ".ent") {
       console.error(
         `${path.basename(file)}: .ent 파일은 Tess 소스가 아니라 엔트리 작품입니다.` +
-          ` 'node index.js decompile ${file}' 로 Tess 소스로 되돌려 보세요.`,
+          ` 'node index.ts decompile ${file}' 로 Tess 소스로 되돌려 보세요.`,
       );
       process.exit(2);
     }
@@ -491,11 +517,12 @@ async function main(argv) {
   let failed = 0;
   let keepAlive = false;
   for (const file of files) {
-    const code = await commands[command](file, options);
+    const code = await commands[command]!(file, options);
     if (code === null) keepAlive = true;
     else failed |= code;
   }
   if (!keepAlive) process.exit(failed ? 1 : 0);
+  return null;
 }
 
 if (

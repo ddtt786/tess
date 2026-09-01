@@ -12,6 +12,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import onigurumaModule from 'vscode-oniguruma';
 import textmateModule from 'vscode-textmate';
+import type { IGrammar } from 'vscode-textmate';
 
 // 둘 다 CommonJS 로 나와서 default 로 들어온다
 const oniguruma = onigurumaModule;
@@ -21,7 +22,7 @@ const require = createRequire(import.meta.url);
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const grammarPath = path.join(root, 'editors', 'vscode', 'syntaxes', 'tess.tmLanguage.json');
 
-let grammar;
+let grammar: IGrammar | null;
 
 test.before(async () => {
   const wasm = fs.readFileSync(require.resolve('vscode-oniguruma/release/onig.wasm'));
@@ -41,19 +42,19 @@ test.before(async () => {
 });
 
 /** 한 줄을 토큰으로 쪼개서 [글자, 가장 안쪽 스코프] 목록으로 */
-function tokenize(line) {
-  const { tokens } = grammar.tokenizeLine(line, textmate.INITIAL);
-  return tokens.map((token) => [
+function tokenize(line: string): Array<[string, string]> {
+  const { tokens } = grammar!.tokenizeLine(line, textmate.INITIAL);
+  return tokens.map((token): [string, string] => [
     line.slice(token.startIndex, token.endIndex),
-    token.scopes[token.scopes.length - 1],
+    token.scopes[token.scopes.length - 1]!,
   ]);
 }
 
 /** 그 낱말이 받은 스코프 */
-function scopeOf(line, word) {
+function scopeOf(line: string, word: string): string {
   const found = tokenize(line).find(([text]) => text.trim() === word);
   assert.ok(found, `'${word}' 를 줄에서 찾지 못했습니다: ${line}`);
-  return found[1];
+  return found[1]!;
 }
 
 test('주석과 색상 리터럴을 구분한다', () => {
@@ -115,18 +116,18 @@ test('예제 파일 전체를 토큰으로 쪼갤 수 있다', () => {
   let state = textmate.INITIAL;
   let colored = 0;
   for (const line of source.split('\n')) {
-    const result = grammar.tokenizeLine(line, state);
+    const result = grammar!.tokenizeLine(line, state);
     state = result.ruleStack;
-    colored += result.tokens.filter((token) => token.scopes.length > 1).length;
+    colored += result.tokens.filter((token: any) => token.scopes.length > 1).length;
   }
   assert.ok(colored > 1000, `칠해진 토큰이 ${colored}개뿐입니다.`);
 });
 
 test('문법 파일이 파서의 키워드 목록과 맞춰져 있다', () => {
-  // build-grammar.mjs 를 다시 돌려도 결과가 같아야 한다
+  // build-grammar.ts 를 다시 돌려도 결과가 같아야 한다
   const before = fs.readFileSync(grammarPath, 'utf-8');
   const { execFileSync } = require('node:child_process');
-  execFileSync(process.execPath, [path.join(root, 'editors', 'vscode', 'build-grammar.mjs')], { cwd: root });
+  execFileSync(process.execPath, [path.join(root, 'editors', 'vscode', 'build-grammar.ts')], { cwd: root });
   assert.equal(fs.readFileSync(grammarPath, 'utf-8'), before,
-    'editors/vscode/build-grammar.mjs 를 다시 돌리면 결과가 달라집니다. 문법 파일을 다시 만들어 커밋하세요.');
+    'editors/vscode/build-grammar.ts 를 다시 돌리면 결과가 달라집니다. 문법 파일을 다시 만들어 커밋하세요.');
 });

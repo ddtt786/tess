@@ -6,9 +6,10 @@
   "license": "ISC",
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.js",
-    "tess": "node packages/cli/index.js",
-    "build:grammar": "node editors/vscode/build-grammar.mjs"
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/player/tsconfig.browser.json",
+    "tess": "node packages/cli/index.ts",
+    "build:grammar": "node editors/vscode/build-grammar.ts"
   },
   "devEngines": {
     "packageManager": {
@@ -24,8 +25,12 @@
     "@tess/decompiler": "workspace:*",
     "@tess/parser": "workspace:*",
     "@tess/player": "workspace:*",
+    "@types/babel__code-frame": "^7.27.0",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^26.4.0",
     "jsdom": "^30.0.1",
     "tess": "workspace:*",
+    "typescript": "^7.0.2",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
   }

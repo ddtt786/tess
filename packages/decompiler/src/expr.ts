@@ -1,23 +1,24 @@
 // ============================================================================
 //  엔트리 값(value)/판단(boolean) 블록 -> Tess 표현식 문자열
 //
-//  packages/compiler/src/expression.js 가 Tess 표현식을 엔트리 블록으로 바꾸는 정확한
+//  packages/compiler/src/expression.ts 가 Tess 표현식을 엔트리 블록으로 바꾸는 정확한
 //  대응표를 그대로 뒤집어서 쓴다. 모르는 블록은 죽지 않고 `??("타입", ...)`
 //  형태의 자리표시자를 남기고 ctx.warnings 에 기록한다.
 // ============================================================================
 import { KEY_CODES } from '@tess/core';
-import { tessNumber, tessString, ownsResource, isExactNumber } from './ident.js';
+import { tessNumber, tessString, ownsResource, isExactNumber } from './ident.ts';
 import { expansionBlock } from '@tess/core';
+import type { DecompileContext, RawBlock, ResourceInfo } from './types.ts';
 
-const REVERSE_COMPARE = {
+const REVERSE_COMPARE: Record<string, string> = {
   EQUAL: '==', NOT_EQUAL: '!=', GREATER: '>', LESS: '<', GREATER_OR_EQUAL: '>=', LESS_OR_EQUAL: '<=',
 };
-const REVERSE_ARITHMETIC = { PLUS: '+', MINUS: '-', MULTI: '*', DIVIDE: '/' };
-const TABLE_CALCULATION_NAMES = {
+const REVERSE_ARITHMETIC: Record<string, string> = { PLUS: '+', MINUS: '-', MULTI: '*', DIVIDE: '/' };
+const TABLE_CALCULATION_NAMES: Record<string, string> = {
   SUM: 'sum', AVG: 'average', MAX: 'maximum', MIN: 'minimum',
   STDEV: 'stdev', MEDIAN: 'median',
 };
-const REVERSE_MATH = {
+const REVERSE_MATH: Record<string, string> = {
   sin: 'sin', cos: 'cos', tan: 'tan', asin_radian: 'asin', acos_radian: 'acos', atan_radian: 'atan',
   ln: 'ln', log: 'log10', floor: 'floor', ceil: 'ceil', round: 'round', abs: 'abs',
 };
@@ -25,22 +26,22 @@ const REVERSE_MATH = {
 // "모양 번호"(picture_index)·"모양 이름"(picture_name) 을 갖고 있다(entryjs
 // block_calc.js) — 이 둘이 빠져 있으면 그 값을 쓴 블록이 통째로 옮겨지지 못하고
 // `??("coordinate_object", ...)` 자리표시자로 남는다(예전 버그).
-const REVERSE_PROPERTY_COORD = {
+const REVERSE_PROPERTY_COORD: Record<string, string> = {
   x: 'x', y: 'y', rotation: 'angle', direction: 'way', size: 'size',
   picture_name: 'costume', picture_index: 'costume_number',
 };
-const REVERSE_OBJECT_COORD = { x: 'x', y: 'y', rotation: 'angle', direction: 'way', size: 'size' };
-const REVERSE_DATE_UNITS = {
+const REVERSE_OBJECT_COORD: Record<string, string> = { x: 'x', y: 'y', rotation: 'angle', direction: 'way', size: 'size' };
+const REVERSE_DATE_UNITS: Record<string, string> = {
   YEAR: 'year', MONTH: 'month', DAY: 'day', HOUR: 'hour', MINUTE: 'minute', SECOND: 'second', DAY_OF_WEEK: 'weekday',
 };
-const REVERSE_HEX_CHANNEL = { r: 'red', g: 'green', b: 'blue' };
-const REVERSE_STATE = {
+const REVERSE_HEX_CHANNEL: Record<string, string> = { r: 'red', g: 'green', b: 'blue' };
+const REVERSE_STATE: Record<string, string> = {
   is_clicked: 'mouse_down', is_object_clicked: 'clicked', is_boost_mode: 'boost_mode',
   is_touch_supported: 'touchable', get_user_name: 'user_id', get_nickname: 'nickname',
   get_project_timer_value: 'timer', get_canvas_input_value: 'answer',
 };
 
-const REVERSE_KEY_CODE = {};
+const REVERSE_KEY_CODE: Record<string, string> = {};
 for (const [name, code] of Object.entries(KEY_CODES)) {
   if (!(String(code) in REVERSE_KEY_CODE)) REVERSE_KEY_CODE[String(code)] = name;
 }
@@ -49,43 +50,48 @@ for (const [name, code] of Object.entries(KEY_CODES)) {
 const EMPTY = '0';
 
 /** #RRGGBB 는 Tess 색 리터럴로 그대로, 그 밖은 문자열로 */
-export function colorLiteral(raw) {
+export function colorLiteral(raw: string): string {
   if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw;
   if (raw === 'transparent') return 'transparent';
   return tessString(raw);
 }
 
-function targetName(ctx, raw) {
+function targetName(ctx: DecompileContext, raw: unknown): string {
   if (raw === 'self' || raw === 'mouse') return raw;
   if (typeof raw === 'string' && raw.startsWith('wall')) return raw;
-  const object = ctx.objectsById.get(raw);
-  return object ? object.identifier : raw;
+  const object = ctx.objectsById.get(raw as string);
+  return object ? object.identifier : String(raw);
 }
 
 /**
  * 편집기 목록에서 고른 모양·소리를 옮긴다. 함수 안에서는 이름 대신 id 를 남긴다 —
- * 함수는 전역이라 어느 오브젝트가 부를지 모르기 때문 (decompiler/index.js 참고).
+ * 함수는 전역이라 어느 오브젝트가 부를지 모르기 때문 (decompiler/index.ts 참고).
  */
-function resourceRef(ctx, id, byId, nameOf) {
+function resourceRef(
+  ctx: DecompileContext,
+  id: string,
+  byId: Map<string, ResourceInfo>,
+  nameOf: (id: string) => string,
+): string {
   if (ctx.inFunction && byId.has(id) && !ownsResource(ctx, byId.get(id))) return tessString(id);
   return tessString(nameOf(id));
 }
 
-function placeholder(ctx, block) {
+function placeholder(ctx: DecompileContext, block: RawBlock | undefined): string {
   const type = block?.type ?? '(빈 슬롯)';
   ctx.warnings.add(`값 블록 '${type}' 은(는) 아직 옮길 수 없습니다.`);
   return `"[decompile: ${type}]"`;
 }
 
 /** 값 또는 판단 블록 하나를 Tess 표현식 문자열로 */
-export function exprOf(block, ctx) {
+export function exprOf(block: any, ctx: DecompileContext): string {
   if (block === null || block === undefined) return EMPTY;
   if (typeof block === 'string') return tessString(block);
   if (typeof block === 'number') return tessNumber(block);
   if (typeof block !== 'object' || !block.type) return EMPTY;
 
   const p = block.params ?? [];
-  const at = (i) => p[i];
+  const at = (i: number) => p[i];
 
   switch (block.type) {
     // 엔트리의 number·text 블록은 둘 다 적어 둔 글자를 그대로 돌려주는 같은 원시
@@ -247,7 +253,8 @@ export function exprOf(block, ctx) {
       if (block.type.startsWith('func_')) {
         const fn = ctx.functionsById.get(block.type.slice('func_'.length));
         if (fn) {
-          const args = p.filter((_, i) => i < fn.params.length).map((param) => exprOf(param, ctx));
+          const args = p.filter((_: unknown, i: number) => i < fn.params.length)
+            .map((param: unknown) => exprOf(param, ctx));
           return `${fn.name}(${args.join(', ')})`;
         }
       }

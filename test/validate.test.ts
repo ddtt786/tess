@@ -3,8 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parse } from '@tess/parser';
 
-const messages = (source) => parse(source).errors.map((e) => e.message);
-const warnings = (source) => parse(source).warnings.map((w) => w.message);
+const messages = (source: string) => parse(source).errors.map((e) => e.message);
+const warnings = (source: string) => parse(source).warnings.map((w) => w.message);
 
 test('8.5 글상자 전용 명령은 object 에서 쓸 수 없다', () => {
   const errors = messages(`object "o":
@@ -260,6 +260,6 @@ test('문법 에러도 같은 형태로 돌려준다', () => {
   assert.equal(typeof result.errors[0].line, 'number');
   assert.equal(typeof result.errors[0].column, 'number');
   // detail 은 문제가 난 줄을 짚어 주는 코드 프레임이다
-  assert.match(result.errors[0].detail, /^\s*2 \|\s+when start do$/m);
-  assert.match(result.errors[0].detail, /\^/);
+  assert.match(result.errors[0]!.detail!, /^\s*2 \|\s+when start do$/m);
+  assert.match(result.errors[0]!.detail!, /\^/);
 });

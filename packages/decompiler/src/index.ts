@@ -9,14 +9,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readTar } from './tar.js';
+import { readTar } from './tar.ts';
 import { findLocalRuntime } from '@tess/player';
-import { safeIdentifier, tessString, tessNumber, tessLiteral } from './ident.js';
+import { safeIdentifier, tessString, tessNumber, tessLiteral } from './ident.ts';
 import { autoParamName } from '@tess/core';
-import { blocksToLines, indent, functionDeclarationLines, colorExpr } from './stmt.js';
+import { blocksToLines, indent, functionDeclarationLines, colorExpr } from './stmt.ts';
 import { KEY_CODES } from '@tess/core';
+import type {
+  CollectedAsset, DecompileContext, DecompileOptions, DecompileResult,
+  FunctionField, FunctionInfo, FunctionLocal, ObjectInfo, RawBlock, RawEntity,
+  ResourceInfo, TableInfo, TarEntry, VarInfo,
+} from './types.ts';
 
-const REVERSE_KEY_NAME = {};
+const REVERSE_KEY_NAME: Record<string, string> = {};
 for (const [name, code] of Object.entries(KEY_CODES)) {
   if (!(String(code) in REVERSE_KEY_NAME)) REVERSE_KEY_NAME[String(code)] = name;
 }
@@ -38,24 +43,24 @@ const BLANK_IMAGE = /(?:^|\/)images\/_1x1\.png$/;
  * save but re-centres the SVG itself, so the SVG no longer matches either the
  * saved picture or the `dimension` the work renders at.
  */
-function capturedPngFor(fileurl, entriesByPath) {
-  if (!/\.svg$/i.test(fileurl ?? '')) return null;
+function capturedPngFor(fileurl: string | undefined, entriesByPath: Map<string, Buffer>): string | null {
+  if (!fileurl || !/\.svg$/i.test(fileurl)) return null;
   const png = `${fileurl.slice(0, -4)}.png`;
   return entriesByPath.has(png) ? png : null;
 }
 
 /** 엔트리 번들에 들어 있는 기본 리소스의 실제 바이트열. 못 찾으면 null */
-function builtinAssetBytes(fileurl, runtimeDir) {
+function builtinAssetBytes(fileurl: string | undefined, runtimeDir: string | null): Buffer | null {
   const match = BUILTIN_ASSET.exec(fileurl ?? '');
   if (!match || !runtimeDir) return null;
   // 남의 작품에서 온 경로라 패키지 바깥을 가리키면 읽지 않는다
-  if (match[1].split('/').includes('..')) return null;
-  const file = path.join(runtimeDir, match[1]);
+  if (match[1]!.split('/').includes('..')) return null;
+  const file = path.join(runtimeDir, match[1]!);
   return fs.existsSync(file) && fs.statSync(file).isFile() ? fs.readFileSync(file) : null;
 }
 
 /** entryjs 를 작업 폴더에서 먼저 찾고, 없으면 tess 가 설치된 곳에서 찾는다 */
-function findRuntimeDir() {
+function findRuntimeDir(): string | null {
   return findLocalRuntime() ?? findLocalRuntime(path.dirname(fileURLToPath(import.meta.url)));
 }
 
@@ -65,11 +70,11 @@ function findRuntimeDir() {
  * `sizes: true` writes `size W H` on every costume instead of only where the
  * compiler cannot measure the image itself.
  *
- * @param {Buffer} bytes
- * @param {{sizes?: boolean}} [options]
- * @returns {Promise<{source: string, warnings: string[], assets: Array<{path:string, data:Buffer}>, name: string}>}
  */
-export async function decompileEnt(bytes, options = {}) {
+export async function decompileEnt(
+  bytes: Buffer,
+  options: DecompileOptions = {},
+): Promise<DecompileResult> {
   const entries = await readTar(bytes);
   const projectEntry = entries.find((e) => e.name.endsWith('project.json'));
   if (!projectEntry) {
@@ -79,10 +84,14 @@ export async function decompileEnt(bytes, options = {}) {
   return decompileProject(project, entries, options);
 }
 
-export function decompileProject(project, entries, options = {}) {
+export function decompileProject(
+  project: RawEntity,
+  entries: TarEntry[],
+  options: DecompileOptions = {},
+): DecompileResult {
   const ctx = buildContext(project, entries, options);
 
-  const lines = [];
+  const lines: string[] = [];
   // 선언 묶음과 그 뒤의 코드 사이는 두 줄을 띄운다. 선언은 파일 머리말에 가까워서,
   // 한 줄만 띄우면 바로 아래의 project/scene 블록과 한 덩어리처럼 보인다.
   for (const varInfo of ctx.globalVars) lines.push(...declarationLine(varInfo));
@@ -111,7 +120,7 @@ export function decompileProject(project, entries, options = {}) {
       lines.push(...functionDeclarationLines(entry, createBlock, ctx));
       lines.push('');
     } catch (error) {
-      ctx.warnings.add(`함수 '${entry.name}' 을(를) 읽지 못했습니다: ${error.message}`);
+      ctx.warnings.add(`함수 '${entry.name}' 을(를) 읽지 못했습니다: ${(error as Error).message}`);
     }
   }
 
@@ -130,24 +139,31 @@ export function decompileProject(project, entries, options = {}) {
 const ID_HOLDING_BLOCKS = new Set(['text', 'number', 'get_pictures', 'get_sounds']);
 
 /** 블록 트리를 훑으면서, 프로젝트에 실제로 있는 모양·소리 id 와 같은 값을 ctx.forcedIds 에 모은다 */
-function collectHardcodedIds(node, ctx) {
+function collectHardcodedIds(node: unknown, ctx: DecompileContext) {
   for (const id of resourceIdsIn(node, ctx)) ctx.forcedIds.add(id);
 }
 
 /** 블록 트리가 가리키는, 프로젝트에 실제로 있는 모양·소리 id 들 */
-function resourceIdsIn(node, ctx, found = new Set()) {
+function resourceIdsIn(node: unknown, ctx: DecompileContext, found = new Set<string>()): Set<string> {
   if (Array.isArray(node)) {
     node.forEach((child) => resourceIdsIn(child, ctx, found));
     return found;
   }
   if (!node || typeof node !== 'object') return found;
-  if (ID_HOLDING_BLOCKS.has(node.type) && typeof node.params?.[0] === 'string') {
-    const raw = node.params[0];
+  const block = node as RawBlock;
+  if (block.type !== undefined && ID_HOLDING_BLOCKS.has(block.type) && typeof block.params?.[0] === 'string') {
+    const raw = block.params[0];
     if (ctx.picturesById.has(raw) || ctx.soundsById.has(raw)) found.add(raw);
   }
-  for (const param of node.params ?? []) resourceIdsIn(param, ctx, found);
-  for (const branch of node.statements ?? []) resourceIdsIn(branch, ctx, found);
+  for (const param of block.params ?? []) resourceIdsIn(param, ctx, found);
+  for (const branch of block.statements ?? []) resourceIdsIn(branch, ctx, found);
   return found;
+}
+
+/** Variable and list ids found in a block tree, split by which kind wants them. */
+interface VariableIds {
+  variables: Set<string>;
+  lists: Set<string>;
 }
 
 // Where a block keeps the id of the variable or list it works on. Mirrors the
@@ -163,20 +179,27 @@ const LIST_SLOTS = new Map([
 ]);
 
 /** Variable and list ids a block tree reads or writes, split by which kind it wants. */
-function variableIdsIn(node, found = { variables: new Set(), lists: new Set() }) {
+function variableIdsIn(
+  node: unknown,
+  found: VariableIds = { variables: new Set(), lists: new Set() },
+): VariableIds {
   if (Array.isArray(node)) {
     node.forEach((child) => variableIdsIn(child, found));
     return found;
   }
   if (!node || typeof node !== 'object') return found;
-  for (const [slots, bucket] of [[VARIABLE_SLOTS, found.variables], [LIST_SLOTS, found.lists]]) {
-    const index = slots.get(node.type);
+  const block = node as RawBlock;
+  const buckets: Array<[Map<string, number>, Set<string>]> = [
+    [VARIABLE_SLOTS, found.variables], [LIST_SLOTS, found.lists],
+  ];
+  for (const [slots, bucket] of buckets) {
+    const index = slots.get(block.type ?? '');
     if (index === undefined) continue;
-    const id = node.params?.[index];
+    const id = block.params?.[index];
     if (typeof id === 'string' && id) bucket.add(id);
   }
-  for (const param of node.params ?? []) variableIdsIn(param, found);
-  for (const branch of node.statements ?? []) variableIdsIn(branch, found);
+  for (const param of block.params ?? []) variableIdsIn(param, found);
+  for (const branch of block.statements ?? []) variableIdsIn(branch, found);
   return found;
 }
 
@@ -186,15 +209,16 @@ function variableIdsIn(node, found = { variables: new Set(), lists: new Set() })
  * deleted while blocks still point at it; without a declaration the source
  * would not compile at all.
  */
-function reviveDanglingVariables(project, ctx, usedNames) {
-  const found = { variables: new Set(), lists: new Set() };
-  const scan = (text) => {
+function reviveDanglingVariables(project: RawEntity, ctx: DecompileContext, usedNames: Set<string>) {
+  const found: VariableIds = { variables: new Set(), lists: new Set() };
+  const scan = (text: string | undefined) => {
     try { variableIdsIn(JSON.parse(text ?? '[]'), found); } catch { /* unreadable script */ }
   };
   for (const object of project.objects ?? []) scan(object.script);
   for (const fn of project.functions ?? []) scan(fn.content);
 
-  for (const [ids, isList] of [[found.variables, false], [found.lists, true]]) {
+  const kinds: Array<[Set<string>, boolean]> = [[found.variables, false], [found.lists, true]];
+  for (const [ids, isList] of kinds) {
     for (const id of ids) {
       if (ctx.varsById.has(id) || ctx.funcLocalsById.has(id)) continue;
       const identifier = safeIdentifier(`_missing_${isList ? 'list' : 'var'}_${id}`, usedNames, 'missing');
@@ -211,14 +235,14 @@ function reviveDanglingVariables(project, ctx, usedNames) {
  * The object id when every costume/sound a function names belongs to one object,
  * else null. A function that names none is left global — nothing ties it down.
  */
-function soleResourceOwner(content, ctx) {
-  const owners = new Set();
+function soleResourceOwner(content: unknown, ctx: DecompileContext): string | null {
+  const owners = new Set<string>();
   for (const id of resourceIdsIn(content, ctx)) {
-    const info = ctx.picturesById.get(id) ?? ctx.soundsById.get(id);
+    const info = (ctx.picturesById.get(id) ?? ctx.soundsById.get(id))!;
     owners.add(info.owner.id);
     if (owners.size > 1) return null;
   }
-  return owners.size === 1 ? [...owners][0] : null;
+  return owners.size === 1 ? [...owners][0]! : null;
 }
 
 /**
@@ -228,9 +252,9 @@ function soleResourceOwner(content, ctx) {
  * always the first: a comment block or a stack the author left detached comes
  * before it whenever it sits higher up in the workspace.
  */
-function functionCreateBlock(content) {
-  for (const thread of content ?? []) {
-    const block = Array.isArray(thread) ? thread[0] : null;
+function functionCreateBlock(content: unknown): RawBlock | null {
+  for (const thread of (content ?? []) as unknown[]) {
+    const block: RawBlock | null = Array.isArray(thread) ? thread[0] : null;
     if (block?.type === 'function_create' || block?.type === 'function_create_value') return block;
   }
   return null;
@@ -241,33 +265,36 @@ function functionCreateBlock(content) {
  * 라벨과 매개변수 칸이 `params[1]` 로 이어진 사슬이고, 라벨이 중간에 끼거나
  * 매개변수가 판단 칸(function_field_boolean)일 수도 있다.
  *
- * @returns {Array<{kind:'label', text:string}|{kind:'param', blockType:string|null, boolean:boolean}>}
  */
-function readFunctionFields(create) {
-  const fields = [];
-  let node = create?.params?.[0];
+function readFunctionFields(create: RawBlock | null): FunctionField[] {
+  const fields: FunctionField[] = [];
+  let node = create?.params?.[0] as RawBlock | undefined;
   while (node && typeof node === 'object') {
     if (node.type === 'function_field_label') {
       fields.push({ kind: 'label', text: String(node.params?.[0] ?? '') });
     } else if (node.type === 'function_field_string' || node.type === 'function_field_boolean') {
       fields.push({
         kind: 'param',
-        blockType: node.params?.[0]?.type ?? null,
+        blockType: (node.params?.[0] as RawBlock | undefined)?.type ?? null,
         boolean: node.type === 'function_field_boolean',
       });
     } else {
       break; // 알 수 없는 마디가 나오면 거기까지만 읽는다
     }
-    node = node.params?.[1];
+    node = node.params?.[1] as RawBlock | undefined;
   }
   return fields;
 }
 
-function buildContext(project, entries, options = {}) {
-  const usedNames = new Set(); // 변수 · 함수 이름은 한 네임스페이스로 합쳐서 절대 안 겹치게 한다
+function buildContext(
+  project: RawEntity,
+  entries: TarEntry[],
+  options: DecompileOptions = {},
+): DecompileContext {
+  const usedNames = new Set<string>(); // 변수 · 함수 이름은 한 네임스페이스로 합쳐서 절대 안 겹치게 한다
   const entriesByPath = new Map(entries.map((e) => [e.name, e.data]));
 
-  const ctx = {
+  const ctx: DecompileContext = {
     warnings: new Set(),
     // Write `size W H` on every costume, not just the ones the compiler cannot measure.
     allSizes: options.sizes === true,
@@ -299,13 +326,13 @@ function buildContext(project, entries, options = {}) {
     inFunction: false,
     // The object that owns the function being written, when it has one.
     functionOwnerId: null,
-    varName(id) {
+    varName(id: string) {
       const info = ctx.varsById.get(id);
       if (info) return info.identifier;
       ctx.warnings.add(`변수/리스트 id '${id}' 를 찾지 못했습니다.`);
       return `_missing_var_${id}`;
     },
-    funcLocalName(id) {
+    funcLocalName(id: string) {
       const info = ctx.funcLocalsById.get(id);
       if (info) return info;
       ctx.warnings.add(`함수 지역변수 id '${id}' 를 찾지 못했습니다.`);
@@ -314,21 +341,21 @@ function buildContext(project, entries, options = {}) {
     // 함수 본문에서 매개변수를 가리키는 블록 타입(stringParam_xxxx / booleanParam_xxxx)
     // -> 그 매개변수의 Tess 이름
     funcParamsByBlockType: new Map(),
-    funcParamName(blockType) {
+    funcParamName(blockType: string) {
       return ctx.funcParamsByBlockType.get(blockType) ?? null;
     },
-    pictureName(id) {
+    pictureName(id: string) {
       const info = ctx.picturesById.get(id);
       return info ? info.identifier : String(id);
     },
-    soundName(id) {
+    soundName(id: string) {
       const info = ctx.soundsById.get(id);
       return info ? info.identifier : String(id);
     },
-    messageName(id) {
+    messageName(id: string) {
       return ctx.messagesById.get(id) ?? String(id);
     },
-    tableName(id) {
+    tableName(id: string) {
       return ctx.tablesById.get(id)?.identifier ?? String(id);
     },
     funcLocalsById: new Map(),
@@ -358,7 +385,7 @@ function buildContext(project, entries, options = {}) {
 
     // 모양·소리 이름은 오브젝트 안에서만 겹치지 않으면 된다. 다른 오브젝트에도 같은
     // 이름이 있을 수 있으므로, 리소스 파일을 저장할 때 쓸 오브젝트 정보를 같이 담아 둔다.
-    const localUsed = new Set();
+    const localUsed = new Set<string>();
     for (const picture of object.sprite?.pictures ?? []) {
       const picId = safeIdentifier(picture.name, localUsed, 'costume');
       ctx.picturesById.set(picture.id, { identifier: picId, source: picture, owner: object });
@@ -384,7 +411,7 @@ function buildContext(project, entries, options = {}) {
     ctx.varsById.set(entry.id, info);
     if (owned) {
       if (!ctx.localVarsByObject.has(entry.object)) ctx.localVarsByObject.set(entry.object, []);
-      ctx.localVarsByObject.get(entry.object).push(info);
+      ctx.localVarsByObject.get(entry.object)!.push(info);
     } else {
       ctx.globalVars.push(info);
     }
@@ -392,17 +419,18 @@ function buildContext(project, entries, options = {}) {
 
   // --- 함수 --------------------------------------------------------------------
   for (const fn of project.functions ?? []) {
-    let fields = [];
+    let fields: FunctionField[] = [];
     try {
       fields = readFunctionFields(functionCreateBlock(JSON.parse(fn.content ?? '[]')));
     } catch { /* 머리를 못 읽어도 id 로 대체해서 계속 진행한다 */ }
 
-    // 맨 앞 라벨만 함수 이름이 된다 (src/function-params.js 참고)
-    const label = fields[0]?.kind === 'label' ? fields[0].text : fn.id;
+    // 맨 앞 라벨만 함수 이름이 된다 (src/function-params.ts 참고)
+    const first = fields[0];
+    const label = first?.kind === 'label' ? first.text : fn.id;
     const identifier = safeIdentifier(label, usedNames, 'func');
 
-    const params = [];
-    const paramNames = new Set();
+    const params: string[] = [];
+    const paramNames = new Set<string>();
     fields.forEach((field, index) => {
       if (field.kind !== 'param') return;
       // 바로 앞에 함수 이름이 아닌 라벨이 있으면, 그 라벨이 이 매개변수의 이름이 된다
@@ -421,8 +449,8 @@ function buildContext(project, entries, options = {}) {
     // resolves a name as parameter -> function local -> global.
     const localUsed = new Set(paramNames);
     for (const info of ctx.globalVars) localUsed.add(info.identifier);
-    const locals = [];
-    for (const local of fn.localVariables ?? []) {
+    const locals: FunctionLocal[] = [];
+    for (const local of (fn.localVariables ?? []) as RawEntity[]) {
       const name = safeIdentifier(local.name, localUsed, 'local');
       ctx.funcLocalsById.set(local.id, name);
       locals.push({ name, value: local.value });
@@ -452,7 +480,7 @@ function buildContext(project, entries, options = {}) {
     if (ownerId && entry && createBlock) {
       ctx.functionOwnerById.set(fn.id, ownerId);
       if (!ctx.functionsByOwner.has(ownerId)) ctx.functionsByOwner.set(ownerId, []);
-      ctx.functionsByOwner.get(ownerId).push({ id: fn.id, entry, createBlock });
+      ctx.functionsByOwner.get(ownerId)!.push({ id: fn.id, entry, createBlock });
       continue;
     }
     collectHardcodedIds(content, ctx);
@@ -462,21 +490,26 @@ function buildContext(project, entries, options = {}) {
   // 모양·소리 이름은 오브젝트마다 따로 붙어서 서로 겹칠 수 있다(특히 "새그림").
   // 파일 이름은 `오브젝트이름_모양이름`, 장면이 여럿이면 장면별 폴더로 나누고,
   // 그래도 겹치면 뒤에 번호를 붙인다.
-  const assetTargets = new Map(); // fileurl -> 저장한 상대 경로
-  const usedAssetPaths = new Set();
+  const assetTargets = new Map<string, string | null>(); // fileurl -> 저장한 상대 경로
+  const usedAssetPaths = new Set<string>();
   const runtimeDir = findRuntimeDir();
 
-  const uniqueAssetPath = (dir, name, ext) => {
+  const uniqueAssetPath = (dir: string, name: string, ext: string) => {
     let candidate = `${dir}/${name}${ext}`;
     for (let n = 2; usedAssetPaths.has(candidate); n += 1) candidate = `${dir}/${name}_${n}${ext}`;
     usedAssetPaths.add(candidate);
     return candidate;
   };
 
-  const registerAsset = (info, kind, ext, fileurl = info.source.fileurl) => {
+  const registerAsset = (
+    info: ResourceInfo,
+    kind: string,
+    ext: string,
+    fileurl: string | undefined = info.source.fileurl,
+  ): string | null => {
     if (!fileurl) return null;
     // 같은 파일을 여러 모양이 함께 쓰면 한 번만 저장하고 같은 경로를 돌려준다.
-    if (assetTargets.has(fileurl)) return assetTargets.get(fileurl);
+    if (assetTargets.has(fileurl)) return assetTargets.get(fileurl)!;
     const data = entriesByPath.get(fileurl) ?? builtinAssetBytes(fileurl, runtimeDir);
     if (!data) return null;
 
@@ -513,15 +546,15 @@ function buildContext(project, entries, options = {}) {
  * The ` as "..."` clause that carries an Entry name the identifier cannot spell.
  * Without it a renamed resource breaks every runtime lookup by name.
  */
-function displayNamePart(identifier, entryName) {
+function displayNamePart(identifier: string, entryName: unknown): string {
   const name = String(entryName ?? '');
   return name && name !== identifier ? ` as ${tessString(name)}` : '';
 }
 
 /** `table 이름: columns ... row ... end` */
-function tableLines(info) {
+function tableLines(info: TableInfo): string[] {
   const table = info.source;
-  const cells = (row) => (row ?? []).map((cell) => tessLiteral(cell)).join(', ');
+  const cells = (row: unknown[] | undefined) => (row ?? []).map((cell) => tessLiteral(cell)).join(', ');
   const lines = [`table ${info.identifier}${displayNamePart(info.identifier, table.name)}:`];
   lines.push(`  columns ${cells(table.fields)}`);
   for (const row of table.data ?? []) lines.push(`  row ${cells(row)}`);
@@ -529,7 +562,7 @@ function tableLines(info) {
   return lines;
 }
 
-function declarationLine(info, indentLevel = 0) {
+function declarationLine(info: VarInfo, indentLevel = 0): string[] {
   const pad = '  '.repeat(indentLevel);
   const source = info.source;
   let scope = '';
@@ -537,7 +570,7 @@ function declarationLine(info, indentLevel = 0) {
   else if (source.isRealTime) scope = 'realtime ';
   const named = displayNamePart(info.identifier, source.name);
   if (info.isList) {
-    const items = (source.array ?? []).map((item) => tessLiteral(item.data));
+    const items = (source.array ?? []).map((item: { data: unknown }) => tessLiteral(item.data));
     return [`${pad}${scope}list ${info.identifier}${named} = [${items.join(', ')}]`];
   }
   return [`${pad}${scope}var ${info.identifier}${named} = ${tessLiteral(source.value)}`];
@@ -546,8 +579,8 @@ function declarationLine(info, indentLevel = 0) {
 // ---------------------------------------------------------------------------
 //  장면
 // ---------------------------------------------------------------------------
-function sceneLines(scene, project, ctx) {
-  const info = ctx.scenesById.get(scene.id);
+function sceneLines(scene: RawEntity, project: RawEntity, ctx: DecompileContext): string[] {
+  const info = ctx.scenesById.get(scene.id)!;
   const lines = [`scene ${tessString(info.identifier)}:`];
   if (info.identifier !== info.displayName) lines.push(`  name ${tessString(info.displayName)}`);
 
@@ -570,8 +603,8 @@ function sceneLines(scene, project, ctx) {
 //  거의 모든 프로젝트가 실제로 장면별로 오브젝트를 관리하므로
 //  objects/장면이름/이름.tess 로 장면마다 폴더를 나눈다(ctx.multiScene).
 // ---------------------------------------------------------------------------
-function useObjectLine(object, ctx, sceneIdentifier) {
-  const info = ctx.objectsById.get(object.id);
+function useObjectLine(object: RawEntity, ctx: DecompileContext, sceneIdentifier: string): string[] {
+  const info = ctx.objectsById.get(object.id)!;
   const isText = object.objectType === 'textBox';
   const dir = ctx.multiScene ? `objects/${sceneIdentifier}` : 'objects';
   const relativePath = `${dir}/${info.identifier}.tess`;
@@ -581,9 +614,9 @@ function useObjectLine(object, ctx, sceneIdentifier) {
 }
 
 /** 조각 파일 하나의 내용 — `object`/`text` 로 감싸지 않은, 들여쓰기 0 부터 시작하는 줄들 */
-function objectFragmentLines(object, ctx, isText) {
-  const info = ctx.objectsById.get(object.id);
-  const lines = [];
+function objectFragmentLines(object: RawEntity, ctx: DecompileContext, isText: boolean): string[] {
+  const info = ctx.objectsById.get(object.id)!;
+  const lines: string[] = [];
 
   if (info.identifier !== info.displayName) lines.push(`name ${tessString(info.displayName)}`);
 
@@ -628,11 +661,11 @@ function objectFragmentLines(object, ctx, isText) {
   }
   if (lines.length) lines.push('', '');
 
-  let threads = [];
+  let threads: RawBlock[][] = [];
   try {
     threads = JSON.parse(object.script ?? '[]');
   } catch (error) {
-    ctx.warnings.add(`오브젝트 '${info.displayName}' 의 스크립트를 읽지 못했습니다: ${error.message}`);
+    ctx.warnings.add(`오브젝트 '${info.displayName}' 의 스크립트를 읽지 못했습니다: ${(error as Error).message}`);
   }
   for (const thread of threads) lines.push(...eventLines(thread, ctx, 0));
 
@@ -653,12 +686,12 @@ function objectFragmentLines(object, ctx, isText) {
  * the same default. Dropping it puts the object somewhere else entirely — in
  * right_leaning.ent the entrybot slides ~200px across the stage.
  */
-function centerLine(object, pad) {
+function centerLine(object: RawEntity, pad: string): string[] {
   const entity = object.entity ?? {};
   if (!Number.isFinite(entity.regX) || !Number.isFinite(entity.regY)) return [];
 
-  const picture = (object.sprite?.pictures ?? []).find((p) => p.id === object.selectedPictureId)
-    ?? (object.sprite?.pictures ?? [])[0];
+  const pictures = (object.sprite?.pictures ?? []) as RawEntity[];
+  const picture = pictures.find((p) => p.id === object.selectedPictureId) ?? pictures[0];
   const width = picture?.dimension?.width ?? 100;
   const height = picture?.dimension?.height ?? 100;
   if (entity.regX === width / 2 && entity.regY === height / 2) return [];
@@ -666,9 +699,9 @@ function centerLine(object, pad) {
   return [`${pad}center ${tessNumber(entity.regX)} ${tessNumber(entity.regY)}`];
 }
 
-function objectPropertyLines(object, isText, indentLevel) {
+function objectPropertyLines(object: RawEntity, isText: boolean, indentLevel: number): string[] {
   const pad = '  '.repeat(indentLevel);
-  const lines = [];
+  const lines: string[] = [];
   const entity = object.entity ?? {};
   if (entity.x) lines.push(`${pad}x = ${tessNumber(entity.x)}`);
   if (entity.y) lines.push(`${pad}y = ${tessNumber(entity.y)}`);
@@ -688,7 +721,7 @@ function objectPropertyLines(object, isText, indentLevel) {
     }
 
     const font = parseFont(entity.font);
-    // 컴파일러의 기본값(packages/compiler/src/index.js buildObject)과 같을 때는 생략한다
+    // 컴파일러의 기본값(packages/compiler/src/index.ts buildObject)과 같을 때는 생략한다
     if (font.family && font.family !== 'Nanum Gothic') lines.push(`${pad}font = ${tessString(font.family)}`);
     if (font.bold) lines.push(`${pad}text_bold = true`);
     if (font.italic) lines.push(`${pad}text_italic = true`);
@@ -697,7 +730,7 @@ function objectPropertyLines(object, isText, indentLevel) {
     if (entity.underLine) lines.push(`${pad}text_underline = true`);
     if (entity.strike) lines.push(`${pad}text_strikethrough = true`);
     if (entity.lineBreak) lines.push(`${pad}line_break = true`);
-    const aligns = { 0: 'center', 1: 'left', 2: 'right' };
+    const aligns: Record<string, string> = { 0: 'center', 1: 'left', 2: 'right' };
     if (entity.textAlign && aligns[entity.textAlign] && entity.textAlign !== 0) {
       lines.push(`${pad}text_align = ${aligns[entity.textAlign]}`);
     }
@@ -706,7 +739,7 @@ function objectPropertyLines(object, isText, indentLevel) {
 }
 
 /** entity.font(`"bold italic 24px D2 Coding"` 형태)를 굵기·기울임·글씨체 이름으로 되짚는다 */
-function parseFont(font) {
+function parseFont(font: unknown) {
   const tokens = String(font ?? '').trim().split(/\s+/);
   let bold = false;
   let italic = false;
@@ -720,13 +753,14 @@ function parseFont(font) {
 // ---------------------------------------------------------------------------
 //  이벤트(hat 블록) -> when ... do
 // ---------------------------------------------------------------------------
-function eventLines(thread, ctx, indentLevel) {
+function eventLines(thread: RawBlock[] | undefined, ctx: DecompileContext, indentLevel: number): string[] {
   if (!thread?.length) return [];
   const [hat, ...rest] = thread;
   const pad = '  '.repeat(indentLevel);
   // 본문은 머리글(when ... do)보다 항상 한 단 더 들여쓴다. 조각 파일에서는 머리글이
   // 0단이라, indentLevel 만큼만 들여쓰던 예전 코드는 본문을 전혀 들여쓰지 않았다.
-  const indentBody = (lines) => Array.from({ length: indentLevel + 1 }).reduce((acc) => indent(acc), lines);
+  const indentBody = (lines: string[]) => Array.from({ length: indentLevel + 1 })
+    .reduce<string[]>((acc) => indent(acc), lines);
 
   const keyUp = matchKeyUpPattern(hat, rest);
   if (keyUp) {
@@ -747,7 +781,7 @@ function eventLines(thread, ctx, indentLevel) {
   // "연결 안 된 상태"를 그대로 지킨다.
   ctx.warnings.add(`연결되지 않은 블록 뭉치(맨 앞이 '${hat?.type}')를 원본처럼 실행되지 않게 주석으로 남겼습니다.`);
   const raw = blocksToLines(thread, ctx); // 맨 앞도 그냥 평범한 블록으로 취급해서 통째로 옮긴다
-  const commented = raw.map((line) => (line.trim() ? `${pad}# ${line}` : ''));
+  const commented = raw.map((line: string) => (line.trim() ? `${pad}# ${line}` : ''));
   return [
     `${pad}# [decompile] 아래는 엔트리 원본에서 어디에도 연결돼 있지 않던 블록입니다 (실행되지 않음):`,
     ...commented,
@@ -755,8 +789,8 @@ function eventLines(thread, ctx, indentLevel) {
   ];
 }
 
-function eventHeader(hat, ctx) {
-  const p = hat?.params ?? [];
+function eventHeader(hat: RawBlock | undefined, ctx: DecompileContext): string | null {
+  const p = (hat?.params ?? []) as any[];
   switch (hat?.type) {
     case 'when_run_button_click': return 'when start';
     case 'when_scene_start': return 'when scene start';
@@ -775,17 +809,19 @@ function eventHeader(hat, ctx) {
 }
 
 /** 컴파일러가 `when key X up` 을 펼쳐 만드는 감시 스크립트를 되짚어 알아본다 */
-function matchKeyUpPattern(hat, rest) {
+function matchKeyUpPattern(hat: RawBlock | undefined, rest: RawBlock[]) {
   if (hat?.type !== 'when_run_button_click') return null;
   if (rest.length !== 1 || rest[0]?.type !== 'repeat_inf') return null;
-  const body = rest[0].statements?.[0] ?? [];
+  const body = rest[0]!.statements?.[0] ?? [];
   if (body.length < 2) return null;
-  const [first, second, ...tail] = body;
+  const [first, second, ...tail] = body as RawBlock[];
   if (first?.type !== 'wait_until_true' || second?.type !== 'wait_until_true') return null;
-  const pressedCode = first.params?.[0]?.type === 'is_press_some_key' ? first.params[0].params?.[0] : null;
-  const notPressed = second.params?.[0];
-  const releasedCode = notPressed?.type === 'boolean_not' && notPressed.params?.[1]?.type === 'is_press_some_key'
-    ? notPressed.params[1].params?.[0]
+  const pressed = first.params?.[0] as RawBlock | undefined;
+  const pressedCode = pressed?.type === 'is_press_some_key' ? pressed.params?.[0] : null;
+  const notPressed = second.params?.[0] as RawBlock | undefined;
+  const negated = notPressed?.params?.[1] as RawBlock | undefined;
+  const releasedCode = notPressed?.type === 'boolean_not' && negated?.type === 'is_press_some_key'
+    ? negated.params?.[0]
     : null;
   if (!pressedCode || pressedCode !== releasedCode) return null;
   const key = REVERSE_KEY_NAME[String(pressedCode)];

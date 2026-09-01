@@ -6,16 +6,35 @@
 // ============================================================================
 import fs from 'node:fs';
 import path from 'node:path';
-import { seedFrom } from './ids.js';
-import { audioDuration } from './audio.js';
+import { seedFrom } from './ids.ts';
+import { audioDuration } from './audio.ts';
+import type { Node } from '@tess/parser';
+import type { Context } from './context.ts';
+import type { EntryAsset } from './types.ts';
+
+/** A picture's or a sound's pixel size. */
+interface Size {
+  width: number;
+  height: number;
+}
+
+/** What a `costume`/`sound` declaration says about the file it names. */
+interface AssetDecl {
+  id: string;
+  file: string;
+  name?: string | null;
+  width?: number | null;
+  height?: number | null;
+  duration?: number | null;
+}
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
-const IMAGE_TYPES = { '.png': 'png', '.jpg': 'jpg', '.jpeg': 'jpg', '.gif': 'gif', '.svg': 'svg', '.bmp': 'bmp' };
+const IMAGE_TYPES: Record<string, string> = { '.png': 'png', '.jpg': 'jpg', '.jpeg': 'jpg', '.gif': 'gif', '.svg': 'svg', '.bmp': 'bmp' };
 const SOUND_TYPES = new Set(['.mp3', '.wav', '.ogg', '.m4a']);
 
 /** 엔트리 리소스 파일명(32자)을 내용/경로에서 결정적으로 만든다 */
-export function assetFilename(key) {
+export function assetFilename(key: string): string {
   let state = seedFrom(key) || 1;
   let name = '';
   for (let i = 0; i < 32; i += 1) {
@@ -25,12 +44,12 @@ export function assetFilename(key) {
   return name;
 }
 
-export function fileUrlFor(kind, filename, ext) {
+export function fileUrlFor(kind: string, filename: string, ext: string): string {
   return `temp/${filename.slice(0, 2)}/${filename.slice(2, 4)}/${kind}/${filename}${ext}`;
 }
 
 /** PNG · JPEG · GIF · SVG 에서 원본 크기를 읽는다. 못 읽으면 null */
-export function imageSize(buffer) {
+export function imageSize(buffer: Buffer): Size | null {
   if (buffer.length >= 24 && buffer.readUInt32BE(0) === 0x89504e47) {
     return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
   }
@@ -65,17 +84,17 @@ export function imageSize(buffer) {
  * 나와야 할 것이 61px 밖에 안 되는 식이다. `width`/`height` 속성을 우선 쓰고, 없으면
  * `viewBox` 의 폭·높이를 쓴다(브라우저가 SVG 고유 크기를 정하는 순서와 같다).
  */
-function svgSize(buffer) {
+function svgSize(buffer: Buffer): Size | null {
   const text = buffer.toString('utf-8');
   const tag = text.match(/<svg\b[^>]*>/i)?.[0];
   if (!tag) return null;
 
-  const length = (attr) => {
+  const length = (attr: string): number | null => {
     const raw = tag.match(new RegExp(`\\b${attr}\\s*=\\s*["']([^"']+)["']`, 'i'))?.[1]?.trim();
     if (!raw) return null;
     const match = raw.match(/^([\d.]+)(px)?$/i); // % 나 다른 단위는 픽셀 크기를 못 정하니 무시한다
-    const value = match && Number(match[1]);
-    return Number.isFinite(value) && value > 0 ? value : null;
+    const value = match ? Number(match[1]) : null;
+    return value !== null && Number.isFinite(value) && value > 0 ? value : null;
   };
 
   const width = length('width');
@@ -85,8 +104,8 @@ function svgSize(buffer) {
   const viewBox = tag.match(/\bviewBox\s*=\s*["']([^"']+)["']/i)?.[1];
   if (viewBox) {
     const parts = viewBox.trim().split(/[\s,]+/).map(Number);
-    if (parts.length === 4 && parts.every(Number.isFinite) && parts[2] > 0 && parts[3] > 0) {
-      return { width: parts[2], height: parts[3] };
+    if (parts.length === 4 && parts.every(Number.isFinite) && parts[2]! > 0 && parts[3]! > 0) {
+      return { width: parts[2]!, height: parts[3]! };
     }
   }
   return null;
@@ -99,7 +118,12 @@ function svgSize(buffer) {
  * 값을 그대로 믿어서, 못 구하면 100×100 · 1초로 굳는다. `size W H`/`for N` 이 우선이다.
  * 파일도 없고 적어 두지도 않았을 때만 경고한다.
  */
-export function makeAsset(kind, { id, file, name, width, height, duration }, ctx, node) {
+export function makeAsset(
+  kind: 'image' | 'sound',
+  { id, file, name, width, height, duration }: AssetDecl,
+  ctx: Context,
+  node: Node,
+): EntryAsset {
   const ext = path.extname(file).toLowerCase();
   const isImage = kind === 'image';
 
@@ -123,7 +147,7 @@ export function makeAsset(kind, { id, file, name, width, height, duration }, ctx
   if (isImage && !size) size = { width: 100, height: 100 };
 
   const filename = assetFilename(`${kind}:${file}:${bytes ? bytes.length : 0}`);
-  const asset = {
+  const asset: EntryAsset = {
     id,
     name: name ?? path.basename(file),
     filename,
@@ -133,7 +157,7 @@ export function makeAsset(kind, { id, file, name, width, height, duration }, ctx
 
   if (isImage) {
     asset.imageType = IMAGE_TYPES[ext] ?? 'png';
-    asset.dimension = { width: size.width, height: size.height };
+    asset.dimension = { width: size!.width, height: size!.height };
     delete asset.ext;
   } else {
     asset.duration = seconds ?? 1;
@@ -144,7 +168,7 @@ export function makeAsset(kind, { id, file, name, width, height, duration }, ctx
 }
 
 /** 소스 파일 옆(또는 --assets 로 지정한 곳)에서 리소스를 찾는다 */
-function findAsset(file, ctx) {
+function findAsset(file: string, ctx: Context): string | null {
   for (const dir of ctx.options.assetDirs ?? []) {
     const candidate = path.resolve(dir, file);
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;

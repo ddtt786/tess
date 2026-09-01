@@ -18,13 +18,13 @@ function compileExample(name = 'examples/all_blocks.tess') {
   return { ...result, assetDirs: [path.dirname(file)] };
 }
 
-async function withServer(options, body) {
+async function withServer(options: any, body: any) {
   const result = compileExample(options.example);
   const server = await serveProject({
     project: result.project,
     assets: result.assets,
     assetDirs: result.assetDirs,
-    name: result.project.name,
+    name: result.project!.name,
     port: 0,
     ...options,
   });
@@ -36,7 +36,7 @@ async function withServer(options, body) {
 }
 
 test('작품과 실행 페이지를 내보낸다', async () => {
-  await withServer({}, async (server, result) => {
+  await withServer({}, async (server: any, result: any) => {
     const page = await (await fetch(server.url)).text();
     assert.match(page, /블록 검증/);
     assert.match(page, /장면 3 · 오브젝트 5 · 블록 \d+/);
@@ -54,7 +54,7 @@ test('실행하기 전에 글상자 폰트를 먼저 내려받는다', async () 
   // 시작하자마자 보이는 글상자가 대체 글꼴로 굳어 버리지 않으려면 Entry.loadProject/
   // toggleRun 으로 블록을 실행하기 '전에' 그 프로젝트가 쓰는 폰트를 전부 미리 내려받아
   // 둬야 한다 — 이 순서가 페이지 스크립트에 실제로 지켜지는지를 검사한다.
-  await withServer({}, async (server) => {
+  await withServer({}, async (server: any) => {
     const page = await (await fetch(server.url)).text();
 
     const preloadCall = page.indexOf('preloadTextFonts(project)');
@@ -74,9 +74,9 @@ test('실행하기 전에 글상자 폰트를 먼저 내려받는다', async () 
 });
 
 test('작품 파일(.ent)을 내려받을 수 있다', async () => {
-  await withServer({}, async (server) => {
+  await withServer({}, async (server: any) => {
     const page = await (await fetch(server.url)).text();
-    const href = page.match(/href="\/([^"]+\.ent)"/)[1];
+    const href = page.match(/href="\/([^"]+\.ent)"/)![1];
     const response = await fetch(server.url + encodeURIComponent(href));
     assert.equal(response.status, 200);
 
@@ -87,10 +87,10 @@ test('작품 파일(.ent)을 내려받을 수 있다', async () => {
 });
 
 test('리소스를 디스크에 있는 그대로의 주소로 내보낸다', async () => {
-  await withServer({ example: 'examples/cat_run.tess' }, async (server, result) => {
+  await withServer({ example: 'examples/cat_run.tess' }, async (server: any, result: any) => {
     const project = await (await fetch(`${server.url}project.json`)).json();
-    const pictures = project.objects.flatMap((object) => object.sprite.pictures);
-    const cat = pictures.find((picture) => picture.fileurl.endsWith('cat_idle.png'));
+    const pictures = project.objects.flatMap((object: any) => object.sprite.pictures);
+    const cat = pictures.find((picture: any) => picture.fileurl.endsWith('cat_idle.png'));
 
     // 엔트리의 temp/<해시> 주소가 아니라 파일이 실제로 있는 경로를 가리킨다
     assert.equal(cat.fileurl, '/cat_idle.png');
@@ -103,7 +103,7 @@ test('리소스를 디스크에 있는 그대로의 주소로 내보낸다', asy
     );
 
     // 엔트리가 쓰던 주소도 그대로 답한다
-    const hashed = result.assets.find((asset) => asset.source.endsWith('cat_idle.png')).target;
+    const hashed = result.assets.find((asset: any) => asset.source.endsWith('cat_idle.png')).target;
     assert.equal((await fetch(`${server.url}${hashed}`)).status, 200);
   });
 });
@@ -129,17 +129,17 @@ test('두 폴더가 같은 이름을 주장하면 어느 쪽도 그 주소를 �
 });
 
 test('없는 주소는 404 를 준다', async () => {
-  await withServer({}, async (server) => {
+  await withServer({}, async (server: any) => {
     assert.equal((await fetch(`${server.url}없는것`)).status, 404);
   });
 });
 
 test('설치된 entryjs 가 없으면 CDN 을 가리킨다', async () => {
-  await withServer({ cwd: os.tmpdir() }, async (server) => {
+  await withServer({ cwd: os.tmpdir() }, async (server: any) => {
     assert.match(server.runtime, /^CDN/);
     const page = await (await fetch(server.url)).text();
     // @entrylabs/entry 본체는 unpkg 에서 받는다 — jsDelivr 는 이 패키지 전체 크기가
-    // 150MB 한도를 넘어 entry.min.js 조차 403 으로 막는다(server.js CDN 상수 주석 참고).
+    // 150MB 한도를 넘어 entry.min.js 조차 403 으로 막는다(server.ts CDN 상수 주석 참고).
     assert.match(page, /unpkg\.com\/@entrylabs\/entry/);
     // 나머지 서드파티 라이브러리(jquery, createjs, @entrylabs/tool ...)는 jsDelivr 에서 받는다
     assert.match(page, /cdn\.jsdelivr\.net/);
@@ -158,7 +158,7 @@ test('설치된 entryjs 가 있으면 그것을 내보낸다', async (t) => {
 
   assert.ok(findLocalRuntime(fake));
 
-  await withServer({ cwd: fake }, async (server) => {
+  await withServer({ cwd: fake }, async (server: any) => {
     assert.match(server.runtime, /^설치된/);
     const page = await (await fetch(server.url)).text();
     assert.match(page, /src="\/lib\/dist\/entry\.min\.js"/);
@@ -177,7 +177,7 @@ test('lib 바깥 파일은 주지 않는다', async (t) => {
   fs.writeFileSync(path.join(fake, 'secret.txt'), '비밀');
   t.after(() => fs.rmSync(fake, { recursive: true, force: true }));
 
-  await withServer({ cwd: fake }, async (server) => {
+  await withServer({ cwd: fake }, async (server: any) => {
     const escaped = await fetch(`${server.url}lib/${encodeURIComponent('../../../secret.txt')}`);
     assert.equal(escaped.status, 404);
   });
@@ -187,7 +187,7 @@ test('엔트리 글꼴 CSS 를 하나씩 <link> 로 직접 붙인다', async () 
   // 묶음 파일 fonts_2023_10.css 는 @font-face 가 아니라 @import 스물두 줄이다.
   // @import 는 그 CSS 를 받아 파싱한 뒤에야 다음 요청이 시작되므로 글꼴이 늦게
   // 도착하고, 그 사이에 preloadTextFonts 가 글꼴을 찾지 못한 채 넘어간다.
-  await withServer({}, async (server) => {
+  await withServer({}, async (server: any) => {
     const page = await (await fetch(server.url)).text();
     const hrefs = [...page.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map((m) => m[1]);
     const fontHrefs = hrefs.filter((href) => href.includes('/uploads/fonts/'));
@@ -207,7 +207,7 @@ test('엔트리 글꼴 CSS 를 하나씩 <link> 로 직접 붙인다', async () 
 test('캔버스 그리기 해상도는 처음 한 번만 정하고, 그 뒤에는 CSS 크기만 바꾼다', async () => {
   // width/height 속성을 바꾸면 그리던 내용이 지워지고 stage 변환도 어긋나므로,
   // 창 크기가 바뀔 때는 CSS 크기만 건드려야 한다.
-  await withServer({}, async (server) => {
+  await withServer({}, async (server: any) => {
     const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
 
     assert.match(ui, /const setCanvasResolution = \(\) => \{/);
@@ -225,7 +225,7 @@ test('캔버스 그리기 해상도는 처음 한 번만 정하고, 그 뒤에�
 test('물어보기 입력창을 캔버스 해상도에 맞춰 키운다', async () => {
   // 엔트리는 입력창을 캔버스 픽셀 좌표에 그대로 그린다(640x360 기준). 우리 캔버스는
   // 그보다 크므로, 그 배율만큼 같이 키우지 않으면 왼쪽 위에 작게 그려진다.
-  await withServer({}, async (server) => {
+  await withServer({}, async (server: any) => {
     const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
 
     assert.match(ui, /const ENTRY_BUFFER_WIDTH = 640;/);
@@ -243,7 +243,7 @@ test('물어보기 입력창을 캔버스 해상도에 맞춰 키운다', async 
 test('무대 배치가 바뀌면 엔트리가 캐시한 캔버스 위치를 새로 잰다', async () => {
   // 엔트리는 창 크기가 바뀔 때만 _boundRect 를 다시 재므로, 디버그 패널이 무대를
   // 밀어내면 마우스 좌표 블록이 옛날 위치로 계산한다.
-  await withServer({}, async (server) => {
+  await withServer({}, async (server: any) => {
     const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
 
     assert.match(ui, /const refreshBoundRect = \(\) => \{/);
@@ -257,14 +257,14 @@ test('무대 배치가 바뀌면 엔트리가 캐시한 캔버스 위치를 새�
 });
 
 test('디버그 UI 와 preact 를 모듈로 내보낸다', async () => {
-  await withServer({}, async (server) => {
+  await withServer({}, async (server: any) => {
     const page = await (await fetch(server.url)).text();
     assert.match(page, /<script type="module" src="\/debug-ui\.js"><\/script>/);
 
     const ui = await fetch(`${server.url}debug-ui.js`);
     assert.equal(ui.status, 200);
     const uiSource = await ui.text();
-    const preactFile = uiSource.match(/from '\/preact\/([^']+)'/)[1];
+    const preactFile = uiSource.match(/from '\/preact\/([^']+)'/)![1];
     assert.equal((await fetch(`${server.url}preact/${preactFile}`)).status, 200);
     // preact 폴더 바깥은 주지 않는다
     const escaped = await fetch(`${server.url}preact/${encodeURIComponent('../../../package.json')}`);
@@ -277,10 +277,10 @@ test('디버그 UI 와 preact 를 모듈로 내보낸다', async () => {
 test('run --boost 는 엔트리를 부스트 모드(WebGL 렌더러)로 띄운다', async () => {
   // 부스트 모드는 엔트리 만들기 화면에서는 못 켜지만, 실행기 자체는 Entry.init 의
   // useWebGL 하나로 그 모드로 돈다(GEHelper.INIT).
-  await withServer({ boost: true }, async (server) => {
+  await withServer({ boost: true }, async (server: any) => {
     assert.match(await (await fetch(server.url)).text(), /useWebGL: true/);
   });
-  await withServer({}, async (server) => {
+  await withServer({}, async (server: any) => {
     assert.match(await (await fetch(server.url)).text(), /useWebGL: false/);
   });
 });
@@ -291,14 +291,14 @@ test('부스트 모드는 실행기가 CDN 이어도 기본 그림을 같은 ori
   // texImage2D 가 SecurityError 로 막히고, 그 프레임이 통째로 안 그려진다.
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-boost-'));
   try {
-    await withServer({ cwd, boost: true }, async (server) => {
+    await withServer({ cwd, boost: true }, async (server: any) => {
       const page = await (await fetch(server.url)).text();
       assert.match(page, /libDir: "\/lib"/);
       // 스크립트는 그대로 CDN 에서 받는다 — 텍스처가 아니라 막힐 일이 없다
       assert.match(page, /src="https:\/\/unpkg\.com\/@entrylabs\/entry@[\d.]+\/dist\/entry\.min\.js"/);
     });
     // 부스트가 아니면 예전처럼 기본 그림도 CDN 에서 바로 받는다
-    await withServer({ cwd }, async (server) => {
+    await withServer({ cwd }, async (server: any) => {
       assert.match(await (await fetch(server.url)).text(), /libDir: "https:\/\/unpkg\.com\//);
     });
   } finally {
@@ -309,7 +309,7 @@ test('부스트 모드는 실행기가 CDN 이어도 기본 그림을 같은 ori
 test('부스트 모드에서는 캔버스 버퍼 대신 렌더러 해상도를 올린다', async () => {
   // PIXI 가 캔버스를 갖고 있어서, 몰래 canvasEl.width 를 바꾸면 화면 한 구석에만 그린다.
   // 해상도를 올리면 무대는 엔트리의 640x360 좌표계에 그대로 남는다.
-  await withServer({}, async (server) => {
+  await withServer({}, async (server: any) => {
     const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
     const fn = ui.slice(ui.indexOf('const setCanvasResolution'), ui.indexOf('const refreshBoundRect'));
     assert.match(fn, /renderer\.resolution = bufferW \/ ENTRY_BUFFER_WIDTH;/);
@@ -323,7 +323,7 @@ test('부스트 모드에서 클릭 판정도 올린 해상도를 따라간다',
   // PIXI 의 InteractionManager 는 setTargetElement 때 받은 해상도를 따로 들고 있다가
   // 캔버스 버퍼 좌표를 그 값으로 나눈다(mapPositionToPoint). 렌더러만 올리면 판정은
   // 1 로 남아서, 좌표 표시는 멀쩡한데 실제보다 배율만큼 왼쪽 위를 눌러야 맞는다.
-  await withServer({}, async (server) => {
+  await withServer({}, async (server: any) => {
     const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
     const fn = ui.slice(ui.indexOf('const setCanvasResolution'), ui.indexOf('const refreshBoundRect'));
     assert.match(fn, /interaction\.resolution = renderer\.resolution;/);
@@ -335,7 +335,7 @@ test('부스트 모드에서 클릭 판정도 올린 해상도를 따라간다',
 test('디버그 패널의 부스트 모드 흉내내기는 그대로 남는다', async () => {
   // --boost 로 켠 상태에서 끈 경우를(그 반대도) 테스트할 수 있어야 하므로, 블록이
   // 돌려주는 값을 바꾸는 흉내내기는 실제 렌더러와 따로 논다.
-  await withServer({}, async (server) => {
+  await withServer({}, async (server: any) => {
     const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
     assert.match(ui, /wrap\('is_boost_mode', \(\) => choice\(state\.env\.boost\)\)/);
     assert.match(ui, /'env-boost'/);

@@ -14,6 +14,15 @@
 //  서버가 이미 쓰는 주소와 겹치는 경우)은 엔트리의 원래 주소를 그대로 쓴다.
 // ============================================================================
 import path from 'node:path';
+import type { AssetFile, EntryProject } from '@tess/compiler';
+
+/** Where each asset is served from, and what project.json should point at. */
+export interface AssetRoutes {
+  /** Served url -> the file on disk. */
+  files: Map<string, string>;
+  /** Entry fileurl -> the url project.json should name instead. */
+  rewrites: Map<string, string>;
+}
 
 /** 서버가 직접 답하는 주소 — 리소스가 가져가면 안 된다 */
 const RESERVED = new Set([
@@ -24,7 +33,7 @@ const RESERVED = new Set([
 const RESERVED_PREFIXES = ['/lib/', '/arrow/', '/temp/', '/api/'];
 
 /** 리소스 폴더 기준의 상대 경로. 폴더 밖이면 null */
-function publicPath(source, assetDirs) {
+function publicPath(source: string, assetDirs: string[]): string | null {
   for (const dir of assetDirs) {
     const relative = path.relative(dir, source);
     if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) continue;
@@ -33,33 +42,33 @@ function publicPath(source, assetDirs) {
   return null;
 }
 
-const isReserved = (url, taken) => RESERVED.has(url)
+const isReserved = (url: string, taken: Set<string>) => RESERVED.has(url)
   || taken.has(url)
   || RESERVED_PREFIXES.some((prefix) => url.startsWith(prefix));
 
 /**
- * @param {Array<{source: string, target: string}>} assets
- * @param {string[]} assetDirs 리소스를 찾은 폴더들
- * @param {string[]} taken 서버가 이미 쓰고 있는 주소 (작품 파일 이름 등)
- * @returns {{files: Map<string, string>, rewrites: Map<string, string>}}
- *   files    주소 -> 실제 파일
- *   rewrites 엔트리 fileurl -> project.json 이 대신 가리킬 주소
+ * @param assetDirs 리소스를 찾은 폴더들
+ * @param taken     서버가 이미 쓰고 있는 주소 (작품 파일 이름 등)
  */
-export function assetRoutes(assets, assetDirs = [], taken = []) {
+export function assetRoutes(
+  assets: AssetFile[],
+  assetDirs: string[] = [],
+  taken: string[] = [],
+): AssetRoutes {
   const reserved = new Set(taken);
-  const files = new Map();
+  const files = new Map<string, string>();
   for (const { source, target } of assets) files.set(`/${target}`, source);
 
   // 두 폴더가 같은 이름을 주장하면 어느 쪽도 그 주소를 쓰지 않는다.
-  const claims = new Map();
+  const claims = new Map<string, Set<string>>();
   for (const { source } of assets) {
     const url = publicPath(source, assetDirs);
     if (!url || isReserved(url, reserved)) continue;
     if (!claims.has(url)) claims.set(url, new Set());
-    claims.get(url).add(source);
+    claims.get(url)!.add(source);
   }
 
-  const rewrites = new Map();
+  const rewrites = new Map<string, string>();
   for (const { source, target } of assets) {
     const url = publicPath(source, assetDirs);
     if (!url || claims.get(url)?.size !== 1) continue;
@@ -70,16 +79,16 @@ export function assetRoutes(assets, assetDirs = [], taken = []) {
 }
 
 /** fileurl 을 서빙 주소로 바꾼 작품 사본을 만든다. 원본은 건드리지 않는다. */
-export function withServedAssets(project, rewrites) {
+export function withServedAssets(project: EntryProject, rewrites: Map<string, string>): EntryProject {
   if (rewrites.size === 0) return project;
-  return rewriteUrls(project, rewrites);
+  return rewriteUrls(project, rewrites) as EntryProject;
 }
 
-function rewriteUrls(value, rewrites) {
+function rewriteUrls(value: unknown, rewrites: Map<string, string>): unknown {
   if (Array.isArray(value)) return value.map((item) => rewriteUrls(item, rewrites));
   if (!value || typeof value !== 'object') return value;
 
-  const out = {};
+  const out: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
     out[key] = key === 'fileurl' && typeof item === 'string' && rewrites.has(item)
       ? rewrites.get(item)

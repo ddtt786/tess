@@ -1,5 +1,5 @@
 // ============================================================================
-//  파서의 키워드 목록과 builtins.js 를 읽어 VS Code 문법 강조 파일을 만든다.
+//  파서의 키워드 목록과 builtins.ts 를 읽어 VS Code 문법 강조 파일을 만든다.
 //  (손으로 키워드를 옮겨 적지 않도록 — 언어가 바뀌면 다시 돌리면 된다)
 //
 //  실행:  node editors/vscode/build-grammar.mjs
@@ -16,7 +16,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const keywords = new Set(KEYWORDS);
 
 /** 낱말 경계 (Tess 식별자는 _ 와 한글도 쓴다) */
-const word = (list) => `(?<![A-Za-z0-9_])(?:${[...list].sort((a, b) => b.length - a.length).join('|')})(?![A-Za-z0-9_])`;
+const word = (list: Iterable<string>) => `(?<![A-Za-z0-9_])(?:${[...list].sort((a, b) => b.length - a.length).join('|')})(?![A-Za-z0-9_])`;
 
 const DECLARATION = ['project', 'scene', 'object', 'text', 'function', 'use', 'useobject', 'usetext', 'var', 'list'];
 const CONTROL = ['if', 'else', 'end', 'then', 'do', 'repeat', 'while', 'until', 'forever',

@@ -11,11 +11,11 @@
  * 붙어 있는 두 글자가 바뀐 것(`lenght` <-> `length`)도 한 번으로 센다 — 손으로 칠 때
  * 가장 흔한 실수라, 이걸 두 번으로 세면 정작 찾아 줘야 할 오타를 놓친다.
  */
-export function editDistance(a, b) {
+export function editDistance(a: string, b: string): number {
   if (a === b) return 0;
   const rows = a.length + 1;
   const cols = b.length + 1;
-  const grid = Array.from({ length: rows }, (unused, i) => {
+  const grid = Array.from({ length: rows }, (unused: unknown, i: number) => {
     const row = new Array(cols).fill(0);
     row[0] = i;
     return row;
@@ -39,7 +39,7 @@ export function editDistance(a, b) {
 }
 
 /** 이 길이의 이름에서 오타로 봐 줄 만한 최대 편집 횟수 */
-function tolerance(length) {
+function tolerance(length: number): number {
   if (length <= 3) return 1;
   return length <= 8 ? 2 : 3;
 }
@@ -47,11 +47,10 @@ function tolerance(length) {
 /**
  * 후보 중 가장 가까운 이름. 오타로 보기 어려울 만큼 멀면 null.
  *
- * @param {string} name 사람이 적은 이름
- * @param {Iterable<string>} candidates 실제로 있는 이름들
- * @returns {string|null}
+ * @param name 사람이 적은 이름
+ * @param candidates 실제로 있는 이름들
  */
-export function nearestName(name, candidates) {
+export function nearestName(name: string, candidates: Iterable<string>): string | null {
   if (!name) return null;
   const target = String(name).toLowerCase();
   const limit = tolerance(target.length);
@@ -74,11 +73,8 @@ export function nearestName(name, candidates) {
 /**
  * 메시지 뒤에 그대로 이어 붙일 안내. 가까운 이름이 없으면 빈 글자열이라,
  * 부르는 쪽에서 따로 따지지 않아도 된다.
- *
- * @param {string} name
- * @param {Iterable<string>} candidates
  */
-export function didYouMean(name, candidates) {
+export function didYouMean(name: string, candidates: Iterable<string>): string {
   const found = nearestName(name, candidates);
   return found ? ` 혹시 '${found}' 인가요?` : '';
 }
@@ -89,11 +85,9 @@ export function didYouMean(name, candidates) {
  * 오타로 보이는데 "그 이름으로 새로 등록하세요" 라고 하면 서로 어긋난 말이 된다.
  * 둘 중 도움이 되는 쪽 하나만 낸다.
  *
- * @param {string} name
- * @param {Iterable<string>} candidates
- * @param {string} hint 가까운 이름이 없을 때 낼 안내
+ * @param hint 가까운 이름이 없을 때 낼 안내
  */
-export function orHint(name, candidates, hint) {
+export function orHint(name: string, candidates: Iterable<string>, hint: string): string {
   const found = nearestName(name, candidates);
   return found ? ` 혹시 '${found}' 인가요?` : ` ${hint}`;
 }

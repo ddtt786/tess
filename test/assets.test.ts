@@ -72,7 +72,7 @@ test('실제로 디컴파일한 배경 SVG(새그림1.svg, 800x490)에서도 정
 // ---------------------------------------------------------------------------
 
 /** 재생 길이 2.5초짜리 최소 WAV — 초당 byteRate 바이트 */
-function wavFixture(seconds, byteRate = 88200) {
+function wavFixture(seconds: any, byteRate = 88200) {
   const dataSize = Math.round(seconds * byteRate);
   const header = Buffer.alloc(44);
   header.write('RIFF', 0, 'latin1');
@@ -155,11 +155,11 @@ end`;
 
   const result = compileProject(source, { path: main, assetDirs: [dir] });
   assert.deepEqual(result.warnings, [], result.warnings.map((w) => w.message).join('\n'));
-  assert.equal(result.project.objects[0].sprite.sounds[0].duration, 2.5);
+  assert.equal(result.project!.objects[0].sprite.sounds[0].duration, 2.5);
 
   // 코드에 적어 둔 값이 있으면 그 값이 우선이다 (파일을 아직 안 넣었을 때를 위해서)
   const declared = compileProject(source.replace('"click.wav"', '"click.wav" for 9'), { path: main, assetDirs: [dir] });
-  assert.equal(declared.project.objects[0].sprite.sounds[0].duration, 9);
+  assert.equal(declared.project!.objects[0].sprite.sounds[0].duration, 9);
 
   fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -177,11 +177,11 @@ test('PNG 에서 96x96 안에 맞춘 미리보기를 만든다', async () => {
   assert.ok(thumb, '미리보기를 만들어야 한다');
 
   const size = imageSize(thumb);
-  assert.ok(size.width <= 96 && size.height <= 96, `96 안에 들어와야 한다: ${size.width}x${size.height}`);
-  assert.equal(Math.max(size.width, size.height), 96); // 긴 쪽이 96 에 딱 맞는다
+  assert.ok(size!.width <= 96 && size!.height <= 96, `96 안에 들어와야 한다: ${size!.width}x${size!.height}`);
+  assert.equal(Math.max(size!.width, size!.height), 96); // 긴 쪽이 96 에 딱 맞는다
   // 비율이 유지된다
-  const before = original.width / original.height;
-  const after = size.width / size.height;
+  const before = original!.width / original!.height;
+  const after = size!.width / size!.height;
   assert.ok(Math.abs(before - after) / before < 0.02, `비율이 달라졌다: ${before} -> ${after}`);
   assert.ok(thumb.length < bytes.length, '미리보기가 원본보다 작아야 한다');
 });
@@ -189,7 +189,7 @@ test('PNG 에서 96x96 안에 맞춘 미리보기를 만든다', async () => {
 test('원본이 96 보다 작으면 늘리지 않는다', async () => {
   // 8x4 짜리 아주 작은 PNG 를 만들어서 넣는다
   const tiny = await makeThumbnail(fs.readFileSync(path.join(root, 'examples/cat_run.png')), 4096);
-  assert.equal(imageSize(tiny).width, imageSize(fs.readFileSync(path.join(root, 'examples/cat_run.png'))).width);
+  assert.equal(imageSize(tiny!)!.width, imageSize(fs.readFileSync(path.join(root, 'examples/cat_run.png')))!.width);
 });
 
 test('PNG 가 아닌 파일은 미리보기를 만들지 않는다 (엔트리도 SVG 는 안 만든다)', async () => {
@@ -206,13 +206,13 @@ end`;
   const result = compileProject(source, { path: path.join(root, 'x.tess'), assetDirs: [path.join(root, 'examples')] });
   assert.deepEqual(result.errors, []);
 
-  const entries = await readTar(await makeEntryBundle(result.project, result.assets));
+  const entries = await readTar(await makeEntryBundle(result.project!, result.assets));
   const names = entries.map((e) => e.name);
   const image = names.find((n) => n.includes('/image/'));
   assert.ok(image, '그림이 담겨야 한다');
   const thumb = image.replace('/image/', '/thumb/');
   assert.ok(names.includes(thumb), `미리보기가 같이 담겨야 한다: ${thumb}`);
 
-  const thumbBytes = entries.find((e) => e.name === thumb).data;
-  assert.equal(Math.max(imageSize(thumbBytes).width, imageSize(thumbBytes).height), 96);
+  const thumbBytes = entries.find((e) => e.name === thumb)!.data;
+  assert.equal(Math.max(imageSize(thumbBytes)!.width, imageSize(thumbBytes)!.height), 96);
 });

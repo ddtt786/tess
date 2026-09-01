@@ -1,10 +1,11 @@
 // 파스 트리가 어떤 AST 로 바뀌는지 — 특히 연산자 우선순위와 결합 방향을 확인한다.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { expr, stmt } from './helpers.js';
+import { expr, stmt } from './helpers.ts';
+import type { ProgramNode } from '@tess/parser';
 
 /** AST 를 비교하기 쉬운 S-식 문자열로 */
-function sexp(node) {
+function sexp(node: any): string {
   switch (node.type) {
     case 'Binary': return `(${node.operator} ${sexp(node.left)} ${sexp(node.right)})`;
     case 'Unary': return `(${node.operator} ${sexp(node.argument)})`;
@@ -21,7 +22,7 @@ function sexp(node) {
   }
 }
 
-const shape = (source, expected) =>
+const shape = (source: string, expected: string) =>
   test(`표현식: ${source}`, () => assert.equal(sexp(expr(source)), expected));
 
 // --- 산술 우선순위 ------------------------------------------------------------
@@ -154,5 +155,5 @@ test('stop 계열은 서로 다른 노드가 된다', () => {
 test('노드에 소스 위치(loc)가 붙는다', async () => {
   const { parse } = await import('@tess/parser');
   const { ast } = parse('var a = 1\n');
-  assert.deepEqual(ast.body[0].loc, { start: 0, end: 9 });
+  assert.deepEqual((ast as ProgramNode).body[0]!.loc, { start: 0, end: 9 });
 });

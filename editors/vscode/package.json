@@ -3,6 +3,7 @@
   "displayName": "Tess",
   "description": "Tess 언어 문법 강조 (엔트리 작품으로 컴파일되는 텍스트 언어)",
   "version": "1.0.0",
+  "type": "module",
   "publisher": "tess",
   "license": "ISC",
   "engines": {
@@ -35,7 +36,7 @@
   },
   "private": true,
   "scripts": {
-    "build:grammar": "node build-grammar.mjs"
+    "build:grammar": "node build-grammar.ts"
   },
   "devDependencies": {
     "@tess/core": "workspace:*",

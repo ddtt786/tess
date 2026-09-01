@@ -4,14 +4,14 @@
   "description": "Tess 언어(엔트리 블록 코드로 변환되는 텍스트 언어) — 라이브러리와 CLI",
   "license": "ISC",
   "type": "module",
-  "main": "index.js",
+  "main": "index.ts",
   "exports": {
-    ".": "./index.js"
+    ".": "./index.ts"
   },
   "bin": {
-    "tess": "./index.js"
+    "tess": "./index.ts"
   },
-  "files": ["index.js", "src"],
+  "files": ["index.ts", "src"],
   "keywords": ["tess", "chevrotain", "parser", "grammar", "entry"],
   "dependencies": {
     "@tess/compiler": "workspace:*",

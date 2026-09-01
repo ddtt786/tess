@@ -13,22 +13,34 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compileProject } from '@tess/compiler';
 
+/** 엔트리 오브젝트 하나가 크기에 대해 갖는 상태 */
+interface EntitySpec {
+  width: number;
+  height: number;
+  originX: number;
+  originY: number;
+  scaleX?: number;
+  scaleY?: number;
+}
+
 /** 엔트리 오브젝트 하나를 흉내 낸다 */
-function makeEntity({ width, height, originX, originY, scaleX = originX, scaleY = originY }) {
+function makeEntity({
+  width, height, originX, originY, scaleX = originX, scaleY = originY,
+}: EntitySpec) {
   return {
     width, height, originX, originY, scaleX, scaleY,
     size() {
       return (this.width * Math.abs(this.scaleX) + this.height * Math.abs(this.scaleY)) / 2;
     },
-    setSize(value) {
+    setSize(value: number) {
       const k = Math.max(1, value) / this.size();
       this.scaleX *= k;
       this.scaleY *= k;
     },
-    setXSize(value) {
+    setXSize(value: number) {
       this.scaleX *= Math.max(1, value) / this.size();
     },
-    setYSize(value) {
+    setYSize(value: number) {
       this.scaleY *= Math.max(1, value) / this.size();
     },
     reset() {
@@ -39,7 +51,12 @@ function makeEntity({ width, height, originX, originY, scaleX = originX, scaleY 
 }
 
 /** 엔트리 블록을 실행하는 아주 작은 인터프리터 (이 함수가 쓰는 블록만) */
-function evaluate(block, entity, params, locals) {
+function evaluate(
+  block: any,
+  entity: any,
+  params: Record<string, number>,
+  locals: Record<string, number>,
+): number {
   if (block === null || typeof block !== 'object') return Number(block);
   switch (block.type) {
     case 'number': case 'text':
@@ -52,15 +69,23 @@ function evaluate(block, entity, params, locals) {
     case 'calc_basic': {
       const left = evaluate(block.params[0], entity, params, locals);
       const right = evaluate(block.params[2], entity, params, locals);
-      return { PLUS: left + right, MINUS: left - right, MULTI: left * right, DIVIDE: left / right }[block.params[1]];
+      const ops: Record<string, number> = {
+        PLUS: left + right, MINUS: left - right, MULTI: left * right, DIVIDE: left / right,
+      };
+      return ops[block.params[1]]!;
     }
     default:
-      if (block.type in params) return params[block.type];
+      if (block.type in params) return params[block.type]!;
       throw new Error(`값 블록 '${block.type}' 은(는) 흉내 낼 수 없습니다.`);
   }
 }
 
-function execute(blocks, entity, params, locals = {}) {
+function execute(
+  blocks: any[],
+  entity: any,
+  params: Record<string, number>,
+  locals: Record<string, number> = {},
+) {
   for (const block of blocks) {
     switch (block.type) {
       case 'set_func_variable':
@@ -86,7 +111,7 @@ function execute(blocks, entity, params, locals = {}) {
 }
 
 /** `scale_x = 값` 이 부르는 함수와 그 인자를 뽑아 온다 */
-function scaleSetter(property, ratio) {
+function scaleSetter(property: string, ratio: number) {
   const source = `scene "s":
   object "o":
     costume 기본 "a.png" size 200 100
@@ -98,12 +123,12 @@ end`;
   const { project, errors } = compileProject(source, { path: 'x.tess' });
   assert.deepEqual(errors, []);
 
-  const call = JSON.parse(project.objects[0].script)[0][1];
-  const fn = project.functions.find((f) => `func_${f.id}` === call.type);
-  const create = JSON.parse(fn.content)[0][0];
+  const call = JSON.parse(project!.objects[0]!.script)[0][1];
+  const fn = project!.functions.find((f) => `func_${f.id}` === call.type);
+  const create = JSON.parse(fn!.content)[0][0];
 
   // 함수의 매개변수 블록 타입 -> 호출할 때 넘긴 값
-  const names = [];
+  const names: string[] = [];
   let field = create.params[0].params[1];
   while (field) {
     names.push(field.params[0].type);
@@ -114,13 +139,13 @@ end`;
 }
 
 /** 시작 배율이 originX/originY 인 오브젝트에서 비율을 정해 본다 */
-function apply(property, ratio, entity) {
+function apply(property: string, ratio: number, entity: any) {
   const { body, params } = scaleSetter(property, ratio);
   execute(body, entity, params);
   return entity;
 }
 
-const close = (actual, expected, label) => assert.ok(
+const close = (actual: number, expected: number, label: string) => assert.ok(
   Math.abs(actual - expected) < 1e-6,
   `${label}: ${actual} 이(가) ${expected} 와 다릅니다.`,
 );
@@ -153,13 +178,13 @@ test('시작 배율이 100%가 아니어도 원본 기준으로 맞춘다', () =
   end
 end`;
   const { project } = compileProject(source, { path: 'x.tess' });
-  const call = JSON.parse(project.objects[0].script)[0][1];
+  const call = JSON.parse(project!.objects[0]!.script)[0][1];
   // 원래 배율(1.5)이 두 번째 인자로 넘어간다
   assert.equal(Number(call.params[1].params[0]), 1.5);
 
-  const fn = project.functions.find((f) => `func_${f.id}` === call.type);
-  const create = JSON.parse(fn.content)[0][0];
-  const names = [];
+  const fn = project!.functions.find((f) => `func_${f.id}` === call.type);
+  const create = JSON.parse(fn!.content)[0][0];
+  const names: string[] = [];
   let field = create.params[0].params[1];
   while (field) { names.push(field.params[0].type); field = field.params[1]; }
   const params = Object.fromEntries(names.map((type, i) => [type, Number(call.params[i].params[0])]));
@@ -206,5 +231,5 @@ test('쓰지 않으면 함수를 만들지 않는다', () => {
     end
   end
 end`, { path: 'x.tess' });
-  assert.equal(project.functions.length, 0);
+  assert.equal(project!.functions.length, 0);
 });

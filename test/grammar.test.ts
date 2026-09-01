@@ -1,10 +1,10 @@
 // spec 의 각 절에 나오는 코드가 문법에 맞는지 확인한다.
 import test from 'node:test';
-import { assertParses, assertRejects, inObject } from './helpers.js';
+import { assertParses, assertRejects, inObject } from './helpers.ts';
 
-const ok = (name, code, kind) => test(name, () => assertParses(inObject(code, kind), name));
-const okRaw = (name, code) => test(name, () => assertParses(code, name));
-const noRaw = (name, code) => test(name, () => assertRejects(code, name));
+const ok = (name: string, code: string, kind?: string) => test(name, () => assertParses(inObject(code, kind), name));
+const okRaw = (name: string, code: string) => test(name, () => assertParses(code, name));
+const noRaw = (name: string, code: string) => test(name, () => assertRejects(code, name));
 
 // --- 3. 프로그램의 뼈대 -------------------------------------------------------
 okRaw('3.1 전역 변수 · 리스트', `

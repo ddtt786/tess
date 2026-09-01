@@ -2,23 +2,36 @@
 //  Tess -> 엔트리 프로젝트(project.json) 컴파일러
 //
 //  단계
-//   1. use 해석 + 파싱          (include.js, parse.js)
-//   2. 시맨틱 검증               (validate.js)
+//   1. use 해석 + 파싱          (include.ts, parse.ts)
+//   2. 시맨틱 검증               (validate.ts)
 //   3. 심볼 수집 — 장면 · 오브젝트 · 변수 · 신호 · 함수
-//   4. 스크립트 컴파일           (statement.js, expression.js)
+//   4. 스크립트 컴파일           (statement.ts, expression.ts)
 //   5. 엔트리 프로젝트 조립
 // ============================================================================
 import path from 'node:path';
-import { Context } from './context.js';
-import { loadProgram, createCompileCache } from './include.js';
-import { buildCommentMap } from './comments.js';
-import { makeAsset } from './assets.js';
-import { compileStatements, compileStatement } from './statement.js';
-import { compileValue, BOOLEAN_TEXT } from './expression.js';
+import { Context } from './context.ts';
+import { loadProgram, createCompileCache } from './include.ts';
+import { buildCommentMap } from './comments.ts';
+import { makeAsset } from './assets.ts';
+import { compileStatements, compileStatement } from './statement.ts';
+import { compileValue, BOOLEAN_TEXT } from './expression.ts';
 import { KEY_CODES, keyCodeOf } from '@tess/core';
 import { didYouMean } from '@tess/core';
 import { validate } from '@tess/parser';
 import { isAutoParamName } from '@tess/core';
+import type {
+  AssignNode, CostumeNode, EventNode, FunctionDeclNode, Expr, ListDeclNode, Node, ObjectNode,
+  ProgramNode, ReturnNode, SceneMember, SoundNode, Stmt, TableDeclNode,
+  TopLevelItem, VarDeclNode,
+} from '@tess/parser';
+import type {
+  CompiledFunction, CompiledObject, CompileDiagnostic, CompileOptions,
+  CompileResult, EntryBlock, EntryEntity, EntryObject, EntryParam, EntryProject,
+  EntryScene, EntryTable, EntryVariable, FunctionScope, PhaseTiming,
+} from './types.ts';
+
+/** A node reached by the generic walk, which reads fields it cannot name ahead. */
+type AnyNode = Record<string, unknown>;
 
 export { createCompileCache };
 
@@ -41,11 +54,8 @@ const BRUSH_DEFAULT_PROPERTIES = ['draw_color', 'fill_color', 'draw_width', 'dra
  *
  * With a `cache` from createCompileCache, unchanged files are not re-parsed.
  *
- * @param {string} source
- * @param {{path?: string, assetDirs?: string[], name?: string, readFile?: Function, force?: boolean, cache?: object}} [options]
- * @returns {{ok: boolean, project: object|null, errors: Array, warnings: Array, assets: Array, sourceMap: object}}
  */
-export function compileProject(source, options = {}) {
+export function compileProject(source: string, options: CompileOptions = {}): CompileResult {
   const filePath = options.path ?? '<input>';
   const timer = createTimer(options.onPhase);
   const loaded = loadProgram({
@@ -109,7 +119,7 @@ export function compileProject(source, options = {}) {
 }
 
 /** 진단 하나가 가리키는 자리 */
-const spotOf = (item) => `${item.file ?? ''}:${item.offset}`;
+const spotOf = (item: CompileDiagnostic) => `${item.file ?? ''}:${item.offset}`;
 
 /**
  * 컴파일러가 이미 에러를 낸 자리의 검증 경고는 접는다.
@@ -118,7 +128,7 @@ const spotOf = (item) => `${item.file ?? ''}:${item.offset}`;
  * 컴파일까지 갔으면 같은 자리에서 더 자세한 에러가 이미 나온다. 둘 다 내면 같은
  * 오타를 두 번 읽게 된다.
  */
-function withoutDuplicates(warnings, errors) {
+function withoutDuplicates(warnings: CompileDiagnostic[], errors: CompileDiagnostic[]): CompileDiagnostic[] {
   if (errors.length === 0) return warnings;
   const spots = new Set(errors.map(spotOf));
   return warnings.filter((warning) => !spots.has(spotOf(warning)));
@@ -130,12 +140,12 @@ function withoutDuplicates(warnings, errors) {
  * 끝나는 즉시 `onPhase` 로 알려 준다 — CLI 는 그걸 그때그때 한 줄씩 찍어서, 큰
  * 작품을 컴파일하는 동안에도 어디까지 갔는지 보이게 한다.
  */
-function createTimer(onPhase) {
-  const timings = [];
+function createTimer(onPhase?: (phase: PhaseTiming) => void) {
+  const timings: PhaseTiming[] = [];
   let last = performance.now();
   return {
     timings,
-    mark(label) {
+    mark(label: string) {
       const now = performance.now();
       const phase = { label, ms: now - last };
       timings.push(phase);
@@ -148,7 +158,7 @@ function createTimer(onPhase) {
 // ---------------------------------------------------------------------------
 //  1. 장면
 // ---------------------------------------------------------------------------
-function collectScenes(program, ctx) {
+function collectScenes(program: ProgramNode, ctx: Context) {
   for (const item of program.body) {
     if (item.type !== 'Scene') continue;
     if (ctx.sceneByName.has(item.name)) {
@@ -172,8 +182,8 @@ function collectScenes(program, ctx) {
 }
 
 /** 장면 본문에 `name "..."` 이 있으면 그 문자열을, 없으면 null 을 돌려준다 */
-function sceneDisplayName(item, ctx) {
-  let value = null;
+function sceneDisplayName(item: { body: SceneMember[] }, ctx: Context): string | null {
+  let value: Expr | null = null;
   for (const member of item.body) {
     if (member.type === 'Property' && member.name === 'name') value = member.value;
   }
@@ -188,7 +198,7 @@ function sceneDisplayName(item, ctx) {
 // ---------------------------------------------------------------------------
 //  2. 전역 변수 · 리스트
 // ---------------------------------------------------------------------------
-function collectGlobals(program, ctx) {
+function collectGlobals(program: ProgramNode, ctx: Context) {
   for (const item of program.body) {
     if (item.type === 'VarDecl' || item.type === 'ListDecl') {
       const entry = makeVariable(item, ctx, null);
@@ -202,11 +212,11 @@ function collectGlobals(program, ctx) {
 }
 
 /** table 선언 -> 엔트리 project.tables 항목 */
-function collectTable(node, ctx) {
+function collectTable(node: TableDeclNode, ctx: Context): EntryTable | null {
   if (ctx.tableByName.has(node.name)) {
     return ctx.error(node, `'${node.name}' 테이블이 이미 있습니다.`);
   }
-  const cells = (row) => {
+  const cells = (row: Expr[]) => {
     const values = row.map((cell) => constantOf(cell, ctx));
     return values.some((value) => value === null) ? null : values.map((value) => String(value));
   };
@@ -237,12 +247,16 @@ function collectTable(node, ctx) {
 }
 
 /** var/list 선언 -> 엔트리 variables 항목 */
-function makeVariable(node, ctx, objectId) {
+function makeVariable(
+  node: VarDeclNode | ListDeclNode,
+  ctx: Context,
+  objectId: string | null,
+): EntryVariable | null {
   // Entry offers cloud/real-time storage on global variables only.
   if (node.scope && objectId) {
     ctx.error(node, `'${node.scope}' 는 오브젝트 안의 변수·리스트에는 쓸 수 없습니다. 전역 선언에만 붙일 수 있습니다.`);
   }
-  const base = {
+  const base: EntryVariable = {
     name: node.displayName ?? node.name,
     id: ctx.newId(),
     visible: false,
@@ -257,13 +271,14 @@ function makeVariable(node, ctx, objectId) {
   };
 
   if (node.type === 'ListDecl') {
-    const items = node.value.elements.map((element) => constantOf(element, ctx));
+    const elements = node.value.type === 'ListLiteral' ? node.value.elements : [];
+    const items = elements.map((element) => constantOf(element, ctx));
     if (items.some((item) => item === null)) return null;
     return {
       ...base,
       value: 0,
       variableType: 'list',
-      array: items.map((data) => ({ data })),
+      array: (items as Array<string | number>).map((data) => ({ data })),
       width: 100,
       height: 120,
     };
@@ -275,11 +290,11 @@ function makeVariable(node, ctx, objectId) {
 }
 
 /** 선언 초기값으로 쓸 수 있는 상수인지 확인하고 원시값으로 바꾼다 */
-function constantOf(node, ctx) {
+function constantOf(node: Expr, ctx: Context): string | number | null {
   switch (node.type) {
     case 'Number': return node.value;
     case 'String': return node.value;
-    // 초기값도 대입할 때와 같은 글자를 쓴다. 엔트리에서 true 는 "TRUE" 이다(expression.js 참고).
+    // 초기값도 대입할 때와 같은 글자를 쓴다. 엔트리에서 true 는 "TRUE" 이다(expression.ts 참고).
     case 'Boolean': return BOOLEAN_TEXT[String(node.value)];
     case 'Color': return node.value;
     case 'Transparent': return 'transparent';
@@ -294,8 +309,8 @@ function constantOf(node, ctx) {
 // ---------------------------------------------------------------------------
 //  3. 오브젝트
 // ---------------------------------------------------------------------------
-function collectObjects(program, ctx) {
-  const register = (node, scene) => {
+function collectObjects(program: ProgramNode, ctx: Context) {
+  const register = (node: ObjectNode, scene: EntryScene) => {
     if (ctx.objectByName.has(node.name)) {
       ctx.error(node, `'${node.name}' 오브젝트가 이미 있습니다.`);
       return;
@@ -321,11 +336,11 @@ function collectObjects(program, ctx) {
   };
 
   for (const item of program.body) {
-    if (item.type === 'Object') register(item, ctx.scenes[0]);
+    if (item.type === 'Object') register(item, ctx.scenes[0]!);
     if (item.type === 'Scene') {
       const scene = ctx.sceneByName.get(item.name);
       for (const member of item.body) {
-        if (member.type === 'Object') register(member, scene);
+        if (member.type === 'Object') register(member, scene!);
       }
     }
   }
@@ -341,7 +356,7 @@ function collectObjects(program, ctx) {
  * project.json 안에서 서로 다른 리소스가 같은 id 를 갖게 되어 엔트리가 엉뚱한 것을
  * 가리키게 되므로, 이미 쓰인 id 와 겹치면 컴파일 에러로 막는다.
  */
-function resourceId(member, ctx) {
+function resourceId(member: CostumeNode | SoundNode, ctx: Context): string | null {
   if (!member.forceId) return ctx.newId();
   if (ctx.newId.has(member.forceId)) {
     return ctx.error(member, `force id "${member.forceId}" 는 이미 다른 모양·소리·오브젝트가 쓰고 있습니다.`);
@@ -351,14 +366,14 @@ function resourceId(member, ctx) {
   return member.forceId;
 }
 
-function collectObjectMembers(object, ctx) {
+function collectObjectMembers(object: CompiledObject, ctx: Context) {
   ctx.object = object;
 
   for (const member of object.node.body) {
     switch (member.type) {
       case 'Costume': {
         const asset = makeAsset('image', {
-          id: resourceId(member, ctx), file: member.file, name: member.displayName ?? member.id,
+          id: resourceId(member, ctx) ?? ctx.newId(), file: member.file, name: member.displayName ?? member.id,
           width: member.width, height: member.height,
         }, ctx, member);
         object.pictures.set(member.id, asset);
@@ -367,7 +382,7 @@ function collectObjectMembers(object, ctx) {
       }
       case 'Sound': {
         const asset = makeAsset('sound', {
-          id: resourceId(member, ctx),
+          id: resourceId(member, ctx) ?? ctx.newId(),
           file: member.file,
           name: member.displayName ?? member.id,
           duration: member.duration,
@@ -403,7 +418,7 @@ function collectObjectMembers(object, ctx) {
     if (member.type !== 'Costume' && member.type !== 'Sound') continue;
     if (!member.displayName || member.displayName === member.id) continue;
     const shelf = member.type === 'Costume' ? object.pictures : object.sounds;
-    if (!shelf.has(member.displayName)) shelf.set(member.displayName, shelf.get(member.id));
+    if (!shelf.has(member.displayName)) shelf.set(member.displayName, shelf.get(member.id)!);
   }
 
   // 이벤트 핸들러 안에서 처음 나오는 var/list 도 이 오브젝트의 변수로 등록한다
@@ -413,7 +428,7 @@ function collectObjectMembers(object, ctx) {
   ctx.object = null;
 }
 
-function collectHandlerVariables(statements, object, ctx) {
+function collectHandlerVariables(statements: Stmt[], object: CompiledObject, ctx: Context) {
   for (const statement of statements) {
     if (statement.type === 'VarDecl' || statement.type === 'ListDecl') {
       if (!object.locals.has(statement.name) && !ctx.globals.has(statement.name)) {
@@ -430,8 +445,10 @@ function collectHandlerVariables(statements, object, ctx) {
         }
       }
     }
+    const fields = statement as unknown as AnyNode;
     for (const key of ['consequent', 'alternate', 'body']) {
-      if (Array.isArray(statement[key])) collectHandlerVariables(statement[key], object, ctx);
+      const block = fields[key];
+      if (Array.isArray(block)) collectHandlerVariables(block as Stmt[], object, ctx);
     }
   }
 }
@@ -439,8 +456,8 @@ function collectHandlerVariables(statements, object, ctx) {
 // ---------------------------------------------------------------------------
 //  4. 함수
 // ---------------------------------------------------------------------------
-function collectFunctions(program, ctx) {
-  const register = (node, owner) => {
+function collectFunctions(program: ProgramNode, ctx: Context) {
+  const register = (node: FunctionDeclNode, owner: string | null) => {
     if (ctx.functionByName.has(node.name)) {
       ctx.error(node, `'${node.name}' 함수가 이미 있습니다. 엔트리 함수는 작품 전체에서 이름이 하나여야 합니다.`);
       return;
@@ -487,11 +504,13 @@ function collectFunctions(program, ctx) {
   }
 }
 
-function findReturns(statements, found = []) {
+function findReturns(statements: Stmt[], found: ReturnNode[] = []): ReturnNode[] {
   for (const statement of statements) {
     if (statement.type === 'Return') found.push(statement);
+    const fields = statement as unknown as AnyNode;
     for (const key of ['consequent', 'alternate', 'body']) {
-      if (Array.isArray(statement[key])) findReturns(statement[key], found);
+      const block = fields[key];
+      if (Array.isArray(block)) findReturns(block as Stmt[], found);
     }
   }
   return found;
@@ -500,15 +519,18 @@ function findReturns(statements, found = []) {
 // ---------------------------------------------------------------------------
 //  5. 신호
 // ---------------------------------------------------------------------------
-function collectMessages(node, ctx) {
+function collectMessages(node: unknown, ctx: Context) {
   if (node === null || typeof node !== 'object') return;
   if (Array.isArray(node)) {
     node.forEach((child) => collectMessages(child, ctx));
     return;
   }
-  if (node.type === 'Send' && node.signal?.type === 'String') ctx.messageId(node.signal.value);
-  if (node.type === 'Event' && node.event === 'signal') ctx.messageId(node.signal);
-  for (const [key, value] of Object.entries(node)) {
+  const item = node as AnyNode;
+  if (item.type === 'Send' && (item.signal as AnyNode | undefined)?.type === 'String') {
+    ctx.messageId((item.signal as { value: string }).value);
+  }
+  if (item.type === 'Event' && item.event === 'signal') ctx.messageId(item.signal as string);
+  for (const [key, value] of Object.entries(item)) {
     if (key !== 'loc') collectMessages(value, ctx);
   }
 }
@@ -516,10 +538,10 @@ function collectMessages(node, ctx) {
 // ---------------------------------------------------------------------------
 //  6. 함수 본문 컴파일
 // ---------------------------------------------------------------------------
-function compileFunctions(ctx) {
+function compileFunctions(ctx: Context) {
   for (const fn of ctx.functions) {
     if (fn.generated) continue; // 컴파일러가 이미 완성해 둔 런타임 함수
-    ctx.object = fn.owner ? ctx.objectByName.get(fn.owner) : null;
+    ctx.object = (fn.owner ? ctx.objectByName.get(fn.owner) : null) ?? null;
     ctx.locals = ctx.object?.locals ?? new Map();
     ctx.funcScope = {
       name: fn.name,
@@ -528,13 +550,13 @@ function compileFunctions(ctx) {
     };
 
     // 함수 안에서 선언한 var 는 엔트리 함수의 지역 변수로
-    collectFunctionLocals(fn.node.body, ctx.funcScope, ctx, fn);
+    const declared = fn.node!;
+    collectFunctionLocals(declared.body, ctx.funcScope, ctx, fn);
 
-    const body = fn.isValue ? fn.node.body.slice(0, -1) : fn.node.body;
+    const body = fn.isValue ? declared.body.slice(0, -1) : declared.body;
     const statements = compileStatements(body, ctx);
-    const returnValue = fn.isValue
-      ? compileValue(fn.node.body[fn.node.body.length - 1].value, ctx)
-      : null;
+    const tail = declared.body[declared.body.length - 1] as ReturnNode | undefined;
+    const returnValue = fn.isValue && tail ? compileValue(tail.value, ctx) : null;
 
     const field = buildFunctionFields(fn, ctx);
     const params = fn.isValue ? [field, null, null, returnValue] : [field, null];
@@ -552,7 +574,12 @@ function compileFunctions(ctx) {
   }
 }
 
-function collectFunctionLocals(statements, scope, ctx, fn) {
+function collectFunctionLocals(
+  statements: Stmt[],
+  scope: FunctionScope,
+  ctx: Context,
+  fn: CompiledFunction,
+) {
   for (const statement of statements) {
     if (statement.type === 'VarDecl' && !scope.localVars.has(statement.name)) {
       scope.localVars.set(statement.name, `${fn.id}_${ctx.newId()}`);
@@ -560,23 +587,25 @@ function collectFunctionLocals(statements, scope, ctx, fn) {
     if (statement.type === 'ListDecl') {
       ctx.error(statement, '함수 안에서는 리스트를 선언할 수 없습니다. 전역 리스트를 쓰세요.');
     }
+    const fields = statement as unknown as AnyNode;
     for (const key of ['consequent', 'alternate', 'body']) {
-      if (Array.isArray(statement[key])) collectFunctionLocals(statement[key], scope, ctx, fn);
+      const block = fields[key];
+      if (Array.isArray(block)) collectFunctionLocals(block as Stmt[], scope, ctx, fn);
     }
   }
 }
 
 /**
  * 함수 머리(라벨과 매개변수 칸의 사슬)를 만든다. 자동 이름(a, b, c …)은 라벨 없이,
- * 그 밖의 이름은 라벨을 달고 나간다 — 되돌리기의 반대다 (src/function-params.js).
+ * 그 밖의 이름은 라벨을 달고 나간다 — 되돌리기의 반대다 (src/function-params.ts).
  */
-function buildFunctionFields(fn, ctx) {
-  let next = null;
+function buildFunctionFields(fn: CompiledFunction, ctx: Context): EntryBlock {
+  let next: EntryParam = null;
   for (let i = fn.params.length - 1; i >= 0; i -= 1) {
-    const name = fn.params[i];
+    const name = fn.params[i]!;
     next = fn.booleanParams?.has(name)
-      ? ctx.block('function_field_boolean', [ctx.block(fn.paramTypes.get(name), [null]), next])
-      : ctx.block('function_field_string', [ctx.block(fn.paramTypes.get(name), []), next]);
+      ? ctx.block('function_field_boolean', [ctx.block(fn.paramTypes.get(name)!, [null]), next])
+      : ctx.block('function_field_string', [ctx.block(fn.paramTypes.get(name)!, []), next]);
     if (!isAutoParamName(name, i)) next = ctx.block('function_field_label', [name, next]);
   }
   return ctx.block('function_field_label', [fn.name, next]);
@@ -585,7 +614,7 @@ function buildFunctionFields(fn, ctx) {
 // ---------------------------------------------------------------------------
 //  7. 오브젝트 스크립트 컴파일
 // ---------------------------------------------------------------------------
-function compileObjects(ctx) {
+function compileObjects(ctx: Context) {
   for (const object of ctx.objects) {
     ctx.object = object;
     ctx.locals = object.locals;
@@ -614,7 +643,7 @@ function compileObjects(ctx) {
   }
 }
 
-function compileEvent(event, ctx) {
+function compileEvent(event: EventNode, ctx: Context): EntryBlock[] | null {
   const body = () => compileStatements(event.body, ctx);
 
   switch (event.event) {
@@ -627,11 +656,11 @@ function compileEvent(event, ctx) {
     case 'cloned': return [ctx.block('when_clone_start', [null]), ...body()];
 
     case 'signal':
-      return [ctx.block('when_message_cast', [null, ctx.messageId(event.signal)]), ...body()];
+      return [ctx.block('when_message_cast', [null, ctx.messageId(event.signal!)]), ...body()];
 
     case 'key': {
       const code = keyCodeOf(event.key);
-      if (!code) return [ctx.error(event, `알 수 없는 키 이름 "${event.key}" 입니다.${didYouMean(event.key, Object.keys(KEY_CODES))}`)] && null;
+      if (!code) return ctx.error(event, `알 수 없는 키 이름 "${event.key}" 입니다.${didYouMean(event.key!, Object.keys(KEY_CODES))}`);
       return [ctx.block('when_some_key_pressed', [null, code]), ...body()];
     }
 
@@ -640,7 +669,7 @@ function compileEvent(event, ctx) {
       //   시작하기 -> 계속 반복: 키가 눌릴 때까지 기다림 -> 떼질 때까지 기다림 -> 본문
       // (SPEC-ADDENDUM 4 에 적어 둔 정해진 변환이라 따로 알리지 않는다)
       const code = keyCodeOf(event.key);
-      if (!code) return [ctx.error(event, `알 수 없는 키 이름 "${event.key}" 입니다.${didYouMean(event.key, Object.keys(KEY_CODES))}`)] && null;
+      if (!code) return ctx.error(event, `알 수 없는 키 이름 "${event.key}" 입니다.${didYouMean(event.key!, Object.keys(KEY_CODES))}`);
       const pressed = () => ctx.block('is_press_some_key', [code, null]);
       const loop = ctx.block('repeat_inf', [null, null], [[
         ctx.block('wait_until_true', [pressed(), null]),
@@ -660,15 +689,19 @@ function compileEvent(event, ctx) {
  * draw_color 등을 오브젝트 선언 맨 위에 썼으면, `when start` 스크립트를 만들어서
  * 그 값을 제일 먼저 정하게 한다 (BRUSH_DEFAULT_PROPERTIES 선언부 참고).
  */
-function compileBrushDefaults(object, ctx) {
+function compileBrushDefaults(object: CompiledObject, ctx: Context): EntryBlock[] | null {
   const present = BRUSH_DEFAULT_PROPERTIES.filter((name) => object.properties.has(name));
   if (present.length === 0) return null;
 
   const blocks = [ctx.block('when_run_button_click', [null])];
   for (const name of present) {
-    const value = object.properties.get(name);
-    const assign = {
-      type: 'Assign', operator: '=', target: { type: 'Identifier', name, loc: value.loc }, value, loc: value.loc,
+    const value = object.properties.get(name)!;
+    const assign: AssignNode = {
+      type: 'Assign',
+      operator: '=',
+      target: { type: 'Identifier', name, loc: value.loc! },
+      value,
+      loc: value.loc!,
     };
     blocks.push(...compileStatement(assign, ctx));
   }
@@ -678,14 +711,25 @@ function compileBrushDefaults(object, ctx) {
 // ---------------------------------------------------------------------------
 //  8. 프로젝트 조립
 // ---------------------------------------------------------------------------
-function assemble(program, ctx, options) {
+function assemble(program: ProgramNode, ctx: Context, options: CompileOptions): EntryProject {
   const projectDecl = program.body.find((item) => item.type === 'Project');
   const fields = new Map((projectDecl?.fields ?? []).map((field) => [field.field, field.value]));
+
+  // The grammar fixes each field's literal type: title and description take a
+  // string, fps a number.
+  const textField = (name: string) => {
+    const value = fields.get(name);
+    return value?.type === 'String' ? value.value : undefined;
+  };
+  const numberField = (name: string) => {
+    const value = fields.get(name);
+    return value?.type === 'Number' ? value.value : undefined;
+  };
 
   const objects = ctx.objects.map((object) => buildObject(object, ctx));
   addSystemVariables(ctx);
 
-  const project = {
+  const project: EntryProject = {
     objects,
     scenes: ctx.scenes.map(({ id, name }) => ({ id, name })),
     variables: ctx.variables,
@@ -698,7 +742,7 @@ function assemble(program, ctx, options) {
       content: JSON.stringify(fn.content ?? []),
     })),
     tables: ctx.tables,
-    speed: fields.get('fps')?.value ?? 60,
+    speed: numberField('fps') ?? 60,
     interface: { menuWidth: 280, canvasWidth: 480, object: objects[0]?.id ?? null },
     expansionBlocks: [...ctx.expansionBlocks],
     // read / tts 문을 쓰면 엔트리가 '읽어주기(TTS)' 확장 블록을 실행할 수 있게 켠다
@@ -707,18 +751,18 @@ function assemble(program, ctx, options) {
     hardwareLiteBlocks: [],
     externalModules: [],
     externalModulesLite: [],
-    name: options.name ?? fields.get('title')?.value ?? 'Tess 작품',
+    name: options.name ?? textField('title') ?? 'Tess 작품',
     isPracticalCourse: false,
   };
 
-  const description = fields.get('description')?.value;
+  const description = textField('description');
   if (description) project.description = description;
   return project;
 }
 
-function buildObject(object, ctx) {
+function buildObject(object: CompiledObject, ctx: Context): EntryObject {
   const properties = object.properties;
-  const number = (name, fallback) => {
+  const number = <T extends number | null>(name: string, fallback: T): number | T => {
     const value = properties.get(name);
     if (value === undefined) return fallback;
     if (value.type === 'Number') return value.value;
@@ -728,7 +772,7 @@ function buildObject(object, ctx) {
     ctx.error(value, `속성 '${name}' 에는 숫자만 쓸 수 있습니다.`);
     return fallback;
   };
-  const string = (name, fallback) => {
+  const string = (name: string, fallback: string) => {
     const value = properties.get(name);
     if (value === undefined) return fallback;
     if (value.type === 'String') return value.value;
@@ -738,7 +782,7 @@ function buildObject(object, ctx) {
     ctx.error(value, `속성 '${name}' 에는 문자열만 쓸 수 있습니다.`);
     return fallback;
   };
-  const boolean = (name, fallback) => {
+  const boolean = (name: string, fallback: boolean) => {
     const value = properties.get(name);
     if (value === undefined) return fallback;
     if (value.type === 'Boolean') return value.value;
@@ -752,7 +796,7 @@ function buildObject(object, ctx) {
   const scaleX = number('scale_x', size ?? 100) / 100;
   const scaleY = number('scale_y', size ?? 100) / 100;
 
-  const entity = {
+  const entity: EntryEntity = {
     x: number('x', 0),
     y: number('y', 0),
     regX: 0,
@@ -768,8 +812,8 @@ function buildObject(object, ctx) {
   };
 
   if (!isText) {
-    const width = picture?.dimension.width ?? 100;
-    const height = picture?.dimension.height ?? 100;
+    const width = picture?.dimension?.width ?? 100;
+    const height = picture?.dimension?.height ?? 100;
     // regX/regY is the registration point: the spot the object's x/y actually
     // put on the stage. Entry fixes it when the object is made and never moves
     // it again, and it defaults to the middle of the costume — but the user can
@@ -783,7 +827,7 @@ function buildObject(object, ctx) {
     });
   }
 
-  const result = {
+  const result: EntryObject = {
     id: object.id,
     name: string('name', object.key),
     script: JSON.stringify(object.script),
@@ -805,7 +849,7 @@ function buildObject(object, ctx) {
     const family = string('font', DEFAULT_FONT);
     const bold = boolean('text_bold', false);
     const italic = boolean('text_italic', false);
-    const aligns = { center: 0, left: 1, right: 2 };
+    const aligns: Record<string, number> = { center: 0, left: 1, right: 2 };
     const align = aligns[string('text_align', 'center')] ?? 0;
 
     Object.assign(entity, {
@@ -838,7 +882,7 @@ function buildObject(object, ctx) {
 }
 
 /** 엔트리 프로젝트는 초시계와 대답 항목을 변수 목록에 함께 담는다 */
-function addSystemVariables(ctx) {
+function addSystemVariables(ctx: Context) {
   ctx.variables.push({
     name: '초시계', id: ctx.newId(), visible: false, value: 0, variableType: 'timer',
     isCloud: false, isRealTime: false, cloudDate: false, object: null, x: 232, y: -144,

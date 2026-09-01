@@ -1,4 +1,4 @@
-import { EXPANSION_BLOCKS } from './expansion.js';
+import { EXPANSION_BLOCKS } from './expansion.ts';
 
 // ============================================================================
 //  spec 에 정의된 내장 이름 목록

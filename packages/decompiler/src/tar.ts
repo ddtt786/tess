@@ -7,25 +7,23 @@
 //  이해하는 검증된 패키지라 그걸 쓴다. gzip 압축 여부도 알아서 판단한다.
 // ============================================================================
 import { Parser } from 'tar';
+import type { TarEntry } from './types.ts';
 
 /**
  * ustar/GNU/PAX 묶음(gzip 이든 아니든)을 { name, data } 목록으로 푼다.
  * 디렉터리 항목은 건너뛴다.
- *
- * @param {Buffer} bytes
- * @returns {Promise<Array<{name: string, data: Buffer}>>}
  */
-export function readTar(bytes) {
+export function readTar(bytes: Buffer): Promise<TarEntry[]> {
   return new Promise((resolve, reject) => {
-    const entries = [];
+    const entries: TarEntry[] = [];
     const parser = new Parser({
       onReadEntry: (entry) => {
         if (entry.type !== 'File') {
           entry.resume();
           return;
         }
-        const chunks = [];
-        entry.on('data', (chunk) => chunks.push(chunk));
+        const chunks: Buffer[] = [];
+        entry.on('data', (chunk: Buffer) => chunks.push(chunk));
         entry.on('end', () => entries.push({ name: entry.path, data: Buffer.concat(chunks) }));
         entry.on('error', reject);
       },

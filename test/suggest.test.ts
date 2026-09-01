@@ -8,10 +8,10 @@ import { editDistance, nearestName, didYouMean } from '@tess/core';
 import { compileProject } from '@tess/compiler';
 import { parse } from '@tess/parser';
 
-const object = (body) => `scene "s":\n  object "o":\n${body}\n  end\nend`;
-const firstError = (source) => compileProject(source, { path: 't.tess' }).errors[0]?.message ?? '';
+const object = (body: any) => `scene "s":\n  object "o":\n${body}\n  end\nend`;
+const firstError = (source: string) => compileProject(source, { path: 't.tess' }).errors[0]?.message ?? '';
 // 엔트리가 실행할 때 이름으로 찾는 자리(모양·소리)는 경고로만 짚어 준다
-const firstWarning = (source) => compileProject(source, { path: 't.tess' }).warnings[0]?.message ?? '';
+const firstWarning = (source: string) => compileProject(source, { path: 't.tess' }).warnings[0]?.message ?? '';
 
 test('붙어 있는 두 글자가 바뀐 것은 한 번으로 센다', () => {
   // 손으로 칠 때 가장 흔한 실수다. 두 번으로 세면 정작 찾아 줘야 할 오타를 놓친다.

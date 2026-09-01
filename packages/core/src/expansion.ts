@@ -14,6 +14,13 @@
 // ============================================================================
 
 /** @type {Record<string, {module: string, kind: string, slots: string[]}>} */
+/** One expansion block: which entry module owns it, and the slots it takes. */
+export interface ExpansionBlock {
+  module: string;
+  kind: string;
+  slots: string[];
+}
+
 export const EXPANSION_BLOCKS = {
   count_disaster_behavior: {
     module: 'behaviorConductDisaster', kind: 'value',
@@ -168,6 +175,8 @@ export const EXPANSION_BLOCKS = {
 };
 
 /** 확장 블록 이름이면 그 정의, 아니면 null */
-export function expansionBlock(name) {
-  return Object.hasOwn(EXPANSION_BLOCKS, name) ? EXPANSION_BLOCKS[name] : null;
+export function expansionBlock(name: string): ExpansionBlock | null {
+  return Object.hasOwn(EXPANSION_BLOCKS, name)
+    ? (EXPANSION_BLOCKS as Record<string, ExpansionBlock>)[name]!
+    : null;
 }

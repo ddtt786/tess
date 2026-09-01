@@ -17,11 +17,10 @@ const THUMB_BOX = 96;
  * 그림 파일 바이트열에서 미리보기 PNG 를 만든다. 만들 수 없으면 null 을 돌려주고,
  * 그러면 그 그림은 미리보기 없이 담긴다 (엔트리도 SVG 는 그렇게 둔다).
  *
- * @param {Buffer} bytes 원본 그림 파일
- * @param {number} [box] 미리보기가 들어갈 정사각형 상자의 한 변
- * @returns {Promise<Buffer|null>}
+ * @param bytes 원본 그림 파일
+ * @param box   미리보기가 들어갈 정사각형 상자의 한 변
  */
-export async function makeThumbnail(bytes, box = THUMB_BOX) {
+export async function makeThumbnail(bytes: Buffer, box = THUMB_BOX): Promise<Buffer | null> {
   if (!bytes?.length) return null;
   try {
     const image = sharp(bytes, { animated: false });
