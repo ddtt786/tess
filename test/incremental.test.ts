@@ -1,8 +1,9 @@
-// 증분 컴파일 — 내용이 그대로인 파일은 다시 파싱하지 않는지 검사한다.
-//
-// 파싱이 컴파일 시간의 대부분이고(오브젝트 조각이 150개쯤 되는 작품에서 ~90%),
-// `run` 의 자동 새로고침은 한 파일만 고쳐도 매번 전부 다시 파싱했다. 캐시를 넘기면
-// 바뀐 파일만 다시 파싱하되, 결과 작품은 캐시 없이 컴파일한 것과 완전히 같아야 한다.
+/**
+ * 내용이 변경되지 않은 파일은 다시 파싱하지 않는 증분 컴파일 기능을 검사합니다.
+ *
+ * 파싱은 컴파일 시간의 대부분을 차지합니다. 캐시를 사용하여 변경된 파일만
+ * 파싱하도록 최적화하면서도, 캐시 없이 컴파일한 결과와 동일하게 작동하는지 검증합니다.
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -20,7 +21,11 @@ when start do
   say "${message}"
 end`;
 
-/** main.tess 와 오브젝트 조각 두 개짜리 작품을 임시 폴더에 만든다 */
+/**
+ * main.tess와 두 개의 오브젝트 조각을 포함하는 테스트용 프로젝트를 임시 폴더에 생성합니다.
+ *
+ * @returns 생성된 임시 폴더의 경로
+ */
 function makeProject() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-incremental-'));
   fs.mkdirSync(path.join(dir, 'objects'));
@@ -74,7 +79,7 @@ test('한 파일만 고치면 그 파일만 다시 파싱한다', () => {
   const result = build(dir, cache);
   assert.equal(cache.parsed - before, 1);
 
-  // 바뀐 내용이 실제로 반영됐는지 — 캐시가 옛 AST 를 붙들고 있으면 안 된다
+  /** 변경된 내용이 실제로 반영되었는지 확인합니다. 이전 AST 캐시가 남아있으면 안 됩니다. */
   const object = result.project!.objects.find((o) => o.name === '가');
   assert.match(object!.script, /바뀐 인사/);
 });
@@ -102,11 +107,11 @@ test('문법 에러가 난 파일은 캐시에 남지 않고 매번 다시 알�
 
   const first = build(dir, cache);
   assert.ok(first.errors.length > 0);
-  // 두 번째에도 똑같이 알려줘야 한다 (에러를 캐시해 두고 조용히 넘어가면 안 된다)
+  /** 에러를 캐시하고 무시하지 않도록, 다시 빌드 시 동일한 에러를 반환해야 합니다. */
   const second = build(dir, cache);
   assert.deepEqual(second.errors, first.errors);
 
-  // 고치면 다시 정상으로 돌아온다
+  /** 파일을 올바르게 수정하면 에러 없이 정상적으로 파싱되어야 합니다. */
   fs.writeFileSync(broken, FRAGMENT('고침'));
   const fixed = build(dir, cache);
   assert.deepEqual(fixed.errors, []);
@@ -127,12 +132,16 @@ test('두 오브젝트가 같은 조각을 use 하면 한 번만 파싱한다', 
   const result = build(dir, cache);
 
   assert.deepEqual(result.errors, []);
-  assert.equal(cache.parsed, 4); // main.tess + 가 + 나 + 공통 — 공통.tess 는 한 번만
-  assert.equal(cache.reused, 1); // 나.tess 가 부른 두 번째 공통.tess
+  /** main.tess, 가, 나, 공통 파일이 파싱됩니다. 공통 파일은 한 번만 파싱됩니다. */
+  assert.equal(cache.parsed, 4);
+  /** 나.tess에서 다시 호출된 공통 파일은 재사용(reused) 처리됩니다. */
+  assert.equal(cache.reused, 1);
 });
 
-// 조각이 깨졌는데 조용히 빠져 버리면, 자동 새로고침이 "반영했습니다" 라고만 하고
-// 오브젝트 하나가 통째로 사라진 작품을 보여 준다.
+/**
+ * 누락된 조각 파일이 있을 경우 사용자에게 명시적으로 에러를 반환해야 합니다.
+ * 에러를 발생시키지 않으면 누락된 오브젝트가 조용히 제외되어 표시될 수 있습니다.
+ */
 test('불러올 파일이 없으면 에러로 알려준다', () => {
   const dir = makeProject();
   fs.writeFileSync(path.join(dir, 'main.tess'), 'scene "s":\n  useobject "objects/없는파일.tess"\nend');

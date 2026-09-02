@@ -1,22 +1,17 @@
 /**
  * @fileoverview Tess 언어를 처리하는 커맨드 라인 인터페이스(CLI) 도구입니다.
- * 
+ *
  * 엔트리 작품을 컴파일하거나, 구문 오류를 검사하고, 서버를 열어 테스트하는 등 다양한 명령을 지원합니다.
- * 
+ *
  * @example
  * // 문법 및 의미 검사 (컴파일 테스트 포함)
  * node index.ts check examples/tour.tess
- * 
+ *
  * // 엔트리 작품으로 컴파일하여 출력
  * node index.ts build examples/all_blocks.tess -o build/blocks.ent
  * node index.ts build examples/all_blocks.tess -o build/project.json
  */
-export {
-  parse,
-  parseOrThrow,
-  check,
-  validate,
-} from "@tess/parser";
+export { parse, parseOrThrow, check, validate } from "@tess/parser";
 export {
   compileProject,
   createCompileCache,
@@ -32,7 +27,11 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import type { CompileCache, CompileOptions, EntryProject } from "@tess/compiler";
+import type {
+  CompileCache,
+  CompileOptions,
+  EntryProject,
+} from "@tess/compiler";
 import type { RunningServer } from "@tess/player";
 
 /** Everything the command line can set. */
@@ -53,44 +52,43 @@ interface CliOptions {
 }
 import { spawn } from "node:child_process";
 import { parse } from "@tess/parser";
-import { compileProject, createCompileCache, makeEntryBundle } from "@tess/compiler";
+import {
+  compileProject,
+  createCompileCache,
+  makeEntryBundle,
+} from "@tess/compiler";
 import { serveProject } from "@tess/player";
 import * as out from "./src/output.ts";
 
 const USAGE = `사용법
-  node index.ts check      <파일.tess>          문법 · 의미 검사 (컴파일까지 해 본다)
+  node index.ts check      <파일.tess>          문법 및 의미 검사 (컴파일 테스트 포함)
   node index.ts build      <파일.tess> [-o 출력] 엔트리 작품으로 컴파일
-  node index.ts run        <파일.tess>          컴파일해서 브라우저로 열기
-  node index.ts ast        <파일.tess>          AST 출력
-  node index.ts decompile  <파일.ent> [-o 폴더]  이미 있는 엔트리 작품을 Tess 소스로 되돌리기
+  node index.ts run        <파일.tess>          컴파일 후 브라우저에서 실행
+  node index.ts ast        <파일.tess>          AST 구조 출력
+  node index.ts decompile  <파일.ent> [-o 폴더]  기존 엔트리 작품을 Tess 소스로 디컴파일
 
 옵션
-  -o, --out <경로>   출력 파일/폴더. build 는 확장자가 .json 이면 project.json,
-                     .ent 이면 tar 묶음(temp/project.json)으로 저장한다.
-                     decompile 은 폴더를 만들어 main.tess 와 에셋을 담는다
-                     (기본값: <파일 이름>_tess/).
-  --assets <폴더>    모양·소리 파일을 찾을 폴더 (여러 번 쓸 수 있음)
-  --name <이름>      작품 이름 (기본값: project 의 title)
-  --port <번호>      run 이 쓸 포트 (기본값: 2013, 쓰이고 있으면 비어 있는 포트)
-  --no-open          run 할 때 브라우저를 자동으로 열지 않는다
-  --no-reload        run 할 때 소스가 바뀌어도 자동으로 새로고침하지 않는다
-  --boost            run 을 부스트 모드(WebGL 렌더러)로 띄운다. 엔트리 만들기 화면
-                     에서는 켤 수 없지만 실행기 자체는 이 모드로 돌 수 있다. 디버그
-                     패널의 '부스트 모드' 는 그대로 남는다 — 켜고 끈 두 경우를
-                     따로 흉내내 볼 수 있어야 하기 때문이다. build 에는 없는 옵션
-                     이다 (컴파일한 작품은 실행하는 쪽이 정한다)
-  --force            컴파일 에러가 있어도 build/run 을 끝까지 밀어붙인다. 에러가 난
-                     문장은 빠진 채로 나오니, 남은 부분만 확인하고 싶을 때만 쓰세요
-                     (문법 에러는 작품을 만들 수조차 없어서 --force 도 소용없습니다)
-  --warnings         decompile 이 옮기지 못한 부분을 콘솔에도 알려준다 (기본은 결과
-                     소스에 '# [decompile]' 주석으로만 남기고 콘솔은 개수만 보여준다)
-  --sizes            decompile 이 모든 모양에 'size 가로 세로' 를 적어 둔다. 기본은
-                     컴파일러가 그림 파일에서 직접 재게 두고 생략한다 (글상자의
-                     'size 가로 세로' 는 이 옵션과 상관없이 항상 적는다)
-  --keep-svg         decompile 이 SVG 모양을 SVG 그대로 가져온다. 기본은 엔트리가
-                     저장할 때 같이 남긴 PNG 를 대신 쓴다 — 엔트리 벡터 그림판은
-                     저장한 뒤 SVG 를 다시 가운데로 옮겨 버려서, 그림판 크기를 넘는
-                     그림을 맞춰 놓은 위치가 SVG 에는 남지 않기 때문이다`;
+  -o, --out <경로>   출력 파일 또는 폴더를 지정합니다.
+                     - build 명령 시: 확장자가 .json이면 project.json으로,
+                       .ent이면 tar 묶음으로 저장합니다.
+                     - decompile 명령 시: 폴더를 생성하여 main.tess와 에셋을 저장합니다.
+                       (기본값: <파일 이름>_tess/)
+  --assets <폴더>    모양 및 소리 파일을 검색할 폴더를 지정합니다. (여러 번 지정 가능)
+  --name <이름>      작품 이름을 지정합니다. (기본값: project 블록의 title)
+  --port <번호>      run 명령 시 사용할 포트 번호를 지정합니다.
+                     (기본값: 2013, 사용 중인 경우 빈 포트 자동 할당)
+  --no-open          run 명령 시 브라우저를 자동으로 열지 않도록 설정합니다.
+  --no-reload        run 명령 시 소스가 변경되어도 자동 새로고침을 하지 않습니다.
+  --boost            run 명령 시 부스트 모드(WebGL 렌더러)를 활성화합니다.
+                     (참고: build 명령에는 적용되지 않습니다.)
+  --force            컴파일 에러가 발생해도 중단하지 않고 build/run을 진행합니다.
+                     에러가 발생한 문장은 제외하고 결과물이 생성됩니다.
+                     단, 문법 오류가 발생한 경우에는 작동하지 않습니다.
+  --warnings         decompile 명령 시 변환하지 못한 부분을 콘솔에 출력하여 알려줍니다.
+                     (기본적으로는 소스 내에 '# [decompile]' 주석으로만 남깁니다.)
+  --sizes            decompile 명령 시 모든 모양(costume)에 'size 가로 세로' 속성을 명시합니다.
+                     (기본적으로 글상자를 제외한 모양 크기는 이미지 파일 자체의 크기를 따릅니다.)
+  --keep-svg         decompile 명령 시 SVG 모양을 PNG로 대체하지 않고 원본 그대로 유지합니다.`;
 
 function parseArgs(argv: string[]) {
   const options: CliOptions = { assets: [] };
@@ -176,17 +174,25 @@ async function runBuild(file: string, options: CliOptions): Promise<number> {
     out.report(label, result.errors, "에러");
     // 문법 에러면 작품 자체가 없으므로(project 가 null) --force 로도 내보낼 게 없다
     if (!options.force || !result.project) {
-      out.outro(out.red(`${label}: 에러 ${result.errors.length}개 — 내보내지 않았습니다`));
+      out.outro(
+        out.red(
+          `${label}: 에러 ${result.errors.length}개 — 내보내지 않았습니다`,
+        ),
+      );
       return 1;
     }
-    out.log.warn(`--force — 에러 ${result.errors.length}개를 무시하고 그대로 내보냅니다.`);
+    out.log.warn(
+      `--force — 에러 ${result.errors.length}개를 무시하고 그대로 내보냅니다.`,
+    );
   }
 
   const outPath = options.out ?? `${file.replace(/\.tess$/, "")}.ent`;
   fs.mkdirSync(path.dirname(path.resolve(outPath)), { recursive: true });
 
   const asJson = outPath.endsWith(".json");
-  const spin = out.working(asJson ? "작품 내보내는 중" : "작품 묶는 중 (모양 미리보기까지)");
+  const spin = out.working(
+    asJson ? "작품 내보내는 중" : "작품 묶는 중 (모양 미리보기까지)",
+  );
   try {
     fs.writeFileSync(
       outPath,
@@ -222,7 +228,10 @@ async function runBuild(file: string, options: CliOptions): Promise<number> {
 }
 
 /** 컴파일해서 브라우저에서 열어 본다 */
-async function runProject(file: string, options: CliOptions): Promise<number | null> {
+async function runProject(
+  file: string,
+  options: CliOptions,
+): Promise<number | null> {
   const source = fs.readFileSync(file, "utf-8");
   const label = path.basename(file);
   const assetDirs = assetDirsFor(file, options);
@@ -240,10 +249,16 @@ async function runProject(file: string, options: CliOptions): Promise<number | n
   if (!result.ok) {
     out.report(label, result.errors, "에러");
     if (!options.force || !result.project) {
-      out.outro(out.red(`${label}: 에러 ${result.errors.length}개 — 실행하지 않았습니다`));
+      out.outro(
+        out.red(
+          `${label}: 에러 ${result.errors.length}개 — 실행하지 않았습니다`,
+        ),
+      );
       return 1;
     }
-    out.log.warn(`--force — 에러 ${result.errors.length}개를 무시하고 그대로 실행합니다.`);
+    out.log.warn(
+      `--force — 에러 ${result.errors.length}개를 무시하고 그대로 실행합니다.`,
+    );
   }
 
   const reload = !options.noReload;
@@ -265,7 +280,10 @@ async function runProject(file: string, options: CliOptions): Promise<number | n
   const rows: Array<[string, string]> = [
     ["주소", out.cyan(server.url)],
     ["실행기", server.runtime],
-    ["새로고침", reload ? "켜짐  " + out.dim("--no-reload 로 끌 수 있습니다") : "꺼짐"],
+    [
+      "새로고침",
+      reload ? "켜짐  " + out.dim("--no-reload 로 끌 수 있습니다") : "꺼짐",
+    ],
   ];
   if (options.boost) rows.push(["부스트", "켜짐  " + out.dim("WebGL 렌더러")]);
   out.note(out.details(rows), "실행 중");
@@ -324,7 +342,9 @@ function watchAndReload(
           out.log.warn("다시 불러오기 실패 — 이전 버전을 계속 보여줍니다.");
           return;
         }
-        out.log.warn(`--force — 에러 ${result.errors.length}개를 무시하고 그대로 반영합니다.`);
+        out.log.warn(
+          `--force — 에러 ${result.errors.length}개를 무시하고 그대로 반영합니다.`,
+        );
       }
       // The guard above returned for every case that leaves `project` unset.
       server.update({
@@ -398,7 +418,10 @@ function countBlocks(node: any): number {
 }
 
 /** 이미 있는 .ent(엔트리 작품)를 Tess 소스로 되돌린다 */
-async function runDecompile(file: string, options: CliOptions): Promise<number> {
+async function runDecompile(
+  file: string,
+  options: CliOptions,
+): Promise<number> {
   const { decompileEnt } = await import("@tess/decompiler");
   const label = path.basename(file);
   const bytes = fs.readFileSync(file);
@@ -451,7 +474,9 @@ async function runDecompile(file: string, options: CliOptions): Promise<number> 
         [...shown, ...(more > 0 ? [out.dim(`… 외 ${more}개`)] : [])].join("\n"),
       );
     } else {
-      out.log.info(out.dim("--warnings 를 붙이면 옮기지 못한 부분을 자세히 보여줍니다."));
+      out.log.info(
+        out.dim("--warnings 를 붙이면 옮기지 못한 부분을 자세히 보여줍니다."),
+      );
     }
   }
 
@@ -461,7 +486,8 @@ async function runDecompile(file: string, options: CliOptions): Promise<number> 
       path: mainFile,
       assetDirs: [outDir],
     });
-    if (recheck.ok) out.log.success("되돌린 소스가 다시 정상적으로 컴파일됩니다.");
+    if (recheck.ok)
+      out.log.success("되돌린 소스가 다시 정상적으로 컴파일됩니다.");
     else {
       out.log.warn(
         `되돌린 소스에 아직 컴파일 에러가 ${recheck.errors.length}개 있습니다.\n` +
@@ -482,7 +508,13 @@ async function main(argv: string[]): Promise<number | null> {
   // and `run` keeps reusing it for every rebuild.
   options.cache = createCompileCache();
   const [first, ...others] = rest;
-  const commands: Record<string, (file: string, options: CliOptions) => number | null | Promise<number | null>> = {
+  const commands: Record<
+    string,
+    (
+      file: string,
+      options: CliOptions,
+    ) => number | null | Promise<number | null>
+  > = {
     check: runCheck,
     build: runBuild,
     run: runProject,

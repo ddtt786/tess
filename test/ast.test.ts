@@ -1,4 +1,10 @@
-// 파스 트리가 어떤 AST 로 바뀌는지 — 특히 연산자 우선순위와 결합 방향을 확인한다.
+/**
+ * 파스 트리가 어떤 AST로 변환되는지 확인합니다.
+ * 특히 연산자 우선순위와 결합 방향을 검증합니다.
+ *
+ * @example
+ * shape('1 + 2 * 3', '(+ 1 (* 2 3))');
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { expr, stmt } from './helpers.ts';
@@ -25,7 +31,9 @@ function sexp(node: any): string {
 const shape = (source: string, expected: string) =>
   test(`표현식: ${source}`, () => assert.equal(sexp(expr(source)), expected));
 
-// --- 산술 우선순위 ------------------------------------------------------------
+/**
+ * 산술 연산자 우선순위 및 결합 방향 테스트
+ */
 shape('1 + 2 * 3', '(+ 1 (* 2 3))');
 shape('1 * 2 + 3', '(+ (* 1 2) 3)');
 shape('(1 + 2) * 3', '(* (+ 1 2) 3)');
@@ -38,7 +46,9 @@ shape('2 * 3 ** 2', '(* 2 (** 3 2))');        // ** 가 * 보다 강함
 shape('-2 ** 2', '(** (- 2) 2)');
 shape('-x + 1', '(+ (- x) 1)');
 
-// --- 비교 · 논리 우선순위 ------------------------------------------------------
+/**
+ * 비교 및 논리 연산자 우선순위 테스트
+ */
 shape('hp > 0 and not dead', '(and (> hp 0) (not dead))');
 shape('a or b and c', '(or a (and b c))');
 shape('a and b or c', '(or (and a b) c)');
@@ -49,7 +59,9 @@ shape('score <= 100', '(<= score 100)');
 shape('item != "potion"', '(!= item "potion")');
 shape('a + 1 == b * 2', '(== (+ a 1) (* b 2))');
 
-// --- 호출 · 인덱스 · 리터럴 ----------------------------------------------------
+/**
+ * 함수 호출, 인덱스 접근 및 리터럴 처리 테스트
+ */
 shape('random(1, 10)', '(random 1 10)');
 shape('random_color()', '(random_color)');
 shape('join(uppercase("a"), b)', '(join (uppercase "a") b)');
@@ -69,7 +81,9 @@ test('색상 리터럴은 소문자로 정규화한다', () => {
   assert.deepEqual(expr('#AbCdEf'), { type: 'Color', value: '#abcdef' });
 });
 
-// --- 문장 AST ------------------------------------------------------------------
+/**
+ * 문장(Statement) AST 변환 테스트
+ */
 test('say ... for ...', () => {
   assert.deepEqual(stmt('say "반갑습니다!" for 2'), {
     type: 'Say',

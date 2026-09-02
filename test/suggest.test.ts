@@ -1,7 +1,10 @@
-// 이름을 잘못 적었을 때 가까운 이름을 짚어 주는지 검사한다.
-//
-// "그런 것 없습니다" 만 돌려주면 어디가 틀렸는지 눈으로 찾아야 한다. 특히 한글은
-// 글자 하나가 자음·모음이 뭉친 덩어리라 '체력' 과 '체렄' 이 눈에 잘 안 띈다.
+/**
+ * 존재하지 않는 식별자를 참조했을 때 오타를 교정하여 가장 유사한 이름을 제안하는지 검증합니다.
+ *
+ * 단순히 "존재하지 않는 이름입니다"라는 오류만 반환하면 사용자가 직접 오타를 찾아야 합니다.
+ * 특히 한글은 자음과 모음이 결합된 형태이므로 '체력'과 '체렄'처럼 시각적으로 구분이 어려운 오타를
+ * 시스템이 적극적으로 식별하여 제안하도록 합니다.
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { editDistance, nearestName, didYouMean } from '@tess/core';
@@ -10,11 +13,11 @@ import { parse } from '@tess/parser';
 
 const object = (body: any) => `scene "s":\n  object "o":\n${body}\n  end\nend`;
 const firstError = (source: string) => compileProject(source, { path: 't.tess' }).errors[0]?.message ?? '';
-// 엔트리가 실행할 때 이름으로 찾는 자리(모양·소리)는 경고로만 짚어 준다
+// 엔트리 실행 시 이름으로 참조되는 속성(예: 모양, 소리)에 대한 오타는 오류가 아닌 경고(warning)로 처리됩니다.
 const firstWarning = (source: string) => compileProject(source, { path: 't.tess' }).warnings[0]?.message ?? '';
 
 test('붙어 있는 두 글자가 바뀐 것은 한 번으로 센다', () => {
-  // 손으로 칠 때 가장 흔한 실수다. 두 번으로 세면 정작 찾아 줘야 할 오타를 놓친다.
+  /** 타이핑 중 가장 빈번하게 발생하는 인접 문자의 도치(예: abc -> acb)는 하나의 수정으로 간주하여 오타 교정의 정확도를 높입니다. */
   assert.equal(editDistance('lenght', 'length'), 1);
   assert.equal(editDistance('abc', 'abc'), 0);
   assert.equal(editDistance('abc', 'abd'), 1);
@@ -30,7 +33,7 @@ test('가까운 이름을 고르고, 너무 멀면 아무것도 고르지 않는
 });
 
 test('짧은 이름일수록 덜 봐준다', () => {
-  // 세 글자짜리에서 두 글자가 다르면 오타라기보다 다른 이름이다
+  /** 세 글자 단어에서 두 글자 이상이 다를 경우 단순 오타가 아닌 전혀 다른 식별자로 취급하여 제안 대상에서 제외합니다. */
   assert.equal(nearestName('abc', ['abd']), 'abd');
   assert.equal(nearestName('abc', ['xyz']), null);
 });
@@ -75,8 +78,9 @@ test('키 이름 오타를 짚어 준다', () => {
 });
 
 test('오타로 볼 수 없으면 원래 안내를 그대로 낸다', () => {
-  // 가까운 이름이 있는데 "그 이름으로 새로 등록하세요" 라고 하면 서로 어긋난 말이 된다.
-  // 반대로 가까운 이름이 없으면 등록 방법을 알려 주는 쪽이 도움이 된다.
+  /**
+   * 유사한 이름이 존재하는 경우 오타 교정 메시지를 출력하며, 유사한 이름이 없을 때만 새 항목 등록을 유도하는 메시지를 출력해야 사용자 혼란을 줄일 수 있습니다.
+   */
   const message = firstWarning(object(
     '    costume 점프 "a.png" size 1 1\n    when start do\n      costume = "전혀다른모양"\n    end',
   ));
@@ -85,8 +89,10 @@ test('오타로 볼 수 없으면 원래 안내를 그대로 낸다', () => {
 });
 
 test('같은 오타를 에러와 경고로 두 번 읽히지 않는다', () => {
-  // 검증기는 컴파일 전에 "선언되지 않은 이름" 을 미리 알려 주는데, 컴파일까지 갔으면
-  // 같은 자리에서 더 자세한 에러가 이미 나온다.
+  /**
+   * 컴파일러의 의미 분석 단계에서 이미 구체적인 오류를 발생시켰다면,
+   * 정적 검증기가 동일한 위치에 대해 "선언되지 않은 이름" 경고를 중복해서 표시하지 않아야 합니다.
+   */
   const result = compileProject(
     object('    var 체력 = 3\n    when start do\n      체렄 = 5\n    end'),
     { path: 't.tess' },

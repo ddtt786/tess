@@ -1,4 +1,12 @@
-// 디버그 패널 UI(packages/player/src/debug-ui.ts)를 jsdom 에 올리고 가짜 엔트리 실행기로 눌러 본다.
+/**
+ * 디버그 패널 UI(`packages/player/src/debug-ui.ts`)를 jsdom 환경에 마운트하고 모의(fake) 엔트리 실행기를 통해 상호작용을 테스트합니다.
+ * 
+ * @example
+ * ```typescript
+ * const ui = await mountDebugPanel(t);
+ * ui.click('run-btn');
+ * ```
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -10,20 +18,31 @@ import { compileProject } from '@tess/compiler';
 import { stripTypeScriptTypes } from 'node:module';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-// preact 는 @tess/player 의 의존성이다 — 실행 서버가 내보내는 것과 같은 파일을 쓴다.
+/**
+ * preact 라이브러리는 @tess/player의 의존성 패키지입니다. 
+ * 테스트 환경과 실제 실행 서버가 클라이언트에 제공하는 파일이 동일하도록 경로를 동적으로 탐색합니다.
+ */
 const preactDist = () => findPreactDir();
 
-/** 디버그 UI 모듈을 jsdom 에 올린다. import 는 떼고 preact 를 직접 넣어 준다. */
+/**
+ * 디버그 UI 모듈을 jsdom에 마운트합니다.
+ * import 구문을 제거하고 preact를 직접 주입하여 브라우저 환경을 시뮬레이션합니다.
+ *
+ * @param t - 테스트 컨텍스트
+ * @returns 마운트된 UI 객체 및 제어 유틸리티
+ */
 async function mountDebugPanel(t: any) {
   const html = playerPage({
     name: '치로', base: '/lib', summary: { scenes: 1, objects: 1, blocks: 1 }, entName: 'a.ent', reload: false,
   });
   const shell = html.slice(0, html.indexOf('<script')) + '</body></html>';
   const dom = new JSDOM(shell, { runScripts: 'outside-only', pretendToBeVisual: true });
-  // The harness stands in for the whole browser side: it stuffs a fake entry
-  // runtime and the tess bridge onto the window, none of which jsdom knows about.
+  /**
+   * 브라우저 환경을 모방하는 테스트 하네스입니다.
+   * jsdom에 존재하지 않는 모의 엔트리 런타임과 tess 브리지를 window 객체에 추가합니다.
+   */
   const window: any = dom.window;
-  t.after(() => window.close()); // 상태를 확인하는 setInterval 이 돌고 있다
+  t.after(() => window.close()); /** 상태 확인용 setInterval 정리를 위해 창을 닫습니다. */
 
   const engine = {
     state: 'stop',
@@ -39,7 +58,10 @@ async function mountDebugPanel(t: any) {
     is_touch_supported: { func: () => '실제터치' },
     is_current_device_type: { func: (sprite: any, script: any) => '실제' + script.getField('DEVICE', script) },
   };
-  // 실행기가 들고 있는 값. 디버거가 고쳐 쓰면 여기가 바뀌어야 한다.
+  /** 
+   * 실행기가 유지하는 상태 값입니다. 
+   * 디버거에서 값을 수정하면 이 객체의 상태가 변경됩니다. 
+   */
   const live: {
     variables: Record<string, number>;
     lists: Record<string, Array<{ data: unknown }>>;
@@ -66,7 +88,10 @@ async function mountDebugPanel(t: any) {
     deleteValue: (index: number) => { live.lists[id]!.splice(index - 1, 1); },
   } : null);
 
-  // 무대 위 오브젝트. entity 는 엔트리가 주는 게터들만 흉내낸다.
+  /** 
+   * 무대 위의 객체입니다. 
+   * entity 객체는 엔트리 실행기가 제공하는 게터(getter) 메서드들을 모방합니다. 
+   */
   const entity: any = {
     x: 12.345, y: -7, size: 100, rotation: 0, direction: 90, visible: true,
     picture: { id: 'p2', name: '점프' },
@@ -116,7 +141,9 @@ async function mountDebugPanel(t: any) {
   });
   window.fetch = () => Promise.resolve({ json: () => Promise.resolve({}) });
 
-  // preact 는 Node 쪽에서 import 되므로 전역 document 가 jsdom 것을 가리켜야 한다
+  /**
+   * preact가 Node 환경에서 import되므로, 전역 변수들이 jsdom의 객체를 가리키도록 설정합니다.
+   */
   const globals = ['document', 'Node', 'Element', 'HTMLElement', 'DocumentFragment',
     'Text', 'Comment', 'NodeFilter', 'MutationObserver', 'requestAnimationFrame'];
   const scope = globalThis as Record<string, unknown>;
@@ -124,10 +151,11 @@ async function mountDebugPanel(t: any) {
   for (const key of globals) scope[key] = window[key];
   t.after(() => { for (const [key, value] of saved) scope[key] = value; });
 
-  // 브라우저가 실제로 받는 preact 파일을 그대로 쓴다. 패키지 기본 진입점을 쓰면
-  // 서버가 내보내는 파일과 달라져서, 그 파일만 깨져 있어도 테스트가 통과해 버린다.
-  // The panel is written in TypeScript and served with its types stripped, so
-  // strip them here too — this is the exact text the browser receives.
+  /**
+   * 브라우저에서 실제로 사용하는 preact 파일을 로드합니다.
+   * 패키지 기본 진입점을 사용하면 서버가 제공하는 파일과 달라질 수 있으므로 정확한 파일을 사용합니다.
+   * 패널 코드는 TypeScript로 작성되었으며 타입이 제거된 상태로 제공되므로, 테스트에서도 동일하게 타입을 제거하여 브라우저가 수신하는 코드와 일치시킵니다.
+   */
   const source = stripTypeScriptTypes(
     fs.readFileSync(path.join(root, 'packages/player/src/debug-ui.ts'), 'utf-8'),
     { mode: 'strip' },
@@ -156,7 +184,13 @@ async function mountDebugPanel(t: any) {
     tab: (name: string) => window.document.querySelector('.debug-tab[data-tab="' + name + '"]')!
       .dispatchEvent(new window.MouseEvent('click')),
     settle: () => new Promise((resolve) => setTimeout(resolve, 20)),
-    /** 값 칸을 눌러서 입력칸으로 바꾸고, 새 값을 넣고 Enter 를 친다 */
+    /**
+     * 특정 요소의 값을 수정합니다. 
+     * 요소를 클릭하여 입력란을 활성화한 후, 새 값을 입력하고 Enter 키 이벤트를 발생시킵니다.
+     *
+     * @param node - 클릭할 대상 DOM 요소
+     * @param value - 입력할 새로운 값
+     */
     async edit(node: any, value: any) {
       node.dispatchEvent(new window.MouseEvent('click'));
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -175,7 +209,7 @@ test('디버그 패널은 탭으로 나뉘고, 한 번에 하나만 보인다', 
   const tabs = [...ui.window.document.querySelectorAll('.debug-tab')];
   assert.deepEqual(tabs.map((button) => button.dataset.tab), ['run', 'data', 'objects', 'errors']);
 
-  // 처음엔 실행 탭
+  /** 초기 상태에서는 실행 탭이 활성화됩니다. */
   assert.equal(ui.byId('tab-run')!.hidden, false);
   assert.equal(ui.byId('tab-data')!.hidden, true);
 
@@ -195,13 +229,13 @@ test('정지한 뒤에도 시작하기로 다시 실행할 수 있다', async (t
   assert.equal(ui.engine.state, 'run');
   ui.click('pause-btn');
   assert.equal(ui.engine.state, 'pause');
-  // 일시정지 중의 시작하기는 처음부터 다시가 아니라 "이어서 하기" 다
+  /** 일시정지 상태에서 시작 버튼을 누르면 처음부터 다시 시작하지 않고 실행을 재개합니다. */
   ui.click('run-btn');
   assert.equal(ui.engine.state, 'run');
 
   ui.click('stop-btn');
   assert.equal(ui.engine.state, 'stop');
-  ui.click('run-btn'); // 이게 안 되던 게 원래 문제였다
+  ui.click('run-btn');
   assert.equal(ui.engine.state, 'run');
 });
 
@@ -214,7 +248,7 @@ test('실행 상태에 따라 버튼과 안내 글이 바뀐다', async (t) => {
   ui.click('stop-btn');
   await ui.settle();
   assert.match(stateText(), /멈춰/);
-  assert.equal(ui.byId('pause-btn')!.disabled, true); // 멈춰 있으면 일시정지할 게 없다
+  assert.equal(ui.byId('pause-btn')!.disabled, true); /** 정지 상태에서는 일시정지 버튼이 비활성화됩니다. */
   assert.equal(ui.byId('run-btn')!.disabled, false);
 
   ui.click('run-btn');
@@ -233,7 +267,7 @@ test('부스트 모드 · 기기 · 터치를 디버그 창에서 정한 값으�
   ui.window.tessPatchEnvironmentBlocks();
   const askMobile = { getField: () => 'mobile' };
 
-  // 기본값은 브라우저의 진짜 값을 그대로 통과시킨다
+  /** 기본 상태에서는 브라우저의 실제 환경 값을 그대로 사용합니다. */
   assert.equal(ui.blocks.is_boost_mode.func(), '실제부스트');
   assert.equal(ui.blocks.is_touch_supported.func(), '실제터치');
   assert.equal(ui.blocks.is_current_device_type.func(null, askMobile), '실제mobile');
@@ -242,20 +276,25 @@ test('부스트 모드 · 기기 · 터치를 디버그 창에서 정한 값으�
   assert.equal(ui.blocks.is_boost_mode.func(), true);
   ui.choose('env-boost', 'false');
   assert.equal(ui.blocks.is_boost_mode.func(), false);
-  ui.choose('env-boost', ''); // 다시 실제 값으로
+  ui.choose('env-boost', ''); /** 실제 값으로 복원합니다. */
   assert.equal(ui.blocks.is_boost_mode.func(), '실제부스트');
 
   ui.choose('env-touch', 'false');
   assert.equal(ui.blocks.is_touch_supported.func(), false);
 
-  // 기기는 "지금 기기가 X 인가?" 를 묻는 블록이라 고른 값과 같은지로 답한다
+  /**
+   * 기기 환경 변수는 선택된 값과 스크립트에서 확인하려는 기기 타입이 일치하는지 여부를 반환합니다.
+   */
   ui.choose('env-device', 'mobile');
   assert.equal(ui.blocks.is_current_device_type.func(null, askMobile), true);
   ui.choose('env-device', 'desktop');
   assert.equal(ui.blocks.is_current_device_type.func(null, askMobile), false);
 });
 
-/** 변수·신호·함수가 담긴 작은 프로젝트 */
+/** 
+ * 테스트용 소규모 프로젝트 객체입니다. 
+ * 변수, 신호, 함수 데이터를 포함하고 있습니다.
+ */
 const dataProject = {
   scenes: [{ id: 's1', name: '장면 1' }],
   objects: [{ id: 'o1', name: '치로', scene: 's1', script: '[]' }],
@@ -277,7 +316,10 @@ const dataProject = {
   }],
 };
 
-/** 본문이 든 함수 하나짜리 작품 — 함수 코드 펼치기 검사용 */
+/**
+ * 단일 함수를 포함하는 테스트용 프로젝트 객체입니다.
+ * 함수 코드 확장 UI 기능을 테스트하는 데 사용됩니다.
+ */
 const functionProject = {
   ...dataProject,
   functions: [{
@@ -302,10 +344,10 @@ test('자료 탭에서 변수의 지금 값 · 신호 · 함수를 볼 수 있�
 
   const variables = ui.byId('var-list')!.textContent;
   assert.match(variables, /점수/);
-  assert.match(variables, /42/);          // 실행 중인 값을 읽어 온다
+  assert.match(variables, /42/); /** 실행 중인 변수의 현재 값을 읽어옵니다. */
   assert.match(variables, /기록/);
   assert.match(variables, /\[2개\]/);
-  assert.doesNotMatch(variables, /초시계/); // 초시계·대답은 Tess 내장이라 목록에서 뺀다
+  assert.doesNotMatch(variables, /초시계/); /** 초시계와 대답은 Tess 내장 기능이므로 목록에서 제외됩니다. */
 
   assert.match(ui.byId('signal-list')!.textContent, /게임 시작/);
   const functions = ui.byId('function-list')!.textContent;
@@ -313,7 +355,13 @@ test('자료 탭에서 변수의 지금 값 · 신호 · 함수를 볼 수 있�
   assert.match(functions, /1개 인자/);
 });
 
-/** 자료 탭을 열고 변수 목록을 돌려준다 */
+/**
+ * 자료 탭을 열고 변수 목록 DOM 요소를 반환합니다.
+ *
+ * @param ui - 테스트 UI 객체
+ * @param project - 렌더링할 프로젝트 데이터 (기본값: dataProject)
+ * @returns 변수 목록을 나타내는 DOM 요소
+ */
 async function openData(ui: any, project = dataProject) {
   ui.window.tessRenderProjectDebug(project);
   ui.tab('data');
@@ -330,7 +378,7 @@ test('변수 값을 눌러서 바로 고칠 수 있다', async (t) => {
   assert.ok(cell, '지금 값이 눌러서 고칠 수 있는 칸이어야 한다');
   await ui.edit(cell, '77');
 
-  // 숫자로 읽히는 값은 숫자로 넣어야 계산 블록이 제대로 돈다
+  /** 입력값이 숫자 형식인 경우 숫자 타입으로 저장되어야 계산 블록이 정상 동작합니다. */
   assert.equal(ui.live.variables.v1, 77);
   assert.match(ui.byId('var-list')!.textContent, /77/);
 });
@@ -372,23 +420,25 @@ test('펼친 리스트에서 항목을 고치고 넣고 지울 수 있다', asyn
     .dispatchEvent(new ui.window.MouseEvent('click'));
   await ui.settle();
 
-  // 고치기
+  /** 리스트의 항목 값을 수정하는 동작을 검증합니다. */
   await ui.edit(ui.byId('var-list')!.querySelectorAll('.debug-list-ol .debug-edit')[1], 'ㄷ');
   assert.deepEqual(ui.live.lists.l1.map((item) => item.data), ['ㄱ', 'ㄷ']);
 
-  // 넣기
+  /** 리스트에 새로운 항목을 추가하는 동작을 검증합니다. */
   ui.byId('var-list')!.querySelector('.debug-add-btn')!.dispatchEvent(new ui.window.MouseEvent('click'));
   await ui.settle();
   assert.equal(ui.live.lists.l1.length, 3);
 
-  // 지우기 (첫 항목)
+  /** 리스트의 첫 번째 항목을 삭제합니다. */
   ui.byId('var-list')!.querySelectorAll('.debug-list-ol .debug-mini-btn')[0]
     .dispatchEvent(new ui.window.MouseEvent('click'));
   await ui.settle();
   assert.deepEqual(ui.live.lists.l1.map((item) => item.data), ['ㄷ', '']);
 });
 
-// 빈 항목은 글자가 없어서 칸의 폭이 0 이 돼 누를 수가 없었다.
+/**
+ * 리스트의 항목이 빈 문자열인 경우에도 사용자가 클릭하여 값을 수정할 수 있어야 합니다.
+ */
 test('값이 빈 리스트 항목도 눌러서 고칠 수 있다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();
@@ -406,7 +456,9 @@ test('값이 빈 리스트 항목도 눌러서 고칠 수 있다', async (t) => 
   assert.deepEqual(ui.live.lists.l1.map((item) => item.data), ['채움']);
 });
 
-// 펼친 항목·블록이 이름 오른쪽으로 눕지 않도록 flex 는 바로 아래 줄에만 건다.
+/**
+ * UI 레이아웃 테스트: 확장된 리스트 항목과 함수 블록이 가로로 배치되지 않고 세로로 올바르게 쌓이는지 확인합니다.
+ */
 test('펼친 리스트 항목과 함수 블록은 세로로 쌓인다', () => {
   const css = playerPage({
     name: 'a', base: '/lib', summary: { scenes: 1, objects: 1, blocks: 1 }, entName: 'a.ent', reload: false,
@@ -416,8 +468,9 @@ test('펼친 리스트 항목과 함수 블록은 세로로 쌓인다', () => {
   assert.match(css, /\.debug-rows > li\.debug-items-row \{[^}]*display: block/);
 });
 
-// 넣고 지운 결과가 화면에 바로 보여야 한다. arrow 는 처음 평가에서 읽은 것만
-// 따라가므로, 접혀 있을 때 일찍 돌아가면 state.tick 을 놓쳐서 다시 안 그렸다.
+/**
+ * 리스트 항목을 추가하거나 삭제할 때 UI가 즉각적으로 업데이트되는지 확인합니다.
+ */
 test('항목을 넣고 지우면 목록이 바로 다시 그려진다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();
@@ -438,7 +491,9 @@ test('항목을 넣고 지우면 목록이 바로 다시 그려진다', async (t
   assert.equal(rows(), 2, '지운 항목이 바로 사라져야 한다');
 });
 
-// 고친 <input> 이 다음 칸에 재사용되면, value 속성을 다시 써도 화면 값이 안 따라온다.
+/**
+ * 한 리스트 항목을 수정한 후 다른 항목을 클릭했을 때, 이전 수정 값이 반영되지 않고 해당 항목의 올바른 값이 표시되는지 확인합니다.
+ */
 test('한 항목을 고친 뒤 다른 항목을 열면 그 항목의 값이 뜬다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();
@@ -451,7 +506,7 @@ test('한 항목을 고친 뒤 다른 항목을 열면 그 항목의 값이 뜬�
   await ui.edit(cells()[0], '바뀐값');
   assert.deepEqual(ui.live.lists.l1.map((i) => i.data), ['바뀐값', 'ㄴ']);
 
-  // 두 번째 항목을 열면 'ㄴ' 이 떠야 한다 (앞서 고친 '바뀐값' 이 아니라)
+  /** 두 번째 항목을 클릭하면 이전 항목의 수정된 값이 아닌, 해당 항목의 원본 값('ㄴ')이 표시되어야 합니다. */
   cells()[1].dispatchEvent(new ui.window.MouseEvent('click'));
   await ui.settle();
   assert.equal(ui.window.document.querySelector('.debug-edit-input')!.value, 'ㄴ');
@@ -463,8 +518,8 @@ test('변수와 리스트를 무대에서 보이거나 숨길 수 있다', async
   const list = await openData(ui);
 
   const toggles = list.querySelectorAll('.debug-toggle');
-  assert.equal(toggles.length, 2); // 변수 하나, 리스트 하나
-  assert.equal(toggles[0].textContent, '숨김'); // 처음엔 안 보이는 상태
+  assert.equal(toggles.length, 2); /** 변수 1개, 리스트 1개가 존재합니다. */
+  assert.equal(toggles[0].textContent, '숨김'); /** 초기 상태는 숨김(hidden)으로 설정됩니다. */
 
   toggles[0].dispatchEvent(new ui.window.MouseEvent('click'));
   await ui.settle();
@@ -518,7 +573,7 @@ test('자료 탭의 신호를 눌러서 바로 보낼 수 있다', async (t) => 
   assert.deepEqual(ui.engine.fired, [['when_message_cast', 'm1']]);
 });
 
-// --- 오브젝트 탭 --------------------------------------------------------------
+/** 오브젝트 탭 UI 동작 테스트 */
 test('오브젝트 정보에 좌표 · 크기 · 방향 · 모양이 나온다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();
@@ -527,16 +582,16 @@ test('오브젝트 정보에 좌표 · 크기 · 방향 · 모양이 나온다',
   await ui.settle();
 
   const info = ui.byId('object-info')!.textContent.replace(/\s+/g, ' ');
-  assert.match(info, /x 좌표 12.35/);   // 소수점 둘째 자리까지만
+  assert.match(info, /x 좌표 12.35/); /** 좌표값은 소수점 둘째 자리까지만 표시됩니다. */
   assert.match(info, /y 좌표 -7/);
   assert.match(info, /크기 100/);
   assert.match(info, /이동 방향 90/);
   assert.match(info, /모양 번호 2 \/ 2/);
 
-  // 모양·회전 방식은 드롭다운, 보이기는 토글이다
+  /** 모양과 회전 방식 설정은 드롭다운 UI로 제공되며, 보이기 설정은 토글 버튼으로 제공됩니다. */
   const [costume, rotate] = ui.byId('object-info')!.querySelectorAll('select');
   assert.deepEqual([...costume.options].map((o) => o.textContent), ['기본', '점프']);
-  assert.equal(costume.value, 'p2'); // 지금 모양이 골라져 있다
+  assert.equal(costume.value, 'p2'); /** 현재 설정된 모양이 선택된 상태여야 합니다. */
   assert.deepEqual([...rotate.options].map((o) => o.value), ['free', 'vertical', 'none']);
   assert.equal(rotate.value, 'free');
   assert.equal(ui.byId('object-info')!.querySelector('.debug-toggle')!.textContent, '보임');
@@ -588,9 +643,10 @@ test('실행기가 아직 없으면 오브젝트 정보는 안내만 보여 준�
   assert.match(ui.byId('object-info')!.textContent, /한 번 실행해 보세요/);
 });
 
-// arrow 1.0.6 은 조각을 떼어낼 때 큐에 남은 갱신을 걷어내지 않아서, 오브젝트를 바꿀 때
-// 줄이 생기거나 없어지면 `expressionPool[effect] is not a function` 으로 터진다.
-// 그래서 줄 구성은 언제나 같아야 하고, 안 쓰는 줄은 hidden 으로만 감춰야 한다.
+/**
+ * 실행기에서 오브젝트 정보가 아직 로드되지 않은 경우, 속성 목록 대신 적절한 안내 메시지가 표시되어야 합니다.
+ * UI 안정성을 위해 DOM 구조는 유지되며, 불필요한 요소는 숨김(hidden) 처리됩니다.
+ */
 test('실행기가 오브젝트를 아직 모르면 안내만 보여 준다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();
@@ -602,9 +658,9 @@ test('실행기가 오브젝트를 아직 모르면 안내만 보여 준다', as
   await ui.settle();
   assert.ok(labels().length > 5, '실행기가 아는 오브젝트는 값 줄이 나온다');
 
-  // 실행기가 이 오브젝트를 모르면 값 줄 대신 안내 한 줄만 남는다
+  /** 실행기에서 해당 오브젝트 데이터를 확인할 수 없는 경우, 안내 메시지 하나만 표시됩니다. */
   ui.window.Entry!.container = { getObject: () => null };
-  ui.click('debug-toggle'); // 패널을 열면 값 새로고침이 돌기 시작한다
+  ui.click('debug-toggle'); /** 디버그 패널을 열어 상태 값 갱신을 시작합니다. */
   await new Promise((resolve) => setTimeout(resolve, 500));
   assert.deepEqual(labels(), ['']);
   assert.match(ui.byId('object-info')!.textContent, /한 번 실행해 보세요/);
@@ -622,14 +678,19 @@ test('글상자는 글 내용을 고칠 수 있고, 모양 줄은 내지 않는�
   const row = (label: string) => [...ui.byId('object-info')!.querySelectorAll('li')]
     .find((li) => li.querySelector('.key')?.textContent === label);
   assert.ok(row('글 내용'), '글상자는 글 내용을 고칠 수 있다');
-  assert.equal(row('모양'), undefined);        // 글상자에는 모양이 없다
+  assert.equal(row('모양'), undefined); /** 글상자 오브젝트에는 모양 속성이 존재하지 않습니다. */
   assert.equal(row('회전 방식'), undefined);
 
   await ui.edit(row('글 내용')!.querySelector('.debug-edit'), '점수: 99');
   assert.equal(ui.entity.text, '점수: 99');
 });
 
-/** Mounts a two scene project and returns the per-scene shortcut buttons. */
+/**
+ * 두 개의 장면(Scene)을 포함하는 프로젝트를 마운트하고 장면 바로가기 버튼 요소를 반환합니다.
+ *
+ * @param ui - 테스트 UI 객체
+ * @returns 장면 바로가기 버튼들의 NodeList
+ */
 async function openScenes(ui: any) {
   ui.window.tessRenderProjectDebug({
     ...dataProject,
@@ -651,7 +712,7 @@ test('장면 바로가기로 그 장면으로 넘어가고 장면 시작 이벤�
 
   buttons[1].dispatchEvent(new ui.window.MouseEvent('click'));
   assert.equal(ui.scene.selected.id, 's2');
-  // Swapping the scene alone never runs its "when scene starts" scripts
+  /** 단순히 장면만 교체하는 경우에는 '장면이 시작될 때' 이벤트 스크립트가 실행되지 않아야 합니다. */
   assert.deepEqual(firedTypes(ui), ['when_scene_start']);
 });
 
@@ -660,7 +721,7 @@ test('장면 바로가기는 멈춰 있거나 일시정지여도 그 장면을 �
   await ui.settle();
   let buttons = await openScenes(ui);
 
-  // Entry drops the event unless the engine runs, so the jump starts it
+  /** 엔진이 정지된 상태에서는 이벤트가 무시되므로, 장면을 변경하면 실행이 함께 시작됩니다. */
   assert.equal(ui.engine.state, 'stop');
   buttons[1].dispatchEvent(new ui.window.MouseEvent('click'));
   assert.equal(ui.engine.state, 'run');
@@ -673,11 +734,11 @@ test('장면 바로가기는 멈춰 있거나 일시정지여도 그 장면을 �
   buttons = await openScenes(ui);
 
   buttons[0].dispatchEvent(new ui.window.MouseEvent('click'));
-  assert.equal(ui.engine.state, 'run'); // resumed, not restarted
+  assert.equal(ui.engine.state, 'run'); /** 실행이 처음부터 재시작되지 않고 이어서 재개되어야 합니다. */
   assert.equal(ui.scene.selected.id, 's1');
   assert.deepEqual(firedTypes(ui), ['when_scene_start', 'when_scene_start']);
 
-  // Firing again on the scene already selected restarts that scene
+  /** 이미 선택된 현재 장면에서 다시 이벤트를 발생시키면 해당 장면이 재시작됩니다. */
   buttons[0].dispatchEvent(new ui.window.MouseEvent('click'));
   assert.equal(ui.engine.fired.length, 3);
 });
@@ -707,8 +768,17 @@ test('항목 추가 단추는 목록 맨 위에 있다', async (t) => {
   assert.ok(kids.indexOf(box!.querySelector('.debug-list-ol')) > 0);
 });
 
-// --- Ctrl+Shift 로 무대에서 오브젝트 고르기 --------------------------------------
-/** 무대 캔버스를 붙이고 그 위의 오브젝트 목록을 세워 둔다 */
+/** 
+ * 단축키(Ctrl+Shift)를 이용한 무대 위 오브젝트 선택 상호작용 테스트
+ */
+/**
+ * 테스트 환경에 무대 캔버스를 추가하고 지정된 오브젝트 목록을 설정합니다.
+ *
+ * @param ui - 테스트 UI 객체
+ * @param objects - 설정할 오브젝트 목록
+ * @param current - 현재 선택된 오브젝트 목록 (기본값: objects)
+ * @returns 캔버스 요소와 중앙 좌표 정보를 포함하는 객체
+ */
 function withStage(ui: any, objects: any, current = objects) {
   const doc = ui.window.document;
   const canvas = doc.createElement('canvas');
@@ -720,11 +790,19 @@ function withStage(ui: any, objects: any, current = objects) {
   ui.window.Entry.container.objects_ = objects;
   ui.window.Entry.container.getCurrentObjects = () => current;
   ui.window.tessWatchStagePicks();
-  // 무대 (0,0) 은 캔버스 한가운데다
+  /** 무대의 (0, 0) 좌표는 캔버스의 정중앙에 위치합니다. */
   return { canvas, center: { clientX: 340, clientY: 185 } };
 }
 
-/** 무대 좌표에 100x100 으로 서 있는 오브젝트 하나 */
+/**
+ * 무대 좌표에 배치된 100x100 크기의 단일 오브젝트 데이터를 생성합니다.
+ *
+ * @param id - 오브젝트 식별자
+ * @param name - 오브젝트 이름
+ * @param x - X 좌표 (기본값: 0)
+ * @param y - Y 좌표 (기본값: 0)
+ * @returns 모의 오브젝트 데이터
+ */
 function stageActor(id: string, name: string, x = 0, y = 0) {
   return {
     id,
@@ -750,7 +828,7 @@ test('Ctrl+Shift 로 무대를 누르면 그 오브젝트가 디버거에서 열
   });
   ui.tab('objects');
   await ui.settle();
-  assert.equal(ui.byId('object-info-name')!.textContent, '— 다른'); // 처음엔 첫 오브젝트
+  assert.equal(ui.byId('object-info-name')!.textContent, '— 다른'); /** 초기 상태에서는 목록의 첫 번째 오브젝트가 표시됩니다. */
 
   const { canvas, center } = withStage(ui, [stageActor('o1', '치로')]);
   canvas.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
@@ -759,12 +837,14 @@ test('Ctrl+Shift 로 무대를 누르면 그 오브젝트가 디버거에서 열
   await ui.settle();
 
   assert.equal(ui.byId('object-info-name')!.textContent, '— 치로');
-  assert.equal(ui.byId('tab-objects')!.hidden, false); // 오브젝트 탭이 열린다
+  assert.equal(ui.byId('tab-objects')!.hidden, false); /** 해당 오브젝트를 표시하기 위해 오브젝트 탭이 활성화됩니다. */
 });
 
+/**
+ * 오브젝트 선택 기능이 반복적인 클릭 상호작용에서도 일관되게 동작하는지 확인합니다.
+ * 매 클릭 이벤트마다 독립적으로 판단하여 선택 상태가 갱신되어야 합니다.
+ */
 test('몇 번을 눌러도 계속 골라진다', async (t) => {
-  // 예전에는 "고르는 중" 플래그와 실행기 함수 바꿔치기가 걸려 있어서, 한 번 어긋나면
-  // 그 뒤로는 영영 안 먹었다. 지금은 누를 때마다 이벤트만 보고 새로 판단한다.
   const ui = await mountDebugPanel(t);
   await ui.settle();
   ui.window.tessRenderProjectDebug({
@@ -777,7 +857,7 @@ test('몇 번을 눌러도 계속 골라진다', async (t) => {
   ui.tab('objects');
   await ui.settle();
 
-  // 위쪽(무대 y=100)에는 엔트리봇, 가운데에는 치로
+  /** 상단(y=100) 위치에는 엔트리봇 객체를, 중앙에는 치로 객체를 배치합니다. */
   const { canvas } = withStage(ui, [stageActor('o2', '엔트리봇', 0, 100), stageActor('o1', '치로')]);
   const click = (clientX: any, clientY: any) => canvas.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
     bubbles: true, cancelable: true, button: 0, ctrlKey: true, shiftKey: true, clientX, clientY,
@@ -785,7 +865,7 @@ test('몇 번을 눌러도 계속 골라진다', async (t) => {
 
   const picked = [];
   for (let i = 0; i < 4; i += 1) {
-    click(340, i % 2 === 0 ? 85 : 185); // 엔트리봇 <-> 치로
+    click(340, i % 2 === 0 ? 85 : 185); /** 엔트리봇과 치로 위치를 번갈아가며 클릭합니다. */
     await ui.settle();
     picked.push(ui.byId('object-info-name')!.textContent);
   }
@@ -817,7 +897,7 @@ test('그냥 누른 것은 디버거가 가로채지 않는다', async (t) => {
 });
 
 test('고르는 클릭은 무대까지 내려가지 않는다', async (t) => {
-  // 디버깅하려고 누른 것이지 작품을 시작시키거나 진행시키려고 누른 게 아니다.
+  /** Ctrl+Shift 클릭 이벤트는 디버깅을 위한 객체 선택 용도이므로, 작품의 스크립트 실행(마우스 클릭 이벤트 등)을 트리거하지 않아야 합니다. */
   const ui = await mountDebugPanel(t);
   await ui.settle();
   ui.window.tessRenderProjectDebug(dataProject);
@@ -839,9 +919,10 @@ test('고르는 클릭은 무대까지 내려가지 않는다', async (t) => {
 });
 
 test('다른 장면의 오브젝트는 고르지 않는다', async (t) => {
-  // Entry.container.objects_ 에는 모든 장면의 오브젝트가 다 들어 있고, 다른 장면 것도
-  // getVisible() 이 참인 채로 제자리에 남아 있다. 그대로 훑으면 화면에 있지도 않은
-  // 앞 장면의 배경이 먼저 걸려서, 장면을 한 번 넘긴 뒤로는 늘 그것만 골라졌다.
+  /**
+   * 객체 선택 시 현재 활성화된 장면(Scene)의 객체들만 스캔해야 합니다.
+   * 모든 장면의 객체가 메모리에 유지되므로, 전체 객체를 스캔하면 현재 화면에 보이지 않는 이전 장면의 객체가 잘못 선택될 수 있습니다.
+   */
   const ui = await mountDebugPanel(t);
   await ui.settle();
   ui.window.tessRenderProjectDebug({
@@ -857,7 +938,7 @@ test('다른 장면의 오브젝트는 고르지 않는다', async (t) => {
 
   const intro = stageActor('old', '인트로배경');   // 앞 장면 것. 아직 보이는 상태로 남아 있다.
   const battle = stageActor('now', '전투배경');
-  // objects_ 는 앞 장면 것이 먼저다. 지금 장면은 전투뿐이다.
+  /** 객체 목록은 장면 순서대로 저장되어 있습니다. 두 번째 장면에 속하는 객체만 선택되는지 검증합니다. */
   const { canvas, center } = withStage(ui, [intro, battle], [battle]);
 
   canvas.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
@@ -869,9 +950,10 @@ test('다른 장면의 오브젝트는 고르지 않는다', async (t) => {
 });
 
 test('부스트 모드처럼 캔버스가 여럿이어도 무대에서 오브젝트를 고른다', async (t) => {
-  // 부스트 모드(WebGL)는 PIXI 가 글자 따위를 그리려고 눈에 안 보이는 도우미 캔버스를
-  // 열 몇 개나 먼저 만든다. `#workspace canvas` 로 첫 번째를 집으면 크기 0 짜리
-  // 엉뚱한 캔버스가 잡혀서, 무대를 눌러도 고르기가 아예 시작되지 않았다.
+  /**
+   * 부스트 모드(WebGL) 환경에서는 텍스트 렌더링 등을 위해 다수의 보조 캔버스가 생성될 수 있습니다.
+   * 무대 선택 이벤트 바인딩 시 정확히 실제 화면 캔버스를 타겟팅하는지 검증합니다.
+   */
   const ui = await mountDebugPanel(t);
   await ui.settle();
   ui.window.tessRenderProjectDebug(dataProject);
@@ -893,7 +975,7 @@ test('부스트 모드처럼 캔버스가 여럿이어도 무대에서 오브젝
   ui.window.Entry!.container.objects_ = [ui.stageObject];
   ui.window.tessWatchStagePicks();
 
-  // 무대 (0,0) = 캔버스 한가운데. 오브젝트는 그 자리에 100x100 으로 있다.
+  /** 무대의 (0,0) 좌표는 캔버스의 중심입니다. 객체가 중심에 100x100 크기로 위치한 상태에서 이벤트 좌표 매핑을 검증합니다. */
   ui.entity.x = 0;
   ui.entity.y = 0;
   stage.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
@@ -905,7 +987,7 @@ test('부스트 모드처럼 캔버스가 여럿이어도 무대에서 오브젝
   assert.equal(ui.byId('tab-objects')!.hidden, false);
 });
 
-// --- 딱 붙이기 (sticky) --------------------------------------------------------
+/** 창 크기 변경 및 스크롤에 따른 탭, 핸들의 위치 고정(Sticky) 동작 테스트 */
 test('섹션을 끝까지 줄이면 딱 붙어서 높이가 0 이 된다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();
@@ -917,12 +999,12 @@ test('섹션을 끝까지 줄이면 딱 붙어서 높이가 0 이 된다', async
     ui.window.dispatchEvent(new ui.window.MouseEvent('mouseup'));
   };
 
-  // jsdom 은 실제 높이를 0 으로 재므로 끌어당긴 만큼이 그대로 높이가 된다
+  /** jsdom 환경에서는 요소의 렌더링 높이를 0으로 간주하므로, 마우스 드래그로 끌어당긴 픽셀 값이 그대로 요소의 높이가 되어야 합니다. */
   drag(100, 130); // 30px — 딱 붙는 크기보다 작다
   await ui.settle();
   assert.match(section!.getAttribute('style'), /height:\s*0px/);
   assert.match(section!.getAttribute('class'), /collapsed/);
-  // 손잡이는 접힌 자리에 그대로 남아 있어야 다시 끌 수 있다
+  /** 크기가 최소로 줄어들어 패널이 접힌 상태에서도, 크기 조절 손잡이는 사용자가 다시 끌어당길 수 있도록 화면상 제자리에 유지되어야 합니다. */
   assert.equal(section!.querySelectorAll('.debug-vresize').length, 1);
 
   drag(100, 200); // 다시 끌어내면 딱 하고 펴진다
@@ -977,7 +1059,7 @@ test('작품 안의 이름은 어떤 것도 태그가 되지 않는다 (XSS)', a
     messages: [{ id: 'm9', name: '<iframe src=javascript:1>' }],
     functions: [],
   });
-  // 작품 이름이 들어가는 영역만 본다 (실행 탭의 안내 글에는 우리가 쓴 <b> 가 있다)
+  /** 작품 이름이 렌더링되는 영역에 대해서만 XSS 방어 처리 여부를 검사합니다. 실행 탭 본문에는 의도된 HTML 태그가 포함될 수 있습니다. */
   const areas = ['#tab-data', '#tab-objects'];
   const selector = areas.flatMap((area) => ['img', 'svg', 'iframe', 'script', 'b'].map((tag) => area + ' ' + tag)).join(', ');
   for (const name of ['data', 'objects']) {
@@ -987,7 +1069,7 @@ test('작품 안의 이름은 어떤 것도 태그가 되지 않는다 (XSS)', a
     assert.equal(injected.length, 0, [...injected].map((node) => node.outerHTML).join('\n'));
   }
   assert.equal(ui.window.PWNED, undefined);
-  // 그래도 사람이 읽을 수 있게 글자로는 그대로 보여야 한다
+  /** 악의적인 스크립트가 실행되지 않도록 차단하더라도, 원본 문자열은 사용자가 시각적으로 읽을 수 있도록 그대로 표시되어야 합니다. */
   assert.match(ui.byId('scene-tree')!.textContent, /<img src=x/);
 });
 
@@ -997,12 +1079,12 @@ test('페이지에 넣는 값은 HTML 로도 스크립트로도 새어 나가지
     name: evil, base: evil, summary: { scenes: 1, objects: 1, blocks: 1 }, entName: evil, reload: true,
   });
 
-  // 태그를 만들 수 있는 형태가 하나도 없어야 한다 (전부 &lt; 로 막혔거나 < 로 들어갔다)
+  /** 렌더링된 결과물 내에 새로운 HTML 태그를 형성할 수 있는 문자가 이스케이프 처리되었는지 확인합니다. */
   const withoutComments = html.replace(/\/\/[^\n]*/g, '');
   assert.doesNotMatch(withoutComments, /<img/);
   assert.doesNotMatch(withoutComments, /<svg/);
 
-  // 인라인 스크립트 안에 날 </script 가 없어야 하고, 전부 파싱돼야 한다
+  /** 주입된 데이터 내부에 닫는 스크립트 태그가 존재하지 않아, 인라인 스크립트 블록 전체가 브라우저에서 온전히 파싱되는지 확인합니다. */
   const bodies = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
   assert.equal(bodies.length, 4);
   for (const body of bodies) {
@@ -1017,7 +1099,7 @@ test('탭 안의 섹션들은 마지막을 빼고 위아래로 크기를 조절�
 
   const sections = [...ui.byId('tab-run')!.querySelectorAll('.debug-section')];
   assert.equal(sections.length, 2);
-  // 마지막 섹션은 남은 높이를 채우므로 손잡이가 없다
+  /** 패널의 마지막 섹션은 남은 가용 높이를 모두 차지하도록 설계되었으므로 크기 조절 손잡이가 노출되지 않아야 합니다. */
   assert.equal(sections[0].querySelectorAll('.debug-vresize').length, 1);
   assert.equal(sections[1].querySelectorAll('.debug-vresize').length, 0);
   assert.match(sections[0].getAttribute('style'), /height:\s*200px/);
@@ -1028,7 +1110,7 @@ test('탭 안의 섹션들은 마지막을 빼고 위아래로 크기를 조절�
   ui.window.dispatchEvent(new ui.window.MouseEvent('mouseup'));
   await ui.settle();
 
-  // jsdom 은 실제 높이를 0 으로 재므로 끌어당긴 만큼(60px)이 그대로 높이가 된다
+  /** jsdom에서는 기본 요소 높이가 0으로 처리되므로 드래그한 거리(60px)가 해당 영역의 최종 높이가 되어야 합니다. */
   assert.match(sections[0].getAttribute('style'), /height:\s*60px/);
 });
 
@@ -1046,14 +1128,14 @@ test('패널 폭은 좌우로 조절할 수 있다', async (t) => {
 });
 
 test('패널이 실제로 그려진다', async (t) => {
-  // 브라우저가 받는 preact 파일이 바뀌었을 때 이 테스트가 걸린다.
+  /** 서버에서 제공하는 preact 의존성 파일의 내용이 변경되었을 때, 테스트 환경이 이를 정상적으로 반영하는지 검증합니다. */
   const ui = await mountDebugPanel(t);
   await ui.settle();
   const panel = ui.byId('debug-panel');
 
   assert.equal(panel!.querySelectorAll('.debug-tab').length, 4);
 
-  // 안 보이는 탭은 그리지 않는다 (블록이 수만 개인 작품도 있다). 탭마다 확인한다.
+  /** 대규모 프로젝트의 성능 저하를 방지하기 위해 현재 화면에 보이지 않는 비활성 탭의 내용은 DOM에 렌더링하지 않아야 합니다. */
   const titles = [];
   for (const name of ['run', 'data', 'objects', 'errors']) {
     ui.tab(name);
@@ -1065,7 +1147,7 @@ test('패널이 실제로 그려진다', async (t) => {
 
   ui.tab('run');
   await ui.settle();
-  // 자바스크립트 소스가 화면에 글자로 새어 나오면 안 된다
+  /** 렌더링 과정에서 디버그 UI의 자바스크립트 소스 코드가 일반 텍스트 형태로 화면에 노출되지 않아야 합니다. */
   const text = panel!.textContent;
   assert.doesNotMatch(text, /appendChild|=>\s*\{|function\s*\(/);
   assert.match(text, /시작하기/);
@@ -1108,6 +1190,6 @@ test('실제 작품을 넣으면 네 탭이 모두 내용을 채운다', async (
   ui.window.tessReportError('실행 오류', new Error('일부러 낸 오류'));
   await ui.settle();
   assert.match(textOf('tab-errors'), /일부러 낸 오류/);
-  // 오류가 나면 오류 탭으로 넘어간다
+  /** 프로젝트 실행 중 오류가 발생하면 사용자에게 원인을 알리기 위해 오류 탭으로 자동 전환되어야 합니다. */
   assert.equal(ui.window.document.querySelector('.debug-tab[aria-selected="true"]')!.dataset.tab, 'errors');
 });

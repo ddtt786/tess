@@ -1,9 +1,9 @@
-// ============================================================================
-//  VS Code 문법 강조 검사
-//
-//  editors/vscode 의 TextMate 문법을 실제 토크나이저(vscode-textmate)로 돌려서
-//  각 낱말이 의도한 갈래로 칠해지는지 확인한다.
-// ============================================================================
+/**
+ * VS Code 문법 강조를 검사합니다.
+ *
+ * editors/vscode의 TextMate 문법을 실제 토크나이저(vscode-textmate)로 실행하여
+ * 각 낱말이 의도한 스코프로 올바르게 강조되는지 확인합니다.
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -14,7 +14,7 @@ import onigurumaModule from 'vscode-oniguruma';
 import textmateModule from 'vscode-textmate';
 import type { IGrammar } from 'vscode-textmate';
 
-// 둘 다 CommonJS 로 나와서 default 로 들어온다
+/** CommonJS 모듈 형식을 지원하기 위해 default로 가져옵니다. */
 const oniguruma = onigurumaModule;
 const textmate = textmateModule;
 
@@ -41,7 +41,12 @@ test.before(async () => {
   assert.ok(grammar, '문법을 불러오지 못했습니다.');
 });
 
-/** 한 줄을 토큰으로 쪼개서 [글자, 가장 안쪽 스코프] 목록으로 */
+/**
+ * 문자열 한 줄을 토큰으로 분리하여 [글자, 가장 안쪽 스코프] 목록을 반환합니다.
+ *
+ * @param line 토큰으로 분리할 문자열
+ * @returns 텍스트와 스코프 쌍의 배열
+ */
 function tokenize(line: string): Array<[string, string]> {
   const { tokens } = grammar!.tokenizeLine(line, textmate.INITIAL);
   return tokens.map((token): [string, string] => [
@@ -50,7 +55,13 @@ function tokenize(line: string): Array<[string, string]> {
   ]);
 }
 
-/** 그 낱말이 받은 스코프 */
+/**
+ * 특정 단어가 할당받은 스코프를 반환합니다.
+ *
+ * @param line 대상이 되는 전체 문자열
+ * @param word 스코프를 확인할 단어
+ * @returns 확인된 스코프 문자열
+ */
 function scopeOf(line: string, word: string): string {
   const found = tokenize(line).find(([text]) => text.trim() === word);
   assert.ok(found, `'${word}' 를 줄에서 찾지 못했습니다: ${line}`);
@@ -61,7 +72,7 @@ test('주석과 색상 리터럴을 구분한다', () => {
   assert.match(scopeOf('forward 10  # 앞으로', '# 앞으로'), /^comment\.line/);
   assert.match(scopeOf('draw_color = #ff0000', '#ff0000'), /^constant\.other\.color/);
   assert.match(scopeOf('font_color = #FFEE00', '#FFEE00'), /^constant\.other\.color/);
-  // 6자리가 아니면 주석이다
+  /** 길이가 6자리가 아닌 경우 주석으로 처리됩니다. */
   assert.match(scopeOf('say "x"  #ff00', '#ff00'), /^comment\.line/);
 });
 
@@ -124,7 +135,7 @@ test('예제 파일 전체를 토큰으로 쪼갤 수 있다', () => {
 });
 
 test('문법 파일이 파서의 키워드 목록과 맞춰져 있다', () => {
-  // build-grammar.ts 를 다시 돌려도 결과가 같아야 한다
+  /** build-grammar.ts를 다시 실행해도 결과가 동일해야 합니다. */
   const before = fs.readFileSync(grammarPath, 'utf-8');
   const { execFileSync } = require('node:child_process');
   execFileSync(process.execPath, [path.join(root, 'editors', 'vscode', 'build-grammar.ts')], { cwd: root });

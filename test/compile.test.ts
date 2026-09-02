@@ -1,4 +1,6 @@
-// Tess -> 엔트리 작품 컴파일 검사
+/**
+ * Tess 코드가 엔트리 프로젝트로 정상적으로 컴파일되는지 검사합니다.
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -10,7 +12,12 @@ import { makeEntryBundle } from '@tess/compiler';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** 문장 하나를 오브젝트 안에 넣어 컴파일하고 그 스크립트를 돌려준다 */
+/**
+ * 단일 문장을 오브젝트 내부에 포함하여 컴파일하고, 해당 스크립트 결과를 반환합니다.
+ *
+ * @example
+ * const { thread } = compileScript('forward 10');
+ */
 function compileScript(body: any, { before = '', kind = 'object', costumes = '' } = {}) {
   const source = `${before}
 scene "s":
@@ -27,7 +34,12 @@ end`;
   return { project: result.project, thread: JSON.parse(object!.script)[0], result };
 }
 
-/** 블록 트리를 읽기 쉬운 문자열로 (type 과 리터럴만) */
+/**
+ * 블록 트리를 가독성이 높은 S-표현식 형태의 문자열로 변환합니다. 주로 블록의 타입(type)과 리터럴 정보를 표현합니다.
+ *
+ * @example
+ * const str = sketch(block);
+ */
 function sketch(block: any) {
   if (block === null || block === undefined) return '_';
   if (typeof block !== 'object') return String(block);
@@ -36,7 +48,9 @@ function sketch(block: any) {
   return `${block.type}(${[...params, ...statements].join(' ')})`;
 }
 
-// --- 기본 매핑 ---------------------------------------------------------------
+/**
+ * 기본 블록 및 스크립트 매핑 테스트
+ */
 test('이벤트 블록으로 시작하는 스크립트를 만든다', () => {
   const { thread } = compileScript('forward 10');
   assert.equal(thread[0].type, 'when_run_button_click');
@@ -59,9 +73,12 @@ test('x = / x += 를 서로 다른 블록으로 바꾼다', () => {
 });
 
 test('costume / costume_number 로 자기·다른 오브젝트의 모양 이름·번호를 읽는다', () => {
-  // 엔트리의 coordinate_object 드롭다운은 x/y/방향/이동방향/크기 말고도
-  // "모양 번호"(picture_index)·"모양 이름"(picture_name) 을 갖고 있다(entryjs
-  // block_calc.js) — costume/costume_number 로 이 둘을 읽는다.
+  /**
+   * coordinate_object 속성을 통해 자기 자신 또는 다른 오브젝트의 모양 이름(picture_name)과 번호(picture_index)를 읽어옵니다.
+   *
+   * @example
+   * const name = costume("다른");
+   */
   const source = `
 scene "s":
   object "다른":
@@ -132,8 +149,10 @@ test('stop 계열을 stop_object 의 대상으로 구분한다', () => {
     ['thisThread', 'otherThread', 'thisOnly', 'other_objects', 'all']);
 });
 
-// --- 자료 ---------------------------------------------------------------------
-// 리스트·문자열 인덱스는 엔트리처럼 1부터다. 그대로 옮기니 보정 블록이 안 생긴다.
+/**
+ * 자료형(변수, 리스트, 문자열 등) 및 인덱스 처리 컴파일 테스트
+ * 리스트 및 문자열 인덱스는 엔트리 시스템과 동일하게 1부터 시작합니다.
+ */
 test('리스트 인덱스를 엔트리와 같은 1부터로 그대로 옮긴다', () => {
   const { thread } = compileScript(
     '기록[1] = 9\nin 기록 insert 5 at 2\nremove 기록[1]\nvar a = 기록[1]',
@@ -175,7 +194,9 @@ test('리스트 초기값이 array 로 들어간다', () => {
   assert.deepEqual(list!.array, [{ data: 1 }, { data: '둘' }, { data: 3 }]);
 });
 
-// --- 신호 · 장면 ---------------------------------------------------------------
+/**
+ * 신호(Signal) 및 장면(Scene) 처리 테스트
+ */
 test('신호를 messages 로 모으고 같은 id 를 쓴다', () => {
   const source = `scene "s":
   object "a":
@@ -213,7 +234,9 @@ end`;
   assert.equal(thread[1].params[0], project!.scenes[1].id);
 });
 
-// --- 함수 ----------------------------------------------------------------------
+/**
+ * 함수 정의 및 호출 처리 테스트
+ */
 test('return 이 없는 함수는 일반 함수, 있으면 값 함수가 된다', () => {
   const source = `function 알림(내용):
   say 내용
@@ -297,7 +320,9 @@ end`;
   assert.ok(fn.content.includes('get_func_variable'));
 });
 
-// --- 오브젝트 · 글상자 -----------------------------------------------------------
+/**
+ * 오브젝트 및 글상자(TextBox) 생성 및 속성 변환 테스트
+ */
 test('오브젝트 속성이 entity 로 들어간다', () => {
   const source = `scene "s":
   object "o":
@@ -351,8 +376,10 @@ end`;
   assert.equal(object.entity.fontSize, 24);
 });
 
-// 엔트리는 글상자틀을 글자를 그려 보고 재 두지만, 컴파일러는 글꼴을 그릴 수 없어
-// 글자 수로 어림잡는다. `size 가로 세로` 를 적으면 그 값이 그대로 들어가야 한다.
+/**
+ * 글상자 크기(size) 명시적 지정 테스트
+ * 컴파일러는 글자 수로 크기를 추정하므로, 명시된 크기 값이 우선 적용되는지 확인합니다.
+ */
 test('글상자의 size 가로 세로 가 entity 크기가 된다', () => {
   const source = `scene "s":
   text "t":
@@ -381,7 +408,9 @@ end`;
   assert.equal(entity.height, 22);
 });
 
-// `size = 100` 은 예전부터 배율(%)이다 — 새로 들어온 `size 가로 세로` 와 헷갈리면 안 된다.
+/**
+ * 크기(size) 배율과 명시적 크기(가로/세로) 설정의 독립적 동작을 확인합니다.
+ */
 test('size = 배율과 size 가로 세로 는 서로 다른 것을 정한다', () => {
   const source = `scene "s":
   text "t":
@@ -398,13 +427,16 @@ end`;
   assert.equal(entity.scaleY, 1.5);
 });
 
-// ---------------------------------------------------------------------------
-//  복잡한 수식
-//
-//  우선순위·괄호·좌결합이 엔트리 블록 트리로 제대로 접히는지, 블록 모양만 보지 않고
-//  엔트리가 하는 것과 똑같이 실제로 계산해서 값으로 확인한다.
-// ---------------------------------------------------------------------------
-/** 엔트리 계산 블록 트리를 실행기가 하듯 계산한다 */
+/**
+ * 복잡한 수식 처리 및 연산 우선순위 테스트
+ * 괄호, 좌결합 등의 연산자 우선순위가 올바른 엔트리 블록 트리로 변환되는지 실제 계산을 통해 검증합니다.
+ */
+/**
+ * 엔트리 계산 블록 트리를 실행기처럼 실제 연산하여 결과값을 반환합니다.
+ *
+ * @example
+ * const result = runCalc(block);
+ */
 function runCalc(block: any): number {
   if (block === null || typeof block !== 'object') return Number(block);
   const p = block.params ?? [];
@@ -498,9 +530,9 @@ end`;
 });
 
 test('force id 로 고정된 id 는 이 오브젝트 소유가 아니어도 costume = 로 그대로 흘려보낸다', () => {
-  // 함수 안에 다른 오브젝트의 모양 id 를 그대로 박아 넣던 관습을 되돌릴 때 쓰는 패턴
-  // (SPEC-ADDENDUM.md 1.4절) — force id 로 고정된 문자열은 이 오브젝트의 모양 이름이
-  // 아니어도 에러 없이 그대로 통과해야 한다.
+  /**
+   * force id로 고정된 id는 타 오브젝트의 리소스이더라도 그대로 전달되는지 테스트합니다.
+   */
   const source = `
 scene "s":
   object "다른":
@@ -520,7 +552,9 @@ end`;
   assert.equal(sketch(thread[1]), 'change_to_some_shape(qio1)');
 });
 
-// --- use ------------------------------------------------------------------------
+/**
+ * 파일 참조(use, useobject, usetext) 컴파일 테스트
+ */
 test('use 가 파일을 그 자리에 펼친다', () => {
   const files = {
     '/p/main.tess': `var 점수 = 0
@@ -550,7 +584,9 @@ end`,
   assert.equal(thread[1].type, 'change_variable');
 });
 
-// --- 엔트리에 없는 기능 -----------------------------------------------------------
+/**
+ * 엔트리에 기본 제공되지 않는 기능 및 확장 문법의 컴파일 테스트
+ */
 test('키를 뗐을 때 이벤트는 감시 스크립트로 바뀐다', () => {
   const source = `scene "s":
   object "o":
@@ -662,8 +698,9 @@ test('엔트리에 없는 오브젝트 · 장면은 에러로 알려 준다', ()
 });
 
 test('없는 모양 · 소리 이름은 경고로 알려 준다', () => {
-  // 엔트리는 이 자리를 실행할 때 id · 이름 · 순번 순으로 찾는다. 컴파일 시점에 없는
-  // 이름이라고 막아 버리면, 실제로 그렇게 쓰는 작품을 되돌린 소스가 빌드되지 않는다.
+  /**
+   * 존재하지 않는 모양이나 소리 이름을 참조할 경우 에러가 아닌 경고를 발생시킵니다.
+   */
   const cases: Array<[string, RegExp]> = [
     ['play sound "없는소리"', /소리를 이 오브젝트에서 찾지 못했습니다/],
     ['costume = "없는모양"', /모양을 이 오브젝트에서 찾지 못했습니다/],
@@ -687,7 +724,9 @@ end`;
   assert.match(result.errors[0].message, /중간에서 값을 돌려줄 수 없습니다/);
 });
 
-// --- 주석 -----------------------------------------------------------------------
+/**
+ * 주석 처리 및 엔트리 블록 주석 변환 테스트
+ */
 test('문장 위의 주석이 그 블록의 엔트리 주석이 된다', () => {
   const { thread } = compileScript('# 앞으로 간다\nforward 10');
   assert.equal(thread[1].type, 'move_direction');
@@ -741,7 +780,9 @@ end`;
   assert.equal(project!.objects[0].name, '이름');
 });
 
-// --- useobject / usetext -----------------------------------------------------------
+/**
+ * useobject 및 usetext 모듈 스크립트 전개 처리 테스트
+ */
 test('useobject 는 불러온 조각을 오브젝트로 감싼다', () => {
   const files = {
     '/p/main.tess': 'scene "무대":\n  useobject "objects/치로.tess"\n  usetext "objects/점수판.tess"\nend',
@@ -785,7 +826,9 @@ test('useobject 로 만든 오브젝트는 파일 이름으로 서로를 가리�
   assert.equal(thread[1].params[0].params[1], enemy.id);
 });
 
-// --- 리소스 선언 ---------------------------------------------------------------------
+/**
+ * 미디어 리소스(이미지, 사운드 등) 선언 및 크기/길이 속성 유지 테스트
+ */
 test('크기·길이를 적어 두면 파일이 없어도 알리지 않는다', () => {
   const declared = compileProject(`scene "s":
   object "o":

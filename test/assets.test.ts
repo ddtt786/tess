@@ -1,11 +1,15 @@
-// imageSize (모양 파일 원본 크기 읽기) 검사 — 특히 SVG.
-//
-// 엔트리는 project.json 의 dimension 값을 그대로 믿고 렌더링 크기를 정한다
-// (entryjs entity.js `setImage`: `this.setWidth(dimension.width)`) — 실제로 로드한
-// 이미지 픽셀 크기를 다시 재서 쓰지 않는다. SVG 는 PNG/GIF/JPEG 처럼 매직 바이트
-// 헤더가 없어서 크기를 못 읽으면 makeAsset 이 100x100 으로 대체하는데, 디컴파일한
-// 소스처럼 scale_x/scale_y 가 SVG 의 진짜 크기(예: 무대를 덮는 800x490 배경) 기준으로
-// 정해져 있으면 100x100 기준으로 다시 스케일된 결과가 원래보다 훨씬 작게 나온다.
+/**
+ * imageSize(모양 파일 원본 크기 읽기) 기능을 검사합니다. 특히 SVG 파일을 중점적으로 테스트합니다.
+ * 
+ * 엔트리는 project.json의 dimension 값을 기준으로 렌더링 크기를 결정하며, 
+ * 실제 로드한 이미지 픽셀 크기를 다시 측정하지 않습니다. SVG 파일은 매직 바이트 헤더가 없어 
+ * 크기를 읽지 못하면 makeAsset이 100x100으로 대체합니다. 이 경우 scale_x/scale_y가 
+ * SVG의 실제 크기 기준으로 설정되어 있다면, 100x100 기준으로 스케일링되어 결과물이 비정상적으로 작게 렌더링될 수 있습니다.
+ *
+ * @example
+ * const svg = Buffer.from('<svg viewBox="0 0 800 490"></svg>');
+ * assert.deepEqual(imageSize(svg), { width: 800, height: 490 });
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -62,14 +66,15 @@ test('실제로 디컴파일한 배경 SVG(새그림1.svg, 800x490)에서도 정
   assert.deepEqual(imageSize(bytes), { width: 800, height: 490 });
 });
 
-// ---------------------------------------------------------------------------
-//  audioDuration (소리 재생 길이 읽기)
-//
-//  엔트리는 소리 길이도 project.json 의 duration 을 그대로 믿는다. 컴파일러가 이 값을
-//  못 구하면 전부 1초로 굳는데, 그렇다고 코드에 `for 1.3` 을 늘 적게 하면 소리 파일을
-//  바꿀 때마다 사람이 숫자까지 고쳐야 한다 — 그래서 헤더를 읽어 직접 잰다.
-//  (실제 작품 310개 소리를 ffprobe 와 맞춰 확인했다.)
-// ---------------------------------------------------------------------------
+/**
+ * audioDuration(소리 재생 길이 읽기) 기능을 검사합니다.
+ *
+ * 엔트리는 소리 길이도 project.json의 duration 값을 사용합니다. 컴파일러가 이 값을
+ * 구하지 못하면 1초로 고정되므로, 오디오 파일 헤더를 직접 읽어 정확한 길이를 측정해야 합니다.
+ * 
+ * @example
+ * const duration = audioDuration(wavBuffer, '.wav');
+ */
 
 /** 재생 길이 2.5초짜리 최소 WAV — 초당 byteRate 바이트 */
 function wavFixture(seconds: any, byteRate = 88200) {
@@ -164,12 +169,16 @@ end`;
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// ---------------------------------------------------------------------------
-//  모양 미리보기(썸네일)
-//
-//  엔트리 작품 파일은 그림마다 image/ 옆에 thumb/ 를 나란히 갖고 있고, 편집기의
-//  오브젝트·모양 목록이 그걸 쓴다. 우리가 만든 .ent 에는 이게 빠져 있었다.
-// ---------------------------------------------------------------------------
+/**
+ * 모양 미리보기(썸네일) 생성 기능을 검사합니다.
+ *
+ * 엔트리 작품 파일은 이미지마다 image/ 폴더와 나란히 thumb/ 폴더를 가지고 있으며,
+ * 편집기의 오브젝트 및 모양 목록에서 이를 사용합니다. 컴파일된 .ent 파일에도 
+ * 올바르게 썸네일이 포함되는지 확인합니다.
+ * 
+ * @example
+ * const thumb = await makeThumbnail(imageBuffer);
+ */
 test('PNG 에서 96x96 안에 맞춘 미리보기를 만든다', async () => {
   const bytes = fs.readFileSync(path.join(root, 'examples/cat_run.png'));
   const original = imageSize(bytes);

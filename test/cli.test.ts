@@ -1,7 +1,12 @@
-// CLI 명령 검사.
-//
-// check 가 실제로 "컴파일되는지" 를 검사하는지 확인한다. 예전에는 parse 만 해서,
-// decompile 이 컴파일 에러 24개를 알려 준 파일을 check 는 OK 라고 답했다.
+/**
+ * CLI 명령어 기능을 검사합니다.
+ * 
+ * check 명령어가 단순 파싱이 아닌 실제 컴파일 가능 여부를 검증하는지 확인합니다.
+ * 
+ * @example
+ * const result = cli('check', 'main.tess');
+ * assert.equal(result.code, 1);
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,7 +17,12 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** `node index.ts ...` 를 돌리고 종료 코드와 출력을 돌려준다 */
+/**
+ * CLI 환경에서 `node index.ts ...` 명령어를 실행하고 종료 코드와 출력을 반환합니다.
+ *
+ * @example
+ * const result = cli('check', 'main.tess');
+ */
 function cli(...args: string[]) {
   try {
     const stdout = execFileSync('node', [path.join(root, 'packages/cli/index.ts'), ...args], { encoding: 'utf-8' });
@@ -23,7 +33,12 @@ function cli(...args: string[]) {
   }
 }
 
-/** 파일 여러 개를 담은 임시 폴더를 만든다 */
+/**
+ * 다수의 파일을 포함하는 임시 프로젝트 폴더를 생성합니다.
+ *
+ * @example
+ * const dir = project(t, { 'main.tess': 'scene "s":\nend' });
+ */
 function project(t: any, files: Record<string, string>) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-cli-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));

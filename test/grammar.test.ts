@@ -1,4 +1,6 @@
-// spec 의 각 절에 나오는 코드가 문법에 맞는지 확인한다.
+/**
+ * spec의 각 절에 나오는 코드가 문법에 맞는지 확인합니다.
+ */
 import test from 'node:test';
 import { assertParses, assertRejects, inObject } from './helpers.ts';
 

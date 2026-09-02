@@ -1,19 +1,21 @@
-// ============================================================================
-//  컴파일러가 만들어 넣는 "가로/세로 비율 정하기" 함수가 실제로 맞게 계산하는지
-//  엔트리의 크기 규칙을 그대로 흉내 내어 확인한다.
-//
-//  엔트리 entity 규칙 (entryjs src/class/entity.js)
-//    크기      = (원본가로 × |가로배율| + 원본세로 × |세로배율|) / 2
-//    setSize   = 두 배율에 max(1, 값)/크기 를 곱한다
-//    setXSize  = 가로 배율에만 곱한다
-//    setYSize  = 세로 배율에만 곱한다
-//    resetSize = 시작 배율로 되돌린다
-// ============================================================================
+/**
+ * 컴파일러가 생성하는 '가로/세로 비율 정하기' 함수가 올바르게 계산되는지 검증합니다.
+ * 엔트리 실행기의 객체 크기 계산 규칙을 시뮬레이션하여 실제 동작과 일치하는지 확인합니다.
+ *
+ * 엔트리 `entity` 크기 계산 규칙 (`entryjs src/class/entity.js`):
+ * - `크기` = `(원본가로 × |가로배율| + 원본세로 × |세로배율|) / 2`
+ * - `setSize` = 두 배율에 `max(1, 값)/크기`를 곱합니다.
+ * - `setXSize` = 가로 배율에만 위 비율을 곱합니다.
+ * - `setYSize` = 세로 배율에만 위 비율을 곱합니다.
+ * - `resetSize` = 시작 배율로 초기화합니다.
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compileProject } from '@tess/compiler';
 
-/** 엔트리 오브젝트 하나가 크기에 대해 갖는 상태 */
+/**
+ * 크기 계산에 사용되는 엔트리 오브젝트의 상태 인터페이스입니다.
+ */
 interface EntitySpec {
   width: number;
   height: number;
@@ -23,7 +25,12 @@ interface EntitySpec {
   scaleY?: number;
 }
 
-/** 엔트리 오브젝트 하나를 흉내 낸다 */
+/**
+ * 크기 계산 로직을 모방하는 모의(fake) 엔트리 오브젝트를 생성합니다.
+ *
+ * @param spec - 초기 상태 값
+ * @returns 크기 관련 메서드가 구현된 모의 객체
+ */
 function makeEntity({
   width, height, originX, originY, scaleX = originX, scaleY = originY,
 }: EntitySpec) {
@@ -50,7 +57,16 @@ function makeEntity({
   };
 }
 
-/** 엔트리 블록을 실행하는 아주 작은 인터프리터 (이 함수가 쓰는 블록만) */
+/**
+ * 최소한의 엔트리 블록을 실행하는 간단한 인터프리터 함수입니다.
+ * 크기 계산에 필요한 블록 타입만 지원합니다.
+ *
+ * @param block - 실행할 블록 객체
+ * @param entity - 대상 모의 오브젝트
+ * @param params - 매개변수 맵
+ * @param locals - 지역 변수 맵
+ * @returns 연산 결과 값
+ */
 function evaluate(
   block: any,
   entity: any,
@@ -110,7 +126,13 @@ function execute(
   return locals;
 }
 
-/** `scale_x = 값` 이 부르는 함수와 그 인자를 뽑아 온다 */
+/**
+ * 비율 설정 문법(`scale_x = 값` 또는 `scale_y = 값`)이 호출하는 컴파일된 함수와 전달 인자를 추출합니다.
+ *
+ * @param property - 비율 설정 속성 (`scale_x` 또는 `scale_y`)
+ * @param ratio - 설정할 목표 비율 값
+ * @returns 함수의 본문, 매개변수, 레이블 정보
+ */
 function scaleSetter(property: string, ratio: number) {
   const source = `scene "s":
   object "o":
@@ -127,7 +149,7 @@ end`;
   const fn = project!.functions.find((f) => `func_${f.id}` === call.type);
   const create = JSON.parse(fn!.content)[0][0];
 
-  // 함수의 매개변수 블록 타입 -> 호출할 때 넘긴 값
+  /** 함수의 매개변수 블록 타입과 호출 시 전달된 값을 매핑합니다. */
   const names: string[] = [];
   let field = create.params[0].params[1];
   while (field) {
@@ -138,7 +160,14 @@ end`;
   return { body: create.statements[0], params, label: create.params[0].params[0] };
 }
 
-/** 시작 배율이 originX/originY 인 오브젝트에서 비율을 정해 본다 */
+/**
+ * 특정 시작 배율을 가진 객체에 지정된 비율 설정 함수를 적용하고 결과를 반환합니다.
+ *
+ * @param property - 비율 설정 속성 (`scale_x` 또는 `scale_y`)
+ * @param ratio - 설정할 목표 비율 값
+ * @param entity - 대상 모의 오브젝트
+ * @returns 변경이 적용된 객체
+ */
 function apply(property: string, ratio: number, entity: any) {
   const { body, params } = scaleSetter(property, ratio);
   execute(body, entity, params);
@@ -151,7 +180,7 @@ const close = (actual: number, expected: number, label: string) => assert.ok(
 );
 
 test('가로 비율을 정하면 가로만 목표 값이 되고 세로는 그대로다', () => {
-  // 원본 200×100, 시작 배율 100%, 지금은 가로 50% · 세로 200%
+  /** 원본 크기는 200x100, 시작 배율은 100%이며 현재 가로 배율은 50%, 세로 배율은 200%인 상태를 가정합니다. */
   const entity = makeEntity({ width: 200, height: 100, originX: 1, originY: 1, scaleX: 0.5, scaleY: 2 });
   apply('scale_x', 25, entity);
   close(entity.scaleX, 0.25, '가로 배율');
@@ -166,7 +195,7 @@ test('세로 비율을 정하면 세로만 목표 값이 되고 가로는 그대
 });
 
 test('시작 배율이 100%가 아니어도 원본 기준으로 맞춘다', () => {
-  // 오브젝트가 scale_x = 150 으로 선언된 경우 (entity.scaleX = 1.5)
+  /** 객체가 스크립트 상에서 `scale_x = 150`으로 선언된 경우(`entity.scaleX = 1.5`)를 검증합니다. */
   const source = `scene "s":
   object "o":
     costume 기본 "a.png" size 200 100
@@ -179,7 +208,7 @@ test('시작 배율이 100%가 아니어도 원본 기준으로 맞춘다', () =
 end`;
   const { project } = compileProject(source, { path: 'x.tess' });
   const call = JSON.parse(project!.objects[0]!.script)[0][1];
-  // 원래 배율(1.5)이 두 번째 인자로 넘어간다
+  /** 원본 배율 값(1.5)이 함수의 두 번째 인자로 정상 전달되어야 합니다. */
   assert.equal(Number(call.params[1].params[0]), 1.5);
 
   const fn = project!.functions.find((f) => `func_${f.id}` === call.type);
