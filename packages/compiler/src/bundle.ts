@@ -1,21 +1,24 @@
-// ============================================================================
-//  엔트리 작품 파일(.ent) 만들기
-//
-//  .ent 는 tar 묶음이고, 모든 내용이 temp/ 폴더 안에 들어간다.
-//    temp/project.json
-//    temp/<앞2자>/<다음2자>/image/<파일명>.png
-//    temp/<앞2자>/<다음2자>/sound/<파일명>.mp3
-//
-//  담을 내용이 전부 메모리에 있어서(project.json 과 방금 만든 미리보기는 디스크에
-//  없다) `tar.create` 대신 `tar.Header` 로 블록을 직접 쌓는다 — ustar 헤더의
-//  자릿수와 체크섬은 그 패키지가 맡는다.
-// ============================================================================
+/**
+ * @fileoverview 엔트리 작품 파일(.ent)을 생성하는 모듈입니다.
+ * 
+ * .ent 파일은 tar 포맷으로 압축되며, 모든 데이터는 temp/ 디렉토리 내부에 저장됩니다:
+ * - temp/project.json
+ * - temp/<앞2자>/<다음2자>/image/<파일명>.png
+ * - temp/<앞2자>/<다음2자>/sound/<파일명>.mp3
+ * 
+ * 데이터를 디스크에 저장하지 않고 모두 메모리에서 처리합니다.
+ * `tar.create` 대신 `tar.Header`를 이용해 블록을 직접 구성하여 성능을 최적화합니다.
+ */
 import fs from 'node:fs';
 import { Header } from 'tar';
 import { makeThumbnail } from './thumbnail.ts';
 import type { AssetFile, EntryProject } from './types.ts';
 
-/** One file on its way into the tar. */
+/** 
+ * tar 파일에 포함될 단일 파일의 정보입니다.
+ * @example
+ * const entry: TarEntry = { name: 'temp/project.json', data: Buffer.from('{...}') };
+ */
 interface TarEntry {
   name: string;
   data: Buffer;
@@ -28,7 +31,11 @@ function padding(size: number): Buffer {
   return remainder === 0 ? Buffer.alloc(0) : Buffer.alloc(BLOCK_SIZE - remainder);
 }
 
-/** tar 엔트리 하나의 헤더(512바이트) */
+/** 
+ * tar 항목의 512바이트 크기 헤더 버퍼를 생성합니다.
+ * @example
+ * const headerBuffer = header('temp/file.txt', 1024, new Date());
+ */
 function header(name: string, size: number, mtime: Date): Buffer {
   const block = Buffer.alloc(BLOCK_SIZE);
   new Header({
@@ -37,7 +44,11 @@ function header(name: string, size: number, mtime: Date): Buffer {
   return block;
 }
 
-/** tar 바이트열로 묶는다 */
+/** 
+ * 여러 파일 항목을 하나의 tar 바이트열로 압축합니다.
+ * @example
+ * const tarBuffer = makeTar([{ name: 'test.txt', data: Buffer.from('hello') }]);
+ */
 export function makeTar(entries: TarEntry[]): Buffer {
   const mtime = new Date();
   const chunks: Buffer[] = [];
@@ -49,13 +60,14 @@ export function makeTar(entries: TarEntry[]): Buffer {
 }
 
 /**
- * 컴파일 결과를 .ent 묶음 바이트열로 만든다.
- *
- * 미리보기를 그리는 동안 기다려야 해서 비동기다. `run` 은 이 일을 하지 않는다 —
- * 내려받기를 눌렀을 때만 부른다 (packages/player/src/server.ts).
- *
- * @param project compileProject() 가 만든 프로젝트 객체
- * @param assets  함께 담을 리소스 파일
+ * 컴파일된 프로젝트 데이터와 리소스 파일들을 .ent 포맷의 tar 바이트열로 변환합니다.
+ * 미리보기를 생성하는 과정이 포함되어 있어 비동기적으로 동작합니다.
+ * 
+ * @param project - 컴파일이 완료된 엔트리 프로젝트 객체
+ * @param assets - 프로젝트에 포함할 추가 리소스 파일 목록
+ * @returns 생성된 .ent 파일의 버퍼 객체
+ * @example
+ * const bundleBuffer = await makeEntryBundle(myProject, myAssets);
  */
 export async function makeEntryBundle(
   project: EntryProject,

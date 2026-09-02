@@ -1,11 +1,7 @@
-// ============================================================================
-//  엔트리 문장(statement) 블록 -> Tess 소스 줄
-//
-//  packages/compiler/src/statement.ts 의 정확한 대응표를 뒤집는다. 한 스레드(블록
-//  이어붙임)를 받아서 들여쓰기 없는 텍스트 줄 배열을 돌려준다 — 호출한 쪽이
-//  `indent()` 로 필요한 만큼 들여쓴다. 모르는 블록은 주석으로 남기고 계속
-//  진행한다 (하나 때문에 전체를 못 옮기면 안 되니까).
-// ============================================================================
+/**
+ * 엔트리 문장 블록을 Tess 소스 코드로 변환합니다.
+ * 블록 배열을 입력받아 들여쓰기가 없는 텍스트 줄 배열을 반환합니다.
+ */
 import { exprOf } from "./expr.ts";
 import {
   tessString,
@@ -55,7 +51,15 @@ export function indent(lines: string[]): string[] {
   return lines.map((line) => (line === "" ? line : `  ${line}`));
 }
 
-/** 스레드(블록 배열) 하나를 Tess 소스 줄들로 */
+/**
+ * 하나의 스레드(블록 배열)를 Tess 소스 코드 줄 배열로 변환합니다.
+ *
+ * @param blocks 변환할 블록 배열
+ * @param ctx 디컴파일 컨텍스트
+ * @returns 변환된 소스 코드 줄 배열
+ * @example
+ * const lines = blocksToLines(blocks, ctx);
+ */
 export function blocksToLines(blocks: RawBlock[] | undefined, ctx: DecompileContext): string[] {
   const lines: string[] = [];
   for (const block of blocks ?? []) lines.push(...statementLines(block, ctx));

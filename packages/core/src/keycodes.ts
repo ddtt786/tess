@@ -1,6 +1,16 @@
-// ============================================================================
-//  키 이름 -> 엔트리 키코드 (Entry.getKeyCodeMap 과 같은 값, 표준 JS keyCode)
-// ============================================================================
+/**
+ * @fileoverview 키 이름과 엔트리 키 코드 간의 매핑을 제공합니다.
+ */
+
+/**
+ * 키 이름을 엔트리 키 코드로 매핑한 객체입니다.
+ * 
+ * @type {Record<string, number>}
+ * 
+ * @example
+ * KEY_CODES["enter"]; // 13
+ * KEY_CODES["space"]; // 32
+ */
 export const KEY_CODES: Record<string, number> = {
   backspace: 8, tab: 9, enter: 13, shift: 16, ctrl: 17, alt: 18,
   esc: 27, escape: 27, space: 32,
@@ -10,7 +20,18 @@ export const KEY_CODES: Record<string, number> = {
 for (let i = 0; i <= 9; i += 1) KEY_CODES[String(i)] = 48 + i;
 for (let i = 0; i < 26; i += 1) KEY_CODES[String.fromCharCode(97 + i)] = 65 + i;
 
-/** 키 이름을 엔트리 키코드 문자열로. 모르는 키면 null */
+/**
+ * 키 이름에 해당하는 엔트리 키 코드 문자열을 반환합니다.
+ * 인식되지 않는 키 이름일 경우 null을 반환합니다.
+ *
+ * @param name - 변환할 키 이름
+ * @returns 엔트리 키 코드 문자열 또는 null
+ *
+ * @example
+ * keyCodeOf("enter"); // "13"
+ * keyCodeOf("a"); // "65"
+ * keyCodeOf("unknown"); // null
+ */
 export function keyCodeOf(name: unknown): string | null {
   if (typeof name !== 'string') return null;
   const key = name.trim().toLowerCase();

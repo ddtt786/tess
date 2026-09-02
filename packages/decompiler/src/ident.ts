@@ -1,36 +1,36 @@
-// ============================================================================
-//  엔트리 이름(무엇이든 될 수 있는 문자열) -> Tess 식별자(bareword)
-//
-//  엔트리 오브젝트/장면/변수/모양/소리 이름은 공백·괄호·이모지까지 뭐든 될 수
-//  있지만, Tess 식별자는 `identifierStart identifierPart*` (letter/'_' 로
-//  시작, 그 뒤로 letter/digit/'_') 만 허용한다. 그래서 이름은 항상 두 개로
-//  나뉜다 — 코드에서 가리킬 안전한 식별자, 그리고 컴파일된 작품에 실제로
-//  찍힐 원래 이름(name 속성으로 되돌려 놓는다).
-// ============================================================================
-
 import { UNUSABLE_AS_NAME } from '@tess/parser';
 import type { DecompileContext, ResourceInfo } from './types.ts';
 
-/** Ohm 의 `letter` 는 유니코드 Letter 카테고리 전부(한글 포함)를 허용한다 */
+/**
+ * 식별자 시작 문자를 검사하는 정규 표현식입니다. 유니코드 문자(한글 등)와 언더스코어(`_`)를 허용합니다.
+ *
+ * @example
+ * IDENT_START.test('가'); // true
+ * IDENT_START.test('1'); // false
+ */
 const IDENT_START = /[\p{L}_]/u;
 const IDENT_PART = /[\p{L}\p{N}_]/u;
 
 /**
- * 임의의 문자열을 안전한 Tess 식별자로 만든다. 같은 네임스페이스(usedNames)
- * 안에서 겹치면 숫자를 붙여 구분한다.
+ * 주어진 임의의 문자열을 안전한 Tess 식별자로 변환합니다. 
+ * 동일한 네임스페이스(`usedNames`) 내에서 이름이 겹칠 경우 뒤에 숫자를 붙여 구분합니다.
+ *
+ * @param raw - 변환할 원본 문자열
+ * @param usedNames - 중복 검사를 위한 기존 식별자 목록
+ * @param fallback - 유효한 문자가 없을 때 사용할 기본 접두사
+ * @returns 변환된 안전한 식별자 문자열
+ *
+ * @example
+ * const used = new Set(['my_var']);
+ * safeIdentifier('my var!', used, 'var'); // "my_var_2"
+ * safeIdentifier('123', used, 'var'); // "var_123"
  */
 export function safeIdentifier(raw: unknown, usedNames: Set<string>, fallback = 'item'): string {
-  // 글자 고르기는 자리를 가리지 않는다. 맨 앞에서 IDENT_START 로 걸러 버리면 "3.png"
-  // 처럼 숫자로 시작하는 이름의 그 숫자가 통째로 사라져서("png"), "1.png"·"2.png" 가
-  // 죄다 같은 이름이 된 뒤 뒤에 번호가 붙어 원래 순서와 어긋났다. 숫자도 그대로 두고,
-  // 식별자가 숫자로 시작하는 문제는 아래에서 앞에 이름을 붙여 푼다.
   let cleaned = '';
   for (const ch of String(raw ?? '')) cleaned += IDENT_PART.test(ch) ? ch : '_';
   cleaned = cleaned.replace(/_+/g, '_').replace(/^_+|_+$/g, '');
   if (!cleaned || !IDENT_START.test(cleaned[0]!)) cleaned = `${fallback}${cleaned ? `_${cleaned}` : ''}`;
   cleaned = cleaned.slice(0, 40) || fallback;
-  // A few keywords read as a statement before they read as a name, so `skip = 0`
-  // never parses as an assignment. Trailing '_' keeps such a name usable.
   if (UNUSABLE_AS_NAME.has(cleaned)) cleaned = `${cleaned}_`;
 
   let candidate = cleaned;

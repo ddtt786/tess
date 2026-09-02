@@ -1,9 +1,6 @@
-// ============================================================================
-//  CLI 출력
-//
-//  단계는 끝나는 대로 한 줄씩 바로 찍는다. 큰 작품은 컴파일에 1초쯤 걸리는데,
-//  다 끝난 뒤에 표를 한꺼번에 보여 주면 그동안 멈춘 것처럼 보이기 때문이다.
-// ============================================================================
+/**
+ * @fileoverview CLI 콘솔 출력을 담당하는 유틸리티.
+ */
 import process from 'node:process';
 import path from 'node:path';
 import {
@@ -11,7 +8,10 @@ import {
 } from '@clack/prompts';
 import type { CompileDiagnostic, PhaseTiming } from '@tess/compiler';
 
-// clack 이 제 기호에 색을 입히는 기준과 같게 맞춘다.
+/**
+ * 터미널 환경이 색상 출력을 지원하는지 판단합니다.
+ * 환경 변수 및 TTY 속성을 확인하여 색상을 비활성화하거나 강제할 수 있습니다.
+ */
 const COLORED = (() => {
   if (process.env.NO_COLOR) return false;
   if (process.env.FORCE_COLOR) return true;
@@ -30,10 +30,19 @@ export const green = wrap(32, 39);
 export const cyan = wrap(36, 39);
 export const grey = wrap(90, 39);
 
-// 한글·한자는 터미널에서 두 칸을 차지한다. 글자 수로 맞추면 칸이 어긋난다.
 const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/;
 
-/** 터미널에서 이 글자열이 차지하는 칸 수 */
+/**
+ * 터미널에서 문자열이 차지하는 시각적 너비를 계산합니다.
+ * 한글 등 전각 문자는 2칸으로 계산합니다.
+ *
+ * @param text - 너비를 계산할 문자열
+ * @returns 시각적 너비 값
+ * 
+ * @example
+ * displayWidth("Hello"); // 5
+ * displayWidth("안녕하세요"); // 10
+ */
 export function displayWidth(text: unknown): number {
   let width = 0;
   for (const ch of String(text)) width += WIDE.test(ch) ? 2 : 1;
@@ -42,23 +51,44 @@ export function displayWidth(text: unknown): number {
 
 const padTo = (text: string, width: number) => text + ' '.repeat(Math.max(0, width - displayWidth(text)));
 
-/** 사람이 읽는 시간. 1초가 넘으면 초로 보여 준다. */
+/**
+ * 밀리초(ms) 단위의 시간을 읽기 쉬운 문자열로 변환합니다.
+ * 1초 이상일 경우 초 단위(s)로 포맷팅합니다.
+ *
+ * @param ms - 변환할 밀리초 시간
+ * @returns 포맷팅된 시간 문자열
+ * 
+ * @example
+ * duration(500); // "500ms"
+ * duration(1500); // "1.5s"
+ */
 export function duration(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }
 
 const STEP_LABEL_WIDTH = 18;
 
-/** 명령 하나를 시작한다 */
+/**
+ * 단일 명령의 실행 시작을 알리는 헤더를 출력합니다.
+ *
+ * @param command - 실행 중인 명령어 (예: "build", "run")
+ * @param file - 대상 파일 경로
+ * 
+ * @example
+ * begin("build", "examples/tour.tess");
+ */
 export function begin(command: string, file: string) {
   intro(`${bold(cyan('tess'))} ${command}${file ? ` ${dim(path.basename(file))}` : ''}`);
 }
 
 /**
- * 끝난 단계를 한 줄로. 시간이 세로로 맞도록 라벨 폭을 맞춘다.
+ * 단일 단계의 완료 정보와 소요 시간을 한 줄로 출력합니다.
+ * 시간 출력이 세로로 정렬될 수 있도록 너비를 맞춥니다.
  *
- * clack 의 `log.step` 은 줄마다 빈 줄을 끼워 넣어서 단계가 예닐곱 개만 돼도 화면을
- * 꽉 채운다. 세로 획은 그대로 두고 줄만 붙여서 직접 찍는다.
+ * @param timing - 완료된 단계의 정보
+ * 
+ * @example
+ * step({ label: "파싱", ms: 15 });
  */
 export function step({ label, ms }: PhaseTiming) {
   process.stdout.write(`${stepLine(green(S_STEP_SUBMIT), timed(label, ms))}\n`);
@@ -71,8 +101,16 @@ const stepLine = (symbol: string, text: string) => `${grey(S_BAR)}  ${symbol}  $
 const timed = (label: string, ms: number) => `${padTo(label, STEP_LABEL_WIDTH)} ${dim(duration(ms).padStart(6))}`;
 
 /**
- * 오래 걸리는 일 하나. 터미널이면 제자리에서 돌다가, 끝나면 다른 단계와 똑같은
- * 모양의 한 줄로 바뀐다. 파이프로 넘길 때는 돌지 않고 끝난 줄만 남는다.
+ * 장시간 진행되는 작업의 상태(애니메이션)를 출력하며 제어 객체를 반환합니다.
+ * 반환된 객체의 메서드를 통해 작업을 완료(done)하거나 실패(fail)로 종료할 수 있습니다.
+ * 
+ * @param title - 진행할 작업의 이름
+ * @returns 제어 가능한 상태 표시 객체
+ * 
+ * @example
+ * const task = working("에셋 압축 중");
+ * // ...작업 처리...
+ * task.done("압축 완료");
  */
 export function working(title: string) {
   const started = performance.now();
@@ -100,10 +138,12 @@ export function working(title: string) {
 export { log, note, outro };
 
 /**
- * 진단 하나를 사람이 읽게 찍는다.
+ * 진단 항목 하나를 사람이 읽기 쉬운 형태의 문자열로 변환합니다.
+ * 위치(파일:줄:칸) 정보를 기반으로 하여 코드 프레임이 있는 경우 아래에 출력합니다.
  *
- * 위치는 `파일:줄:칸` 한 줄로 먼저 내고(편집기·터미널이 눌러서 열 수 있는 모양이다),
- * 파서가 코드 프레임을 붙여 줬으면 그 아래에 그대로 보여 준다.
+ * @param label - 기본 파일 이름 또는 식별자
+ * @param item - 출력할 진단 항목
+ * @returns 포맷팅된 문자열
  */
 function diagnostic(label: string, item: CompileDiagnostic): string {
   const where = item.file && item.file !== label ? path.basename(item.file) : label;
@@ -111,10 +151,19 @@ function diagnostic(label: string, item: CompileDiagnostic): string {
   return item.detail ? `${head}\n${dim(item.detail)}` : head;
 }
 
-/** 한 번에 보여 주는 진단 개수. 넘치면 세어서만 알려 준다. */
 const MAX_SHOWN = 8;
 
-/** 에러·경고 묶음을 찍는다 */
+/**
+ * 에러나 경고 목록을 그룹지어 출력합니다.
+ * 최대 출력 수치를 넘어서면 요약된 건수로 표기합니다.
+ *
+ * @param label - 대상 파일 이름 또는 식별자
+ * @param diagnostics - 진단 메시지 배열
+ * @param kind - '에러' 또는 '경고'
+ * 
+ * @example
+ * report("main.tess", errors, "에러");
+ */
 export function report(label: string, diagnostics: CompileDiagnostic[], kind: '에러' | '경고') {
   if (diagnostics.length === 0) return;
 
@@ -131,7 +180,18 @@ export function report(label: string, diagnostics: CompileDiagnostic[], kind: '�
   (isError ? log.error : log.warn)(lines.join('\n'));
 }
 
-/** `이름  값` 목록을 가지런히 */
+/**
+ * 이름-값 튜플 배열을 받아 이름 부분을 가장 긴 너비에 맞춰 정렬된 문자열로 반환합니다.
+ *
+ * @param rows - 이름과 값으로 이루어진 항목 목록
+ * @returns 정렬 포맷이 적용된 다중 문자열
+ * 
+ * @example
+ * console.log(details([
+ *   ["장면 1", "오브젝트 4"],
+ *   ["오브젝트 32", "변수 2"]
+ * ]));
+ */
 export function details(rows: Array<[string, string]>): string {
   const width = Math.max(...rows.map(([name]) => displayWidth(name)));
   return rows.map(([name, value]) => `${dim(padTo(name, width))}  ${value}`).join('\n');

@@ -1,16 +1,24 @@
-// ============================================================================
-//  Tess AST node shapes
-//
-//  The visitor builds these, and the validator, compiler and decompiler read
-//  them. `type` is the discriminant everywhere, so a `switch` on it narrows a
-//  node down to exactly the fields that node carries.
-// ============================================================================
+/**
+ * Tess AST 노드 구조를 정의합니다.
+ * 방문자(visitor)가 이를 생성하고, 유효성 검사기, 컴파일러, 디컴파일러가 이를 읽습니다.
+ * `type` 속성을 판별자로 사용하여 `switch` 문으로 안전하게 타입을 좁힐 수 있습니다.
+ */
 
-/** Half-open source span. `end` is exclusive. */
+/**
+ * 반개구간(half-open) 소스 코드 범위를 나타냅니다. `end` 값은 포함되지 않습니다.
+ * 
+ * @example
+ * const loc: Loc = { start: 0, end: 10 };
+ */
 export interface Loc {
   start: number;
   end: number;
-  /** Set when the node came from a file pulled in by `use`. */
+  /**
+   * `use` 구문으로 가져온 파일에서 유래한 노드인 경우 파일 경로가 설정됩니다.
+   * 
+   * @example
+   * loc.file = "other.tess";
+   */
   file?: string;
 }
 
@@ -50,7 +58,12 @@ export interface Identifier extends Base {
   name: string;
 }
 
-/** A bare option word such as a rotation method. Written without a span. */
+/**
+ * 회전 방식과 같은 단일 옵션 키워드를 나타냅니다. 소스 범위(span) 없이 기록될 수 있습니다.
+ * 
+ * @example
+ * const kw: KeywordNode = { type: 'Keyword', name: 'left_right' };
+ */
 export interface KeywordNode {
   type: 'Keyword';
   name: string;
@@ -102,7 +115,9 @@ export type Expr =
   | IndexNode
   | ListLiteralNode;
 
-/** What an assignment or a list operation may write to. */
+/**
+ * 할당 또는 리스트 연산의 대상이 될 수 있는 좌변값(LValue) 타입입니다.
+ */
 export type LValue = Identifier | IndexNode;
 
 // ----------------------------------------------------------------------------
@@ -197,7 +212,9 @@ export interface TableDeclNode extends Base {
   rows: Expr[][];
 }
 
-/** Where a variable or list lives when it is not plain local storage. */
+/**
+ * 일반 지역 스토리지가 아닌 경우, 변수나 리스트가 저장되는 스코프를 나타냅니다.
+ */
 export type StorageScope = 'shared' | 'realtime';
 
 export interface VarDeclNode extends Base {
@@ -282,7 +299,9 @@ export interface ReturnNode extends Base {
   value: Expr;
 }
 
-/** Statements that carry nothing but their own span. */
+/**
+ * 추가적인 속성 없이 소스 범위(span)와 타입만을 가지는 문장의 종류입니다.
+ */
 export type NullaryStatementType =
   | 'Break'
   | 'Skip'
@@ -448,7 +467,9 @@ export interface ListRemoveNode extends Base {
   index: Expr;
 }
 
-/** Which way a table grows or shrinks. */
+/**
+ * 테이블이 늘어나거나 줄어드는 방향을 나타냅니다.
+ */
 export type TableLine = 'row' | 'column';
 
 export interface TableAddLineNode extends Base {
@@ -563,7 +584,9 @@ export interface ProgramNode extends Base {
   body: TopLevelItem[];
 }
 
-/** Every node the visitor can produce, in any position. */
+/**
+ * 방문자가 생성할 수 있는 모든 위치의 노드 타입입니다.
+ */
 export type Node =
   | ProgramNode
   | TopLevelItem
@@ -575,16 +598,20 @@ export type Node =
   | EventNode;
 
 /**
- * What `parse` returns for a fragment start rule. `Program` yields the whole
- * program, the fragment rules yield the members they matched, and the
- * expression and statement rules yield a single node.
+ * 구문 분석기(`parse`)가 시작 규칙에 따라 반환하는 결과 타입입니다.
+ * `Program`은 전체 프로그램을, 단편(fragment) 규칙은 일치하는 멤버들을, 표현식과 문장 규칙은 단일 노드를 반환합니다.
  */
 export type ParseRoot = ProgramNode | SceneMember[] | ObjectMember[] | Stmt | Expr;
 
 // ----------------------------------------------------------------------------
 //  Diagnostics
 // ----------------------------------------------------------------------------
-/** One problem found while parsing or validating, located in a source file. */
+/**
+ * 구문 분석 또는 유효성 검사 중에 발견된 소스 파일 내의 문제를 나타냅니다.
+ * 
+ * @example
+ * const diag: Diagnostic = { line: 1, column: 1, offset: 0, message: "에러" };
+ */
 export interface Diagnostic {
   line: number;
   column: number;
@@ -594,13 +621,23 @@ export interface Diagnostic {
   detail?: string | null;
 }
 
-/** What `validate` reports about one program. */
+/**
+ * 단일 프로그램에 대해 `validate`가 보고하는 검사 결과입니다.
+ * 
+ * @example
+ * const result: ValidationResult = { errors: [], warnings: [] };
+ */
 export interface ValidationResult {
   errors: Diagnostic[];
   warnings: Diagnostic[];
 }
 
-/** What `parse` returns: the tree when it succeeded, plus every diagnostic. */
+/**
+ * 구문 분석기(`parse`)의 반환 결과입니다. 성공 시 생성된 트리와 진단 정보를 포함합니다.
+ * 
+ * @example
+ * const result: ParseResult = { ok: true, ast: programNode, errors: [], warnings: [] };
+ */
 export interface ParseResult<T = ParseRoot> {
   ok: boolean;
   ast: T | null;

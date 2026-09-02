@@ -1,29 +1,26 @@
-// ============================================================================
-//  컴파일한 작품을 브라우저에서 열어 보기 위한 페이지
-//
-//  엔트리 실행기(entryjs)는 서드파티 라이브러리가 많아서 통째로 담지 않고
-//  다음 순서로 찾는다.
-//    1. 프로젝트에 설치된 node_modules/@entrylabs/entry  (오프라인)
-//    2. unpkg CDN                                          (기본, server.ts 의 CDN 상수)
-//  @entrylabs/entry 자체는 jsDelivr 로는 못 받는다 — 패키지 전체 크기가 jsDelivr 의
-//  150MB 한도를 넘어서 entry.min.js 조차 403 으로 막힌다(server.ts CDN 상수 주석 참고).
-//  나머지 서드파티 라이브러리(THIRD_PARTY_SCRIPTS)는 각각 크기가 작아 jsDelivr 로도 잘 받아진다.
-//  둘 다 못 쓰면 페이지가 그 사실을 알려 주고, 작품 파일을 내려받아
-//  playentry.org 에서 여는 길을 안내한다.
-//
-//  entry.min.js 는 그 자체로 완결된 파일이 아니라, 아래 서드파티 라이브러리들이
-//  전역 변수(createjs, _, EntryTool, EntryVideoLegacy, React, ...)로 먼저
-//  준비돼 있어야 한다 (entryjs 의 webpack externals 설정과 동일).
-//  이 라이브러리들이 없으면 entry.min.js 를 불러오는 도중 조용히 실패해서
-//  `Entry.init` 이 함수가 아니게 되고, 결국 "엔트리를 불러오지 못했습니다"
-//  화면만 뜨게 된다 — 이게 이 파일에서 고친 로딩 오류의 원인이었다.
-// ============================================================================
+/**
+ * 컴파일된 엔트리 작품을 브라우저에서 실행하기 위한 HTML 템플릿과 로딩 로직을 제공합니다.
+ *
+ * 실행 페이지는 다음과 같은 순서로 리소스를 불러옵니다.
+ * 1. 서드파티 라이브러리: (jQuery, CreateJS, React 등) `THIRD_PARTY_SCRIPTS`로 정의된 라이브러리들을 불러옵니다.
+ * 2. 엔트리 코어 파일: `entry.min.js` 및 관련 파일들을 프로젝트 내부 패키지 또는 CDN에서 불러옵니다.
+ * 
+ * 엔트리 실행기(`entryjs`)는 외부 라이브러리에 전역 의존성을 가지므로 서드파티 스크립트가 완전히 로드된 이후에 실행되어야 합니다.
+ * 오프라인 환경인 경우 로컬에 설치된 버전을 사용하며, 문제가 생기면 `playentry.org`에서 실행할 수 있는 안내 화면을 보여줍니다.
+ */
 
 // createjs must stay on the 2015.11.26 bundle (EaselJS 0.8.2). In EaselJS 1.0.0
 // cache() no longer sets _cacheScale/_cacheOffsetX/_cacheOffsetY, which
 // DisplayObject.getBounds() still reads, so every cached object reports 0x0
 // bounds and collision blocks always return false. See AI_README.md.
-/** entry.min.js 가 실행되기 전에 전역으로 준비돼 있어야 하는 서드파티 라이브러리 */
+/** 
+ * `entry.min.js`가 실행되기 전 전역 스코프에 미리 정의되어야 하는 서드파티 라이브러리의 CDN 주소 목록입니다. 
+ *
+ * @example
+ * ```typescript
+ * THIRD_PARTY_SCRIPTS.forEach(scriptUrl => addScriptTag(scriptUrl));
+ * ```
+ */
 export const THIRD_PARTY_SCRIPTS = [
   'https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js',
   'https://cdn.jsdelivr.net/npm/createjs@1.0.1/builds/createjs-2015.11.26.min.js',
@@ -57,7 +54,14 @@ export const ENTRY_FONT_STYLES = [
   'maruburi_2023', 'd2coding_2023',
 ].map((name) => `${ENTRY_FONTS_BASE}/${name}.css`);
 
-/** entryjs 가 필요로 하는 파일들 (엔트리 공식 문서의 순서 그대로) */
+/** 
+ * `entryjs` 실행에 필요한 필수 파일 목록입니다. (엔트리 공식 문서 로딩 순서 기준)
+ *
+ * @example
+ * ```typescript
+ * const runtimeUrls = RUNTIME_FILES.map(file => `${libBase}/${file}`);
+ * ```
+ */
 export const RUNTIME_FILES = [
   'extern/util/filbert.js',
   'extern/util/CanvasInput.js',
@@ -87,24 +91,49 @@ const jsValue = (value: unknown) => JSON.stringify(value ?? null)
   .replaceAll('<', '\\u003c').replaceAll('>', '\\u003e').replaceAll('&', '\\u0026')
   .replaceAll('\u2028', '\\u2028').replaceAll('\u2029', '\\u2029');
 
-/** 실행 페이지가 무엇을 어디서 가져올지. */
+/** 
+ * 실행 페이지 렌더링 시 필요한 옵션 객체입니다. 
+ *
+ * @example
+ * ```typescript
+ * const options: PlayerPageOptions = {
+ *   name: '마이 프로젝트',
+ *   base: '/lib',
+ *   summary: { scenes: 1, objects: 2, blocks: 10 },
+ *   entName: 'project.ent',
+ *   reload: true
+ * };
+ * ```
+ */
 export interface PlayerPageOptions {
   name: string;
-  /** entryjs 파일들을 가져올 곳 (`/lib` 또는 CDN 주소) */
+  /** `entryjs` 파일들을 가져올 기준 경로 (`/lib` 또는 CDN 주소) */
   base: string;
   /**
-   * 엔트리 기본 그림·소리를 가져올 곳. 부스트 모드에서는 반드시 같은
-   * origin(`/lib`)이어야 한다 — WebGL 은 다른 origin 의 그림을 텍스처로 못 올린다.
+   * 엔트리 기본 이미지·소리를 가져올 경로입니다.
+   * 부스트 모드에서는 WebGL 보안 정책상 반드시 같은 출처(`/lib`)여야 합니다.
    */
   mediaBase?: string;
   summary: { scenes: number; objects: number; blocks: number };
   entName: string;
-  /** 서버가 다시 컴파일할 때마다 페이지를 자동으로 새로고침한다 */
+  /** 서버에서 컴파일이 완료될 때마다 페이지를 자동으로 새로고침할지 여부 */
   reload?: boolean;
-  /** 엔트리를 부스트 모드(WebGL/PIXI 렌더러)로 띄운다 */
+  /** 부스트 모드 (WebGL/PIXI 렌더러) 사용 여부 */
   boost?: boolean;
 }
 
+/**
+ * 작품을 실행할 수 있는 전체 HTML 페이지 문자열을 생성하여 반환합니다.
+ *
+ * @param options 페이지 렌더링에 필요한 각종 설정값들
+ * @returns 렌더링 완료된 HTML 문자열
+ *
+ * @example
+ * ```typescript
+ * const htmlContent = playerPage(options);
+ * response.end(htmlContent);
+ * ```
+ */
 export function playerPage({
   name, base, mediaBase = base, summary, entName, reload = true, boost = false,
 }: PlayerPageOptions): string {

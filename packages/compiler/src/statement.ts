@@ -1,9 +1,12 @@
-// ============================================================================
-//  Tess 문장 -> 엔트리 블록
-//
-//  Tess 문장 하나가 엔트리 블록 여러 개가 되기도 한다.
-//  (예: `move 20 20` 은 엔트리에 대응 블록이 없어서 move_x + move_y 로 펼친다)
-// ============================================================================
+/**
+ * Tess 문장을 엔트리 블록으로 변환하는 컴파일 모듈입니다.
+ *
+ * Tess 문장 하나가 여러 개의 엔트리 블록으로 확장될 수 있습니다.
+ * 
+ * @example
+ * // Tess 문장 `move 20 20`은 엔트리에 대응하는 단일 블록이 없으므로
+ * // move_x 블록과 move_y 블록 두 개로 펼쳐집니다.
+ */
 import {
   ambiguousLocalError,
   compileAnyValue,
@@ -90,7 +93,9 @@ const TTS_LEVELS: Record<string, string> = {
   "-5": "-5",
 };
 
-/** 값을 읽어올 수 있는 오브젝트 속성 (복합 대입을 풀 때 쓴다) */
+/** 
+ * 복합 대입 연산(+=, -= 등)을 풀 때 현재 값을 읽어오기 위해 사용하는 오브젝트 속성 매핑입니다.
+ */
 const READABLE_PROPERTIES: Record<string, string> = {
   x: "x",
   y: "y",
@@ -99,7 +104,12 @@ const READABLE_PROPERTIES: Record<string, string> = {
   size: "size",
 };
 
-/** Drops the nulls a failed sub-compile leaves behind. */
+/** 
+ * 하위 컴파일 과정에서 실패하여 발생한 null 값들을 배열에서 제거합니다.
+ *
+ * @param items 엔트리 블록 또는 null을 포함하는 배열
+ * @returns null이 제거된 엔트리 블록 배열
+ */
 const blocksOf = (items: Array<EntryBlock | null>): EntryBlock[] => (
   items.filter((item): item is EntryBlock => item !== null)
 );
@@ -537,7 +547,17 @@ function timerAction(action: string, ctx: Context): EntryBlock {
   return ctx.block("choose_project_timer_action", [null, action, null, null]);
 }
 
-/** 회전 계열 블록은 각도 리터럴 블록(angle)을 쓴다 */
+/** 
+ * 회전 계열 블록 처리를 위한 각도 컴파일 함수입니다.
+ * 엔트리에서는 각도를 입력받을 때 전용 각도 리터럴 블록(angle)을 사용합니다.
+ *
+ * @param node 각도를 나타내는 표현식 노드
+ * @param ctx 컴파일 컨텍스트
+ * @returns 변환된 엔트리 블록 또는 실패 시 null
+ *
+ * @example
+ * const angleBlock = compileAngle(node, ctx);
+ */
 function compileAngle(node: Expr, ctx: Context): EntryBlock | null {
   if (node.type === "Number") return ctx.angle(node.value);
   if (
@@ -617,7 +637,16 @@ function compileVisibility(node: ShowHideNode, ctx: Context): EntryBlock[] {
 // ---------------------------------------------------------------------------
 //  테이블 (엔트리 '자료 분석' 블록)
 // ---------------------------------------------------------------------------
-/** `show 표` · `show 표 for N` · `show 표 chart N`, and `hide 표`. */
+/**
+ * 테이블 윈도우 표시 및 숨김 동작을 컴파일합니다.
+ * 지원하는 형태: `show 표`, `show 표 for N`, `show 표 chart N`, `hide 표`.
+ *
+ * @param node 표시/숨김 구문 노드
+ * @param table 대상 테이블 객체
+ * @param showing 표시할지 여부 (true: 표시, false: 숨김)
+ * @param ctx 컴파일 컨텍스트
+ * @returns 생성된 엔트리 블록 배열
+ */
 function compileTableWindow(
   node: ShowHideNode,
   table: EntryTable,
@@ -637,8 +666,12 @@ function compileTableWindow(
 }
 
 /**
- * A chart number, which Entry keeps as a dropdown field rather than a value
- * slot, so it has to be written out at compile time.
+ * 차트 번호를 추출합니다.
+ * 엔트리에서 차트 번호는 값 슬롯이 아니라 드롭다운 필드로 관리되므로, 컴파일 타임에 값으로 작성되어야 합니다.
+ *
+ * @param node 차트 번호를 나타내는 표현식 노드
+ * @param ctx 컴파일 컨텍스트
+ * @returns 추출된 차트 번호 문자열 또는 유효하지 않은 경우 null
  */
 function literalIndex(node: Expr, ctx: Context): string | null {
   if (node.type === "Number") return String(node.value - 1);
@@ -646,7 +679,13 @@ function literalIndex(node: Expr, ctx: Context): string | null {
   return ctx.error(node, "차트 번호는 숫자로 직접 적어야 합니다.");
 }
 
-/** The table a statement names, or an error when the name is not one. */
+/** 
+ * 구문에서 지정한 테이블 객체를 가져오거나, 테이블이 아닌 경우 오류를 반환합니다.
+ *
+ * @param node 테이블 식별자 노드
+ * @param ctx 컴파일 컨텍스트
+ * @returns 찾은 테이블 객체 또는 실패 시 null
+ */
 function requireTable(node: Identifier, ctx: Context): EntryTable | null {
   const table = ctx.tableByName.get(node.name);
   if (table) return table;

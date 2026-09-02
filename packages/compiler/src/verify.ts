@@ -1,22 +1,26 @@
-// ============================================================================
-//  엔트리 프로젝트 구조 검증기
-//
-//  컴파일 결과가 엔트리가 실제로 읽을 수 있는 모양인지 확인한다.
-//  (실제 엔트리 작품의 project.json 을 기준으로 규칙을 맞췄다.)
-// ============================================================================
 import { BLOCK_PARAM_COUNTS } from './block-params.ts';
 import type { EntryProject } from './types.ts';
 
 /**
- * The verifier checks a project it cannot assume is well formed, so it reads
- * blocks through this rather than through `EntryBlock`.
+ * 컴파일된 엔트리 프로젝트 구조가 올바른지 검증하기 위해 사용되는 범용 블록 타입입니다.
+ * 구조가 완전하지 않을 수 있는 프로젝트를 다루기 위해 `EntryBlock` 대신 사용됩니다.
  */
 type AnyBlock = Record<string, any>;
 
-/** Which entry entity a parameter slot points at. */
+/** 엔트리 블록 내 매개변수가 참조할 수 있는 대상의 종류를 나타냅니다. */
 type ReferenceKind = 'variable' | 'list' | 'message' | 'scene' | 'picture' | 'sound' | 'objectOrSelf';
 
-/** The picture and sound ids the object holding a block owns. */
+/** 
+ * 특정 블록을 소유한 오브젝트가 가지고 있는 모양(picture)과 소리(sound)의 ID 집합입니다. 
+ *
+ * @example
+ * ```ts
+ * const owner: BlockOwner = {
+ *   pictures: new Set(["pic_1", "pic_2"]),
+ *   sounds: new Set(["sound_1"])
+ * };
+ * ```
+ */
 interface BlockOwner {
   pictures: Set<string>;
   sounds: Set<string>;
@@ -28,7 +32,15 @@ const PROJECT_KEYS = [
   'objects', 'scenes', 'variables', 'messages', 'functions', 'speed', 'interface',
 ];
 
-/** 참조 무결성 규칙: 블록 타입 -> [파라미터 위치, 참조 종류] */
+/**
+ * 블록 타입에 따른 참조 무결성 규칙을 정의합니다.
+ * 각 배열의 요소는 [파라미터 인덱스, 참조 종류] 쌍으로 구성됩니다.
+ *
+ * @example
+ * ```ts
+ * const rules = REFERENCES["get_variable"]; // [[0, "variable"]]
+ * ```
+ */
 const REFERENCES: Record<string, Array<[number, ReferenceKind]>> = {
   get_variable: [[0, 'variable']],
   set_variable: [[0, 'variable']],
@@ -56,7 +68,21 @@ const REFERENCES: Record<string, Array<[number, ReferenceKind]>> = {
   text_read: [[0, 'objectOrSelf']],
 };
 
-/** 발견한 문제 목록을 돌려준다 (비어 있으면 정상) */
+/**
+ * 주어진 엔트리 프로젝트의 구조적 오류를 검사하고 발견된 문제 목록을 반환합니다.
+ * 반환된 배열이 비어있다면 프로젝트 구조가 정상임을 의미합니다.
+ *
+ * @param project 검사할 엔트리 프로젝트 객체
+ * @returns 발견된 문제점들에 대한 설명이 담긴 문자열 배열
+ *
+ * @example
+ * ```ts
+ * const problems = verifyEntryProject(project);
+ * if (problems.length > 0) {
+ *   console.error("프로젝트에 오류가 있습니다:", problems);
+ * }
+ * ```
+ */
 export function verifyEntryProject(project: EntryProject): string[] {
   const problems: string[] = [];
   const add = (message: string) => problems.push(message);
@@ -76,8 +102,7 @@ export function verifyEntryProject(project: EntryProject): string[] {
   }
   const objectIds = new Set(project.objects.map((object) => object.id));
 
-  // 블록 id 는 오브젝트(또는 함수) 안에서만 유일하면 된다.
-  // 실제 엔트리 작품도 오브젝트를 복제하면 블록 id 가 그대로 복사된다.
+  /** 블록 ID는 개별 오브젝트나 함수 내에서만 고유하면 됩니다. */
   let blockIds = new Set<string>();
 
   const checkBlock = (block: AnyBlock | null | undefined, owner: BlockOwner | null, path: string) => {

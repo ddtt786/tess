@@ -1,11 +1,7 @@
-// ============================================================================
-//  .ent(엔트리 작품) -> Tess 소스로 되돌리기
-//
-//  src/compiler 가 하는 일의 정반대: project.json 의 블록 트리를 걸어 다니며
-//  Tess 소스 텍스트를 만든다. 모든 블록을 다 알지는 못하므로, 모르는 블록은
-//  `# [decompile] ...` 주석으로 남기고 계속 진행한다 — 하나 때문에 통째로
-//  실패하는 것보다, 사람이 나머지를 보고 그 부분만 손보는 편이 낫다.
-// ============================================================================
+/**
+ * 엔트리 작품(.ent) 파일을 Tess 소스 코드로 디컴파일합니다.
+ * 블록 트리를 분석하여 해당되는 텍스트 코드를 생성합니다.
+ */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,11 +61,13 @@ function findRuntimeDir(): string | null {
 }
 
 /**
- * .ent 파일 바이트열을 Tess 소스로 되돌린다.
+ * 주어진 엔트리 파일(.ent) 바이트 배열을 파싱하여 Tess 소스 코드로 디컴파일합니다.
  *
- * `sizes: true` writes `size W H` on every costume instead of only where the
- * compiler cannot measure the image itself.
- *
+ * @param bytes 엔트리 작품 파일의 바이트 데이터
+ * @param options 디컴파일 옵션
+ * @returns 디컴파일 결과 객체를 포함하는 Promise
+ * @example
+ * const result = await decompileEnt(buffer, { sizes: true });
  */
 export async function decompileEnt(
   bytes: Buffer,

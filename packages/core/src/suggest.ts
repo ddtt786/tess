@@ -1,15 +1,20 @@
-// ============================================================================
-//  "혹시 이걸 쓰려던 건가요?"
-//
-//  이름을 하나 잘못 적었을 뿐인데 "그런 것 없습니다" 만 돌려주면, 어디가 틀렸는지
-//  눈으로 찾아야 한다. 아는 이름 중 가장 가까운 것을 같이 알려 준다.
-// ============================================================================
+/**
+ * @fileoverview 오타 교정 및 가장 유사한 이름 추천 기능
+ */
 
 /**
- * 두 이름을 같게 만드는 데 드는 최소 편집 횟수 (Damerau-Levenshtein).
+ * 두 문자열 간의 Damerau-Levenshtein 편집 거리를 계산합니다.
  *
- * 붙어 있는 두 글자가 바뀐 것(`lenght` <-> `length`)도 한 번으로 센다 — 손으로 칠 때
- * 가장 흔한 실수라, 이걸 두 번으로 세면 정작 찾아 줘야 할 오타를 놓친다.
+ * 두 글자의 순서가 바뀐 경우(예: 'lenght'와 'length')도 단일 편집으로 처리하여
+ * 일반적인 오타를 더 정확하게 잡아냅니다.
+ *
+ * @param a - 비교할 첫 번째 문자열
+ * @param b - 비교할 두 번째 문자열
+ * @returns 최소 편집 횟수
+ *
+ * @example
+ * editDistance("length", "lenght"); // 1
+ * editDistance("apple", "apply"); // 1
  */
 export function editDistance(a: string, b: string): number {
   if (a === b) return 0;
@@ -26,29 +31,45 @@ export function editDistance(a: string, b: string): number {
     for (let j = 1; j < cols; j += 1) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
       grid[i][j] = Math.min(
-        grid[i - 1][j] + 1,        // 지우기
-        grid[i][j - 1] + 1,        // 넣기
-        grid[i - 1][j - 1] + cost, // 바꾸기
+        grid[i - 1][j] + 1,
+        grid[i][j - 1] + 1,
+        grid[i - 1][j - 1] + cost,
       );
       if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
-        grid[i][j] = Math.min(grid[i][j], grid[i - 2][j - 2] + 1); // 자리 바꾸기
+        grid[i][j] = Math.min(grid[i][j], grid[i - 2][j - 2] + 1);
       }
     }
   }
   return grid[a.length][b.length];
 }
 
-/** 이 길이의 이름에서 오타로 봐 줄 만한 최대 편집 횟수 */
+/**
+ * 문자열 길이에 따라 허용되는 최대 편집 횟수를 반환합니다.
+ *
+ * @param length - 기준 문자열의 길이
+ * @returns 허용되는 최대 편집 횟수
+ *
+ * @example
+ * tolerance(3); // 1
+ * tolerance(5); // 2
+ * tolerance(10); // 3
+ */
 function tolerance(length: number): number {
   if (length <= 3) return 1;
   return length <= 8 ? 2 : 3;
 }
 
 /**
- * 후보 중 가장 가까운 이름. 오타로 보기 어려울 만큼 멀면 null.
+ * 제공된 후보 목록 중 가장 유사한 이름을 찾습니다.
+ * 허용 오차 범위를 벗어날 경우 null을 반환합니다.
  *
- * @param name 사람이 적은 이름
- * @param candidates 실제로 있는 이름들
+ * @param name - 검색할 대상 이름
+ * @param candidates - 비교할 식별자 목록
+ * @returns 가장 유사한 이름 또는 null
+ *
+ * @example
+ * nearestName("aple", ["apple", "banana"]); // "apple"
+ * nearestName("xyz", ["apple", "banana"]); // null
  */
 export function nearestName(name: string, candidates: Iterable<string>): string | null {
   if (!name) return null;
@@ -60,7 +81,7 @@ export function nearestName(name: string, candidates: Iterable<string>): string 
   for (const candidate of candidates) {
     if (candidate === undefined || candidate === null) continue;
     const text = String(candidate);
-    if (text === name) continue; // 같은 이름이면 애초에 여기 오지 않는다
+    if (text === name) continue; 
     const score = editDistance(target, text.toLowerCase());
     if (score < bestScore) {
       bestScore = score;
@@ -71,8 +92,15 @@ export function nearestName(name: string, candidates: Iterable<string>): string 
 }
 
 /**
- * 메시지 뒤에 그대로 이어 붙일 안내. 가까운 이름이 없으면 빈 글자열이라,
- * 부르는 쪽에서 따로 따지지 않아도 된다.
+ * 가장 유사한 이름이 있을 경우 추천 메시지를 반환합니다.
+ * 
+ * @param name - 검색할 대상 이름
+ * @param candidates - 비교할 식별자 목록
+ * @returns 오타 추천 메시지 또는 빈 문자열
+ *
+ * @example
+ * didYouMean("forwad", ["forward", "turn"]); // " 혹시 'forward' 인가요?"
+ * didYouMean("xyz", ["forward", "turn"]); // ""
  */
 export function didYouMean(name: string, candidates: Iterable<string>): string {
   const found = nearestName(name, candidates);
@@ -80,12 +108,17 @@ export function didYouMean(name: string, candidates: Iterable<string>): string {
 }
 
 /**
- * 가까운 이름이 있으면 그것을, 없으면 대신 알려 줄 안내를 붙인다.
+ * 가장 유사한 이름이 있을 경우 해당 이름을 추천하고,
+ * 없을 경우 대체 안내 메시지를 반환합니다.
  *
- * 오타로 보이는데 "그 이름으로 새로 등록하세요" 라고 하면 서로 어긋난 말이 된다.
- * 둘 중 도움이 되는 쪽 하나만 낸다.
+ * @param name - 검색할 대상 이름
+ * @param candidates - 비교할 식별자 목록
+ * @param hint - 추천할 이름이 없을 때 반환할 기본 안내 메시지
+ * @returns 추천 메시지 또는 기본 안내 메시지
  *
- * @param hint 가까운 이름이 없을 때 낼 안내
+ * @example
+ * orHint("forwad", ["forward"], "새로 등록하세요."); // " 혹시 'forward' 인가요?"
+ * orHint("xyz", ["forward"], "새로 등록하세요."); // " 새로 등록하세요."
  */
 export function orHint(name: string, candidates: Iterable<string>, hint: string): string {
   const found = nearestName(name, candidates);

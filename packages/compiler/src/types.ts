@@ -1,16 +1,24 @@
-// ============================================================================
-//  엔트리 작품(project.json) 의 자료 구조
-//
-//  The names and shapes here are entry's, not ours — they are what entryjs
-//  reads back. Anything the compiler needs only while building lives further
-//  down, under "컴파일러 내부".
-// ============================================================================
+/**
+ * @fileoverview 엔트리 작품(project.json)의 핵심 자료 구조 및 컴파일러 내부 타입 정의입니다.
+ * 
+ * 엔트리 엔진이 직접 읽어들이는 형태를 따르며, 
+ * 컴파일 과정에서만 사용되는 데이터들은 하단의 "컴파일러 내부 타입" 섹션에 정의되어 있습니다.
+ */
 import type { Expr, FunctionDeclNode, ObjectNode, ParseRoot } from '@tess/parser';
 
-/** What may sit in a block's parameter slot. */
+/** 
+ * 블록의 매개변수 슬롯에 들어갈 수 있는 값의 타입입니다. 
+ * @example
+ * const param: EntryParam = "문자열 값";
+ */
 export type EntryParam = EntryBlock | string | number | boolean | null;
 
-/** One entry block. `statements` holds the nested block lists of a C-block. */
+/** 
+ * 엔트리 블록 하나의 데이터 구조입니다.
+ * `statements` 속성은 C형 블록(예: 반복문) 안에 중첩된 블록 리스트를 보관합니다.
+ * @example
+ * const block: EntryBlock = { id: "ab12", type: "move_direction", params: [10], ... };
+ */
 export interface EntryBlock {
   id: string;
   x: number;
@@ -28,7 +36,11 @@ export interface EntryBlock {
   comment?: EntryComment;
 }
 
-/** A note pinned to a block. */
+/** 
+ * 특정 블록에 첨부된 메모(주석) 정보입니다. 
+ * @example
+ * const comment: EntryComment = { value: "이 블록은 이동을 담당합니다.", visible: true, ... };
+ */
 export interface EntryComment {
   x: number;
   y: number;
@@ -54,7 +66,7 @@ export interface EntryMessage {
   name: string;
 }
 
-/** A variable, a list, or one of the two entry keeps for itself. */
+/** 엔트리에서 변수, 리스트, 타이머, 대답을 구분하기 위해 내부적으로 사용하는 식별 타입입니다. */
 export type VariableType = 'variable' | 'list' | 'timer' | 'answer';
 
 export interface EntryVariable {
@@ -84,7 +96,11 @@ export interface EntryTable {
   chart: unknown[];
 }
 
-/** A variable that lives for one call of a function. */
+/** 
+ * 함수 호출 시 할당되고 종료 시 소멸하는 지역 변수입니다. 
+ * @example
+ * const local: FuncLocalVariable = { id: "loc1", name: "임시변수", value: 0 };
+ */
 export interface FuncLocalVariable {
   id: string;
   name: string;
@@ -118,10 +134,14 @@ export interface EntrySound {
   ext?: string;
 }
 
-/** A picture or a sound, before `makeAsset` decides which fields it keeps. */
+/** 그림이나 소리 리소스를 모두 포함할 수 있는 공통 에셋 타입입니다. */
 export type EntryAsset = EntryPicture & EntrySound;
 
-/** Where the object sits on the stage and how it is drawn. */
+/** 
+ * 오브젝트가 화면에 그려지는 위치, 크기, 회전 등의 속성 정보입니다. 
+ * @example
+ * const entity: EntryEntity = { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 90, ... };
+ */
 export interface EntryEntity {
   x: number;
   y: number;
@@ -180,10 +200,14 @@ export interface EntryProject {
 }
 
 // ============================================================================
-//  컴파일러 내부
+//  컴파일러 내부 타입
 // ============================================================================
 
-/** One problem the compiler found, located in a source file. */
+/** 
+ * 컴파일 중 발견된 소스 코드 내의 문제(오류 또는 경고) 정보입니다.
+ * @example
+ * const diag: CompileDiagnostic = { line: 10, column: 5, offset: 150, message: "구문 오류" };
+ */
 export interface CompileDiagnostic {
   line: number;
   column: number;
@@ -193,7 +217,11 @@ export interface CompileDiagnostic {
   detail?: string | null;
 }
 
-/** Where one block came from, so the debugger can point back at the source. */
+/** 
+ * 생성된 블록이 원본 소스 코드의 어느 부분을 가리키는지 추적하기 위한 위치 정보입니다. 
+ * @example
+ * const span: SourceSpan = { file: "main.tess", line: 1, column: 0, endLine: 1, endColumn: 10 };
+ */
 export interface SourceSpan {
   file: string | null;
   line: number;
@@ -204,19 +232,25 @@ export interface SourceSpan {
 
 export type SourceMap = Record<string, SourceSpan>;
 
-/** A file the build copies next to the project. */
+/** 
+ * 빌드 결과물에 함께 포함되어 복사될 외부 에셋(그림, 소리 등) 파일의 경로 정보입니다.
+ * @example
+ * const asset: AssetFile = { source: "./image.png", target: "temp/image/image.png" };
+ */
 export interface AssetFile {
   source: string;
   target: string;
 }
 
-/** How long one compile phase took. */
+/** 컴파일 파이프라인의 각 단계별 소요 시간입니다. */
 export interface PhaseTiming {
   label: string;
   ms: number;
 }
 
-/** An object while it is being compiled, before `buildObject` finishes it. */
+/** 
+ * 최종 오브젝트로 조립되기 전, 컴파일 진행 중 상태의 오브젝트 정보입니다. 
+ */
 export interface CompiledObject {
   id: string;
   key: string;
@@ -234,7 +268,7 @@ export interface CompiledObject {
   script: EntryBlock[][];
 }
 
-/** A function while it is being compiled. */
+/** 컴파일이 진행 중인 상태의 사용자 정의 함수 정보입니다. */
 export interface CompiledFunction {
   id: string;
   name: string;
@@ -254,19 +288,19 @@ export interface CompiledFunction {
   content?: EntryBlock[][];
 }
 
-/** What a name resolves to at the point it is used. */
+/** 특정 식별자 이름이 사용된 시점에 어떤 종류의 변수로 해석되는지 나타냅니다. */
 export type VariableRef =
   | { kind: 'param'; name: string }
   | { kind: 'funcLocal'; name: string; id: string }
   | { kind: 'variable'; entry: EntryVariable; owner?: CompiledObject }
   | { kind: 'ambiguousLocal'; name: string; owners: string[] };
 
-/** What a costume or sound name resolves to from outside any object. */
+/** 외부에서 특정 모양이나 소리 이름을 참조할 때의 탐색 결과입니다. */
 export type ResourceRef =
   | { kind: 'found'; asset: EntryPicture | EntrySound }
   | { kind: 'ambiguous'; owners: string[] };
 
-/** The scope a function body compiles in. */
+/** 함수 본문을 컴파일할 때 필요한 매개변수와 지역 변수의 스코프 정보입니다. */
 export interface FunctionScope {
   name: string;
   /** Parameter name -> the entry block type that reads it. */
@@ -275,7 +309,7 @@ export interface FunctionScope {
   localVars: Map<string, string>;
 }
 
-/** How `compileProject` should read and build the source. */
+/** `compileProject` 실행 시 주입하는 컴파일 옵션 설정입니다. */
 export interface CompileOptions {
   path?: string;
   assetDirs?: string[];
@@ -289,14 +323,18 @@ export interface CompileOptions {
   onPhase?: (phase: PhaseTiming) => void;
 }
 
-/** Parsed files kept between builds, so a watch does not re-parse what it has. */
+/** 파일 감시 모드(watch)에서 이미 분석된 구문 트리를 재사용하기 위한 캐시 상태입니다. */
 export interface CompileCache {
   asts: Map<string, { text: string; ast: ParseRoot }>;
   reused: number;
   parsed: number;
 }
 
-/** What one compile produced. */
+/** 
+ * 단일 컴파일 실행 후 생성된 결과물 및 오류, 경고 내역입니다.
+ * @example
+ * const result: CompileResult = { ok: true, project: myProject, errors: [], warnings: [], assets: [], timings: [] };
+ */
 export interface CompileResult {
   ok: boolean;
   project: EntryProject | null;

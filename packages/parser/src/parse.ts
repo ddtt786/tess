@@ -1,18 +1,23 @@
-// ============================================================================
-//  Tess 공개 API
-// ============================================================================
+/**
+ * Tess 파서 공개 API
+ */
 import { parseSource, checkSource } from './parser/index.ts';
 import type { StartRule } from './parser/index.ts';
 import { lineAndColumn, validate } from './validate.ts';
 import type { Diagnostic, ParseResult, ParseRoot, ProgramNode } from './ast.ts';
 
-/** How `parse` should read the source, and how far it should check it. */
+/** 
+ * 파싱 수행 시 사용할 옵션을 정의합니다.
+ */
 export interface ParseOptions {
   validate?: boolean;
   startRule?: StartRule;
 }
 
-/** Thrown by `parseOrThrow`, carrying everything `parse` would have reported. */
+/** 
+ * parseOrThrow 호출 시 파싱 또는 검증에 실패하면 발생하는 예외입니다. 
+ * 파싱 중 발견된 에러와 경고를 포함합니다.
+ */
 export class TessParseError extends Error {
   errors: Diagnostic[];
 
@@ -26,7 +31,18 @@ export class TessParseError extends Error {
   }
 }
 
-/** Tess 소스를 파싱해서 AST 와 진단 결과를 돌려준다. */
+/** 
+ * Tess 소스 코드를 파싱하여 AST(추상 구문 트리)와 진단 결과를 반환합니다.
+ * 
+ * @param source 파싱할 소스 코드 문자열
+ * @param options 파싱 옵션 (검증 여부, 시작 규칙 등)
+ * @returns 파싱 성공 여부, AST, 에러 및 경고 목록을 포함하는 결과 객체
+ * @example
+ * const result = parse("var a = 1");
+ * if (result.ok) {
+ *   console.log(result.ast);
+ * }
+ */
 export function parse(source: string, options: ParseOptions = {}): ParseResult {
   const { validate: runValidation = true, startRule } = options;
   const result = parseSource(source, { startRule });
@@ -56,7 +72,20 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
   };
 }
 
-/** 파싱에 실패하면 예외를 던지고, 성공하면 AST 를 돌려준다. */
+/** 
+ * 소스 코드를 파싱하며, 실패할 경우 예외를 던지고 성공 시 AST를 반환합니다.
+ * 
+ * @param source 파싱할 소스 코드 문자열
+ * @param options 파싱 옵션
+ * @returns 성공적으로 생성된 AST의 최상위 노드
+ * @throws {TessParseError} 파싱 또는 검증 중 에러가 발생한 경우
+ * @example
+ * try {
+ *   const ast = parseOrThrow("var a = 1");
+ * } catch (e) {
+ *   console.error(e.errors);
+ * }
+ */
 export function parseOrThrow(source: string, options: ParseOptions = {}): ParseRoot {
   const result = parse(source, options);
   if (!result.ok) {
@@ -70,7 +99,15 @@ export function parseOrThrow(source: string, options: ParseOptions = {}): ParseR
   return result.ast!;
 }
 
-/** 문법에 맞는 코드인지만 빠르게 확인한다. */
+/** 
+ * AST를 생성하지 않고 코드의 문법적 유효성만 빠르게 확인합니다.
+ * 
+ * @param source 검사할 소스 코드 문자열
+ * @param startRule 시작할 파서 규칙
+ * @returns 문법에 맞으면 true, 아니면 false
+ * @example
+ * const isValid = check("var a = 1");
+ */
 export function check(source: string, startRule?: StartRule): boolean {
   return checkSource(source, startRule);
 }

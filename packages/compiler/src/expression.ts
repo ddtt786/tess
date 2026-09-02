@@ -1,10 +1,10 @@
-// ============================================================================
-//  Tess 표현식 -> 엔트리 값(value) 블록
-//
-//  주의할 의미 차이
-//   - 리스트/문자열 인덱스, slice, index_of: Tess 도 엔트리처럼 1부터다.
-//     둘 다 1부터이므로 그대로 옮긴다 — 못 찾으면 0(index_of), 양끝 포함(slice).
-// ============================================================================
+/**
+ * @fileoverview Tess 표현식을 엔트리 값(value) 블록으로 변환하는 모듈입니다.
+ * 
+ * 주요 차이점 주의:
+ * - 리스트/문자열 인덱스, slice, index_of: Tess와 엔트리 모두 1부터 시작합니다.
+ *   따라서 위치값을 변경 없이 그대로 변환합니다. (검색 실패 시 0, slice는 양끝 포함)
+ */
 import { KEY_CODES, keyCodeOf } from '@tess/core';
 import { didYouMean, orHint } from '@tess/core';
 import { requirePowerRefiner } from './runtime.ts';
@@ -18,7 +18,11 @@ import type {
   CompiledFunction, EntryBlock, EntryParam, EntryVariable,
 } from './types.ts';
 
-/** What `resolveTarget` accepts besides an object's own name. */
+/** 
+ * `resolveTarget` 함수가 오브젝트의 고유 이름 외에 추가로 허용하는 대상 옵션들입니다. 
+ * @example
+ * const options: TargetOptions = { mouse: true, wall: true };
+ */
 interface TargetOptions {
   wall?: boolean;
   self?: boolean;
@@ -26,7 +30,7 @@ interface TargetOptions {
   mouse?: boolean;
 }
 
-/** 결과가 엔트리 "판단(boolean)" 블록인 타입들 */
+/** 변환 결과가 엔트리의 "판단(boolean)" 블록 형태가 되는 블록 타입들의 집합입니다. */
 const BOOLEAN_TYPES = new Set([
   'True', 'False',
   'boolean_basic_operator', 'boolean_and_or', 'boolean_not',
@@ -39,9 +43,13 @@ const BOOLEAN_TYPES = new Set([
 const LITERAL_TYPES = new Set(['Number', 'String', 'Color', 'Transparent']);
 
 /**
- * Tess 의 true/false 를 엔트리 값으로 옮기면 "TRUE"/"FALSE" 라는 문자열이 된다.
- * 엔트리의 `(<판단>의 값)`(get_boolean_value) 블록이 그 글자를 돌려주기 때문이다.
- * 리터럴에서 왔든 비교식에서 왔든 항상 같은 글자가 나오도록 맞춘다.
+ * Tess의 참/거짓(true/false) 값을 엔트리 블록 시스템에서 사용하는 문자열("TRUE"/"FALSE")로 매핑합니다.
+ * 
+ * 엔트리의 `(<판단>의 값)`(get_boolean_value) 블록은 판단 결과를 이 문자열로 반환하기 때문에,
+ * 리터럴이든 비교 연산의 결과든 일관성 있게 같은 문자열이 나오도록 맞추는 데 사용됩니다.
+ * 
+ * @example
+ * const trueString = BOOLEAN_TEXT.true; // "TRUE"
  */
 export const BOOLEAN_TEXT: Record<string, string> = { true: 'TRUE', false: 'FALSE' };
 
@@ -53,7 +61,7 @@ const COMPARE_OPERATORS: Record<string, string> = {
 
 const ARITHMETIC_OPERATORS: Record<string, string> = { '+': 'PLUS', '-': 'MINUS', '*': 'MULTI', '/': 'DIVIDE' };
 
-/** calc_operation 으로 바로 가는 수학 함수 */
+/** 엔트리의 `calc_operation` 블록으로 일대일 변환이 가능한 단항 수학 함수들의 매핑입니다. */
 const MATH_OPERATIONS: Record<string, string> = {
   sin: 'sin', cos: 'cos', tan: 'tan',
   asin: 'asin_radian', acos: 'acos_radian', atan: 'atan_radian',
@@ -62,18 +70,17 @@ const MATH_OPERATIONS: Record<string, string> = {
 };
 
 /**
- * 오브젝트 정보 조회 함수 -> coordinate_object 의 COORDINATE 값.
- * 엔트리의 실제 coordinate_object 드롭다운은 x/y/방향/이동방향/크기 말고도
- * "모양 번호"(picture_index)·"모양 이름"(picture_name) 을 갖고 있다
- * (entryjs block_calc.js). costume/costume_number 로 다른 오브젝트의 모양도
- * 이름·번호로 읽을 수 있게 한다.
+ * 특정 오브젝트의 정보를 조회할 때 `coordinate_object` 블록의 조회 속성(COORDINATE)으로 사용할 값들의 매핑입니다.
+ * 
+ * X, Y, 방향, 이동방향, 크기 외에도 모양 번호(picture_index)와 모양 이름(picture_name)을 
+ * 지원하여 다른 오브젝트의 모양 정보도 쉽게 읽어올 수 있도록 매핑합니다.
  */
 const OBJECT_COORDINATES: Record<string, string> = {
   x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size',
   costume: 'picture_name', costume_number: 'picture_index',
 };
 
-/** 상태 값(괄호 없이 쓰는 읽기 전용 값) */
+/** 괄호 없이 식별자만으로 조회할 수 있는 읽기 전용 전역 상태 값들의 매핑입니다. */
 const STATE_BLOCKS: Record<string, string> = {
   mouse_down: 'is_clicked',
   clicked: 'is_object_clicked',
@@ -85,7 +92,7 @@ const STATE_BLOCKS: Record<string, string> = {
   answer: 'get_canvas_input_value',
 };
 
-/** 오브젝트 속성을 읽는 coordinate_object 의 COORDINATE 값 (자기 자신, 괄호 없이) */
+/** 자신(self)의 속성을 괄호 없이 조회할 때 사용되는 `coordinate_object`의 속성 매핑입니다. */
 const PROPERTY_COORDINATES: Record<string, string> = {
   x: 'x', y: 'y', angle: 'rotation', way: 'direction', size: 'size',
   costume: 'picture_name', costume_number: 'picture_index',
@@ -100,8 +107,16 @@ export function isBooleanBlock(node: EntryParam): boolean {
 }
 
 /**
- * 판단 자리에 들어갈 블록. `true`/`false` 는 참·거짓 블록, 그 밖의 리터럴은 참,
- * 실행해 봐야 아는 값은 `== "TRUE"` 비교로 감싼다.
+ * 주어진 표현식을 엔트리의 판단(boolean) 자리에 들어갈 수 있는 블록으로 컴파일합니다.
+ * 
+ * true/false 리터럴은 참/거짓 블록으로, 그 외의 리터럴은 참으로 처리합니다.
+ * 실행 전까지 결과를 알 수 없는 일반 값 표현식은 `== "TRUE"` 형태의 비교 블록으로 감싸 판단 블록으로 만듭니다.
+ *
+ * @param node - 컴파일할 AST 노드
+ * @param ctx - 현재 컴파일 컨텍스트
+ * @returns 판단 타입의 엔트리 블록 객체
+ * @example
+ * const block = compileBoolean(exprNode, ctx);
  */
 export function compileBoolean(node: Expr | null | undefined, ctx: Context): EntryBlock | null {
   if (node?.type === 'Boolean') return ctx.block(node.value ? 'True' : 'False', [null]);
@@ -114,8 +129,16 @@ export function compileBoolean(node: Expr | null | undefined, ctx: Context): Ent
 }
 
 /**
- * 값 자리에 들어갈 블록. 판단이 오면 엔트리의 `(<판단>의 값)` 으로 감싼다
- * (결과는 "TRUE"/"FALSE" 문자열).
+ * 주어진 표현식을 일반 값(value) 자리에 들어갈 수 있는 엔트리 블록으로 컴파일합니다.
+ * 
+ * 컴파일 결과가 판단(boolean) 블록인 경우, 이를 엔트리의 `(<판단>의 값)` 블록으로
+ * 감싸서 최종적으로 "TRUE" 또는 "FALSE" 문자열 값이 반환되도록 변환합니다.
+ *
+ * @param node - 컴파일할 AST 노드
+ * @param ctx - 현재 컴파일 컨텍스트
+ * @returns 값 타입의 엔트리 블록 객체
+ * @example
+ * const valueBlock = compileValue(exprNode, ctx);
  */
 export function compileValue(node: Expr | null | undefined, ctx: Context): EntryBlock | null {
   const compiled = compileAnyValue(node, ctx);
@@ -124,8 +147,16 @@ export function compileValue(node: Expr | null | undefined, ctx: Context): Entry
 }
 
 /**
- * 감싸기 전의 블록을 그대로 돌려준다. 판단 블록이 나올 수도 있다.
- * 값이냐 판단이냐에 따라 다른 블록을 쓰는 자리(`wait` 이 대표적이다)에서 직접 부른다.
+ * 표현식을 가장 원형에 가까운 엔트리 블록으로 컴파일하여 반환합니다.
+ * 
+ * 결과가 값 블록일지 판단(boolean) 블록일지 확정되지 않은 상태로 반환합니다.
+ * 값이나 판단이 모두 올 수 있는 위치(예: `wait` 블록 등)에서 내부적으로 직접 호출됩니다.
+ *
+ * @param node - 컴파일할 AST 노드
+ * @param ctx - 현재 컴파일 컨텍스트
+ * @returns 변환된 엔트리 블록 객체
+ * @example
+ * const rawBlock = compileAnyValue(exprNode, ctx);
  */
 export function compileAnyValue(node: Expr | null | undefined, ctx: Context): EntryBlock | null {
   if (!node) return null;
@@ -194,8 +225,12 @@ function compileIdentifier(node: Node & { name: string }, ctx: Context): EntryBl
 }
 
 /**
- * Reports a local variable name that several objects declare, used from a place
- * that belongs to none of them.
+ * 여러 오브젝트에서 동일한 이름으로 선언된 지역 변수를 모호한 위치에서 사용할 때 발생하는 오류를 보고합니다.
+ * 
+ * @param node - 오류가 발생한 AST 노드
+ * @param found - 찾은 변수명과 해당 변수를 소유한 오브젝트 이름 목록
+ * @param ctx - 현재 컴파일 컨텍스트
+ * @returns 항상 null을 반환하며 컨텍스트에 오류를 기록합니다.
  */
 export function ambiguousLocalError(node: Node, found: { name: string; owners: string[] }, ctx: Context): null {
   return ctx.error(
@@ -241,8 +276,15 @@ function compileBinary(node: BinaryNode, ctx: Context): EntryBlock | null {
 }
 
 /**
- * 상수만으로 이루어진 식이면 그 값을, 아니면 null 을 돌려준다.
- * (`x ** (1/3)` 처럼 지수를 계산해서 적을 수 있게 하기 위한 것)
+ * 표현식이 상수들로만 이루어져 있는 경우 미리 계산(Fold)하여 그 값을 반환합니다.
+ * 변수나 런타임에 결정되는 값이 포함되어 있으면 null을 반환합니다.
+ * 
+ * (예: `x ** (1/3)` 같은 수식에서 지수 부분을 미리 계산해 두기 위한 용도로 사용됩니다.)
+ *
+ * @param node - 평가할 표현식 AST 노드
+ * @returns 상수 값, 미리 계산할 수 없으면 null
+ * @example
+ * const result = foldConstant(exprNode); // 1.5 또는 null
  */
 export function foldConstant(node: Expr | null | undefined): number | null {
   if (!node) return null;
@@ -272,22 +314,27 @@ export function foldConstant(node: Expr | null | undefined): number | null {
   }
 }
 
-/** 소수부를 몇 자리까지 이진 전개할지 (2^-20 ≈ 0.000001) */
+/** 
+ * 소수부 계산 시 이진 전개할 최대 비트 수입니다. (20비트는 약 0.000001의 정밀도입니다.) 
+ */
 const FRACTION_BITS = 20;
 
 /**
- * 엔트리에는 일반 거듭제곱 블록이 없다. 있는 것은 제곱(square)과 제곱근(root)뿐이다.
- * 그런데 이 둘만으로 모든 실수 지수를 만들 수 있다.
+ * 거듭제곱 연산을 제곱(square)과 제곱근(root) 연산의 조합으로 변환합니다.
+ * 
+ * 엔트리에는 임의의 거듭제곱을 수행하는 내장 블록이 없으므로, 모든 실수 지수를
+ * 제곱과 제곱근 블록을 중첩하여 계산하는 구조로 펼쳐서 컴파일합니다.
+ * 
+ * - 정수부: 자릿수만큼 제곱과 곱셈을 반복하여 전개합니다.
+ * - 소수부: 이진 소수로 전개한 뒤, 제곱근을 겹쳐서 전개합니다. 
+ *   (예: 0.5, 0.25 등은 정확히 떨어지며 무한소수는 20자리에서 절사하여 오차를 줄입니다.)
  *
- *   정수부  x^13 = ((x^2)^2 · x)^2 · x        (제곱과 곱셈으로, 자릿수만큼만)
- *   소수부  x^0.b1b2b3… = √(x^b1 · √(x^b2 · √(x^b3 · …)))
+ * 컴파일 시점에 블록 트리로 모두 펼치는 이유는, 엔트리의 반복 블록이 프레임을 소모하기 때문에
+ * 하나의 표현식이 여러 프레임에 걸쳐 계산되는 것을 방지하기 위함입니다.
  *
- * 소수부 전개는 지수를 2배씩 하며 1이 넘는지 보는 이진 전개다.
- * 0.5, 0.25, 0.75 처럼 2의 거듭제곱으로 떨어지는 지수는 **정확히** 맞고,
- * 1/3 같은 무한소수는 20자리에서 끊어 사실상 같은 값(오차 10^-6 수준)이 된다.
- *
- * 반복 블록을 쓰지 않는 이유: 엔트리 반복은 한 번 돌 때마다 프레임을 넘긴다.
- * 값을 구하는 식이 여러 프레임에 걸치면 안 되므로 컴파일할 때 펼쳐 둔다.
+ * @param node - 거듭제곱 이항 연산 노드
+ * @param ctx - 현재 컴파일 컨텍스트
+ * @returns 전개된 거듭제곱 엔트리 블록
  */
 function compilePower(node: BinaryNode, ctx: Context): EntryBlock | null {
   const exponent = foldConstant(node.right);
@@ -301,8 +348,16 @@ function compilePower(node: BinaryNode, ctx: Context): EntryBlock | null {
 }
 
 /**
- * 밑(baseNode)의 exponent 제곱을 블록 트리로 만든다.
- * 지수에 따라 밑이 여러 번 들어가므로, 값이 매번 달라지는 random() 은 막는다.
+ * 밑(base)과 지수(exponent)를 바탕으로 거듭제곱을 수행하는 블록 트리를 생성합니다.
+ * 
+ * 지수 계산 과정에서 밑에 해당하는 블록이 여러 번 복제되어 사용되므로,
+ * `random()`과 같이 호출할 때마다 값이 달라지는 표현식은 사용할 수 없도록 검증합니다.
+ *
+ * @param baseNode - 밑에 해당하는 AST 노드
+ * @param exponent - 지수 값 (숫자)
+ * @param node - 오류 보고용 원본 AST 노드
+ * @param ctx - 현재 컴파일 컨텍스트
+ * @returns 거듭제곱 처리가 완료된 엔트리 블록
  */
 export function buildPower(
   baseNode: Expr,
@@ -355,7 +410,7 @@ export function buildPower(
   return result ?? ctx.number(1);
 }
 
-/** x^n 을 제곱과 곱셈으로. n 이 0이면 null(=1) */
+/** 정수부를 제곱과 곱셈으로 전개합니다. 지수가 0이면 null(결과적으로 1)을 반환합니다. */
 function integerPower(
   n: number,
   base: () => EntryBlock,
@@ -369,7 +424,7 @@ function integerPower(
   return n % 2 === 1 ? multiply(squared, base()) : squared;
 }
 
-/** 소수부를 이진 전개해서 √ 중첩으로. 남은 자리가 모두 0이면 null(=1) */
+/** 소수부를 이진 전개하여 제곱근(√) 중첩으로 전개합니다. 남은 자리가 모두 0이면 null(=1)을 반환합니다. */
 function fractionPower(
   bits: number[],
   index: number,
@@ -385,8 +440,13 @@ function fractionPower(
 }
 
 /**
- * 0 <= fraction < 1 을 이진 소수로. 뒤쪽 0은 버린다.
- * 자릿수 안에서 딱 떨어졌으면 exact 가 true 다 (0.5, 0.25, 0.75 …).
+ * 0 이상 1 미만의 소수값을 이진 소수 배열로 변환합니다. 끝에 남는 0은 제거합니다.
+ * 계산 범위 내에서 정확하게 떨어지는 경우(예: 0.5, 0.25) `exact` 플래그가 true가 됩니다.
+ * 
+ * @param fraction - 변환할 0 이상 1 미만의 실수
+ * @returns 이진 전개된 비트 배열과 정확도 여부를 포함하는 객체
+ * @example
+ * const { bits, exact } = fractionBits(0.625); // bits: [1, 0, 1], exact: true
  */
 function fractionBits(fraction: number): { bits: number[]; exact: boolean } {
   const bits: number[] = [];
@@ -404,7 +464,7 @@ function fractionBits(fraction: number): { bits: number[]; exact: boolean } {
   return { bits, exact: rest === 0 };
 }
 
-/** 밑을 두 번 이상 쓰면 값이 달라지는 식인지 */
+/** 표현식 내부에 평가할 때마다 값이 달라지는 요소(예: random)가 포함되어 있는지 확인합니다. */
 function containsRandom(node: unknown): boolean {
   if (node === null || typeof node !== 'object') return false;
   if (Array.isArray(node)) return node.some(containsRandom);
@@ -502,9 +562,15 @@ function compileIndex(node: IndexNode, ctx: Context): EntryBlock | null {
 }
 
 /**
- * 사용자 정의 함수에 넘길 인자들을 만든다.
- * `이름?` 으로 선언한 자리는 판단 칸이라 판단 블록만 꽂을 수 있으므로 compileBoolean 을
- * 쓰고, 나머지 자리는 값으로 맞춰 넣는다.
+ * 사용자 정의 함수 호출 시 전달할 매개변수 블록들을 컴파일합니다.
+ * 
+ * `이름?`과 같이 판단 칸으로 선언된 자리는 판단(boolean) 블록만 들어갈 수 있으므로
+ * `compileBoolean`을 사용하고, 나머지 자리는 일반 값으로 변환하여 채웁니다.
+ *
+ * @param fn - 대상 사용자 정의 함수의 메타데이터
+ * @param args - 전달할 인자 표현식 목록
+ * @param ctx - 현재 컴파일 컨텍스트
+ * @returns 컴파일된 매개변수 엔트리 블록들의 배열
  */
 export function compileCallArguments(
   fn: CompiledFunction,
@@ -517,8 +583,12 @@ export function compileCallArguments(
 }
 
 /**
- * 소리 이름 -> 그 소리의 엔트리 id (블록이 아니라 드롭다운 칸 값이다).
- * `play sound` 와 달리 get_sound_duration 의 VALUE 는 필드라서 id 를 그대로 넣는다.
+ * 소리 이름을 엔트리의 고유 리소스 ID로 변환합니다. (블록이 아니라 드롭다운 필드 값으로 사용됨)
+ * `play sound` 블록과 달리 `get_sound_duration` 블록의 값은 필드 형태이므로 ID를 직접 주입합니다.
+ * 
+ * @param node - 소리 이름이 담긴 문자열 노드
+ * @param ctx - 현재 컴파일 컨텍스트
+ * @returns 소리의 엔트리 ID, 없으면 원본 이름 또는 null
  */
 function resolveSoundValue(node: Expr, ctx: Context): string | null {
   if (node.type !== 'String') {
@@ -543,7 +613,7 @@ function resolveSoundValue(node: Expr, ctx: Context): string | null {
       `sound ${node.value} "파일명" 으로 먼저 등록하세요.`));
 }
 
-/** 식별자가 리스트를 가리키면 그 엔트리 변수 항목을 돌려준다 */
+/** 식별자가 리스트를 가리키고 있을 경우 해당 리스트의 엔트리 변수 항목을 반환합니다. */
 export function resolveList(node: Expr | null | undefined, ctx: Context): EntryVariable | null {
   if (!node || node.type !== 'Identifier') return null;
   const found = ctx.lookupVariable(node.name);
@@ -554,13 +624,13 @@ export function resolveList(node: Expr | null | undefined, ctx: Context): EntryV
 // ---------------------------------------------------------------------------
 //  내장 함수 호출
 // ---------------------------------------------------------------------------
-/** Column summaries Entry's "테이블의 () 값" block can compute. */
+/** 엔트리의 "테이블의 () 값" 블록이 계산할 수 있는 테이블 열 요약 연산들의 매핑입니다. */
 const TABLE_CALCULATIONS: Record<string, string> = {
   sum: 'SUM', average: 'AVG', maximum: 'MAX', minimum: 'MIN',
   stdev: 'STDEV', median: 'MEDIAN',
 };
 
-/** The table a value function was called on, or an error when the name is not one. */
+/** 연산 함수가 호출된 대상 테이블을 반환하거나, 테이블이 아닐 경우 오류를 보고합니다. */
 function tableArgument(node: Expr, callee: string, ctx: Context) {
   const table = node.type === 'Identifier' && ctx.tableByName.get(node.name);
   return table || ctx.error(node, `${callee}() 의 첫 번째 인자는 테이블이어야 합니다.`
@@ -568,9 +638,15 @@ function tableArgument(node: Expr, callee: string, ctx: Context) {
 }
 
 /**
- * 확장 블록 하나. 드롭다운 칸은 골라 둔 값이 그대로 들어가야 하므로 문자열로 직접
- * 적어야 하고, 값 칸만 식을 받는다. 쓰인 확장은 project.expansionBlocks 에 적어
- * 둬야 엔트리가 실행할 때 그 모듈을 켠다.
+ * 확장 블록 호출을 컴파일합니다.
+ * 
+ * 드롭다운 슬롯은 고정된 값이 들어가야 하므로 문자열 리터럴로 직접 작성해야 하며,
+ * 값 슬롯만 일반 표현식을 받습니다. 사용된 확장 모듈은 `project.expansionBlocks`에
+ * 기록되어 런타임에 엔트리가 해당 모듈을 불러오도록 합니다.
+ * 
+ * @param node - 컴파일할 확장 블록 호출 노드
+ * @param ctx - 현재 컴파일 컨텍스트
+ * @returns 컴파일된 확장 엔트리 블록
  */
 function compileExpansion(node: CallNode, ctx: Context): EntryBlock | null {
   const { callee, arguments: args } = node;

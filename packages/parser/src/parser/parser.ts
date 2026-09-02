@@ -1,17 +1,10 @@
-// ============================================================================
-//  Tess parser — chevrotain grammar
-//
-//  Mirrors the language reference rule for rule. Two differences are deliberate
-//  and behaviour preserving:
-//
-//   1) Alternatives that share a prefix are folded into one rule with optional
-//      tails (`say Expr (for Expr)?` covers both `say` forms). Ordered choice
-//      over a shared prefix and a single rule with an optional tail accept the
-//      same input.
-//   2) Where ordered choice is load bearing, alternatives carry explicit gates
-//      and the choice is marked unambiguous, so the first matching alternative
-//      wins exactly as it does in a PEG.
-// ============================================================================
+/**
+ * @fileoverview Tess 구문 분석기 (Chevrotain 기반 문법)
+ * 
+ * 언어 명세서의 규칙을 일대일로 반영하되, 원활한 파싱을 위해 다음과 같이 조정되었습니다:
+ * 1. 공통된 접두사를 가진 대체 규칙들은 선택적 꼬리를 갖는 하나의 규칙으로 병합되었습니다 (예: `say Expr (for Expr)?`).
+ * 2. 순서가 중요한 선택 규칙의 경우 명시적인 게이트를 두어, PEG 파서처럼 처음 매칭되는 대안이 반드시 선택되도록 보장합니다.
+ */
 import { CstParser, EOF, tokenLabel } from 'chevrotain';
 import type {
   CstNode, IParserErrorMessageProvider, IToken, ParserMethod, TokenType,

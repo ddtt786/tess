@@ -1,6 +1,8 @@
-// ============================================================================
-//  @tess/compiler — AST → 엔트리 작품
-// ============================================================================
+/**
+ * @fileoverview @tess/compiler 패키지 진입점
+ * 
+ * 추상 구문 트리(AST)를 분석하여 실제 실행 가능한 엔트리(Entry) 작품 형식으로 변환하는 모듈입니다.
+ */
 export { compileProject, createCompileCache } from "./src/index.ts";
 export { loadProgram } from "./src/include.ts";
 export { makeEntryBundle, makeTar } from "./src/bundle.ts";

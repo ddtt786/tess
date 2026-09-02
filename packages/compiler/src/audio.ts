@@ -1,17 +1,27 @@
-// ============================================================================
-//  소리 파일에서 재생 길이 읽기
-//
-//  엔트리는 project.json 의 `duration` 을 그대로 믿으므로, 못 구하면 모든 소리가
-//  1초로 굳는다. 디코딩 없이 헤더만 읽어서 계산한다.
-// ============================================================================
+/**
+ * 소리 파일에서 재생 길이(초)를 읽어옵니다.
+ * 디코딩 없이 헤더 정보만 읽어 길이를 계산합니다.
+ */
 
-/** 엔트리가 소리 길이를 적는 자릿수(소수점 한 자리)에 맞춘다 */
+/**
+ * 소리 길이를 소수점 첫째 자리까지 반올림합니다.
+ *
+ * @param seconds 원본 시간(초)
+ * @returns 반올림된 시간(초)
+ * @example
+ * const rounded = round(1.234); // 1.2
+ */
 const round = (seconds: number) => Math.round(seconds * 10) / 10;
 
 /**
- * 소리 파일에서 재생 길이(초)를 잰다. 재지 못하면 null 을 돌려준다.
+ * 소리 파일의 재생 길이(초)를 측정합니다.
+ * 측정할 수 없는 경우 null을 반환합니다.
  *
- * @param ext 확장자 (`.mp3` 처럼 점을 포함한 소문자)
+ * @param bytes 소리 파일의 바이트 데이터
+ * @param ext 파일 확장자 (예: '.mp3')
+ * @returns 소리 파일의 재생 길이 또는 null
+ * @example
+ * const duration = audioDuration(buffer, '.mp3');
  */
 export function audioDuration(bytes: Buffer, ext: string): number | null {
   try {

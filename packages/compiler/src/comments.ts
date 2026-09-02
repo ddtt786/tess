@@ -1,29 +1,55 @@
-// ============================================================================
-//  Tess 주석 -> 엔트리 주석
-//
-//  문법에서 주석은 공백으로 취급되어 AST 에 남지 않는다.
-//  그래서 원본 소스를 따로 훑어 주석 위치를 모으고, 소스 위치(loc)를 기준으로
-//  "바로 아래 문장" 또는 "같은 줄 문장" 에 붙인다.
-//
-//  엔트리는 주석을 블록의 comment 필드에 담는다.
-//    { x, y, width, height, value, readOnly, visible, display,
-//      movable, isOpened, deletable, type: 'comment' }
-// ============================================================================
+/**
+ * Tess 주석을 엔트리 블록 주석으로 변환하는 모듈입니다.
+ * 
+ * 원본 소스에서 주석의 위치를 찾아내어 소스 위치(loc)를 기준으로 
+ * "바로 아래 문장" 또는 "같은 줄 문장" 에 해당하는 AST 노드와 연결합니다.
+ */
 
 import type { Node } from '@tess/parser';
 import type { EntryComment } from './types.ts';
 
-/** One comment found in the source, and where it sits. */
+/**
+ * 소스 코드에서 발견된 단일 주석과 그 위치 정보를 나타냅니다.
+ *
+ * @example
+ * ```typescript
+ * const comment: ScannedComment = {
+ *   start: 10,
+ *   end: 25,
+ *   text: "이것은 주석입니다"
+ * };
+ * ```
+ */
 interface ScannedComment {
   start: number;
   end: number;
   text: string;
 }
 
-/** A node reached by the generic walk, which reads fields it cannot name ahead. */
+/**
+ * AST 순회 중 접근할 수 있는 일반적인 노드 타입입니다.
+ * 
+ * @example
+ * ```typescript
+ * const node: AnyNode = {
+ *   type: 'If',
+ *   loc: { file: 'main.tess', start: 100 }
+ * };
+ * ```
+ */
 type AnyNode = Record<string, unknown> & { type?: string; loc?: { file?: string; start: number } };
 
-/** 주석이 붙을 수 있는 노드 (블록이 만들어지는 것들) */
+/**
+ * 주석을 첨부할 수 있는 AST 노드 타입의 집합입니다.
+ * 주로 엔트리 블록으로 변환되는 노드들이 포함됩니다.
+ * 
+ * @example
+ * ```typescript
+ * if (ATTACHABLE.has(node.type)) {
+ *   // 주석 첨부 가능
+ * }
+ * ```
+ */
 const ATTACHABLE = new Set([
   'Event',
   'If', 'Repeat', 'While', 'Until', 'Forever', 'Wait', 'Break', 'Skip', 'Restart', 'Return',
@@ -37,7 +63,17 @@ const ATTACHABLE = new Set([
   'VarDecl', 'ListDecl', 'Assign', 'ExpressionStatement',
 ]);
 
-/** 엔트리 주석 한 개 만들기 */
+/**
+ * 엔트리 블록에 붙일 주석 객체를 생성합니다.
+ *
+ * @param value - 주석 내용
+ * @returns 엔트리 블록 주석 객체
+ * 
+ * @example
+ * ```typescript
+ * const comment = makeComment("반복문 시작");
+ * ```
+ */
 export function makeComment(value: string): EntryComment {
   return {
     x: 240,
@@ -56,8 +92,16 @@ export function makeComment(value: string): EntryComment {
 }
 
 /**
- * 소스에서 주석을 찾는다. 문자열 안의 `#` 과 색상 리터럴(#ff0000)은 건너뛴다.
- * (문법의 comment 규칙과 같은 판단이다)
+ * 소스 코드에서 주석을 찾아냅니다. 
+ * 문자열 내부의 `#` 기호나 색상 리터럴은 주석으로 처리하지 않습니다.
+ *
+ * @param source - 분석할 소스 코드 문자열
+ * @returns 추출된 주석들의 배열
+ * 
+ * @example
+ * ```typescript
+ * const comments = scanComments("a = 10 # 변수 선언");
+ * ```
  */
 export function scanComments(source: string): ScannedComment[] {
   const comments: ScannedComment[] = [];

@@ -1,9 +1,8 @@
-// ============================================================================
-//  컴파일 컨텍스트
-//
-//  블록 생성, 심볼 테이블(오브젝트 · 장면 · 변수 · 신호 · 함수), 진단 수집을
-//  한 곳에서 관리한다.
-// ============================================================================
+/**
+ * 컴파일 컨텍스트
+ *
+ * 블록 생성, 심볼 테이블(오브젝트, 장면, 변수, 신호, 함수), 진단 수집을 한 곳에서 관리합니다.
+ */
 import { createIdFactory, seedFrom } from './ids.ts';
 import type { IdFactory } from './ids.ts';
 import { commentKey, makeComment } from './comments.ts';
@@ -15,7 +14,17 @@ import type {
   EntryVariable, FunctionScope, ResourceRef, SourceMap, VariableRef,
 } from './types.ts';
 
-/** 엔트리 블록 한 개의 기본 뼈대 */
+/**
+ * 엔트리 블록 하나에 대한 기본 구조를 생성합니다.
+ *
+ * @param id 블록의 고유 식별자
+ * @param type 블록의 종류
+ * @param params 블록에 전달할 매개변수 배열
+ * @param statements 블록 내부의 실행 문장 배열
+ * @returns 생성된 엔트리 블록 객체
+ * @example
+ * const block = makeBlock('uuid-123', 'text_write', ['Hello']);
+ */
 export function makeBlock(
   id: string,
   type: string,

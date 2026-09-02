@@ -1,9 +1,9 @@
-// ============================================================================
-//  Tess CST -> AST
-//
-//  The grammar decides whether code is well formed; this decides what it means.
-//  Node shapes are the contract the compiler, validator and decompiler share.
-// ============================================================================
+/**
+ * @fileoverview Tess 구문 분석 결과(CST)를 추상 구문 트리(AST)로 변환하는 역할을 합니다.
+ * 
+ * 구문 분석기(grammar)는 코드가 올바른 형태인지 판단하지만, 이 모듈은 그 코드의 실질적인 의미(AST)를 결정합니다.
+ * 여기서 만들어진 노드의 형태는 컴파일러, 검증기(validator), 역컴파일러(decompiler) 등 전체 시스템에서 공통으로 사용되는 계약(contract)입니다.
+ */
 import type { CstNode, IToken } from 'chevrotain';
 import { parser } from './parser.ts';
 import type {
@@ -23,8 +23,9 @@ import type {
 } from '../ast.ts';
 
 /**
- * A parsed rule's children. Chevrotain shapes this per rule at runtime, so it
- * stays loose here; what each method builds out of it is typed exactly.
+ * 파싱된 규칙의 자식 노드들을 나타내는 타입입니다.
+ * Chevrotain은 실행 시간에 각 규칙별로 이 객체의 형태를 결정하므로 여기서는 느슨하게(loose) 타입이 지정되어 있습니다.
+ * 실제 각 메서드는 이 객체에서 어떤 데이터를 꺼내서 어떤 구조를 만들지 명확한 타입으로 정의합니다.
  */
 type Ctx = Record<string, any>;
 

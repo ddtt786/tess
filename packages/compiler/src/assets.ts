@@ -1,9 +1,9 @@
-// ============================================================================
-//  모양(그림) · 소리 리소스
-//
-//  엔트리는 리소스를 temp/<앞2자>/<다음2자>/image|sound/<파일명>.<확장자> 에 담고,
-//  project.json 의 fileurl 이 그 경로를 가리킨다.
-// ============================================================================
+/**
+ * 모양(그림) 및 소리 리소스 처리 모듈입니다.
+ * 
+ * 엔트리 프로젝트는 리소스를 `temp/<앞2자>/<다음2자>/image|sound/<파일명>.<확장자>` 경로에 저장하며,
+ * `project.json`의 `fileurl` 속성이 이 경로를 가리킵니다.
+ */
 import fs from 'node:fs';
 import path from 'node:path';
 import { seedFrom } from './ids.ts';
@@ -12,13 +12,27 @@ import type { Node } from '@tess/parser';
 import type { Context } from './context.ts';
 import type { EntryAsset } from './types.ts';
 
-/** A picture's or a sound's pixel size. */
+/**
+ * 이미지나 소리 파일의 크기 정보를 나타내는 인터페이스입니다.
+ * 
+ * @example
+ * ```typescript
+ * const size: Size = { width: 100, height: 100 };
+ * ```
+ */
 interface Size {
   width: number;
   height: number;
 }
 
-/** What a `costume`/`sound` declaration says about the file it names. */
+/**
+ * `costume` 또는 `sound` 선언에서 지정된 파일의 정보를 나타냅니다.
+ * 
+ * @example
+ * ```typescript
+ * const decl: AssetDecl = { id: 'abc', file: 'image.png', width: 100, height: 100 };
+ * ```
+ */
 interface AssetDecl {
   id: string;
   file: string;
@@ -33,7 +47,16 @@ const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const IMAGE_TYPES: Record<string, string> = { '.png': 'png', '.jpg': 'jpg', '.jpeg': 'jpg', '.gif': 'gif', '.svg': 'svg', '.bmp': 'bmp' };
 const SOUND_TYPES = new Set(['.mp3', '.wav', '.ogg', '.m4a']);
 
-/** 엔트리 리소스 파일명(32자)을 내용/경로에서 결정적으로 만든다 */
+/** 
+ * 엔트리 리소스 파일명(32자)을 리소스의 키(내용/경로 등)를 기반으로 결정적으로 생성합니다.
+ * 
+ * @param key 파일명을 생성할 기준이 되는 문자열 키
+ * @returns 32자 길이의 결정적인 영숫자 파일명
+ * @example
+ * ```typescript
+ * const filename = assetFilename('image:my_image.png:1024');
+ * ```
+ */
 export function assetFilename(key: string): string {
   let state = seedFrom(key) || 1;
   let name = '';
@@ -44,11 +67,35 @@ export function assetFilename(key: string): string {
   return name;
 }
 
+/**
+ * 주어진 리소스 정보를 바탕으로 엔트리 프로젝트 내의 파일 경로(`fileurl`)를 생성합니다.
+ * 
+ * @param kind 리소스의 종류 ('image' 또는 'sound')
+ * @param filename 32자로 생성된 리소스 파일명
+ * @param ext 리소스의 파일 확장자 (예: '.png', '.mp3')
+ * @returns 엔트리 프로젝트 구조에 맞는 파일 경로 문자열
+ * @example
+ * ```typescript
+ * const url = fileUrlFor('image', 'abcdefghijklmnopqrstuvwxyz012345', '.png');
+ * // 'temp/ab/cd/image/abcdefghijklmnopqrstuvwxyz012345.png'
+ * ```
+ */
 export function fileUrlFor(kind: string, filename: string, ext: string): string {
   return `temp/${filename.slice(0, 2)}/${filename.slice(2, 4)}/${kind}/${filename}${ext}`;
 }
 
-/** PNG · JPEG · GIF · SVG 에서 원본 크기를 읽는다. 못 읽으면 null */
+/** 
+ * PNG, JPEG, GIF, SVG 파일의 바이너리 데이터에서 원본 이미지의 가로/세로 크기를 읽어옵니다.
+ * 
+ * @param buffer 이미지 파일의 바이너리 데이터
+ * @returns 이미지의 크기 객체, 파싱할 수 없는 경우 `null`
+ * @example
+ * ```typescript
+ * const buffer = fs.readFileSync('image.png');
+ * const size = imageSize(buffer);
+ * if (size) console.log(size.width, size.height);
+ * ```
+ */
 export function imageSize(buffer: Buffer): Size | null {
   if (buffer.length >= 24 && buffer.readUInt32BE(0) === 0x89504e47) {
     return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
@@ -73,16 +120,16 @@ export function imageSize(buffer: Buffer): Size | null {
 }
 
 /**
- * SVG 는 매직 바이트가 없는 XML 텍스트라 PNG/GIF/JPEG 처럼 헤더를 읽을 수 없다.
- * 그렇다고 크기를 못 읽으면(예전엔 그랬다) makeAsset 이 무조건 100x100 으로 대체하는데,
- * 엔트리는 project.json 의 dimension 값을 그대로 믿고 렌더링 크기를 정한다(entryjs
- * entity.js setImage: `this.setWidth(dimension.width)`) — 실제로 로드한 이미지 픽셀 크기를
- * 다시 재서 쓰지 않는다. 그래서 SVG 원본이 100x100 이 아닌데(예: 무대 전체를 덮는 배경
- * 그림) scale_x/scale_y 가 그 원본 크기 기준으로 정해져 있으면(디컴파일한 소스가 그렇다),
- * 100x100 을 기준으로 다시 스케일된 결과가 원래 크기보다 훨씬 작게 나온다 — 예를 들어
- * 원본이 800x490 인데 100x100 으로 잘못 알면, scale_x 61% 로 정확히 488px(무대 폭에 맞춘 값)가
- * 나와야 할 것이 61px 밖에 안 되는 식이다. `width`/`height` 속성을 우선 쓰고, 없으면
- * `viewBox` 의 폭·높이를 쓴다(브라우저가 SVG 고유 크기를 정하는 순서와 같다).
+ * SVG 파일의 바이너리 데이터에서 이미지의 가로/세로 크기를 읽어옵니다.
+ * `width`/`height` 속성을 우선적으로 확인하며, 없는 경우 `viewBox` 속성을 사용하여 크기를 계산합니다.
+ * 
+ * @param buffer SVG 파일의 바이너리 데이터
+ * @returns SVG 이미지의 크기 객체, 파싱할 수 없는 경우 `null`
+ * @example
+ * ```typescript
+ * const buffer = Buffer.from('<svg width="100" height="200"></svg>');
+ * const size = svgSize(buffer); // { width: 100, height: 200 }
+ * ```
  */
 function svgSize(buffer: Buffer): Size | null {
   const text = buffer.toString('utf-8');
@@ -112,11 +159,19 @@ function svgSize(buffer: Buffer): Size | null {
 }
 
 /**
- * 선언된 파일을 실제로 찾아보고 엔트리 리소스 항목을 만든다.
- *
- * 파일을 찾으면 그림 크기와 소리 길이를 파일에서 직접 잰다. 엔트리는 project.json 의
- * 값을 그대로 믿어서, 못 구하면 100×100 · 1초로 굳는다. `size W H`/`for N` 이 우선이다.
- * 파일도 없고 적어 두지도 않았을 때만 경고한다.
+ * 선언된 리소스 파일을 실제 시스템에서 찾아 엔트리 프로젝트용 리소스 객체를 생성합니다.
+ * 파일이 존재하는 경우 파일에서 직접 크기나 길이를 측정하며, 명시적으로 선언된 `size`나 `for` 값이 있으면 그 값을 우선합니다.
+ * 파일을 찾을 수 없고 선언된 정보도 없을 경우에만 경고를 발생시킵니다.
+ * 
+ * @param kind 리소스의 종류 ('image' 또는 'sound')
+ * @param decl 리소스 선언 정보 객체
+ * @param ctx 컴파일러 컨텍스트
+ * @param node 원본 AST 노드 (경고 발생 시 위치 정보용)
+ * @returns 생성된 엔트리 에셋 객체
+ * @example
+ * ```typescript
+ * const asset = makeAsset('image', { id: 'img1', file: 'cat.png' }, ctx, node);
+ * ```
  */
 export function makeAsset(
   kind: 'image' | 'sound',
@@ -167,7 +222,17 @@ export function makeAsset(
   return asset;
 }
 
-/** 소스 파일 옆(또는 --assets 로 지정한 곳)에서 리소스를 찾는다 */
+/** 
+ * 소스 파일과 같은 디렉터리 또는 컴파일 옵션으로 지정된 에셋 디렉터리들에서 파일을 찾습니다.
+ * 
+ * @param file 찾을 파일의 상대 경로
+ * @param ctx 컴파일러 컨텍스트
+ * @returns 찾은 파일의 절대 경로, 찾지 못한 경우 `null`
+ * @example
+ * ```typescript
+ * const path = findAsset('image.png', ctx);
+ * ```
+ */
 function findAsset(file: string, ctx: Context): string | null {
   for (const dir of ctx.options.assetDirs ?? []) {
     const candidate = path.resolve(dir, file);

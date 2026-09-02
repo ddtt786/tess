@@ -1,7 +1,10 @@
-// ============================================================================
-//  @tess/player — 실행 서버. debug-ui.ts 는 타입만 벗겨 브라우저로 내보내는
-//  파일이라 여기서 import 하지 않는다.
-// ============================================================================
+/**
+ * @fileoverview @tess/player 패키지 진입점
+ * 
+ * 컴파일된 Tess 작품을 브라우저에서 실행하고 테스트할 수 있는 로컬 서버 모듈입니다.
+ * 
+ * @note `debug-ui.ts` 파일은 클라이언트 사이드에서 사용하기 위해 타입만 제거한 후 브라우저로 제공되므로, 여기서는 임포트하지 않습니다.
+ */
 export { serveProject, findLocalRuntime, findPreactDir, DEFAULT_PORT } from "./src/server.ts";
 export type { RunningServer, ServeOptions } from "./src/server.ts";
 export type { AssetRoutes } from "./src/asset-routes.ts";

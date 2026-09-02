@@ -1,10 +1,7 @@
-// ============================================================================
-//  엔트리 값(value)/판단(boolean) 블록 -> Tess 표현식 문자열
-//
-//  packages/compiler/src/expression.ts 가 Tess 표현식을 엔트리 블록으로 바꾸는 정확한
-//  대응표를 그대로 뒤집어서 쓴다. 모르는 블록은 죽지 않고 `??("타입", ...)`
-//  형태의 자리표시자를 남기고 ctx.warnings 에 기록한다.
-// ============================================================================
+/**
+ * 엔트리 값(value) 및 판단(boolean) 블록을 Tess 표현식 문자열로 변환하는 기능을 제공합니다.
+ * 알려지지 않은 블록은 자리표시자를 남기고 경고에 기록합니다.
+ */
 import { KEY_CODES } from '@tess/core';
 import { tessNumber, tessString, ownsResource, isExactNumber } from './ident.ts';
 import { expansionBlock } from '@tess/core';
@@ -22,10 +19,13 @@ const REVERSE_MATH: Record<string, string> = {
   sin: 'sin', cos: 'cos', tan: 'tan', asin_radian: 'asin', acos_radian: 'acos', atan_radian: 'atan',
   ln: 'ln', log: 'log10', floor: 'floor', ceil: 'ceil', round: 'round', abs: 'abs',
 };
-// coordinate_object 의 COORDINATE 드롭다운은 x/y/방향/이동방향/크기 말고도
-// "모양 번호"(picture_index)·"모양 이름"(picture_name) 을 갖고 있다(entryjs
-// block_calc.js) — 이 둘이 빠져 있으면 그 값을 쓴 블록이 통째로 옮겨지지 못하고
-// `??("coordinate_object", ...)` 자리표시자로 남는다(예전 버그).
+/**
+ * 좌표 객체의 속성을 Tess 속성 이름으로 매핑합니다.
+ * x, y, 방향, 크기 외에도 모양 번호와 모양 이름 등을 처리합니다.
+ * 
+ * @example
+ * REVERSE_PROPERTY_COORD['picture_name']; // "costume"
+ */
 const REVERSE_PROPERTY_COORD: Record<string, string> = {
   x: 'x', y: 'y', rotation: 'angle', direction: 'way', size: 'size',
   picture_name: 'costume', picture_index: 'costume_number',
@@ -46,10 +46,25 @@ for (const [name, code] of Object.entries(KEY_CODES)) {
   if (!(String(code) in REVERSE_KEY_CODE)) REVERSE_KEY_CODE[String(code)] = name;
 }
 
-/** 값 블록이 없을 때(빈 슬롯) 쓰는 기본값 */
+/**
+ * 값 블록이 없을 때(빈 슬롯) 사용하는 기본값입니다.
+ * 
+ * @example
+ * const defaultVal = EMPTY; // "0"
+ */
 const EMPTY = '0';
 
-/** #RRGGBB 는 Tess 색 리터럴로 그대로, 그 밖은 문자열로 */
+/**
+ * 주어진 문자열이 `#RRGGBB` 형태의 색상 리터럴이면 그대로 반환하고, 그 외의 경우 Tess 문자열로 변환합니다.
+ * 
+ * @param raw - 변환할 원본 문자열입니다.
+ * @returns 변환된 색상 리터럴 또는 Tess 문자열입니다.
+ * 
+ * @example
+ * colorLiteral("#FF0000"); // "#FF0000"
+ * colorLiteral("transparent"); // "transparent"
+ * colorLiteral("blue"); // "\"blue\""
+ */
 export function colorLiteral(raw: string): string {
   if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw;
   if (raw === 'transparent') return 'transparent';
@@ -64,8 +79,17 @@ function targetName(ctx: DecompileContext, raw: unknown): string {
 }
 
 /**
- * 편집기 목록에서 고른 모양·소리를 옮긴다. 함수 안에서는 이름 대신 id 를 남긴다 —
- * 함수는 전역이라 어느 오브젝트가 부를지 모르기 때문 (decompiler/index.ts 참고).
+ * 편집기 목록에서 선택한 모양이나 소리 자원을 참조합니다.
+ * 전역 함수 내부에서는 객체를 특정할 수 없으므로 이름 대신 ID를 남깁니다.
+ * 
+ * @param ctx - 디컴파일 컨텍스트입니다.
+ * @param id - 자원의 ID입니다.
+ * @param byId - ID로 자원 정보를 찾는 맵입니다.
+ * @param nameOf - ID로 자원의 이름을 가져오는 함수입니다.
+ * @returns 자원 참조를 나타내는 Tess 표현식 문자열입니다.
+ * 
+ * @example
+ * resourceRef(ctx, "sound_1", soundsById, soundName);
  */
 function resourceRef(
   ctx: DecompileContext,
@@ -83,7 +107,17 @@ function placeholder(ctx: DecompileContext, block: RawBlock | undefined): string
   return `"[decompile: ${type}]"`;
 }
 
-/** 값 또는 판단 블록 하나를 Tess 표현식 문자열로 */
+/**
+ * 단일 값 또는 판단 블록을 Tess 표현식 문자열로 변환합니다.
+ * 
+ * @param block - 변환할 엔트리 블록 객체입니다.
+ * @param ctx - 디컴파일 컨텍스트입니다.
+ * @returns 변환된 Tess 표현식 문자열입니다.
+ * 
+ * @example
+ * const expr = exprOf({ type: 'number', params: [42] }, ctx);
+ * console.log(expr); // "42"
+ */
 export function exprOf(block: any, ctx: DecompileContext): string {
   if (block === null || block === undefined) return EMPTY;
   if (typeof block === 'string') return tessString(block);
@@ -94,11 +128,10 @@ export function exprOf(block: any, ctx: DecompileContext): string {
   const at = (i: number) => p[i];
 
   switch (block.type) {
-    // 엔트리의 number·text 블록은 둘 다 적어 둔 글자를 그대로 돌려주는 같은 원시
-    // 블록이다. 그래서 숫자를 어느 쪽에 담아 두었는지는 작품을 만든 사람이 어느 칸에
-    // 입력했느냐일 뿐이고, 실행 결과는 똑같다 — 판단문 안이든 계산식 안이든 함수
-    // 인수든, 숫자로 읽히는 리터럴은 숫자로 옮긴다. 다시 적었을 때 글자가 달라지는
-    // 값("01" 처럼)만 그대로 글자로 남긴다 (isExactNumber).
+    /**
+     * 숫자와 텍스트 블록은 모두 입력된 문자열을 반환합니다.
+     * 숫자로 해석 가능한 리터럴은 숫자로 변환하고, 문자열 형태가 유지되어야 하는 값(예: "01")은 문자열로 변환합니다.
+     */
     case 'number': case 'text': {
       const raw = String(at(0) ?? '');
       if (raw === 'true' || raw === 'false') return raw;
@@ -150,9 +183,10 @@ export function exprOf(block: any, ctx: DecompileContext): string {
     case 'boolean_not': return `not (${exprOf(at(1), ctx)})`;
     case 'True': return 'true';
     case 'False': return 'false';
-    // `(<판단>의 값)` 은 판단을 값 자리에 넣으려고 엔트리가 씌우는 블록이며
-    // "TRUE"/"FALSE" 를 돌려준다. Tess 에서는 판단을 값 자리에 그냥 쓰면 컴파일러가
-    // 다시 씌워 주므로(compileValue 참고), 껍데기를 벗기고 안쪽만 옮긴다.
+    /**
+     * 판단 블록을 값으로 사용할 때 감싸는 블록입니다.
+     * Tess에서는 값 위치에 판단식을 그대로 사용할 수 있으므로 내부 표현식만 변환합니다.
+     */
     case 'get_boolean_value': return exprOf(at(0), ctx);
     case 'is_clicked': case 'is_object_clicked': case 'is_boost_mode':
     case 'is_touch_supported': case 'get_user_name': case 'get_nickname':
@@ -228,16 +262,17 @@ export function exprOf(block: any, ctx: DecompileContext): string {
 
     case 'get_pictures': return resourceRef(ctx, at(0), ctx.picturesById, ctx.pictureName);
     case 'get_sounds': return resourceRef(ctx, at(0), ctx.soundsById, ctx.soundName);
-    // 소리 길이 — VALUE 는 블록이 아니라 드롭다운 칸이라 소리 id 가 그대로 들어 있다
+    /** 소리 길이 블록은 드롭다운 필드에서 소리 ID를 직접 사용합니다. */
     case 'get_sound_duration':
       return `sound_duration(${resourceRef(ctx, at(1), ctx.soundsById, ctx.soundName)})`;
-    // 색 고르기 칸. 고른 색(#RRGGBB)을 그대로 돌려주는 블록이다.
+    /** 색상 선택 필드에서 선택한 색상(#RRGGBB)을 리터럴로 반환합니다. */
     case 'text_color': return colorLiteral(String(at(0) ?? ''));
 
-    // 사용자 정의 함수 호출(값을 돌려주는 것) — func_<함수id>
+    /** 사용자 정의 함수 호출 및 확장 블록을 처리합니다. */
     default: {
-      // 확장 블록(날씨 · 축제 · 재난문자 · 국민행동요령). 드롭다운 칸은 고른 값이
-      // 그대로 들어 있으므로 문자열로 적고, 값 칸만 식으로 되돌린다.
+      /**
+       * 확장 블록(날씨, 축제 등)의 드롭다운 값은 문자열로 처리하고, 값 슬롯은 표현식으로 변환합니다.
+       */
       const expansion = expansionBlock(block.type);
       if (expansion) {
         const args = expansion.slots.map((slot, i) => (slot === 'value'
@@ -246,7 +281,7 @@ export function exprOf(block: any, ctx: DecompileContext): string {
         return `${block.type}(${args.join(', ')})`;
       }
 
-      // 함수 본문에서 매개변수를 가리키는 블록 — stringParam_xxxx / booleanParam_xxxx
+      /** 함수 본문에서 매개변수를 참조하는 블록을 처리합니다. */
       const paramName = ctx.funcParamName?.(block.type);
       if (paramName) return paramName;
 

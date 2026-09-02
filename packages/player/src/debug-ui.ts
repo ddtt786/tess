@@ -1,11 +1,13 @@
-// 실행 페이지의 디버그 패널 UI. preact 로 그리고, 서버가 /debug-ui.js 로 내보낸다.
-//
-//  구성
-//    1. 상태          — 바뀌면 패널을 통째로 다시 그린다 (preact 가 실제 DOM 차이만 고친다)
-//    2. 실행기 붙이기 — window.Entry 를 만지는 것은 전부 여기 모여 있다
-//    3. 위젯          — 고쳐 쓰는 칸 · 고르는 칸 · 켜고 끄는 칸 · 블록 트리
-//    4. 탭            — 실행 · 자료 · 오브젝트 · 오류
-//    5. 바깥 연결     — 실행 페이지가 부르는 window.tess* 들
+/**
+ * 실행 페이지의 디버그 패널 UI 컴포넌트입니다. Preact로 렌더링되며, 서버가 `/debug-ui.js`로 제공합니다.
+ *
+ * 이 파일은 다음 부분들로 구성됩니다.
+ * 1. 상태 (State) - 상태가 변경되면 패널 전체를 다시 렌더링합니다. (Preact가 실제 DOM 차이만 업데이트함)
+ * 2. 실행기 브리지 - `window.Entry` 객체 조작 등 엔트리 런타임과의 상호작용
+ * 3. 위젯 컴포넌트 - 입력 칸, 선택 칸, 토글 칸, 블록 트리 등의 UI 요소
+ * 4. 탭 컴포넌트 - 실행, 자료, 오브젝트, 오류 탭 화면
+ * 5. 외부 API - 실행 페이지에서 호출하는 `window.tess*` 훅 연결
+ */
 // The url the player server serves preact at. TypeScript resolves a rooted
 // specifier as a filesystem path, so it cannot find it; `h` and `render` are
 // declared in globals.d.ts instead.
@@ -35,11 +37,16 @@ const panel = document.getElementById("debug-panel")!;
 let scheduled = false;
 
 /**
- * 상태가 바뀌면 한 번만 모아서 다시 그린다.
+ * 상태가 변경되면 변경 사항을 모아 한 번만 다시 렌더링하도록 예약합니다.
  *
- * requestAnimationFrame 으로 미루면 안 된다 — 브라우저는 탭이 뒤에 있거나 가려져
- * 있으면 rAF 를 아예 멈춘다. 그러면 패널을 눌러도 상태만 바뀌고 화면은 그대로라,
- * 디버거가 통째로 먹통이 된 것처럼 보인다. 마이크로태스크는 언제나 돈다.
+ * `requestAnimationFrame` 대신 `queueMicrotask` 또는 `setTimeout`을 사용하여,
+ * 탭이 숨겨져 있을 때도 업데이트가 멈추지 않도록 합니다.
+ * 
+ * @example
+ * ```typescript
+ * state.runState = 'pause';
+ * schedule();
+ * ```
  */
 function schedule() {
   if (scheduled) return;
@@ -55,10 +62,16 @@ function schedule() {
 const proxies = new WeakMap();
 
 /**
- * 건드리면 다시 그리게 하는 얇은 껍데기.
+ * 객체의 속성이 변경될 때마다 자동으로 다시 렌더링하도록 만드는 프록시 래퍼입니다.
  *
- * 원래는 arrow-js 의 reactive 가 표현식 하나하나를 따로 따라갔다. preact 는 통째로
- * 다시 그리고 실제로 달라진 DOM 만 고치므로, 여기서는 "바뀌었다" 는 사실만 알면 된다.
+ * @param target 감시할 원본 객체
+ * @returns 반응형으로 감싸진 프록시 객체
+ *
+ * @example
+ * ```typescript
+ * const state = observable({ count: 0 });
+ * state.count++; // 자동으로 schedule() 이 호출됨
+ * ```
  */
 function observable(target: any) {
   const cached = proxies.get(target);
@@ -238,7 +251,18 @@ const liveList = (id: string) => {
   }
 };
 
-/** 리스트 항목들을 [{data}] 모양 그대로. 실행 전이면 project.json 의 초기값 */
+/** 
+ * 엔트리 리스트 객체의 항목들을 원본 배열 형태(`[{ data }]`)로 반환합니다. 
+ * 실행 전이라면 `project.json`의 초기값을 사용합니다.
+ *
+ * @param entry 리스트 변수 정보 객체
+ * @returns 리스트 항목들의 배열
+ *
+ * @example
+ * ```typescript
+ * const items = listArray(myList);
+ * ```
+ */
 const listArray = (entry: any) => {
   const list = liveList(entry.id);
   try {
@@ -249,7 +273,17 @@ const listArray = (entry: any) => {
   return entry.array || [];
 };
 
-/** 실행 중이면 지금 값을, 아니면 project.json 의 초기값을 돌려준다 */
+/** 
+ * 변수의 현재 원시 값을 반환합니다. 실행 전이라면 `project.json`의 초기값을 반환합니다.
+ *
+ * @param entry 변수 정보 객체
+ * @returns 변수의 값
+ *
+ * @example
+ * ```typescript
+ * const value = rawValue(myVar);
+ * ```
+ */
 const rawValue = (entry: any) => {
   const variable = liveVariable(entry.id);
   try {
@@ -577,10 +611,17 @@ const toggleExpanded = (key: string) => {
 // ============================================================================
 
 /**
- * 고쳐 쓰는 칸.
+ * 값을 클릭하여 수정할 수 있는 입력 칸 컴포넌트입니다.
  *
- * 값을 늘 <input> 으로 두면 0.4초마다 도는 새로고침이 타이핑을 덮어써 버린다.
- * 그래서 평소엔 글자만 보여 주고, 누른 칸 하나만 잠깐 입력칸으로 바꾼다.
+ * @param key 현재 편집 중인 항목의 고유 식별자
+ * @param value 표시할 현재 값
+ * @param commit 사용자가 입력을 완료했을 때 호출할 함수
+ * @returns Preact VNode 객체
+ *
+ * @example
+ * ```tsx
+ * {editable('var_1', 10, (newVal) => setVariable('var_1', newVal))}
+ * ```
  */
 function editable(key: string, value: any, commit: any) {
   if (state.editing !== key) {
@@ -631,7 +672,19 @@ function editable(key: string, value: any, commit: any) {
   });
 }
 
-/** 골라 쓰는 칸 */
+/** 
+ * 주어진 옵션 목록에서 값을 선택할 수 있는 드롭다운 컴포넌트입니다.
+ *
+ * @param options 선택 가능한 옵션 목록 (`{ label, value }` 형태)
+ * @param value 현재 선택된 값
+ * @param commit 사용자가 값을 변경했을 때 호출할 함수
+ * @returns Preact VNode 객체
+ *
+ * @example
+ * ```tsx
+ * {chooser([{label:'켜기', value:'on'}], 'on', (val) => console.log(val))}
+ * ```
+ */
 function chooser(options: any, value: any, commit: any) {
   return h(
     "select",
@@ -654,7 +707,19 @@ function chooser(options: any, value: any, commit: any) {
   );
 }
 
-/** 켜고 끄는 칸 */
+/** 
+ * 두 가지 상태(켬/끔)를 전환하는 토글 버튼 컴포넌트입니다.
+ *
+ * @param on 현재 켜짐 여부
+ * @param commit 사용자가 버튼을 클릭했을 때 상태를 변경하는 함수
+ * @param labels 켜졌을 때와 꺼졌을 때 표시할 텍스트 배열 `[켜짐라벨, 꺼짐라벨]`
+ * @returns Preact VNode 객체
+ *
+ * @example
+ * ```tsx
+ * {toggle(true, (val) => console.log(val), ['보이기', '숨기기'])}
+ * ```
+ */
 function toggle(on: boolean, commit: any, labels: any) {
   return h(
     "button",
@@ -721,7 +786,17 @@ const startVerticalResize = (event: any, id: string) => {
   window.addEventListener("mouseup", up);
 };
 
-/** 마지막을 뺀 섹션마다 아래쪽에 높이 조절 손잡이를 붙인다 */
+/** 
+ * 섹션 목록을 렌더링하고, 마지막 섹션을 제외한 나머지 섹션 하단에 높이 조절 핸들을 추가합니다.
+ *
+ * @param list 렌더링할 섹션 데이터 목록
+ * @returns Preact VNode 배열
+ *
+ * @example
+ * ```tsx
+ * {sections([{ id: 'sec1', title: '섹션 1', body: h('div') }])}
+ * ```
+ */
 function sections(list: any) {
   return list.map((section: any, index: number) => {
     const last = index === list.length - 1;

@@ -1,12 +1,16 @@
-// ============================================================================
-//  tess — 엔트리 작품으로 컴파일되는 텍스트 언어
-//
-//  라이브러리:  import { parse, compileProject } from 'tess'
-//  CLI:
-//    node index.ts check examples/tour.tess
-//    node index.ts build examples/all_blocks.tess -o build/blocks.ent
-//    node index.ts build examples/all_blocks.tess -o build/project.json
-// ============================================================================
+/**
+ * @fileoverview Tess 언어를 처리하는 커맨드 라인 인터페이스(CLI) 도구입니다.
+ * 
+ * 엔트리 작품을 컴파일하거나, 구문 오류를 검사하고, 서버를 열어 테스트하는 등 다양한 명령을 지원합니다.
+ * 
+ * @example
+ * // 문법 및 의미 검사 (컴파일 테스트 포함)
+ * node index.ts check examples/tour.tess
+ * 
+ * // 엔트리 작품으로 컴파일하여 출력
+ * node index.ts build examples/all_blocks.tess -o build/blocks.ent
+ * node index.ts build examples/all_blocks.tess -o build/project.json
+ */
 export {
   parse,
   parseOrThrow,

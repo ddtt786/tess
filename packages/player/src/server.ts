@@ -1,20 +1,20 @@
-// ============================================================================
-//  `tess run` 이 띄우는 작은 정적 서버
-//
-//  주는 것
-//    /                 실행 페이지
-//    /project.json     컴파일한 작품 (리소스 링크는 아래 실제 경로를 가리킨다)
-//    /assets/...       모양·소리 파일을 디스크에 있는 그대로
-//    /temp/...         같은 파일을 엔트리가 쓰는 주소로도 (asset-routes.ts 참고)
-//    /<이름>.ent        내려받기용 묶음 — 요청받은 그때 처음 묶는다
-//    /lib/...          @entrylabs/entry 가 설치돼 있으면 그 파일들
-//    /debug-ui.js      디버그 패널 UI (모듈)
-//    /arrow/...        디버그 패널 UI 가 쓰는 arrow-js
-//    /api/expansionBlock/tts/read.mp3   tts 읽어주기 — playentry.org 로 대신 요청해 준다
-//
-//  `run` 은 작품을 묶지 않는다. 리소스는 있는 자리에서 그대로 내보내고, .ent 는
-//  내려받기를 눌렀을 때만 만든다. 묶는 일은 `build` 가 한다.
-// ============================================================================
+/**
+ * `tess run` 명령어가 띄우는 경량 정적 서버 설정입니다.
+ *
+ * 서버가 제공하는 주요 경로는 다음과 같습니다.
+ * - `/` : 실행 페이지
+ * - `/project.json` : 컴파일된 작품 데이터 (리소스 링크는 서버 제공 주소 사용)
+ * - `/assets/...` : 디스크에 있는 원래 형태의 모양·소리 파일
+ * - `/temp/...` : 엔트리 실행기가 기대하는 경로로 제공되는 동일한 리소스 파일
+ * - `/<이름>.ent` : 다운로드용 묶음 파일 (요청 시점에 최초 생성)
+ * - `/lib/...` : 로컬에 설치된 `@entrylabs/entry` 모듈 (존재 시)
+ * - `/debug-ui.js` : 디버그 패널 UI 모듈
+ * - `/arrow/...` : 디버그 패널 UI가 사용하는 arrow-js
+ * - `/api/expansionBlock/tts/read.mp3` : TTS 프록시 (playentry.org로 요청 전달)
+ *
+ * `run` 모드는 사전에 전체 작품을 묶지 않고 리소스는 있는 그대로 서비스하며,
+ * `.ent` 파일은 사용자가 다운로드 버튼을 누를 때에만 실시간으로 압축하여 생성합니다.
+ */
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -27,7 +27,18 @@ import { assetRoutes, withServedAssets } from './asset-routes.ts';
 import { makeEntryBundle } from '@tess/compiler';
 import type { AssetFile, EntryProject, SourceMap } from '@tess/compiler';
 
-/** How `serveProject` should serve one work. */
+/** 
+ * `serveProject` 함수가 서버를 띄울 때 사용하는 옵션입니다. 
+ *
+ * @example
+ * ```typescript
+ * const options: ServeOptions = {
+ *   project: entryProject,
+ *   name: 'My Project',
+ *   port: 2013
+ * };
+ * ```
+ */
 export interface ServeOptions {
   project: EntryProject;
   assets?: AssetFile[];
@@ -40,7 +51,16 @@ export interface ServeOptions {
   boost?: boolean;
 }
 
-/** The running server, and the handles the CLI drives it with. */
+/** 
+ * 현재 실행 중인 서버 객체이며, CLI에서 서버를 제어하기 위한 핸들러를 제공합니다. 
+ *
+ * @example
+ * ```typescript
+ * const server = await serveProject(options);
+ * console.log(`서버가 ${server.url} 에서 실행 중입니다.`);
+ * await server.close();
+ * ```
+ */
 export interface RunningServer {
   url: string;
   runtime: string;
@@ -89,11 +109,27 @@ function debugUiScript() {
   return stripTypeScriptTypes(fs.readFileSync(DEBUG_UI_FILE, 'utf-8'), { mode: 'strip' });
 }
 
-/** `run` 이 기본으로 쓰는 포트 */
+/** 
+ * `run` 명령어가 기본적으로 사용하는 포트 번호입니다. 
+ *
+ * @example
+ * ```typescript
+ * const port = options.port ?? DEFAULT_PORT;
+ * ```
+ */
 export const DEFAULT_PORT = 2013;
 
 // preact 는 dist/preact.mjs 한 파일이면 된다 — 다른 파일을 부르지 않는 ESM 이다.
-/** 디버그 패널이 쓰는 preact 의 dist 폴더. 못 찾으면 null */
+/** 
+ * 디버그 패널이 사용하는 preact 패키지의 `dist` 폴더 경로를 찾습니다. 찾지 못하면 `null`을 반환합니다. 
+ *
+ * @returns preact의 dist 폴더 절대 경로 또는 `null`
+ *
+ * @example
+ * ```typescript
+ * const preactDir = findPreactDir();
+ * ```
+ */
 export function findPreactDir() {
   try {
     return path.dirname(fileURLToPath(import.meta.resolve('preact')));
@@ -102,7 +138,17 @@ export function findPreactDir() {
   }
 }
 
-/** 프로젝트에 entryjs 가 설치돼 있으면 그 폴더를 돌려준다 */
+/** 
+ * 프로젝트에 `entryjs`가 설치되어 있으면 해당 폴더 경로를 반환합니다.
+ *
+ * @param from 탐색을 시작할 경로 (기본값: 현재 작업 디렉터리)
+ * @returns `@entrylabs/entry` 폴더 절대 경로 또는 `null`
+ *
+ * @example
+ * ```typescript
+ * const runtimeDir = findLocalRuntime('/path/to/project');
+ * ```
+ */
 export function findLocalRuntime(from = process.cwd()) {
   let dir = path.resolve(from);
   for (;;) {
@@ -115,11 +161,18 @@ export function findLocalRuntime(from = process.cwd()) {
 }
 
 /**
- * 작품을 실행할 수 있는 서버를 띄운다.
+ * 작품을 브라우저에서 실행할 수 있는 서버를 띄웁니다.
  *
- * 리소스는 디스크에 있는 파일을 그대로 내보낸다 — `run` 은 작품을 묶지 않는다.
- * .ent 는 내려받기를 눌렀을 때만 만든다.
+ * 리소스는 디스크에 있는 파일을 그대로 내보내며(작품을 미리 묶지 않음), `.ent` 파일은 사용자가 다운로드를 요청할 때만 생성합니다.
  *
+ * @param options 서버 실행 옵션
+ * @returns 실행 중인 서버 제어 객체를 반환하는 프로미스
+ *
+ * @example
+ * ```typescript
+ * const server = await serveProject({ project, name: '테스트 작품' });
+ * server.update({ project: newProject });
+ * ```
  */
 export function serveProject({
   project, assets = [], assetDirs = [], name, port = DEFAULT_PORT, cwd = process.cwd(),

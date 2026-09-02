@@ -1,12 +1,12 @@
-// ============================================================================
-//  엔트리 블록별 params 배열 길이표
-//
-//  출처: entryjs 의 블록 정의(src/playground/blocks/block_*.js)에 있는
-//        params 스키마와 def.params, 그리고 실제 엔트리 작품의 project.json.
-//        (셋이 다를 때는 가장 긴 값 = 엔트리가 실제로 저장하는 길이를 썼다)
-//
-//  컴파일러가 만든 블록이 이 길이와 맞는지 verify.ts 가 확인한다.
-// ============================================================================
+/**
+ * 엔트리 블록의 종류별 매개변수(params) 배열의 길이를 정의한 표입니다.
+ * 컴파일러가 생성한 블록의 매개변수 개수가 올바른지 검증할 때 사용됩니다.
+ *
+ * @example
+ * ```ts
+ * const expectedCount = BLOCK_PARAM_COUNTS["add_effect_amount"]; // 3
+ * ```
+ */
 export const BLOCK_PARAM_COUNTS: Record<string, number> = {
   _if: 2,
   add_effect_amount: 3,
