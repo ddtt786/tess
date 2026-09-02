@@ -305,8 +305,8 @@ export interface FunctionScope {
   name: string;
   /** Parameter name -> the entry block type that reads it. */
   params: Map<string, string>;
-  /** Local variable name -> its entry id. */
-  localVars: Map<string, string>;
+  /** Local variable name -> its entry id and the name entry shows. */
+  localVars: Map<string, { id: string; displayName: string }>;
 }
 
 /** `compileProject` 실행 시 주입하는 컴파일 옵션 설정입니다. */

@@ -238,7 +238,7 @@ export class Context {
       if (this.funcScope.params.has(name)) return { kind: 'param', name };
       // 엔트리 함수 지역 변수는 이름이 아니라 `함수id_해시` 로 가리킨다
       if (this.funcScope.localVars.has(name)) {
-        return { kind: 'funcLocal', name, id: this.funcScope.localVars.get(name)! };
+        return { kind: 'funcLocal', name, id: this.funcScope.localVars.get(name)!.id };
       }
       // A function declared inside an object sees that object's locals.
       const owned = this.locals.get(name);

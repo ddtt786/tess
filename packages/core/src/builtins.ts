@@ -155,3 +155,15 @@ export const OBJECT_PROPERTIES = new Set([
   "sound_volume",
   "sound_speed",
 ]);
+
+/**
+ * 선언 없이도 이미 뜻이 있는 이름들. 이름 찾기는 변수를 먼저 보므로, 이 중 하나를
+ * 변수 · 매개변수 · 함수 이름으로 선언하면 내장 이름이 가려진다.
+ */
+export const BUILTIN_NAMES = new Set([
+  ...STATE_VALUES,
+  ...BUILTIN_FUNCTIONS,
+  ...OPTION_KEYWORDS,
+  ...TEXT_ONLY_PROPERTIES,
+  ...OBJECT_PROPERTIES,
+]);

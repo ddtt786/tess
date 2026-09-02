@@ -107,10 +107,12 @@ export interface TableInfo {
  * 지역 함수 변수와 변환된 Tess 이름을 나타냅니다.
  * 
  * @example
- * const local: FunctionLocal = { name: "localIndex", value: 0 };
+ * const local: FunctionLocal = { name: "localIndex", entryName: "지역 번호", value: 0 };
  */
 export interface FunctionLocal {
   name: string;
+  /** 엔트리에 적혀 있던 원래 이름. `name` 과 다르면 `as` 로 같이 적는다. */
+  entryName: string;
   value: string | number;
 }
 

@@ -1,3 +1,4 @@
+import { BUILTIN_NAMES } from '@tess/core';
 import { UNUSABLE_AS_NAME } from '@tess/parser';
 import type { DecompileContext, ResourceInfo } from './types.ts';
 
@@ -31,7 +32,9 @@ export function safeIdentifier(raw: unknown, usedNames: Set<string>, fallback = 
   cleaned = cleaned.replace(/_+/g, '_').replace(/^_+|_+$/g, '');
   if (!cleaned || !IDENT_START.test(cleaned[0]!)) cleaned = `${fallback}${cleaned ? `_${cleaned}` : ''}`;
   cleaned = cleaned.slice(0, 40) || fallback;
-  if (UNUSABLE_AS_NAME.has(cleaned)) cleaned = `${cleaned}_`;
+  // 예약어와 내장 이름은 뒤에 `_` 를 붙여 비껴 간다. 내장 이름을 그대로 쓰면
+  // 선언이 그 이름을 가려서 `x = x` 처럼 서로 다른 두 값이 한 글자가 된다.
+  if (UNUSABLE_AS_NAME.has(cleaned) || BUILTIN_NAMES.has(cleaned)) cleaned = `${cleaned}_`;
 
   let candidate = cleaned;
   let n = 2;
@@ -52,6 +55,15 @@ export function tessString(value: unknown): string {
     .replaceAll('\r', '\\r')
     .replaceAll('\t', '\\t');
   return `"${escaped}"`;
+}
+
+/**
+ * The ` as "..."` clause that carries an Entry name the identifier cannot spell.
+ * Without it a renamed resource breaks every runtime lookup by name.
+ */
+export function displayNamePart(identifier: string, entryName: unknown): string {
+  const name = String(entryName ?? '');
+  return name && name !== identifier ? ` as ${tessString(name)}` : '';
 }
 
 /** 숫자를 Tess 소스에 그대로 적을 수 있는 형태로 */

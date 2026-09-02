@@ -2,7 +2,13 @@
  * @fileoverview 함수 매개변수 이름 생성 및 검증을 담당하는 유틸리티.
  */
 
-const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
+import { BUILTIN_NAMES } from './builtins.ts';
+
+// x · y 는 좌표를 뜻하는 내장 이름이라 자동 이름에서 뺀다. 매개변수가 그 이름을
+// 가지면 함수 안에서 좌표를 가려 버린다.
+const LETTERS = [...'abcdefghijklmnopqrstuvwxyz']
+  .filter((letter) => !BUILTIN_NAMES.has(letter))
+  .join('');
 
 /**
  * 인덱스에 해당하는 매개변수의 자동 생성 이름을 반환합니다.
@@ -16,7 +22,7 @@ const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
  * @example
  * autoParamName(0); // "a"
  * autoParamName(1); // "b"
- * autoParamName(26); // "a1"
+ * autoParamName(24); // "a1"
  */
 export function autoParamName(index: number): string {
   return index < LETTERS.length ? LETTERS[index] : `a${index - LETTERS.length + 1}`;

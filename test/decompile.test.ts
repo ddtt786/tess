@@ -637,10 +637,11 @@ test('함수 머리의 라벨·판단 칸을 지나서 매개변수를 끝까지
   );
 });
 
-test('자동 이름은 z 를 넘으면 a1, a2 로 이어진다', () => {
+test('자동 이름은 알파벳을 다 쓰면 a1, a2 로 이어진다', () => {
   const field = fieldLabel('많이', Array.from({ length: 28 })
     .reduceRight((next, _, i) => fieldString(`p${i}`, next), null));
-  assert.match(declarationOf(field), /, x, y, z, a1, a2\):$/);
+  // x·y 는 좌표를 뜻하는 내장 이름이라 자동 이름에서 빠진다
+  assert.match(declarationOf(field), /, v, w, z, a1, a2, a3, a4\):$/);
 });
 
 test('함수 본문의 매개변수 블록은 이름으로 되짚는다', () => {
@@ -1301,8 +1302,8 @@ test('지역 변수 이름이 매개변수·전역과 겹치면 다른 이름을
   );
   const result = decompileProject(project, []);
 
-  assert.match(result.source, /^ {2}var a_2 = 0$/m);
-  assert.match(result.source, /^ {2}var 점수_2 = 0$/m);
+  assert.match(result.source, /^ {2}var a_2 as "a" = 0$/m);
+  assert.match(result.source, /^ {2}var 점수_2 as "점수" = 0$/m);
 });
 
 test('이름으로 쓸 수 없는 낱말은 뒤에 _ 를 붙여 되돌린다', () => {
@@ -1312,8 +1313,42 @@ test('이름으로 쓸 수 없는 낱말은 뒤에 _ 를 붙여 되돌린다', (
   );
   const result = decompileProject(project, []);
 
-  assert.match(result.source, /^ {2}var skip_ = 0$/m);
+  assert.match(result.source, /^ {2}var skip_ as "skip" = 0$/m);
   assert.match(result.source, /^ {2}skip_ = 1$/m);
+});
+
+test('지역 변수 이름이 내장 이름과 겹치면 내장 이름을 가리지 않게 비껴 준다', () => {
+  const coordinate = { type: 'coordinate_object', params: [null, 'self', null, 'x'], statements: [] };
+  const project = funcLocalProject(
+    [{ name: 'x', value: 0, id: 'fn1_a' }],
+    [{ type: 'set_func_variable', params: ['fn1_a', coordinate, null], statements: [] }],
+  );
+  const result = decompileProject(project, []);
+
+  // 지역 변수가 `x` 로 남으면 `x = x` 가 되어 오른쪽의 좌표까지 지역 변수를 가리킨다
+  assert.match(result.source, /^ {2}var x_ as "x" = 0$/m);
+  assert.match(result.source, /^ {2}x_ = x$/m);
+
+  const recompiled = compileProject(result.source, { path: 'main.tess' });
+  assert.deepEqual(recompiled.errors, []);
+  const fn = recompiled.project!.functions[0];
+  assert.deepEqual(fn.localVariables.map((v: any) => v.name), ['x']);
+  // 오른쪽의 `x` 는 지역 변수가 아니라 좌표 블록으로 돌아와야 한다
+  const body = JSON.parse(fn.content as unknown as string)[0][0].statements[0];
+  const assignment = body[body.length - 1];
+  assert.equal(assignment.params[1].type, 'coordinate_object');
+  assert.deepEqual(assignment.params[1].params, [null, 'self', null, 'x']);
+});
+
+test('내장 이름과 겹치는 전역 변수·함수 이름도 비껴 준다', () => {
+  const project = funcLocalProject(
+    [],
+    [],
+    [{ id: 'g1', name: 'size', variableType: 'variable', value: 0, object: null }],
+  );
+  const result = decompileProject(project, []);
+
+  assert.match(result.source, /^var size_ as "size" = 0$/m);
 });
 
 test('되돌린 지역 변수는 다시 컴파일해도 함수의 지역 변수로 남는다', () => {

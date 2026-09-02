@@ -564,7 +564,9 @@ function compileFunctions(ctx: Context) {
     create.x = 50;
     create.y = 30;
 
-    fn.localVariables = [...ctx.funcScope.localVars].map(([name, id]) => ({ id, name, value: 0 }));
+    fn.localVariables = [...ctx.funcScope.localVars].map(
+      ([, local]) => ({ id: local.id, name: local.displayName, value: 0 }),
+    );
     fn.content = [[create]];
     fn.type = fn.isValue ? 'value' : 'normal';
 
@@ -582,7 +584,10 @@ function collectFunctionLocals(
 ) {
   for (const statement of statements) {
     if (statement.type === 'VarDecl' && !scope.localVars.has(statement.name)) {
-      scope.localVars.set(statement.name, `${fn.id}_${ctx.newId()}`);
+      scope.localVars.set(statement.name, {
+        id: `${fn.id}_${ctx.newId()}`,
+        displayName: statement.displayName ?? statement.name,
+      });
     }
     if (statement.type === 'ListDecl') {
       ctx.error(statement, '함수 안에서는 리스트를 선언할 수 없습니다. 전역 리스트를 쓰세요.');

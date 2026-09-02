@@ -9,6 +9,7 @@ import {
   ownsResource,
   isExactNumber,
   tessLiteral,
+  displayNamePart,
 } from "./ident.ts";
 import type {
   DecompileContext, FunctionInfo, RawBlock, ResourceInfo,
@@ -568,7 +569,7 @@ export function functionDeclarationLines(
   // Entry keeps function locals in a table on the function and initialises them
   // at each call; `var` at the top of the body is the same thing in Tess.
   const locals = (fn.locals ?? []).map(
-    (local) => `var ${local.name} = ${tessLiteral(local.value)}`,
+    (local) => `var ${local.name}${displayNamePart(local.name, local.entryName)} = ${tessLiteral(local.value)}`,
   );
 
   const lines = [

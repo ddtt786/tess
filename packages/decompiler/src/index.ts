@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readTar } from './tar.ts';
 import { findLocalRuntime } from '@tess/player';
-import { safeIdentifier, tessString, tessNumber, tessLiteral } from './ident.ts';
+import { safeIdentifier, tessString, tessNumber, tessLiteral, displayNamePart } from './ident.ts';
 import { autoParamName } from '@tess/core';
 import { blocksToLines, indent, functionDeclarationLines, colorExpr } from './stmt.ts';
 import { KEY_CODES } from '@tess/core';
@@ -451,7 +451,7 @@ function buildContext(
     for (const local of (fn.localVariables ?? []) as RawEntity[]) {
       const name = safeIdentifier(local.name, localUsed, 'local');
       ctx.funcLocalsById.set(local.id, name);
-      locals.push({ name, value: local.value });
+      locals.push({ name, entryName: String(local.name ?? ''), value: local.value });
     }
 
     ctx.functionsById.set(fn.id, { name: identifier, params, locals, displayLabel: label });
@@ -538,15 +538,6 @@ function buildContext(
   }
 
   return ctx;
-}
-
-/**
- * The ` as "..."` clause that carries an Entry name the identifier cannot spell.
- * Without it a renamed resource breaks every runtime lookup by name.
- */
-function displayNamePart(identifier: string, entryName: unknown): string {
-  const name = String(entryName ?? '');
-  return name && name !== identifier ? ` as ${tessString(name)}` : '';
 }
 
 /** `table 이름: columns ... row ... end` */
