@@ -2,7 +2,7 @@
   "name": "tess",
   "version": "1.0.0",
   "description": "Tess 언어(엔트리 블록 코드로 변환되는 텍스트 언어) — 라이브러리와 CLI",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "main": "index.ts",
   "exports": {
@@ -11,8 +11,17 @@
   "bin": {
     "tess": "./index.ts"
   },
-  "files": ["index.ts", "src"],
-  "keywords": ["tess", "chevrotain", "parser", "grammar", "entry"],
+  "files": [
+    "index.ts",
+    "src"
+  ],
+  "keywords": [
+    "tess",
+    "chevrotain",
+    "parser",
+    "grammar",
+    "entry"
+  ],
   "dependencies": {
     "@tess/compiler": "workspace:*",
     "@tess/core": "workspace:*",

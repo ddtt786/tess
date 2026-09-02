@@ -2,13 +2,16 @@
   "name": "@tess/parser",
   "version": "1.0.0",
   "description": "Tess 소스를 AST 로 읽고 의미를 검사한다",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "main": "index.ts",
   "exports": {
     ".": "./index.ts"
   },
-  "files": ["index.ts", "src"],
+  "files": [
+    "index.ts",
+    "src"
+  ],
   "dependencies": {
     "@tess/core": "workspace:*",
     "@babel/code-frame": "^8.0.0",

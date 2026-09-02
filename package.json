@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Tess 언어(엔트리 블록 코드로 변환되는 텍스트 언어) 모노레포",
   "private": true,
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.ts",

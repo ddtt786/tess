@@ -2,7 +2,7 @@
   "name": "@tess/decompiler",
   "version": "1.0.0",
   "description": "이미 있는 엔트리 작품을 Tess 소스로 되돌린다",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "main": "index.ts",
   "exports": {

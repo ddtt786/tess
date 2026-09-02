@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "type": "module",
   "publisher": "tess",
-  "license": "ISC",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.60.0"
   },
