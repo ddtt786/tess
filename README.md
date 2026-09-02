@@ -16,7 +16,7 @@ pnpm tess build examples/all_blocks.tess -o blocks.ent
 내장 라이브러리를 활용하여 직접 파싱하거나 빌드할 수 있습니다.
 
 ```js
-import { parse } from "tess";
+import { parse } from "@tess/parser";
 
 const result = parse(`
   var score = 0
@@ -37,7 +37,7 @@ result.warnings; // [{ line, column, message }]
 ```
 
 ```js
-import { parse, compileProject, makeEntryBundle } from "tess";
+import { parse, compileProject, makeEntryBundle } from "@tess/compiler";
 
 const result = compileProject(source, { path: "main.tess" });
 if (result.ok) {
