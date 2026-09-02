@@ -176,7 +176,7 @@ async function runBuild(file: string, options: CliOptions): Promise<number> {
     if (!options.force || !result.project) {
       out.outro(
         out.red(
-          `${label}: 에러 ${result.errors.length}개 — 내보내지 않았습니다`,
+          `${label}: 에러 ${result.errors.length}개로 인해 내보낼 수 없습니다.`,
         ),
       );
       return 1;
@@ -251,7 +251,7 @@ async function runProject(
     if (!options.force || !result.project) {
       out.outro(
         out.red(
-          `${label}: 에러 ${result.errors.length}개 — 실행하지 않았습니다`,
+          `${label}: 에러 ${result.errors.length}개로 인해 실행할 수 없습니다.`,
         ),
       );
       return 1;
@@ -474,9 +474,7 @@ async function runDecompile(
         [...shown, ...(more > 0 ? [out.dim(`… 외 ${more}개`)] : [])].join("\n"),
       );
     } else {
-      out.log.info(
-        out.dim("--warnings 를 붙이면 옮기지 못한 부분을 자세히 보여줍니다."),
-      );
+      out.log.info(out.dim("--warnings 를 붙이면 모든 주의를 볼 수 있습니다."));
     }
   }
 
@@ -530,21 +528,19 @@ async function main(argv: string[]): Promise<number | null> {
     process.exit(2);
   }
 
-  // .ent(엔트리 작품)를 decompile 이 아닌 명령에 잘못 넣거나, 반대로 .tess 를
-  // decompile 에 넣는 실수는 아리송한 파싱 에러 대신 바로 알려 준다.
   for (const file of files) {
     const ext = path.extname(file).toLowerCase();
     if (command !== "decompile" && ext === ".ent") {
       console.error(
-        `${path.basename(file)}: .ent 파일은 Tess 소스가 아니라 엔트리 작품입니다.` +
-          ` 'node index.ts decompile ${file}' 로 Tess 소스로 되돌려 보세요.`,
+        `${path.basename(file)}: .ent 파일을 바로 실행하거나 확인할 수 없습니다.` +
+          ` 'decompile ${file}' 명령어로 Tess 소스로 변환하세요.`,
       );
       process.exit(2);
     }
     if (command === "decompile" && ext === ".tess") {
       console.error(
-        `${path.basename(file)}: decompile 은 .ent(엔트리 작품) 파일을 받습니다.` +
-          " Tess 소스를 엔트리 작품으로 만들려면 build 를 쓰세요.",
+        `${path.basename(file)}: decompile 명령어는 .ent 파일을 인수로 받습니다.` +
+          " Tess 소스를 엔트리 작품으로 만들려면 build 명령어를 사용하세요.",
       );
       process.exit(2);
     }
