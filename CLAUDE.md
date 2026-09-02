@@ -2,17 +2,7 @@
 
 이 프로젝트에서 작업할 때는 다음 원칙과 제약 사항을 **반드시 엄격하게 준수**해야 합니다.
 
----
-
-## 1. 언어 사용 원칙 (Language Rules)
-
-- **사용자와의 대화 / 응답 (Chat Responses):** **한국어(Korean)**로만 작성합니다.
-- **코드 내 모든 주석 (Source Code Comments):** **반드시 영어(English)**로만 작성합니다. (한국어 주석 절대 금지)
-- **커밋 메시지 (Commit Messages):** 영어(Imperative mood)로 작성합니다.
-
----
-
-## 2. 문서화 정책 및 권한 분리 (Strict Documentation Separation)
+## 1. 문서화 정책 및 권한 분리 (Strict Documentation Separation)
 
 ### 사용자용 문서 수정 절대 금지 (Protected User Docs)
 
@@ -30,7 +20,7 @@
 
 ---
 
-## 3. "개발 일지화(회고록)" 절대 금지 규칙 (No Diary / Journaling)
+## 2. "개발 일지화(회고록)" 절대 금지 규칙 (No Diary / Journaling)
 
 코드 주석, 커밋 메시지, 사용자 문서에 **개인적인 개발 여정, 고뇌, 학습 경험 등을 서술하는 것을 엄격히 금지**합니다.
 
@@ -44,7 +34,7 @@
 
 ---
 
-## 4. 코드 주석 작성 규칙 (Code Commenting Standard)
+## 3. 코드 주석 작성 규칙 (Code Commenting Standard)
 
 1. **언어:** 오직 **영어(English)**만 사용합니다.
 2. **간결성:** 무엇을(What) 하는지만 1~2줄로 명확하고 드라이하게 작성합니다.
@@ -52,10 +42,10 @@
 4. **포맷 예시:**
 
 ```javascript
-   //  Bad (Storytelling / Korean):
+   //  Bad (Storytelling ):
    // 엔트리에는 scale_x 블록이 없어서 한참 고민하다가 크기를 임시로 늘려보고 복구하는 함수를 만들었습니다.
 
-   //  Good (Objective / Concise / English):
+   //  Good (Objective / Concise):
    // calc aspect ratio manually.
    function generateScaleHelper() { ... }
 ```
@@ -68,26 +58,5 @@
 
 - [ ] 사용자용 문서(`README.md`, `tutorial.md` 등)를 무단으로 길게 늘리거나 수정하지 않았는가?
 - [ ] 기술적인 장문의 설명과 구현 원리를 `AI_**.md`에만 격리하여 작성했는가?
-- [ ] 코드의 모든 주석이 영어로 작성되었으며, 일기장 형태가 아닌 객관적인 설명인가?
+- [ ] 코드의 모든 주석이 일기장 형태가 아닌 객관적인 설명인가?
 - [ ] 사용자의 질문에 대한 채팅 "답변"은 한국어로 작성하고 있는가?
-
-<!-- arrow-js-skill:start -->
-
-# Arrow
-
-Use the local Arrow references when working on this project:
-
-- `.arrow-js/skill/getting-started.md`
-- `.arrow-js/skill/api.md`
-- `.arrow-js/skill/examples.md`
-
-Prefer idiomatic Arrow patterns:
-
-- `reactive()` for live state
-- `html` tagged templates for DOM
-- `component()` for reusable view units
-- `routeToPage(url)` in scaffolded SSR apps
-
-Keep no-build core usage simple. If SSR or hydration is involved, preserve payload and boundary behavior.
-
-<!-- arrow-js-skill:end -->
