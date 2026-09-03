@@ -416,6 +416,15 @@ function buildContext(
   }
 
   // --- 함수 --------------------------------------------------------------------
+  // A parameter name hides every variable of the same name inside the function
+  // body (compiler/context.ts lookupVariable: param -> function local -> object
+  // local -> global). Entry has no such shadowing — its body points at a
+  // variable by id — so a parameter named after one silently rebinds reads of
+  // that variable and turns writes to it into a compile error. Parameter names
+  // therefore start out clear of every variable and list name.
+  const variableNames = new Set<string>();
+  for (const info of ctx.varsById.values()) variableNames.add(info.identifier);
+
   for (const fn of project.functions ?? []) {
     let fields: FunctionField[] = [];
     try {
@@ -428,7 +437,7 @@ function buildContext(
     const identifier = safeIdentifier(label, usedNames, 'func');
 
     const params: string[] = [];
-    const paramNames = new Set<string>();
+    const paramNames = new Set<string>(variableNames);
     fields.forEach((field, index) => {
       if (field.kind !== 'param') return;
       // 바로 앞에 함수 이름이 아닌 라벨이 있으면, 그 라벨이 이 매개변수의 이름이 된다
@@ -442,11 +451,9 @@ function buildContext(
       if (field.blockType) ctx.funcParamsByBlockType.set(field.blockType, name);
     });
 
-    // Function locals are referenced by id in the body. Their names must clash
-    // with neither the parameters nor the globals: inside a function Tess
-    // resolves a name as parameter -> function local -> global.
+    // Function locals are referenced by id in the body, and hide variables the
+    // same way parameters do, so they share the parameters' reserved names.
     const localUsed = new Set(paramNames);
-    for (const info of ctx.globalVars) localUsed.add(info.identifier);
     const locals: FunctionLocal[] = [];
     for (const local of (fn.localVariables ?? []) as RawEntity[]) {
       const name = safeIdentifier(local.name, localUsed, 'local');

@@ -1550,3 +1550,95 @@ test('테이블 줄의 칸 수가 열 개수와 다르면 에러다', () => {
   assert.equal(result.ok, false);
   assert.match(result.errors[0].message, /열 개수\(2\)와 같아야 합니다/);
 });
+
+/**
+ * 함수 매개변수 이름과 변수 이름의 충돌 복원 테스트
+ *
+ * 엔트리 함수 본문은 변수를 id 로 가리키므로 매개변수 이름과 겹쳐도 그만이지만,
+ * Tess 는 함수 안에서 이름을 매개변수 -> 함수 지역 -> 오브젝트 로컬 -> 전역 순으로
+ * 찾습니다. 그래서 라벨에서 딴 매개변수 이름이 변수 이름과 같으면 본문의 그 변수
+ * 참조가 매개변수로 바뀌어 버립니다 — 대입은 컴파일 에러가 되어 문장째로 사라집니다.
+ */
+function paramClashProject() {
+  const param = (blockType: string, next: unknown) => ({
+    type: 'function_field_string',
+    params: [{ type: blockType, params: [null], statements: [] }, next],
+    statements: [],
+  });
+  const labelField = (text: string, next: unknown) => ({
+    type: 'function_field_label',
+    params: [text, next],
+    statements: [],
+  });
+
+  const create = {
+    type: 'function_create',
+    params: [
+      labelField('걷기', param('stringParam_aaaa', labelField('넉백횟수', param('stringParam_bbbb', null)))),
+      null,
+    ],
+    // 매개변수로 받은 값을 같은 이름의 전역 변수에 넣어 둔다.
+    statements: [[
+      { type: 'set_variable', params: ['var1', { type: 'stringParam_bbbb', params: [null], statements: [] }, null], statements: [] },
+    ]],
+  };
+
+  return {
+    name: '이름 충돌 테스트',
+    speed: 60,
+    scenes: [{ id: 'scene1', name: '장면 1' }],
+    variables: [{ id: 'var1', name: '넉백횟수', variableType: 'variable', value: 0, visible: false, x: 0, y: 0 }],
+    messages: [],
+    functions: [{ id: 'fn01', type: 'normal', localVariables: [], useLocalVariables: false, content: JSON.stringify([[create]]) }],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: 'obj1',
+      name: '주인공',
+      objectType: 'sprite',
+      scene: 'scene1',
+      rotateMethod: 'free',
+      selectedPictureId: 'pic1',
+      entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true },
+      sprite: {
+        pictures: [{ id: 'pic1', name: '기본', fileurl: null, dimension: { width: 1, height: 1 } }],
+        sounds: [],
+      },
+      script: JSON.stringify([[
+        { type: 'when_run_button_click', params: [null], statements: [] },
+        { type: 'func_fn01', params: [{ type: 'number', params: ['1'] }, { type: 'number', params: ['3'] }, null], statements: [] },
+      ]]),
+    }],
+  } as unknown as RawEntity;
+}
+
+test('변수와 이름이 겹치는 라벨은 매개변수 이름으로 그대로 쓰지 않는다', () => {
+  const result = decompileProject(paramClashProject(), []);
+
+  // 매개변수가 변수 이름을 가리지 않으니, 본문의 대입은 전역 변수 대입으로 남는다.
+  assert.match(result.source, /^function 걷기\(a, (?!넉백횟수\))[\p{L}\p{N}_]+\):$/mu);
+  assert.match(result.source, /^ {2}넉백횟수 = [\p{L}\p{N}_]+$/mu);
+  assert.doesNotMatch(result.source, /^ {2}넉백횟수 = 넉백횟수$/m);
+});
+
+test('이름이 겹쳐도 되돌린 함수는 다시 컴파일되어 전역 변수에 값을 넣는다', () => {
+  const result = decompileProject(paramClashProject(), []);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-decompile-clash-'));
+  const mainFile = path.join(dir, 'main.tess');
+  fs.writeFileSync(mainFile, result.source);
+  for (const asset of result.assets) {
+    const target = path.join(dir, asset.path);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, asset.data);
+  }
+
+  const recompiled = compileProject(fs.readFileSync(mainFile, 'utf-8'), { path: mainFile, assetDirs: [dir] });
+  assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
+
+  const body = JSON.parse(recompiled.project!.functions[0].content)[0][0].statements[0];
+  const write = body.find((block: any) => block.type === 'set_variable');
+  assert.ok(write, '전역 변수 대입 블록이 남아 있어야 한다');
+  const variable = recompiled.project!.variables.find((v: any) => v.name === '넉백횟수');
+  assert.equal(write.params[0], variable!.id);
+  assert.match(write.params[1].type, /^stringParam_/);
+});
