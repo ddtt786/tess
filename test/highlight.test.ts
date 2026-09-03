@@ -91,6 +91,29 @@ test('선언 키워드와 이름을 나눠 칠한다', () => {
   assert.match(scopeOf('usetext "objects/판.tess"', 'usetext'), /^keyword\.declaration/);
 });
 
+test('테이블 선언과 이름을 나눠 칠한다', () => {
+  assert.match(scopeOf('table 성적표:', 'table'), /^keyword\.declaration/);
+  assert.match(scopeOf('table 성적표:', '성적표'), /^entity\.name\.type/);
+  assert.match(scopeOf('  columns "이름", "점수"', 'columns'), /^keyword\.other\.command/);
+  assert.match(scopeOf('  row "가", 10', 'row'), /^keyword\.other\.command/);
+});
+
+test('저장 범위와 선언 수식어를 칠한다', () => {
+  assert.match(scopeOf('shared var 최고기록 = 0', 'shared'), /^storage\.modifier/);
+  assert.match(scopeOf('realtime var 접속자수 = 0', 'realtime'), /^storage\.modifier/);
+  assert.match(scopeOf('shared list 명예 as "명예의 전당" = []', 'as'), /^storage\.modifier/);
+  assert.match(scopeOf('  default costume 기본 "cat.png"', 'default'), /^storage\.modifier/);
+  assert.match(scopeOf('  costume 기본 "cat.png" force id "abc"', 'force'), /^storage\.modifier/);
+  assert.match(scopeOf('  costume 기본 "cat.png" force id "abc"', 'id'), /^storage\.modifier/);
+});
+
+test('속성 이름을 겸하는 키워드는 속성으로 칠한다', () => {
+  assert.match(scopeOf('  x = 10', 'x'), /^support\.variable\.property/);
+  assert.match(scopeOf('  size = 150', 'size'), /^support\.variable\.property/);
+  assert.match(scopeOf('  rotation = free', 'rotation'), /^support\.variable\.property/);
+  assert.match(scopeOf('  next costume', 'costume'), /^support\.variable\.property/);
+});
+
 test('흐름·이벤트·명령 키워드를 갈래별로 칠한다', () => {
   assert.match(scopeOf('  if 점수 > 10:', 'if'), /^keyword\.control/);
   assert.match(scopeOf('  end', 'end'), /^keyword\.control/);
@@ -120,6 +143,15 @@ test('리터럴과 연산자를 칠한다', () => {
   assert.match(scopeOf('  점수 += 1', '+='), /^keyword\.operator\.assignment/);
   assert.match(scopeOf('  if a >= b:', '>='), /^keyword\.operator\.comparison/);
   assert.match(scopeOf('  if a and b:', 'and'), /^keyword\.operator\.word/);
+  assert.match(scopeOf('  order first', 'first'), /^constant\.language/);
+  assert.match(scopeOf('  order last', 'last'), /^constant\.language/);
+  assert.match(scopeOf('  prev costume', 'prev'), /^constant\.language/);
+});
+
+test('구분 기호와 판단 매개변수 표시를 칠한다', () => {
+  assert.match(scopeOf('function 더하기(값, 판단?):', '?'), /^keyword\.operator\.optional/);
+  assert.match(scopeOf('function 더하기(값, 판단?):', ','), /^punctuation\.separator\.comma/);
+  assert.match(scopeOf('table 성적표:', ':'), /^punctuation\.section\.block\.begin/);
 });
 
 test('예제 파일 전체를 토큰으로 쪼갤 수 있다', () => {

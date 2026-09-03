@@ -18,19 +18,25 @@ const keywords = new Set(KEYWORDS);
 /** 낱말 경계 (Tess 식별자는 _ 와 한글도 쓴다) */
 const word = (list: Iterable<string>) => `(?<![A-Za-z0-9_])(?:${[...list].sort((a, b) => b.length - a.length).join('|')})(?![A-Za-z0-9_])`;
 
-const DECLARATION = ['project', 'scene', 'object', 'text', 'function', 'use', 'useobject', 'usetext', 'var', 'list'];
+const DECLARATION = ['project', 'scene', 'object', 'text', 'table', 'function', 'use', 'useobject', 'usetext', 'var', 'list'];
+// Storage scope of a global declaration: cloud (`shared`) and real-time (`realtime`).
+const STORAGE = ['shared', 'realtime'];
+// Modifiers trailing a declaration: `as "name"`, `force id "..."`, `default costume`.
+const MODIFIER = ['as', 'force', 'id', 'default'];
 const CONTROL = ['if', 'else', 'end', 'then', 'do', 'repeat', 'while', 'until', 'forever',
   'wait', 'break', 'skip', 'restart', 'stop', 'return'];
 const EVENT = ['when', 'cloned', 'signal', 'click', 'stage', 'key', 'start'];
 const OPERATOR_WORDS = ['and', 'or', 'not', 'in', 'at', 'to', 'from', 'for', 'up'];
-const CONSTANTS = ['true', 'false', 'transparent', 'next', 'back', 'front', 'all', 'this', 'me',
-  'them', 'other', 'free', 'vertical', 'none', ...OPTION_KEYWORDS];
-
-// 위 갈래에 넣지 않은 나머지 키워드는 전부 "명령"으로 본다
-const claimed = new Set([...DECLARATION, ...CONTROL, ...EVENT, ...OPERATOR_WORDS, ...CONSTANTS]);
-const COMMANDS = [...keywords].filter((keyword) => !claimed.has(keyword));
+const CONSTANTS = ['true', 'false', 'transparent', 'next', 'prev', 'back', 'front', 'first', 'last',
+  'all', 'this', 'me', 'them', 'other', 'free', 'vertical', 'none', ...OPTION_KEYWORDS];
 
 const PROPERTIES = [...new Set([...OBJECT_PROPERTIES, ...TEXT_ONLY_PROPERTIES])];
+
+// 위 갈래에 넣지 않은 나머지 키워드는 전부 "명령"으로 본다
+// Keywords that double as property names (`x`, `size`, `costume`) go to PROPERTIES.
+const claimed = new Set([...DECLARATION, ...STORAGE, ...MODIFIER, ...CONTROL, ...EVENT,
+  ...OPERATOR_WORDS, ...CONSTANTS, ...PROPERTIES]);
+const COMMANDS = [...keywords].filter((keyword) => !claimed.has(keyword));
 
 const grammar = {
   $schema: 'https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json',
@@ -38,7 +44,8 @@ const grammar = {
   scopeName: 'source.tess',
   patterns: [{ include: '#comment' }, { include: '#string' }, { include: '#color' },
     { include: '#number' }, { include: '#declaration' }, { include: '#function-call' },
-    { include: '#keyword' }, { include: '#operator' }, { include: '#identifier' }],
+    { include: '#keyword' }, { include: '#operator' }, { include: '#punctuation' },
+    { include: '#identifier' }],
   repository: {
     // `#` 은 주석이지만 `#ff0000` 은 색이다 (문법의 comment 규칙과 같은 판단)
     comment: {
@@ -67,6 +74,10 @@ const grammar = {
           captures: { 1: { name: 'keyword.declaration.tess' }, 2: { name: 'entity.name.function.tess' } },
         },
         {
+          match: `(${word(['table'])})\\s+([A-Za-z_\\p{L}][A-Za-z0-9_\\p{L}]*)`,
+          captures: { 1: { name: 'keyword.declaration.tess' }, 2: { name: 'entity.name.type.tess' } },
+        },
+        {
           match: `(${word(['var', 'list'])})\\s+([A-Za-z_\\p{L}][A-Za-z0-9_\\p{L}]*)`,
           captures: { 1: { name: 'keyword.declaration.tess' }, 2: { name: 'variable.other.tess' } },
         },
@@ -89,10 +100,11 @@ const grammar = {
       patterns: [
         { name: 'constant.language.tess', match: word(CONSTANTS) },
         { name: 'variable.language.tess', match: word(STATE_VALUES) },
+        { name: 'storage.modifier.tess', match: word([...STORAGE, ...MODIFIER]) },
         { name: 'keyword.control.tess', match: word(CONTROL) },
         { name: 'keyword.control.event.tess', match: word(EVENT) },
-        { name: 'keyword.other.command.tess', match: word(COMMANDS) },
         { name: 'support.variable.property.tess', match: word(PROPERTIES) },
+        { name: 'keyword.other.command.tess', match: word(COMMANDS) },
       ],
     },
     operator: {
@@ -101,6 +113,15 @@ const grammar = {
         { name: 'keyword.operator.comparison.tess', match: '==|!=|>=|<=|>|<' },
         { name: 'keyword.operator.arithmetic.tess', match: '\\*\\*|//|[+\\-*/%]' },
         { name: 'keyword.operator.word.tess', match: word(OPERATOR_WORDS) },
+        { name: 'keyword.operator.optional.tess', match: '\\?' },
+      ],
+    },
+    punctuation: {
+      patterns: [
+        { name: 'punctuation.section.block.begin.tess', match: ':' },
+        { name: 'punctuation.separator.comma.tess', match: ',' },
+        { name: 'meta.brace.round.tess', match: '[()]' },
+        { name: 'meta.brace.square.tess', match: '[\\[\\]]' },
       ],
     },
     identifier: {

@@ -28,6 +28,9 @@
       "include": "#operator"
     },
     {
+      "include": "#punctuation"
+    },
+    {
       "include": "#identifier"
     }
   ],
@@ -69,6 +72,17 @@
           }
         },
         {
+          "match": "((?<![A-Za-z0-9_])(?:table)(?![A-Za-z0-9_]))\\s+([A-Za-z_\\p{L}][A-Za-z0-9_\\p{L}]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.tess"
+            },
+            "2": {
+              "name": "entity.name.type.tess"
+            }
+          }
+        },
+        {
           "match": "((?<![A-Za-z0-9_])(?:list|var)(?![A-Za-z0-9_]))\\s+([A-Za-z_\\p{L}][A-Za-z0-9_\\p{L}]*)",
           "captures": {
             "1": {
@@ -81,7 +95,7 @@
         },
         {
           "name": "keyword.declaration.tess",
-          "match": "(?<![A-Za-z0-9_])(?:useobject|function|project|usetext|object|scene|text|list|use|var)(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_])(?:useobject|function|project|usetext|object|scene|table|text|list|use|var)(?![A-Za-z0-9_])"
         }
       ]
     },
@@ -105,11 +119,15 @@
       "patterns": [
         {
           "name": "constant.language.tess",
-          "match": "(?<![A-Za-z0-9_])(?:transparent|vertical|false|front|other|green|true|next|back|this|them|free|none|blue|all|red|me)(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_])(?:transparent|vertical|false|front|first|other|green|true|next|prev|back|last|this|them|free|none|blue|all|red|me)(?![A-Za-z0-9_])"
         },
         {
           "name": "variable.language.tess",
           "match": "(?<![A-Za-z0-9_])(?:costume_number|block_count|mouse_down|boost_mode|touchable|nickname|clicked|user_id|device|answer|timer)(?![A-Za-z0-9_])"
+        },
+        {
+          "name": "storage.modifier.tess",
+          "match": "(?<![A-Za-z0-9_])(?:realtime|default|shared|force|as|id)(?![A-Za-z0-9_])"
         },
         {
           "name": "keyword.control.tess",
@@ -120,12 +138,12 @@
           "match": "(?<![A-Za-z0-9_])(?:cloned|signal|click|stage|start|when|key)(?![A-Za-z0-9_])"
         },
         {
-          "name": "keyword.other.command.tess",
-          "match": "(?<![A-Za-z0-9_])(?:description|realtime|rotation|columns|costume|default|effects|forward|prepend|visible|append|bounce|bubble|center|clones|column|insert|remove|shared|clear|clone|chart|force|first|order|pitch|reset|sound|speed|stamp|steer|table|think|timer|title|voice|write|call|draw|fill|flip|hide|jump|kill|last|lock|look|move|name|play|prev|read|save|send|show|size|turn|add|ask|bgm|del|fps|row|say|tts|as|go|id|x|y)(?![A-Za-z0-9_])"
-        },
-        {
           "name": "support.variable.property.tess",
           "match": "(?<![A-Za-z0-9_])(?:text_strikethrough|effect_brightness|text_underline|effect_color|effect_alpha|sound_volume|text_content|sound_speed|text_italic|draw_color|draw_width|draw_alpha|fill_color|font_color|text_align|line_break|font_size|text_bold|rotation|bg_color|scale_x|scale_y|costume|angle|size|font|way|x|y)(?![A-Za-z0-9_])"
+        },
+        {
+          "name": "keyword.other.command.tess",
+          "match": "(?<![A-Za-z0-9_])(?:description|columns|effects|forward|prepend|visible|append|bounce|bubble|center|clones|column|insert|remove|clear|clone|chart|order|pitch|reset|sound|speed|stamp|steer|think|timer|title|voice|write|call|draw|fill|flip|hide|jump|kill|lock|look|move|name|play|read|save|send|show|turn|add|ask|bgm|del|fps|row|say|tts|go)(?![A-Za-z0-9_])"
         }
       ]
     },
@@ -146,6 +164,30 @@
         {
           "name": "keyword.operator.word.tess",
           "match": "(?<![A-Za-z0-9_])(?:from|and|not|for|or|in|at|to|up)(?![A-Za-z0-9_])"
+        },
+        {
+          "name": "keyword.operator.optional.tess",
+          "match": "\\?"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.section.block.begin.tess",
+          "match": ":"
+        },
+        {
+          "name": "punctuation.separator.comma.tess",
+          "match": ","
+        },
+        {
+          "name": "meta.brace.round.tess",
+          "match": "[()]"
+        },
+        {
+          "name": "meta.brace.square.tess",
+          "match": "[\\[\\]]"
         }
       ]
     },

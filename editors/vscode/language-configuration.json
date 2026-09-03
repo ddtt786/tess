@@ -8,12 +8,12 @@
   ],
   "surroundingPairs": [["[", "]"], ["(", ")"], ["\"", "\""]],
   "indentationRules": {
-    "increaseIndentPattern": "(^\\s*(project|scene|object|text|function|when|if|else|repeat|while|until|forever)\\b.*(:|\\bthen\\b|\\bdo\\b)\\s*$)",
+    "increaseIndentPattern": "(^\\s*(project|scene|object|text|table|function|when|if|else|repeat|while|until|forever)\\b.*(:|\\bthen\\b|\\bdo\\b)\\s*$)",
     "decreaseIndentPattern": "^\\s*(end|else)\\b"
   },
   "onEnterRules": [
     {
-      "beforeText": "^\\s*(if|else|repeat|while|until|forever|when|function|project|scene|object|text)\\b.*(:|\\bthen\\b|\\bdo\\b)\\s*$",
+      "beforeText": "^\\s*(if|else|repeat|while|until|forever|when|function|project|scene|object|text|table)\\b.*(:|\\bthen\\b|\\bdo\\b)\\s*$",
       "action": { "indent": "indent" }
     }
   ],

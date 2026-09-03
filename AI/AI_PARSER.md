@@ -213,3 +213,34 @@ mismatches: 0
 - `.ohm/` 폴더는 Ohm 사용법 튜토리얼이다. 이제 쓰이지 않는다.
 - `editors/vscode/build-grammar.mjs`는 `tess.ohm`을 정규식으로 긁는 대신
   `packages/parser/src/parser/tokens.js`의 `KEYWORDS`를 import한다. 생성 결과는 바이트 단위로 동일하다.
+
+---
+
+## 9. VS Code 문법의 키워드 갈래
+
+`build-grammar.ts`는 `KEYWORDS`를 갈래별 목록으로 나눠 TextMate 스코프에 매핑한다.
+목록은 손으로 관리하고, **어느 갈래에도 없는 키워드는 전부 `keyword.other.command`로
+떨어진다** — 새 키워드를 `tokens.ts`에 넣으면 강조는 자동으로 붙지만 갈래는 자동으로
+정해지지 않는다.
+
+| 갈래           | 스코프                       | 내용                                                         |
+| -------------- | ---------------------------- | ------------------------------------------------------------ |
+| `DECLARATION`  | `keyword.declaration`        | `project` `scene` `object` `text` `table` `function` `use*` `var` `list` |
+| `STORAGE`      | `storage.modifier`           | `shared` `realtime` — 전역 선언의 저장 범위                  |
+| `MODIFIER`     | `storage.modifier`           | `as` `force` `id` `default` — 선언 뒤에 붙는 수식어          |
+| `CONTROL`      | `keyword.control`            | 블록 경계와 흐름 제어                                        |
+| `EVENT`        | `keyword.control.event`      | `when` 절을 이루는 낱말                                      |
+| `CONSTANTS`    | `constant.language`          | 리터럴과 자리를 고른 낱말(`front` `first` `next` `prev` …)   |
+| `PROPERTIES`   | `support.variable.property`  | `OBJECT_PROPERTIES` + `TEXT_ONLY_PROPERTIES`                 |
+| `COMMANDS`     | `keyword.other.command`      | 위 어디에도 없는 나머지                                      |
+
+`PROPERTIES`는 `COMMANDS`보다 먼저 매칭한다. `x` `y` `size` `costume` `rotation`
+`angle` `way`는 렉서의 키워드이면서 속성 이름이기도 해서, `claimed` 집합에
+`PROPERTIES`를 함께 넣어 `COMMANDS`에서 빼고 속성으로 칠한다.
+
+키워드를 더할 때의 순서: `tokens.ts`의 `KEYWORDS` → `build-grammar.ts`의 갈래 목록
+→ `pnpm build:grammar` → `test/highlight.test.ts`. 문법 파일은 생성물이므로 손으로
+고치지 않는다 (`test/highlight.test.ts`의 마지막 검사가 재생성 결과와 대조한다).
+
+블록을 여는 키워드는 `editors/vscode/language-configuration.json`의
+`increaseIndentPattern`·`onEnterRules`에도 함께 넣어야 들여쓰기가 따라온다.
