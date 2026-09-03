@@ -510,11 +510,12 @@ test('엔트리 기본 오브젝트의 모양·소리는 entryjs 에서 꺼내 �
 
   // bower_components 경로가 소스에 새어 나오면 안 된다 — 그런 파일은 어디에도 없다
   assert.doesNotMatch(fragment, /bower_components/);
-  // 파일을 실제로 담았으니 크기·길이는 적지 않는다 — 컴파일러가 그림을 열어 재고,
+  // 파일을 실제로 담았으니 그림 크기는 적지 않는다 — 컴파일러가 그림을 열어 재고,
   // 사람이 그림을 바꿔 넣을 때 숫자까지 같이 고치지 않아도 된다.
   assert.match(fragment, /^default costume 엔트리봇_걷기1 "assets\/image\/엔트리봇_엔트리봇_걷기1\.svg"$/m);
   assert.match(fragment, /^costume 엔트리봇_걷기2 "assets\/image\/엔트리봇_엔트리봇_걷기2\.svg"$/m);
-  assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3" as "강아지 짖는 소리"$/m);
+  // 소리 길이는 반대로 늘 적는다 — 아래 '소리 길이는 원본 값을 늘 적는다' 참고.
+  assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3" for 1\.3 as "강아지 짖는 소리"$/m);
 
   for (const relative of ['assets/image/엔트리봇_엔트리봇_걷기1.svg', 'assets/image/엔트리봇_엔트리봇_걷기2.svg', 'assets/sound/엔트리봇_강아지_짖는_소리.mp3']) {
     const asset = result.assets.find((a) => a.path === relative);
@@ -698,7 +699,7 @@ test('when 본문은 한 단 들여쓰고, 선언 뭉치 뒤에는 두 줄을 �
   assert.equal(fragment, 'x = 10\n\n\nwhen start do\n  wait 1\nend\n');
 });
 
-test('파일을 담은 모양·소리는 크기·길이를 적지 않고, 1×1 빈 그림만 예외다', () => {
+test('파일을 담은 모양은 크기를 적지 않고, 1×1 빈 그림만 예외다', () => {
   // 크기를 늘 적어 두면 그림을 바꿔 넣을 때마다 사람이 숫자까지 고쳐야 한다 —
   // 컴파일러가 파일을 열어 재 주므로 적지 않는 게 기본이다. 다만 "모양 없이 만든
   // 새 오브젝트"의 _1x1.png 는 파일에서 잰 1×1 이 진짜 크기가 아니라 예외다.
@@ -714,7 +715,7 @@ test('파일을 담은 모양·소리는 크기·길이를 적지 않고, 1×1 �
   const result = decompileProject(project, []);
   const fragment = result.assets.find((a) => a.path === 'objects/엔트리봇.tess')!.data.toString('utf-8');
   assert.match(fragment, /^default costume 엔트리봇_걷기1 "assets\/image\/엔트리봇_엔트리봇_걷기1\.svg"$/m);
-  assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3" as "강아지 짖는 소리"$/m);
+  assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3" for 1\.3 as "강아지 짖는 소리"$/m);
   assert.match(fragment, /^costume 새그림 "assets\/image\/엔트리봇_새그림\.png" size 960 540$/m);
 });
 
@@ -726,8 +727,8 @@ test('sizes 옵션을 켜면 모든 모양에 size 가로 세로 를 적는다',
 
   assert.match(fragment, /^default costume 엔트리봇_걷기1 "assets\/image\/엔트리봇_엔트리봇_걷기1\.svg" size 144 246$/m);
   assert.match(fragment, /^costume 엔트리봇_걷기2 "assets\/image\/엔트리봇_엔트리봇_걷기2\.svg" size 144 246$/m);
-  // 소리 길이는 이 옵션과 상관없다 — 컴파일러가 파일에서 잰다
-  assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3" as "강아지 짖는 소리"$/m);
+  // 소리 길이는 이 옵션과 상관없다 — 원본 값을 늘 적기 때문이다
+  assert.match(fragment, /^sound 강아지_짖는_소리 "assets\/sound\/엔트리봇_강아지_짖는_소리\.mp3" for 1\.3 as "강아지 짖는 소리"$/m);
 });
 
 /**
@@ -1641,4 +1642,184 @@ test('이름이 겹쳐도 되돌린 함수는 다시 컴파일되어 전역 변�
   const variable = recompiled.project!.variables.find((v: any) => v.name === '넉백횟수');
   assert.equal(write.params[0], variable!.id);
   assert.match(write.params[1].type, /^stringParam_/);
+});
+
+/**
+ * 되돌린 소스를 다시 컴파일했을 때 값 블록·속성이 원본과 같은 값을 내는지 검사합니다.
+ */
+function valueProject(script: any[], extra: RawEntity = {}): RawEntity {
+  return {
+    name: '값 테스트',
+    speed: 60,
+    scenes: [{ id: 'scene1', name: '장면 1' }],
+    variables: extra.variables ?? [],
+    messages: [],
+    functions: [],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: 'obj1',
+      name: '주인공',
+      objectType: 'sprite',
+      scene: 'scene1',
+      rotateMethod: 'free',
+      selectedPictureId: 'pic1',
+      entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true, ...(extra.entity ?? {}) },
+      sprite: {
+        pictures: [{ id: 'pic1', name: '기본', fileurl: null, dimension: { width: 10, height: 10 } }],
+        sounds: extra.sounds ?? [],
+      },
+      script: JSON.stringify([[
+        { type: 'when_run_button_click', params: [null], statements: [] },
+        ...script,
+      ]]),
+    }],
+  } as unknown as RawEntity;
+}
+
+/** 되돌린 소스(조각 파일까지)를 다시 컴파일해서 첫 오브젝트의 첫 스레드를 돌려준다. */
+function recompiledThread(project: RawEntity) {
+  const result = decompileProject(project, []);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-decompile-value-'));
+  const mainFile = path.join(dir, 'main.tess');
+  fs.writeFileSync(mainFile, result.source);
+  for (const asset of result.assets) {
+    const target = path.join(dir, asset.path);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, asset.data);
+  }
+  const recompiled = compileProject(result.source, { path: mainFile, assetDirs: [dir] });
+  assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e) => e.message).join('\n'));
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
+  return {
+    source: fragment,
+    warnings: result.warnings,
+    blocks: JSON.parse(recompiled.project!.objects[0].script)[0] as any[],
+    project: recompiled.project!,
+  };
+}
+
+// 붓 계열의 색 자리에 들어가는 `color` 는 글상자의 `text_color` 와 같은 원시 블록인데,
+// 표에 빠져 있어서 자리표시자 문자열로 나갔다 — 되돌린 작품의 선 색이 깨졌다.
+test('붓 색 고르기(color) 블록은 색상 리터럴로 되돌아온다', () => {
+  const color = (hex: string) => ({ type: 'color', params: [hex], statements: [] });
+  const { source, warnings, blocks } = recompiledThread(valueProject([
+    { type: 'set_color', params: [color('#ffdc69'), null], statements: [] },
+    { type: 'set_fill_color', params: [color('#616161'), null], statements: [] },
+  ]));
+
+  assert.deepEqual(warnings, []);
+  assert.match(source, /^ {2}draw_color = #ffdc69$/m);
+  assert.match(source, /^ {2}fill_color = #616161$/m);
+  assert.equal(blocks.find((b) => b.type === 'set_color').params[0], '#ffdc69');
+  assert.equal(blocks.find((b) => b.type === 'set_fill_color').params[0], '#616161');
+});
+
+// char_at 을 slice(문자열, i, i) 로 옮기면 자리 번호가 두 번 계산된다 — 그 안에
+// 무작위 수가 있으면 서로 다른 값이 나와 엉뚱한 글자를 집는다.
+test('변수의 글자 하나 읽기는 이름[번호] 로 되돌려 자리 번호를 한 번만 계산한다', () => {
+  const project = valueProject([
+    {
+      type: 'set_variable',
+      params: ['v1', {
+        type: 'char_at',
+        params: [null, { type: 'get_variable', params: ['v1', null] }, null,
+          { type: 'calc_rand', params: [null, { type: 'number', params: ['1'] }, null, { type: 'number', params: ['5'] }, null] }, null],
+      }, null],
+      statements: [],
+    },
+  ], { variables: [{ id: 'v1', name: '글자', variableType: 'variable', value: 0, visible: false, x: 0, y: 0 }] } as RawEntity);
+
+  const { source, warnings, blocks } = recompiledThread(project);
+  assert.deepEqual(warnings, []);
+  assert.match(source, /^ {2}글자 = 글자\[random\(1, 5\)\]$/m);
+  const value = blocks.find((b) => b.type === 'set_variable').params[1];
+  assert.equal(value.type, 'char_at');
+  assert.equal(value.params[3].type, 'calc_rand');
+});
+
+// 엔트리 소수점 부분(unnatural) 은 Tess 함수가 없어서 자리표시자 문자열로 나갔다 —
+// 숫자 자리에 글자가 들어가 계산이 깨졌다. |x| mod 1 이 모든 x 에서 같은 값이다.
+test('소수점 부분(unnatural) 은 같은 값을 내는 계산으로 되돌아온다', () => {
+  const { source, warnings, blocks } = recompiledThread(valueProject([
+    {
+      type: 'move_x',
+      params: [{ type: 'calc_operation', params: [null, { type: 'number', params: ['-1.3'] }, null, 'unnatural'] }, null],
+      statements: [],
+    },
+  ]));
+
+  assert.deepEqual(warnings, []);
+  assert.match(source, /^ {2}x \+= \(abs\(-1\.3\) % 1\)$/m);
+  const value = blocks.find((b) => b.type === 'move_x').params[0];
+  assert.equal(value.type, 'quotient_and_mod');
+  assert.equal(value.params[5], 'MOD');
+  assert.equal(value.params[1].params[3], 'abs');
+});
+
+// 엔트리 calc_operation 은 연산자 이름의 첫 `_` 뒤를 잘라내고 고르기 때문에
+// asin 과 asin_radian 이 같은 계산이다. 표에 없던 앞쪽 세 개도 같은 곳으로 보낸다.
+test('역삼각함수의 도 단위 이름도 자리표시자 없이 되돌아온다', () => {
+  for (const [entryName, tessName] of [['asin', 'asin'], ['acos', 'acos'], ['atan', 'atan']]) {
+    const { source, warnings } = recompiledThread(valueProject([
+      {
+        type: 'move_x',
+        params: [{ type: 'calc_operation', params: [null, { type: 'number', params: ['0.5'] }, null, entryName] }, null],
+        statements: [],
+      },
+    ]));
+    assert.deepEqual(warnings, [], entryName);
+    assert.match(source, new RegExp(`^ {2}x \\+= ${tessName}\\(0\\.5\\)$`, 'm'));
+  }
+});
+
+// 엔트리 키 목록(extern/util/static.js keyInputList)에 있는 키는 전부 되돌릴 수 있어야
+// 한다. 이름이 없으면 판단은 자리표시자가 되고, when 머리는 스레드째로 주석이 된다.
+test('엔트리 키 목록의 모든 키 코드가 그대로 되돌아온다', () => {
+  const codes = [8, 9, 13, 16, 17, 18, 27, 32, 37, 38, 39, 40, 48, 57, 65, 90,
+    186, 187, 188, 189, 190, 191, 192, 219, 220, 221, 222];
+  const project = valueProject([]);
+  project.objects[0].script = JSON.stringify(codes.map((code) => [
+    { type: 'when_some_key_pressed', params: [null, String(code)], statements: [] },
+    {
+      type: '_if',
+      params: [{ type: 'is_press_some_key', params: [String(code), null], statements: [] }, null],
+      statements: [[{ type: 'move_x', params: [{ type: 'number', params: ['1'] }, null], statements: [] }]],
+    },
+  ]));
+
+  const { warnings, project: recompiled } = recompiledThread(project);
+  assert.deepEqual(warnings, []);
+
+  const threads = JSON.parse(recompiled.objects[0].script);
+  assert.deepEqual(threads.map((t: any[]) => Number(t[0].params[1])), codes);
+  assert.deepEqual(
+    threads.map((t: any[]) => Number(t[1].params[0].params[0])),
+    codes,
+    '판단 블록의 키 코드도 그대로여야 한다',
+  );
+});
+
+// 엔트리는 크기를 배율로, Tess 는 퍼센트로 적는다. 퍼센트를 정수로 깎으면
+// 51.3% 짜리 오브젝트가 51% 로 줄어든다.
+test('배율은 퍼센트 소수점을 버리지 않고 되돌아온다', () => {
+  const project = valueProject([], { entity: { scaleX: 0.513, scaleY: 1.564 } } as RawEntity);
+  const { source, project: recompiled } = recompiledThread(project);
+
+  assert.match(source, /^scale_x = 51\.3$/m);
+  assert.match(source, /^scale_y = 156\.4$/m);
+  assert.equal(recompiled.objects[0].entity.scaleX, 0.513);
+  assert.equal(recompiled.objects[0].entity.scaleY, 1.564);
+});
+
+// 그림 크기는 컴파일러가 파일에서 정확히 재지만, 소리 길이는 mp3 머리말로 어림잡는
+// 값이라 엔트리가 재 둔 값과 0.1초씩 어긋난다. 그 길이는 "재생하고 기다리기" 가
+// 기다리는 시간이고, 0 이면 엔트리가 소리를 아예 안 읽어 들인다.
+test('소리 길이는 원본 값을 늘 적는다', () => {
+  const project = valueProject([], {
+    sounds: [{ id: 'snd1', name: '짖는 소리', fileurl: null, ext: '.mp3', duration: 1.3 }],
+  } as RawEntity);
+  const { source, project: recompiled } = recompiledThread(project);
+
+  assert.match(source, /^sound 짖는_소리 ".*\.mp3" for 1\.3 as "짖는 소리"$/m);
+  assert.equal(recompiled.objects[0].sprite.sounds[0].duration, 1.3);
 });

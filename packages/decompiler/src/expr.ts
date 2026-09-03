@@ -18,6 +18,11 @@ const TABLE_CALCULATION_NAMES: Record<string, string> = {
 const REVERSE_MATH: Record<string, string> = {
   sin: 'sin', cos: 'cos', tan: 'tan', asin_radian: 'asin', acos_radian: 'acos', atan_radian: 'atan',
   ln: 'ln', log: 'log10', floor: 'floor', ceil: 'ceil', round: 'round', abs: 'abs',
+  // Entry offers `asin` next to `asin_radian`, but its calc_operation strips
+  // everything after the first `_` before switching, so both run the same
+  // `toDegrees(Math.asin(x))`. They therefore map to the same Tess function
+  // rather than to a placeholder.
+  asin: 'asin', acos: 'acos', atan: 'atan',
 };
 /**
  * 좌표 객체의 속성을 Tess 속성 이름으로 매핑합니다.
@@ -101,6 +106,20 @@ function resourceRef(
   return tessString(nameOf(id));
 }
 
+const BARE_NAME = /^[\p{L}_][\p{L}\p{N}_]*$/u;
+
+/**
+ * Whether `${text}[i]` reads the i-th character of `text`. It must be a single
+ * name, and not a list or table name — on those, `[i]` reads an item or a cell
+ * instead (compiler/expression.ts resolveList).
+ */
+function indexableName(text: string, ctx: DecompileContext): boolean {
+  if (!BARE_NAME.test(text)) return false;
+  for (const info of ctx.varsById.values()) if (info.isList && info.identifier === text) return false;
+  for (const info of ctx.tablesById.values()) if (info.identifier === text) return false;
+  return true;
+}
+
 function placeholder(ctx: DecompileContext, block: RawBlock | undefined): string {
   const type = block?.type ?? '(빈 슬롯)';
   ctx.warnings.add(`값 블록 '${type}' 은(는) 아직 옮길 수 없습니다.`);
@@ -170,6 +189,11 @@ export function exprOf(block: any, ctx: DecompileContext): string {
       const op = at(3);
       if (op === 'square') return `(${exprOf(at(1), ctx)} ** 2)`;
       if (op === 'root') return `(${exprOf(at(1), ctx)} ** 0.5)`;
+      // Entry's fractional-part operator is `|x| mod 1`: it takes x - floor(x)
+      // and then, for a negative x, 1 - that. Tess has no single call for it,
+      // and `%` on the absolute value is the same number for every x (entryjs
+      // MOD is `l - r * floor(l / r)`, so it floors the way Entry does).
+      if (op === 'unnatural') return `(abs(${exprOf(at(1), ctx)}) % 1)`;
       const fn = REVERSE_MATH[op];
       return fn ? `${fn}(${exprOf(at(1), ctx)})` : placeholder(ctx, block);
     }
@@ -217,7 +241,21 @@ export function exprOf(block: any, ctx: DecompileContext): string {
     }
     case 'char_at': {
       const index = exprOf(at(3), ctx);
-      return `slice(${exprOf(at(1), ctx)}, ${index}, ${index})`;
+      const target = exprOf(at(1), ctx);
+      // `이름[i]` is the only Tess form that compiles back to char_at, and it
+      // takes a bare name (parser.js indexExpr). Everything else has to go
+      // through slice, which evaluates the index twice — a different value
+      // every time when the index is random or an answer.
+      if (indexableName(target, ctx)) return `${target}[${index}]`;
+      const literalIndex = at(3) === null || at(3) === undefined
+        || ['number', 'text'].includes((at(3) as RawBlock | undefined)?.type ?? '');
+      if (!literalIndex) {
+        ctx.warnings.add(
+          `'${target}' 의 글자 하나를 읽는 자리는 slice 로 옮겼습니다 — 자리 번호가 두 번 계산되니, `
+          + '그 안에 무작위 수처럼 부를 때마다 달라지는 값이 있으면 결과가 달라집니다.',
+        );
+      }
+      return `slice(${target}, ${index}, ${index})`;
     }
     case 'length_of_list': return `length(${ctx.varName(at(1))})`;
     case 'length_of_string': return `length(${exprOf(at(1), ctx)})`;
@@ -265,8 +303,12 @@ export function exprOf(block: any, ctx: DecompileContext): string {
     /** 소리 길이 블록은 드롭다운 필드에서 소리 ID를 직접 사용합니다. */
     case 'get_sound_duration':
       return `sound_duration(${resourceRef(ctx, at(1), ctx.soundsById, ctx.soundName)})`;
-    /** 색상 선택 필드에서 선택한 색상(#RRGGBB)을 리터럴로 반환합니다. */
-    case 'text_color': return colorLiteral(String(at(0) ?? ''));
+    /**
+     * 색상 선택 필드에서 선택한 색상(#RRGGBB)을 리터럴로 반환합니다.
+     * Both blocks are primitive colour pickers holding that hex string: `color`
+     * fills the brush blocks' slot, `text_color` the text blocks' one.
+     */
+    case 'color': case 'text_color': return colorLiteral(String(at(0) ?? ''));
 
     /** 사용자 정의 함수 호출 및 확장 블록을 처리합니다. */
     default: {

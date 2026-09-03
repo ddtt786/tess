@@ -201,6 +201,17 @@ function variableIdsIn(
   return found;
 }
 
+/** Tess names of the variables and lists a block tree reads or writes. */
+function touchedVariableNames(content: unknown, ctx: DecompileContext): Set<string> {
+  const found = variableIdsIn(content);
+  const names = new Set<string>();
+  for (const id of [...found.variables, ...found.lists]) {
+    const info = ctx.varsById.get(id);
+    if (info) names.add(info.identifier);
+  }
+  return names;
+}
+
 /**
  * Declares a variable for every id the blocks reference but the project no
  * longer defines. Entry leaves such references behind when a variable is
@@ -416,19 +427,12 @@ function buildContext(
   }
 
   // --- 함수 --------------------------------------------------------------------
-  // A parameter name hides every variable of the same name inside the function
-  // body (compiler/context.ts lookupVariable: param -> function local -> object
-  // local -> global). Entry has no such shadowing — its body points at a
-  // variable by id — so a parameter named after one silently rebinds reads of
-  // that variable and turns writes to it into a compile error. Parameter names
-  // therefore start out clear of every variable and list name.
-  const variableNames = new Set<string>();
-  for (const info of ctx.varsById.values()) variableNames.add(info.identifier);
-
   for (const fn of project.functions ?? []) {
     let fields: FunctionField[] = [];
+    let content: unknown = [];
     try {
-      fields = readFunctionFields(functionCreateBlock(JSON.parse(fn.content ?? '[]')));
+      content = JSON.parse(fn.content ?? '[]');
+      fields = readFunctionFields(functionCreateBlock(content));
     } catch { /* 머리를 못 읽어도 id 로 대체해서 계속 진행한다 */ }
 
     // 맨 앞 라벨만 함수 이름이 된다 (src/function-params.ts 참고)
@@ -437,7 +441,16 @@ function buildContext(
     const identifier = safeIdentifier(label, usedNames, 'func');
 
     const params: string[] = [];
-    const paramNames = new Set<string>(variableNames);
+    // A parameter name hides every variable of the same name inside the body
+    // (compiler/context.ts lookupVariable: param -> function local -> object
+    // local -> global). Entry has no such shadowing — its body points at a
+    // variable by id — so a parameter named after one silently rebinds that
+    // variable's reads and turns its writes into a compile error. Only the
+    // variables this body actually touches can be hidden, so only those names
+    // are off limits; reserving every name in the work would rename parameters
+    // that hide nothing, and each rename shows up as a label in the Entry
+    // signature (compiler/index.ts isAutoParamName).
+    const paramNames = touchedVariableNames(content, ctx);
     fields.forEach((field, index) => {
       if (field.kind !== 'param') return;
       // 바로 앞에 함수 이름이 아닌 라벨이 있으면, 그 라벨이 이 매개변수의 이름이 된다
@@ -451,9 +464,11 @@ function buildContext(
       if (field.blockType) ctx.funcParamsByBlockType.set(field.blockType, name);
     });
 
-    // Function locals are referenced by id in the body, and hide variables the
-    // same way parameters do, so they share the parameters' reserved names.
+    // Function locals are referenced by id in the body. Their names must clash
+    // with neither the parameters nor the variables the body can see: inside a
+    // function Tess resolves a name as parameter -> function local -> global.
     const localUsed = new Set(paramNames);
+    for (const info of ctx.globalVars) localUsed.add(info.identifier);
     const locals: FunctionLocal[] = [];
     for (const local of (fn.localVariables ?? []) as RawEntity[]) {
       const name = safeIdentifier(local.name, localUsed, 'local');
@@ -636,7 +651,12 @@ function objectFragmentLines(object: RawEntity, ctx: DecompileContext, isText: b
   for (const sound of object.sprite?.sounds ?? []) {
     const sndInfo = ctx.soundsById.get(sound.id);
     if (!sndInfo) continue;
-    const durationPart = sndInfo.relativePath ? '' : ` for ${tessNumber(sound.duration ?? 1)}`;
+    // Always keep the length Entry measured, for the same reason the text box
+    // frame is kept: "play sound and wait" waits `duration * 1000` ms and
+    // Entry skips loading a sound whose duration is 0, while the compiler only
+    // estimates the length from the mp3 header. Costume sizes are different —
+    // the compiler reads those from the image file exactly.
+    const durationPart = ` for ${tessNumber(Number.isFinite(sound.duration) ? sound.duration : 1)}`;
     const filePart = sndInfo.relativePath ?? (sound.fileurl ?? `${sndInfo.identifier}.mp3`);
     const namePart = displayNamePart(sndInfo.identifier, sound.name);
     const forcePart = ctx.forcedIds.has(sound.id) ? ` force id ${tessString(sound.id)}` : '';
@@ -695,6 +715,21 @@ function centerLine(object: RawEntity, pad: string): string[] {
   return [`${pad}center ${tessNumber(entity.regX)} ${tessNumber(entity.regY)}`];
 }
 
+/**
+ * Entry keeps scale as a ratio and Tess writes it as a percent, so this rounds
+ * only as far as it can while still dividing back to the same ratio (the
+ * compiler does `scale_x / 100`). Rounding to a whole percent instead would
+ * turn a size of 51.3% into 51%.
+ */
+function scalePercent(ratio: number): number {
+  const exact = ratio * 100;
+  for (let digits = 0; digits <= 6; digits += 1) {
+    const candidate = Number(exact.toFixed(digits));
+    if (candidate / 100 === ratio) return candidate;
+  }
+  return Number(exact.toPrecision(12));
+}
+
 function objectPropertyLines(object: RawEntity, isText: boolean, indentLevel: number): string[] {
   const pad = '  '.repeat(indentLevel);
   const lines: string[] = [];
@@ -703,8 +738,8 @@ function objectPropertyLines(object: RawEntity, isText: boolean, indentLevel: nu
   if (entity.y) lines.push(`${pad}y = ${tessNumber(entity.y)}`);
   if (entity.rotation) lines.push(`${pad}angle = ${tessNumber(entity.rotation)}`);
   if (entity.direction !== undefined && entity.direction !== 90) lines.push(`${pad}way = ${tessNumber(entity.direction)}`);
-  if (entity.scaleX !== undefined && entity.scaleX !== 1) lines.push(`${pad}scale_x = ${tessNumber(Math.round(entity.scaleX * 100))}`);
-  if (entity.scaleY !== undefined && entity.scaleY !== 1) lines.push(`${pad}scale_y = ${tessNumber(Math.round(entity.scaleY * 100))}`);
+  if (entity.scaleX !== undefined && entity.scaleX !== 1) lines.push(`${pad}scale_x = ${tessNumber(scalePercent(entity.scaleX))}`);
+  if (entity.scaleY !== undefined && entity.scaleY !== 1) lines.push(`${pad}scale_y = ${tessNumber(scalePercent(entity.scaleY))}`);
   if (!isText) lines.push(...centerLine(object, pad));
 
   if (isText) {

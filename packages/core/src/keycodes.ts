@@ -20,6 +20,15 @@ export const KEY_CODES: Record<string, number> = {
 for (let i = 0; i <= 9; i += 1) KEY_CODES[String(i)] = 48 + i;
 for (let i = 0; i < 26; i += 1) KEY_CODES[String.fromCharCode(97 + i)] = 65 + i;
 
+// The punctuation keys of entryjs' own dropdown (extern/util/static.js
+// keyInputList). Real works use them, so leaving them out made those blocks
+// impossible to write and impossible to bring back with decompile.
+// `backslash` comes before its symbol so that decompile picks the readable one.
+Object.assign(KEY_CODES, {
+  ';': 186, '=': 187, ',': 188, '-': 189, '.': 190, '/': 191, '~': 192,
+  '[': 219, backslash: 220, '\\': 220, ']': 221, "'": 222,
+});
+
 /**
  * 키 이름에 해당하는 엔트리 키 코드 문자열을 반환합니다.
  * 인식되지 않는 키 이름일 경우 null을 반환합니다.
