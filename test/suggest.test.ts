@@ -13,8 +13,8 @@ import { parse } from '@tess/parser';
 
 const object = (body: any) => `scene "s":\n  object "o":\n${body}\n  end\nend`;
 const firstError = (source: string) => compileProject(source, { path: 't.tess' }).errors[0]?.message ?? '';
-// 엔트리 실행 시 이름으로 참조되는 속성(예: 모양, 소리)에 대한 오타는 오류가 아닌 경고(warning)로 처리됩니다.
-const firstWarning = (source: string) => compileProject(source, { path: 't.tess' }).warnings[0]?.message ?? '';
+// 엔트리 실행 시 이름으로 참조되는 속성(예: 모양, 소리)에 대한 오타는 오류가 아닌 주의(notice)로 처리됩니다.
+const firstNotice = (source: string) => compileProject(source, { path: 't.tess' }).notices[0]?.message ?? '';
 
 test('붙어 있는 두 글자가 바뀐 것은 한 번으로 센다', () => {
   /** 타이핑 중 가장 빈번하게 발생하는 인접 문자의 도치(예: abc -> acb)는 하나의 수정으로 간주하여 오타 교정의 정확도를 높입니다. */
@@ -55,12 +55,12 @@ test('변수 이름 오타를 짚어 준다', () => {
 });
 
 test('모양 · 소리 · 오브젝트 · 장면 이름 오타를 짚어 준다', () => {
-  const costume = firstWarning(object(
+  const costume = firstNotice(object(
     '    costume 점프 "a.png" size 1 1\n    when start do\n      costume = "점푸"\n    end',
   ));
   assert.match(costume, /혹시 '점프' 인가요\?/);
 
-  const sound = firstWarning(object(
+  const sound = firstNotice(object(
     '    sound 효과음 "a.mp3" for 1\n    when start do\n      play sound "효과응"\n    end',
   ));
   assert.match(sound, /혹시 '효과음' 인가요\?/);
@@ -81,7 +81,7 @@ test('오타로 볼 수 없으면 원래 안내를 그대로 낸다', () => {
   /**
    * 유사한 이름이 존재하는 경우 오타 교정 메시지를 출력하며, 유사한 이름이 없을 때만 새 항목 등록을 유도하는 메시지를 출력해야 사용자 혼란을 줄일 수 있습니다.
    */
-  const message = firstWarning(object(
+  const message = firstNotice(object(
     '    costume 점프 "a.png" size 1 1\n    when start do\n      costume = "전혀다른모양"\n    end',
   ));
   assert.match(message, /costume 전혀다른모양 "파일명" 으로 먼저 등록하세요/);

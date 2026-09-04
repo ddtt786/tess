@@ -99,3 +99,62 @@ test('문법 에러는 그대로 위치와 함께 알려 준다', (t) => {
   assert.equal(result.code, 1);
   assert.match(result.output, /main\.tess:\d+:\d+/);
 });
+
+// --- 느슨한 실행 -------------------------------------------------------------
+const LOOSE_PROJECT = `scene "s":
+  object "주인공":
+    default costume 기본 "a.png" size 10 10
+    when start do
+      jump "없는장면"
+      x += 1
+    end
+  end
+end`;
+
+test('build 는 에러가 있어도 그 문장만 빼고 내보낸다', (t) => {
+  const dir = project(t, { 'main.tess': LOOSE_PROJECT });
+  const outPath = path.join(dir, 'out.json');
+
+  const result = cli('build', path.join(dir, 'main.tess'), '-o', outPath);
+  assert.equal(result.code, 0);
+  assert.match(result.output, /--strict 를 붙이면 여기서 멈춥니다/);
+
+  // 에러가 난 jump 만 빠지고 그 뒤의 move_x 는 남는다
+  const built = JSON.parse(fs.readFileSync(outPath, 'utf-8'));
+  const types = JSON.parse(built.objects[0].script)[0].map((block: any) => block.type);
+  assert.deepEqual(types, ['when_run_button_click', 'move_x']);
+});
+
+test('--strict 는 에러가 있으면 아무것도 내보내지 않는다', (t) => {
+  const dir = project(t, { 'main.tess': LOOSE_PROJECT });
+  const outPath = path.join(dir, 'out.json');
+
+  const result = cli('build', path.join(dir, 'main.tess'), '-o', outPath, '--strict');
+  assert.equal(result.code, 1);
+  assert.match(result.output, /내보낼 수 없습니다/);
+  assert.equal(fs.existsSync(outPath), false);
+});
+
+const MISSING_COSTUME = `scene "s":
+  object "주인공":
+    default costume 기본 "a.png" size 10 10
+    when start do
+      costume = "없는모양"
+    end
+  end
+end`;
+
+test('없는 모양은 주의로 알리고 check 를 통과시킨다', (t) => {
+  const dir = project(t, { 'main.tess': MISSING_COSTUME });
+
+  const loose = cli('check', path.join(dir, 'main.tess'));
+  assert.equal(loose.code, 0);
+  assert.match(loose.output, /주의 1개/);
+  assert.doesNotMatch(loose.output, /경고 1개/);
+
+  // --strict 는 같은 것을 경고로 올려 보여 준다 (에러는 아니므로 여전히 통과한다)
+  const strict = cli('check', path.join(dir, 'main.tess'), '--strict');
+  assert.equal(strict.code, 0);
+  assert.match(strict.output, /경고 1개/);
+  assert.doesNotMatch(strict.output, /주의 1개/);
+});

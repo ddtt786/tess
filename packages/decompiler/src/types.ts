@@ -173,6 +173,8 @@ export interface DecompileOptions {
    * options.keepSvg = true;
    */
   keepSvg?: boolean;
+  /** Reports notices as warnings. Off by default. */
+  strict?: boolean;
 }
 
 /**
@@ -184,6 +186,8 @@ export interface DecompileOptions {
  */
 export interface DecompileContext {
   warnings: Set<string>;
+  /** Names entry settles when the block runs — nothing is lost from the source. */
+  notices: Set<string>;
   allSizes: boolean;
   keepSvg: boolean;
   varsById: Map<string, VarInfo>;
@@ -218,11 +222,13 @@ export interface DecompileContext {
  * 프로젝트 디컴파일 결과를 나타냅니다.
  * 
  * @example
- * const result: DecompileResult = { source: "...", warnings: [], assets: [], name: "Project" };
+ * const result: DecompileResult = { source: "...", warnings: [], notices: [], assets: [], name: "Project" };
  */
 export interface DecompileResult {
   source: string;
   warnings: string[];
+  /** Empty under `strict` — those entries are folded into `warnings`. */
+  notices: string[];
   assets: CollectedAsset[];
   name: string;
 }

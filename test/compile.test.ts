@@ -697,19 +697,37 @@ test('엔트리에 없는 오브젝트 · 장면은 에러로 알려 준다', ()
   }
 });
 
-test('없는 모양 · 소리 이름은 경고로 알려 준다', () => {
+test('없는 모양 · 소리 이름은 주의로 알려 준다', () => {
   /**
-   * 존재하지 않는 모양이나 소리 이름을 참조할 경우 에러가 아닌 경고를 발생시킵니다.
+   * 존재하지 않는 모양이나 소리 이름은 엔트리가 실행할 때 이름으로 찾으므로
+   * 에러도 경고도 아닌 주의로 알려 줍니다.
    */
   const cases: Array<[string, RegExp]> = [
     ['play sound "없는소리"', /소리를 이 오브젝트에서 찾지 못했습니다/],
     ['costume = "없는모양"', /모양을 이 오브젝트에서 찾지 못했습니다/],
+    ['say sound_duration("없는소리")', /'없는소리' 소리가 이 오브젝트에 없습니다/],
   ];
   for (const [code, pattern] of cases) {
     const result = compileProject(inObject(code), { path: 'x.tess' });
     assert.equal(result.ok, true, code);
-    assert.match(result.warnings[0]!.message, pattern, code);
+    assert.match(result.notices[0]!.message, pattern, code);
   }
+});
+
+test('strict 는 주의를 경고로 올려서 알려 준다', () => {
+  const source = inObject('costume = "없는모양"');
+  const loose = compileProject(source, { path: 'x.tess' });
+  const strict = compileProject(source, { path: 'x.tess', strict: true });
+
+  assert.equal(strict.ok, true); // 승격이지 에러가 되는 것은 아니다
+  assert.deepEqual(strict.notices, []);
+  const promoted = strict.warnings.filter(
+    (item) => !loose.warnings.some((kept) => kept.message === item.message),
+  );
+  assert.deepEqual(
+    promoted.map((item) => item.message),
+    loose.notices.map((item) => item.message),
+  );
 });
 
 test('함수 중간의 return 은 에러다', () => {
@@ -911,13 +929,13 @@ test('같은 소스는 항상 같은 결과로 컴파일된다', () => {
   assert.equal(JSON.stringify(first), JSON.stringify(second));
 });
 
-// --- force: 에러가 있어도 만들다 만 작품 받아 가기 -------------------------------
+// --- 느슨한 실행: 에러가 있어도 만들다 만 작품 받아 가기 -----------------------
 // 컴파일러는 에러를 만나도 그 자리만 빼고 끝까지 가므로(한 번에 에러를 다 보여
-// 주기 위해서다), 만들다 만 작품이 이미 손에 있다. --force / options.force 는 그걸
-// 그대로 돌려준다 — 큰 작품을 되돌려 놓고 아직 안 고친 부분이 남았을 때 나머지가
-// 제대로 도는지 먼저 실행해 보는 용도다.
-const FORCE_SOURCE = `project:
-  title "강제"
+// 주기 위해서다), 만들다 만 작품이 이미 손에 있다. 기본값은 그걸 그대로 돌려주는
+// 느슨한 실행이다 — 큰 작품을 되돌려 놓고 아직 안 고친 부분이 남았을 때 나머지가
+// 제대로 도는지 먼저 실행해 보는 용도다. --strict / options.strict 는 그걸 끈다.
+const LOOSE_SOURCE = `project:
+  title "느슨"
 end
 
 object "주인공":
@@ -928,23 +946,23 @@ object "주인공":
   end
 end`;
 
-test('에러가 있으면 project 는 null 이고, force 를 주면 만들다 만 작품을 그대로 돌려준다', () => {
-  const plain = compileProject(FORCE_SOURCE, { path: 'x.tess' });
-  assert.equal(plain.ok, false);
-  assert.equal(plain.project, null);
+test('에러가 있어도 만들다 만 작품을 그대로 돌려주고, strict 를 주면 null 이다', () => {
+  const strict = compileProject(LOOSE_SOURCE, { path: 'x.tess', strict: true });
+  assert.equal(strict.ok, false);
+  assert.equal(strict.project, null);
 
-  const forced = compileProject(FORCE_SOURCE, { path: 'x.tess', force: true });
-  assert.equal(forced.ok, false); // force 를 줘도 에러가 없어지는 건 아니다
-  assert.deepEqual(forced.errors.map((e) => e.message), plain.errors.map((e) => e.message));
-  assert.ok(forced.project);
+  const loose = compileProject(LOOSE_SOURCE, { path: 'x.tess' });
+  assert.equal(loose.ok, false); // 느슨하게 간다고 에러가 없어지는 건 아니다
+  assert.deepEqual(loose.errors.map((e) => e.message), strict.errors.map((e) => e.message));
+  assert.ok(loose.project);
 
   // 에러가 난 문장(jump "없는장면")은 빠지고, 그 뒤의 멀쩡한 블록은 그대로 남는다
-  const script = JSON.parse(forced.project.objects[0].script);
+  const script = JSON.parse(loose.project.objects[0].script);
   assert.deepEqual(script[0].map((block: any) => block.type), ['when_run_button_click', 'move_x']);
 });
 
-test('문법 에러는 작품 자체가 안 만들어져서 force 도 소용없다', () => {
-  const result = compileProject('object "주인공":\n  when start do\n    x +=\n', { path: 'x.tess', force: true });
+test('문법 에러는 작품 자체가 안 만들어져서 느슨한 실행으로도 내보낼 게 없다', () => {
+  const result = compileProject('object "주인공":\n  when start do\n    x +=\n', { path: 'x.tess' });
   assert.equal(result.ok, false);
   assert.equal(result.project, null);
 });

@@ -68,6 +68,8 @@ export class Context {
 
   warnings: CompileDiagnostic[];
 
+  notices: CompileDiagnostic[];
+
   sourceMap: SourceMap;
 
   currentNode: Node | null;
@@ -119,6 +121,7 @@ export class Context {
     this.newId = createIdFactory(seedFrom(options.seed ?? source));
     this.errors = [];
     this.warnings = [];
+    this.notices = [];
 
     // 블록 id -> 그 블록을 만든 Tess 소스 위치. 실행 중 엔트리가 panic 나면
     // 어느 블록인지(id)는 알 수 있어도 어느 줄인지는 모르니, 디버그 패널이
@@ -163,6 +166,15 @@ export class Context {
 
   warn(node: Node | null | undefined, message: string): null {
     this.#report(this.warnings, node, message);
+    return null;
+  }
+
+  /**
+   * A name entry resolves when the block runs, so the build is complete
+   * without it. `strict` reports these as warnings instead.
+   */
+  notice(node: Node | null | undefined, message: string): null {
+    this.#report(this.notices, node, message);
     return null;
   }
 

@@ -49,8 +49,8 @@ const BRUSH_DEFAULT_PROPERTIES = ['draw_color', 'fill_color', 'draw_width', 'dra
 /**
  * Tess 소스를 엔트리 프로젝트 객체로 컴파일한다.
  *
- * 에러가 있으면 `project` 는 null 이다. `force: true` 면 에러가 난 문장만 빠진 작품을
- * 그대로 돌려준다 (`ok` 는 여전히 false).
+ * 에러가 있어도 에러가 난 문장만 빠진 작품을 그대로 돌려준다 (`ok` 는 여전히 false).
+ * `strict: true` 면 그때만 `project` 가 null 이고, 주의는 경고로 올라온다.
  *
  * With a `cache` from createCompileCache, unchanged files are not re-parsed.
  *
@@ -68,6 +68,7 @@ export function compileProject(source: string, options: CompileOptions = {}): Co
       project: null,
       errors: loaded.errors,
       warnings: loaded.warnings,
+      notices: [],
       assets: [],
       timings: timer.timings,
     };
@@ -107,11 +108,16 @@ export function compileProject(source: string, options: CompileOptions = {}): Co
   timer.mark('작품 조립');
 
   const ok = ctx.errors.length === 0;
+  // Notices are warnings under `strict`, so a run that must be clean sees them
+  // in the same place as everything else it stops for.
+  const strict = options.strict === true;
+  const warnings = strict ? [...ctx.warnings, ...ctx.notices] : ctx.warnings;
   return {
     ok,
-    project: ok || options.force ? project : null,
+    project: ok || !strict ? project : null,
     errors: ctx.errors,
-    warnings: withoutDuplicates(ctx.warnings, ctx.errors),
+    warnings: withoutDuplicates(warnings, ctx.errors),
+    notices: strict ? [] : withoutDuplicates(ctx.notices, ctx.errors),
     assets: ctx.assetFiles,
     sourceMap: ctx.sourceMap,
     timings: timer.timings,

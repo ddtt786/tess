@@ -119,7 +119,7 @@ result.warnings; // [{ line, column, message }]
 | `parseOrThrow(source)`             | 실패하면 예외, 성공하면 AST                      |
 | `check(source)`                    | 문법에 맞는지만 boolean 으로                     |
 | `trace(source)`                    | 파서의 판단 과정을 문자열로 (디버깅용)           |
-| `compileProject(source, options?)` | `{ ok, project, errors, warnings, assets }` 반환 |
+| `compileProject(source, options?)` | `{ ok, project, errors, warnings, notices, assets }` 반환 |
 | `makeEntryBundle(project, assets)` | `.ent` (tar) 바이트열                            |
 | `verifyEntryProject(project)`      | 엔트리 구조 검사 결과(문제 목록)                 |
 | `grammar`                          | Ohm `Grammar` 인스턴스                           |
@@ -840,7 +840,7 @@ end
 아직 옮기지 못하는 블록이나, 엔트리 워크스페이스에서 어디에도 안 연결된 채 남아 있던
 블록 뭉치는 실패로 끝내지 않고 `# [decompile] ...` 주석으로 표시한 뒤 계속 진행합니다 —
 명령이 끝나면 몇 개가 그렇게 남았는지만 알려 주고, 하나하나 무엇인지는 `--warnings` 를
-붙여야 보여 줍니다.
+붙여야 보여 줍니다. 되돌리기도 경고와 주의를 나눠 셉니다 — 아래 진단 등급 항목 참고.
 
 **함수 머리**도 그대로 살립니다. 엔트리 함수는 `스폰 (인수) 체력 (인수)` 처럼 이름이
 중간에 끼어들 수 있고 판단 칸도 받는데, 그 정보를 매개변수 **이름**에 담아
@@ -1179,20 +1179,54 @@ broken.tess:15:12  에러: 'bullet' 이라는 오브젝트가 없습니다.
 broken.tess:21:5  에러: 엔트리 함수는 중간에서 값을 돌려줄 수 없습니다. return 은 함수의 마지막 문장에만 쓸 수 있습니다.
 ```
 
+### 진단 등급 — 에러 · 경고 · 주의
+
+| 등급 | 뜻                                                       | 기본 동작                          |
+| ---- | -------------------------------------------------------- | ---------------------------------- |
+| 에러 | 그 문장을 엔트리 블록으로 옮길 수 없습니다.              | 그 문장만 빠지고 `ok` 가 `false`   |
+| 경고 | 만들어진 작품에 컴파일러가 고칠 수 없는 흠이 남습니다.   | 노란색으로 그대로 보여 줍니다      |
+| 주의 | 엔트리가 블록을 실행할 때 스스로 푸는 것입니다.          | 회색으로 흐리게 보여 줍니다        |
+
+`CompileResult` 와 `DecompileResult` 는 셋을 `errors` · `warnings` · `notices` 로 나눠
+돌려줍니다.
+
+주의는 값 칸을 **이름 그대로** 흘려보낸 자리에 붙습니다. 엔트리는 모양·소리 칸을
+1) id 2) 이름 3) 등록 순번 순으로 맞춰 찾으므로, 컴파일 시점에 이 오브젝트의 모양·
+소리로 묶이지 않은 이름도 실행할 때 그 이름의 자원을 찾아냅니다 — 컴파일러가 지금
+판정할 수 없는 것이지 틀렸다고 말할 수 있는 것이 아닙니다.
+
+- `resolvePicture` · `resolveSound` (`compiler/statement.ts` 의 `byNameAtRuntime`)
+- `resolveSoundValue` (`compiler/expression.ts`) — `sound_duration()` 의 소리 칸
+- 되돌리기의 `pictureName` · `soundName` (`decompiler/index.ts`) — 작품에 없는 자원 id
+
+반대로 이런 것들은 실행할 때 저절로 풀리지 않으므로 **경고**로 남습니다.
+
+- 모양·소리 파일을 `assetDirs` 에서 찾지 못함 (`compiler/assets.ts`) — 묶음에 없는 파일을 가리킵니다
+- 오브젝트에 모양이 하나도 없음 (`compiler/index.ts`) — 엔트리가 그릴 것이 없습니다
+
+### 느슨한 실행과 `--strict`
+
 컴파일러는 에러를 만나도 거기서 멈추지 않고 그 문장만 빼고 끝까지 갑니다 — 한
 번에 에러를 다 보여 주기 위해서입니다. 그래서 만들다 만 작품이 이미 손에 있고,
-`--force` 를 붙이면 그걸 그대로 내보냅니다(`compileProject` 의 `options.force`).
-큰 작품을 되돌려 놓고 아직 안 고친 부분이 남았을 때, 나머지가 제대로 도는지 먼저
-실행해 보는 용도입니다.
+`build` 와 `run` 은 **기본값으로** 그걸 그대로 내보냅니다. 큰 작품을 되돌려 놓고
+아직 안 고친 부분이 남았을 때, 나머지가 제대로 도는지 먼저 실행해 보기 위해서입니다.
 
 ```
-$ node index.js run broken.tess --force
+$ node index.ts run broken.tess
 broken.tess:12:7  에러: 엔트리에는 scale_x 을(를) 정하는 블록이 없습니다. ...
-broken.tess: --force — 에러 1개를 무시하고 그대로 실행합니다.
+broken.tess: 에러 1개가 난 문장을 빼고 실행합니다. --strict 를 붙이면 여기서 멈춥니다.
 ```
 
 에러가 난 문장은 **통째로 빠진 채**로 나오므로 그 부분은 아예 돌지 않습니다.
-`ok` 는 여전히 `false` 고, 문법 에러는 작품을 만들 수조차 없어서 `--force` 도 소용없습니다.
+`ok` 는 여전히 `false` 고, 문법 에러는 작품을 만들 수조차 없어서(`project` 가 `null`)
+느슨한 실행으로도 내보낼 것이 없습니다.
+
+`--strict` (`compileProject` 와 `decompileEnt` 의 `options.strict`) 는 이 느슨함을 끕니다.
+
+- 에러가 하나라도 있으면 `project` 가 `null` 이 되어 `build`·`run` 이 멈춥니다.
+- `notices` 가 비고, 그 내용이 `warnings` 로 올라갑니다.
+
+`check` 는 검사가 목적이므로 `--strict` 와 상관없이 에러가 있으면 종료 코드 1 입니다.
 
 ## 에러 문구
 

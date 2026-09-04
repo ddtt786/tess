@@ -46,7 +46,7 @@ interface CliOptions {
   warnings?: boolean;
   sizes?: boolean;
   keepSvg?: boolean;
-  force?: boolean;
+  strict?: boolean;
   /** Shared between rebuilds so a watch only re-parses what changed. */
   cache?: CompileCache;
 }
@@ -81,9 +81,9 @@ const USAGE = `사용법
   --no-reload        run 명령 시 소스가 변경되어도 자동 새로고침을 하지 않습니다.
   --boost            run 명령 시 부스트 모드(WebGL 렌더러)를 활성화합니다.
                      (참고: build 명령에는 적용되지 않습니다.)
-  --force            컴파일 에러가 발생해도 중단하지 않고 build/run을 진행합니다.
-                     에러가 발생한 문장은 제외하고 결과물이 생성됩니다.
-                     단, 문법 오류가 발생한 경우에는 작동하지 않습니다.
+  --strict           느슨한 실행을 끕니다. 컴파일 에러가 하나라도 있으면 build/run을
+                     중단하고, '주의'로 알리던 것을 '경고'로 올려서 보여줍니다.
+                     (기본값은 느슨한 실행입니다 — 에러가 난 문장만 빼고 진행합니다.)
   --warnings         decompile 명령 시 변환하지 못한 부분을 콘솔에 출력하여 알려줍니다.
                      (기본적으로는 소스 내에 '# [decompile]' 주석으로만 남깁니다.)
   --sizes            decompile 명령 시 모든 모양(costume)에 'size 가로 세로' 속성을 명시합니다.
@@ -105,7 +105,7 @@ function parseArgs(argv: string[]) {
     else if (arg === "--warnings") options.warnings = true;
     else if (arg === "--sizes") options.sizes = true;
     else if (arg === "--keep-svg") options.keepSvg = true;
-    else if (arg === "--force") options.force = true;
+    else if (arg === "--strict") options.strict = true;
     else rest.push(arg!);
   }
   return { options, rest };
@@ -122,11 +122,13 @@ function runCheck(file: string, options: CliOptions = { assets: [] }): number {
     path: file,
     assetDirs,
     name: options.name,
+    strict: options.strict,
     cache: options.cache,
     onPhase: out.step,
   });
   out.report(label, result.errors, "에러");
   out.report(label, result.warnings, "경고");
+  out.report(label, result.notices, "주의");
 
   if (!result.ok) {
     out.outro(out.red(`${label}: 에러 ${result.errors.length}개`));
@@ -165,15 +167,16 @@ async function runBuild(file: string, options: CliOptions): Promise<number> {
     path: file,
     assetDirs,
     name: options.name,
-    force: options.force,
+    strict: options.strict,
     cache: options.cache,
     onPhase: out.step,
   });
   out.report(label, result.warnings, "경고");
+  out.report(label, result.notices, "주의");
   if (!result.ok) {
     out.report(label, result.errors, "에러");
-    // 문법 에러면 작품 자체가 없으므로(project 가 null) --force 로도 내보낼 게 없다
-    if (!options.force || !result.project) {
+    // 문법 에러면 작품 자체가 없으므로(project 가 null) 느슨한 실행으로도 내보낼 게 없다
+    if (options.strict || !result.project) {
       out.outro(
         out.red(
           `${label}: 에러 ${result.errors.length}개로 인해 내보낼 수 없습니다.`,
@@ -182,7 +185,8 @@ async function runBuild(file: string, options: CliOptions): Promise<number> {
       return 1;
     }
     out.log.warn(
-      `--force — 에러 ${result.errors.length}개를 무시하고 그대로 내보냅니다.`,
+      `에러 ${result.errors.length}개가 난 문장을 빼고 내보냅니다. `
+        + `--strict 를 붙이면 여기서 멈춥니다.`,
     );
   }
 
@@ -241,14 +245,15 @@ async function runProject(
     path: file,
     assetDirs,
     name: options.name,
-    force: options.force,
+    strict: options.strict,
     cache: options.cache,
     onPhase: out.step,
   });
   out.report(label, result.warnings, "경고");
+  out.report(label, result.notices, "주의");
   if (!result.ok) {
     out.report(label, result.errors, "에러");
-    if (!options.force || !result.project) {
+    if (options.strict || !result.project) {
       out.outro(
         out.red(
           `${label}: 에러 ${result.errors.length}개로 인해 실행할 수 없습니다.`,
@@ -257,7 +262,8 @@ async function runProject(
       return 1;
     }
     out.log.warn(
-      `--force — 에러 ${result.errors.length}개를 무시하고 그대로 실행합니다.`,
+      `에러 ${result.errors.length}개가 난 문장을 빼고 실행합니다. `
+        + `--strict 를 붙이면 여기서 멈춥니다.`,
     );
   }
 
@@ -332,18 +338,19 @@ function watchAndReload(
         path: file,
         assetDirs,
         name: options.name,
-        force: options.force,
+        strict: options.strict,
         cache,
       });
       out.report(label, result.warnings, "경고");
+      out.report(label, result.notices, "주의");
       if (!result.ok) {
         out.report(label, result.errors, "에러");
-        if (!options.force || !result.project) {
+        if (options.strict || !result.project) {
           out.log.warn("다시 불러오기 실패 — 이전 버전을 계속 보여줍니다.");
           return;
         }
         out.log.warn(
-          `--force — 에러 ${result.errors.length}개를 무시하고 그대로 반영합니다.`,
+          `에러 ${result.errors.length}개가 난 문장을 빼고 반영합니다.`,
         );
       }
       // The guard above returned for every case that leaves `project` unset.
@@ -417,6 +424,32 @@ function countBlocks(node: any): number {
   );
 }
 
+/**
+ * 되돌리면서 남긴 경고와 주의를 보여 준다. 소스에는 '# [decompile]' 주석으로도
+ * 남아 있어서, 목록 전체는 --warnings 를 붙였을 때만 펼친다.
+ */
+function showDecompileNotes(
+  warnings: string[],
+  notices: string[],
+  options: CliOptions,
+) {
+  if (warnings.length + notices.length === 0) return;
+  if (!options.warnings) {
+    out.log.info(out.dim("--warnings 를 붙이면 모든 경고와 주의를 볼 수 있습니다."));
+    return;
+  }
+  const listOf = (items: string[], paint: (text: unknown) => string) => {
+    const shown = items.slice(0, 20);
+    const more = items.length - shown.length;
+    return [...shown.map(paint), ...(more > 0 ? [out.dim(`… 외 ${more}개`)] : [])]
+      .join("\n");
+  };
+  if (warnings.length > 0) out.log.warn(listOf(warnings, String));
+  if (notices.length > 0) {
+    out.log.message(listOf(notices, out.grey), { symbol: out.dim("·") });
+  }
+}
+
 /** 이미 있는 .ent(엔트리 작품)를 Tess 소스로 되돌린다 */
 async function runDecompile(
   file: string,
@@ -433,6 +466,7 @@ async function runDecompile(
     result = await decompileEnt(bytes, {
       sizes: options.sizes,
       keepSvg: options.keepSvg,
+      strict: options.strict,
     });
   } catch (error) {
     reading.fail(`되돌리기 실패 — ${(error as Error).message}`);
@@ -462,27 +496,21 @@ async function runDecompile(
     ["모양 · 소리", `${result.assets.length - fragmentCount}개`],
   ];
   if (result.warnings.length > 0) {
-    rows.push(["주의", out.yellow(`${result.warnings.length}개`)]);
+    rows.push(["경고", out.yellow(`${result.warnings.length}개`)]);
+  }
+  if (result.notices.length > 0) {
+    rows.push(["주의", out.grey(`${result.notices.length}개`)]);
   }
   out.note(out.details(rows), "요약");
 
-  if (result.warnings.length > 0) {
-    if (options.warnings) {
-      const shown = result.warnings.slice(0, 20);
-      const more = result.warnings.length - shown.length;
-      out.log.warn(
-        [...shown, ...(more > 0 ? [out.dim(`… 외 ${more}개`)] : [])].join("\n"),
-      );
-    } else {
-      out.log.info(out.dim("--warnings 를 붙이면 모든 주의를 볼 수 있습니다."));
-    }
-  }
+  showDecompileNotes(result.warnings, result.notices, options);
 
   // 되돌린 소스가 실제로 다시 컴파일되는지 확인해 준다 (참고용)
   try {
     const recheck = compileProject(result.source, {
       path: mainFile,
       assetDirs: [outDir],
+      strict: options.strict,
     });
     if (recheck.ok)
       out.log.success("되돌린 소스가 다시 정상적으로 컴파일됩니다.");

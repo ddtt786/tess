@@ -605,12 +605,15 @@ function resolveSoundValue(node: Expr, ctx: Context): string | null {
   if (!ctx.object) {
     const found = ctx.lookupObjectResource('sounds', node.value);
     if (found?.kind === 'found') return found.asset.id;
-    if (!found) ctx.warn(node, `'${node.value}' 소리가 어느 오브젝트에도 없습니다. 실행할 때 이름으로 찾습니다.`);
+    if (!found) ctx.notice(node, `'${node.value}' 소리가 어느 오브젝트에도 없습니다. 실행할 때 이름으로 찾습니다.`);
     return node.value;
   }
-  return ctx.error(node, `'${node.value}' 소리가 이 오브젝트에 없습니다.`
+  // Entry reads this field as id, then name, then index, so an unknown name is
+  // settled when the block runs — same as the sound slot of a play statement.
+  ctx.notice(node, `'${node.value}' 소리가 이 오브젝트에 없습니다. 실행할 때 이름으로 찾습니다.`
     + orHint(node.value, ctx.object?.sounds.keys() ?? [],
       `sound ${node.value} "파일명" 으로 먼저 등록하세요.`));
+  return node.value;
 }
 
 /** 식별자가 리스트를 가리키고 있을 경우 해당 리스트의 엔트리 변수 항목을 반환합니다. */

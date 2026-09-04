@@ -145,39 +145,52 @@ export { log, note, outro };
  * @param item - 출력할 진단 항목
  * @returns 포맷팅된 문자열
  */
-function diagnostic(label: string, item: CompileDiagnostic): string {
+function diagnostic(label: string, item: CompileDiagnostic, muted = false): string {
   const where = item.file && item.file !== label ? path.basename(item.file) : label;
-  const head = `${cyan(`${where}:${item.line}:${item.column}`)}  ${item.message}`;
+  const paint = muted ? grey : cyan;
+  const head = `${paint(`${where}:${item.line}:${item.column}`)}  ${muted ? dim(item.message) : item.message}`;
   return item.detail ? `${head}\n${dim(item.detail)}` : head;
 }
 
 const MAX_SHOWN = 8;
 
+/** 진단 등급별 색과 출력 방식. 주의는 흐리게 깔려서 경고와 한눈에 갈린다. */
+const REPORT_STYLES = {
+  '에러': { paint: red, muted: false, write: (text: string) => log.error(text) },
+  '경고': { paint: yellow, muted: false, write: (text: string) => log.warn(text) },
+  '주의': {
+    paint: grey,
+    muted: true,
+    write: (text: string) => log.message(text, { symbol: dim('·') }),
+  },
+} as const;
+
+export type ReportKind = keyof typeof REPORT_STYLES;
+
 /**
- * 에러나 경고 목록을 그룹지어 출력합니다.
+ * 에러 · 경고 · 주의 목록을 그룹지어 출력합니다.
  * 최대 출력 수치를 넘어서면 요약된 건수로 표기합니다.
  *
  * @param label - 대상 파일 이름 또는 식별자
  * @param diagnostics - 진단 메시지 배열
- * @param kind - '에러' 또는 '경고'
+ * @param kind - '에러', '경고' 또는 '주의'
  * 
  * @example
  * report("main.tess", errors, "에러");
  */
-export function report(label: string, diagnostics: CompileDiagnostic[], kind: '에러' | '경고') {
+export function report(label: string, diagnostics: CompileDiagnostic[], kind: ReportKind) {
   if (diagnostics.length === 0) return;
 
-  const isError = kind === '에러';
-  const paint = isError ? red : yellow;
+  const style = REPORT_STYLES[kind];
   const shown = diagnostics.slice(0, MAX_SHOWN);
   const lines = [
-    paint(`${kind} ${diagnostics.length}개`),
-    ...shown.map((item) => diagnostic(label, item)),
+    style.paint(`${kind} ${diagnostics.length}개`),
+    ...shown.map((item) => diagnostic(label, item, style.muted)),
   ];
   if (diagnostics.length > shown.length) {
     lines.push(dim(`… 외 ${diagnostics.length - shown.length}개`));
   }
-  (isError ? log.error : log.warn)(lines.join('\n'));
+  style.write(lines.join('\n'));
 }
 
 /**

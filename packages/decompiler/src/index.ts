@@ -122,9 +122,12 @@ export function decompileProject(
     }
   }
 
+  // Notices are warnings under `strict`, matching compileProject.
+  const strict = options.strict === true;
   return {
     source: `${lines.join('\n').trimEnd()}\n`,
-    warnings: [...ctx.warnings],
+    warnings: strict ? [...ctx.warnings, ...ctx.notices] : [...ctx.warnings],
+    notices: strict ? [] : [...ctx.notices],
     assets: ctx.collectedAssets,
     name: project.name ?? 'project',
   };
@@ -305,6 +308,7 @@ function buildContext(
 
   const ctx: DecompileContext = {
     warnings: new Set(),
+    notices: new Set(),
     // Write `size W H` on every costume, not just the ones the compiler cannot measure.
     allSizes: options.sizes === true,
     // Keep SVG costumes as SVG instead of taking the PNG entry captured on save.
@@ -355,11 +359,17 @@ function buildContext(
     },
     pictureName(id: string) {
       const info = ctx.picturesById.get(id);
-      return info ? info.identifier : String(id);
+      if (info) return info.identifier;
+      // Entry matches the slot by id, then name, then position, so the value is
+      // left as it stands and settled when the block runs.
+      ctx.notices.add(`모양 id '${id}' 가 작품에 없어 그대로 남겼습니다. 실행할 때 이름으로 찾습니다.`);
+      return String(id);
     },
     soundName(id: string) {
       const info = ctx.soundsById.get(id);
-      return info ? info.identifier : String(id);
+      if (info) return info.identifier;
+      ctx.notices.add(`소리 id '${id}' 가 작품에 없어 그대로 남겼습니다. 실행할 때 이름으로 찾습니다.`);
+      return String(id);
     },
     messageName(id: string) {
       return ctx.messagesById.get(id) ?? String(id);

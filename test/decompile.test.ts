@@ -1823,3 +1823,59 @@ test('소리 길이는 원본 값을 늘 적는다', () => {
   assert.match(source, /^sound 짖는_소리 ".*\.mp3" for 1\.3 as "짖는 소리"$/m);
   assert.equal(recompiled.objects[0].sprite.sounds[0].duration, 1.3);
 });
+
+/**
+ * 작품에 없는 모양·소리 id 를 가리키는 블록의 되돌리기 결과를 검사합니다.
+ *
+ * 엔트리는 그 칸을 id -> 이름 -> 순번 순으로 맞춰 찾으므로 값을 그대로 남기고,
+ * 경고가 아닌 주의로 알립니다.
+ */
+function danglingResourceProject(): RawEntity {
+  return {
+    name: '없는 자원 테스트',
+    speed: 60,
+    scenes: [{ id: 'scene1', name: '장면 1' }],
+    variables: [],
+    messages: [],
+    functions: [],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: 'obj1',
+      name: '주인공',
+      objectType: 'sprite',
+      scene: 'scene1',
+      rotateMethod: 'free',
+      selectedPictureId: 'pic1',
+      entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true },
+      sprite: {
+        pictures: [{ id: 'pic1', name: '기본', fileurl: null, dimension: { width: 10, height: 10 } }],
+        sounds: [],
+      },
+      script: JSON.stringify([[
+        { type: 'when_run_button_click', params: [null], statements: [] },
+        {
+          type: 'change_to_some_shape',
+          params: [{ type: 'get_pictures', params: ['지워진모양'] }, null],
+          statements: [],
+        },
+      ]]),
+    }],
+  } as RawEntity;
+}
+
+test('작품에 없는 모양 id 는 그대로 남기고 주의로 알린다', () => {
+  const result = decompileProject(danglingResourceProject(), []);
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
+
+  assert.match(fragment, /^ {2}costume = "지워진모양"$/m);
+  assert.deepEqual(result.warnings, []);
+  assert.match(result.notices[0]!, /모양 id '지워진모양' 가 작품에 없어 그대로 남겼습니다/);
+});
+
+test('되돌리기의 strict 는 주의를 경고로 올린다', () => {
+  const loose = decompileProject(danglingResourceProject(), []);
+  const strict = decompileProject(danglingResourceProject(), [], { strict: true });
+
+  assert.deepEqual(strict.notices, []);
+  assert.deepEqual(strict.warnings, loose.notices);
+});

@@ -771,7 +771,7 @@ function compilePlaySound(node: PlaySoundNode, ctx: Context): EntryBlock[] {
  * whichever object runs the block — by id, then name, then position — so no
  * one object's id is the right answer, and a name that matches nothing here
  * may still be the id of a resource the work no longer carries. Neither can be
- * settled before the block runs, so both only warn.
+ * settled before the block runs, so both are notices.
  */
 function byNameAtRuntime(
   node: Expr & { value: string },
@@ -784,7 +784,7 @@ function byNameAtRuntime(
   const shelf = isPicture ? ctx.object?.pictures : ctx.object?.sounds;
   const label = isPicture ? '모양을' : '소리를';
   const declare = isPicture ? 'costume' : 'sound';
-  ctx.warn(
+  ctx.notice(
     node,
     `'${node.value}' ${label} ${ctx.object ? '이 오브젝트에서' : '어느 오브젝트에서도'} 찾지 못했습니다. `
     + `실행할 때 이름으로 찾습니다.${orHint(node.value, shelf?.keys() ?? [], `${declare} ${node.value} "파일명" 으로 먼저 등록하세요.`)}`,

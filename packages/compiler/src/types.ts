@@ -204,7 +204,7 @@ export interface EntryProject {
 // ============================================================================
 
 /** 
- * 컴파일 중 발견된 소스 코드 내의 문제(오류 또는 경고) 정보입니다.
+ * 컴파일 중 발견된 소스 코드 내의 문제(에러 · 경고 · 주의) 정보입니다.
  * @example
  * const diag: CompileDiagnostic = { line: 10, column: 5, offset: 150, message: "구문 오류" };
  */
@@ -315,7 +315,11 @@ export interface CompileOptions {
   assetDirs?: string[];
   name?: string;
   readFile?: (file: string) => string;
-  force?: boolean;
+  /**
+   * Stops the build on errors and reports notices as warnings. Off by default:
+   * a build keeps whatever compiled and states what it dropped.
+   */
+  strict?: boolean;
   cache?: CompileCache;
   seed?: string;
   sources?: Map<string, string> | null;
@@ -331,15 +335,17 @@ export interface CompileCache {
 }
 
 /** 
- * 단일 컴파일 실행 후 생성된 결과물 및 오류, 경고 내역입니다.
+ * 단일 컴파일 실행 후 생성된 결과물 및 에러, 경고, 주의 내역입니다.
  * @example
- * const result: CompileResult = { ok: true, project: myProject, errors: [], warnings: [], assets: [], timings: [] };
+ * const result: CompileResult = { ok: true, project: myProject, errors: [], warnings: [], notices: [], assets: [], timings: [] };
  */
 export interface CompileResult {
   ok: boolean;
   project: EntryProject | null;
   errors: CompileDiagnostic[];
   warnings: CompileDiagnostic[];
+  /** Things entry settles at run time, so they stop no build. Empty under `strict`. */
+  notices: CompileDiagnostic[];
   assets: AssetFile[];
   sourceMap?: SourceMap;
   timings: PhaseTiming[];
