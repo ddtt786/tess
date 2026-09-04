@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": [],
+    "moduleResolution": "bundler",
+    "module": "esnext"
+  },
+  "include": [
+    "src/web/**/*.ts",
+    "src/render/**/*.ts",
+    "src/audio/**/*.ts",
+    "src/collision/**/*.ts",
+    "src/runtime/**/*.ts",
+    "src/compile/**/*.ts"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@tess/vm",
+  "version": "0.1.0",
+  "description": "Tess 작품을 PixiJS 위에서 엔트리와 같게, 훨씬 빠르게 실행하는 런타임",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "bin": {
+    "tessvm": "./src/node/cli.ts"
+  },
+  "files": [
+    "index.ts",
+    "src"
+  ],
+  "dependencies": {
+    "@tess/compiler": "workspace:*",
+    "@tess/core": "workspace:*",
+    "@tess/decompiler": "workspace:*",
+    "@tess/parser": "workspace:*",
+    "@tess/player": "workspace:*",
+    "es-toolkit": "^1.40.0",
+    "pixi.js": "^8.20.1"
+  }
+}

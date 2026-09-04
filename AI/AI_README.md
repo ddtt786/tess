@@ -28,6 +28,8 @@ all_blocks.tess -> build/blocks.ent
 
 pnpm 워크스페이스 모노레포입니다. 패키지는 아래로만 의존합니다 —
 `cli → decompiler → player → compiler → parser → core`. 순환은 없습니다.
+`tessvm` 은 그 위에 얹히는 별개의 실행기로, `decompiler` 와 `compiler` 를 쓰지만
+아무도 `tessvm` 을 쓰지 않습니다.
 
 | 패키지              | 이름               | 외부 의존성                  | 역할                                                    |
 | ------------------- | ------------------ | ---------------------------- | ------------------------------------------------------- |
@@ -36,6 +38,7 @@ pnpm 워크스페이스 모노레포입니다. 패키지는 아래로만 의존�
 | `packages/compiler` | `@tess/compiler`   | sharp, tar                   | AST → 엔트리 작품(project.json · `.ent`)                |
 | `packages/player`   | `@tess/player`     | preact                       | `run` 이 띄우는 미리보기 서버와 실행 페이지             |
 | `packages/decompiler` | `@tess/decompiler` | tar                        | `.ent` → Tess 소스                                      |
+| `packages/tessvm`   | `@tess/vm`         | pixi.js, es-toolkit          | Tess 작품을 PixiJS 로 직접 돌리는 실행기 (`bin: tessvm`) — [AI_TESSVM.md](./AI_TESSVM.md) |
 | `packages/cli`      | `tess`             | @clack/prompts               | 라이브러리 재export + CLI (`bin: tess`)                 |
 | `editors/vscode`    | `tess-lang`        | —                            | VS Code 문법 강조 (설치법은 그 폴더의 README)           |
 

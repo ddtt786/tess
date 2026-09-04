@@ -7,9 +7,10 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/player/tsconfig.browser.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/player/tsconfig.browser.json && tsc --noEmit -p packages/tessvm/tsconfig.browser.json",
     "tess": "node packages/cli/index.ts",
-    "build:grammar": "node editors/vscode/build-grammar.ts"
+    "build:grammar": "node editors/vscode/build-grammar.ts",
+    "tessvm": "node packages/tessvm/src/node/cli.ts"
   },
   "devEngines": {
     "packageManager": {
@@ -25,6 +26,7 @@
     "@tess/decompiler": "workspace:*",
     "@tess/parser": "workspace:*",
     "@tess/player": "workspace:*",
+    "@tess/vm": "workspace:*",
     "@types/babel__code-frame": "^7.27.0",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^26.4.0",
