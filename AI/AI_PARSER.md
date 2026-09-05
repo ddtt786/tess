@@ -87,7 +87,7 @@ Ohm은 PEG(순서 있는 선택 + 백트래킹)이고 chevrotain은 LL(k)다. �
 `leads(kw)`가 이 두 경우를 가른다:
 
 - 다음 토큰이 대입 연산자나 `[` 이면 → 대입문으로 넘긴다.
-- 단, `STANDALONE_LEADERS`(인자 없이도 완성되는 문장: `stop break skip restart
+- 단, `STANDALONE_LEADERS`(인자 없이도 완성되는 문장: `stop break continue skip restart
   bounce stamp show hide clone kill`)는 넘기지 않는다. 문법이 이미 그 키워드에
   확정되기 때문이다.
 

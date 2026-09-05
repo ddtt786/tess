@@ -42,7 +42,7 @@ function unicodePattern(source: string) {
 export const KEYWORDS = [
   'add', 'all', 'and', 'append', 'as', 'ask', 'at', 'back', 'bgm', 'bounce', 'break',
   'bubble', 'call', 'center', 'clear', 'click', 'clone', 'cloned', 'clones',
-  'chart', 'column', 'columns', 'costume', 'default', 'del', 'description', 'do', 'draw', 'effects', 'else',
+  'chart', 'column', 'columns', 'continue', 'costume', 'default', 'del', 'description', 'do', 'draw', 'effects', 'else',
   'end', 'false', 'fill', 'flip', 'for', 'force', 'forever', 'forward', 'fps',
   'free', 'from', 'front', 'first', 'function', 'go', 'hide', 'id', 'if', 'in',
   'insert', 'jump', 'key', 'kill', 'last', 'list', 'lock', 'look', 'me', 'move',
@@ -70,7 +70,7 @@ export const RESERVED = new Set([
  * @example STANDALONE_STATEMENTS.has('break'); // true
  */
 export const STANDALONE_STATEMENTS = new Set([
-  'break', 'skip', 'restart', 'stop', 'bounce', 'stamp', 'show', 'hide',
+  'break', 'continue', 'skip', 'restart', 'stop', 'bounce', 'stamp', 'show', 'hide',
   'clone', 'kill',
 ]);
 

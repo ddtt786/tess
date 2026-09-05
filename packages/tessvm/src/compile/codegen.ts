@@ -88,6 +88,12 @@ function isBlock(value: unknown): value is RawBlock {
   return Boolean(value) && typeof value === 'object' && typeof (value as RawBlock).type === 'string';
 }
 
+/** `not(continue_repeat)` — the boolean slot `skip` compiles to. */
+function isSkipPattern(param: unknown): boolean {
+  if (!isBlock(param) || param.type !== 'boolean_not') return false;
+  return isBlock(param.params?.[1]) && (param.params[1] as RawBlock).type === 'continue_repeat';
+}
+
 export class Codegen {
   private readonly input: CompileInput;
   private readonly varIndex = new Map<string, number>();
@@ -333,6 +339,11 @@ export class Codegen {
           line('}')
         );
       case 'wait_until_true':
+        // `not(continue_repeat)` in the slot unwinds to the loop and keeps
+        // running, so this form restarts the iteration without a frame.
+        if (isSkipPattern(p[0])) {
+          return this.loopDepth > 0 ? line('continue;') : line('yield 0;');
+        }
         return line(`while (!(${this.bool(p[0])})) { yield 0; }`);
       case 'stop_repeat':
         return this.loopDepth > 0 ? line('break;') : line(this.endExecutor());

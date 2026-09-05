@@ -164,24 +164,28 @@ end`);
   assert.match(errors[0], /function 블록 안에서만/);
 });
 
-test('break / skip 은 반복문 밖에서 쓸 수 없다', () => {
+test('break / continue / skip 은 반복문 밖에서 쓸 수 없다', () => {
   const errors = messages(`object "o":
   when start do
     break
+    continue
     skip
   end
 end`);
-  assert.equal(errors.length, 2);
+  assert.equal(errors.length, 3);
   assert.match(errors[0], /반복문/);
+  assert.match(errors[1], /continue 은\(는\) 반복문/);
+  assert.match(errors[2], /skip 은\(는\) 반복문/);
 });
 
-test('반복문 안의 break / skip 은 괜찮다', () => {
+test('반복문 안의 break / continue / skip 은 괜찮다', () => {
   const result = parse(`object "o":
   when start do
     forever:
       if mouse_down:
         break
       end
+      continue
       skip
     end
   end
@@ -220,7 +224,7 @@ test('상태 값 · 내장 함수 · 오브젝트 속성은 경고하지 않는�
     say nickname
     say block_count
     say answer
-    if mouse_down and clicked and boost_mode and touchable: skip end
+    if mouse_down and clicked and boost_mode and touchable: continue end
     x += 1
     effect_alpha = 20
     size = 100

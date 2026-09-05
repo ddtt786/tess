@@ -128,6 +128,28 @@ test('무한 반복은 프레임마다 한 바퀴씩 돈다', () => {
   }
 });
 
+test('continue 는 한 바퀴를 접고 다음 프레임으로 넘긴다', () => {
+  const vm = runVm(wrap('repeat 3:\n  n += 1\n  continue\n  m += 1\nend\ndone = 1', 'var n = 0\nvar m = 0\nvar done = 0'));
+  vm.tick();
+  assert.equal(valueOf(vm, 'n'), 1);
+  assert.equal(valueOf(vm, 'm'), 0);
+  vm.tick();
+  vm.tick();
+  assert.equal(valueOf(vm, 'n'), 3);
+  assert.equal(valueOf(vm, 'done'), 0);
+  vm.tick();
+  assert.equal(valueOf(vm, 'done'), 1);
+});
+
+test('skip 은 프레임을 넘기지 않고 바로 다음 바퀴로 간다', () => {
+  const vm = runVm(wrap('repeat 3:\n  n += 1\n  skip\n  m += 1\nend\ndone = 1', 'var n = 0\nvar m = 0\nvar done = 0'));
+  // 세 바퀴와 그 뒤 문장까지 한 프레임에 끝난다.
+  vm.tick();
+  assert.equal(valueOf(vm, 'n'), 3);
+  assert.equal(valueOf(vm, 'm'), 0);
+  assert.equal(valueOf(vm, 'done'), 1);
+});
+
 test('기다리기는 시간이 찰 때까지 붙잡는다', () => {
   const vm = runVm(wrap('wait 0.1\na = 1', 'var a = 0'));
   for (let i = 0; i < 5; i += 1) {
@@ -416,6 +438,39 @@ test('돌고 있는 초시계를 초기화하면 0 부터 다시 센다', () => 
     vm.tick();
   }
   assert.ok(Math.abs(vm.timerValue() - 15 / vm.frameRate) < 1e-6);
+});
+
+// ---------------------------------------------------------------------------
+//  붓
+// ---------------------------------------------------------------------------
+test('붓의 투명도는 선과 채우기에 함께 걸린다', () => {
+  const vm = runVm(wrap([
+    'draw_alpha = 70',
+    'go -50 0',
+    'start draw',
+    'go 50 0',
+    'stop draw',
+    'start fill',
+    'go 50 30',
+    'go -50 30',
+    'stop fill',
+  ].join('\n')));
+  vm.tick();
+
+  const entity = vm.targets[0]!.entity;
+  assert.equal(entity.brush!.opacity, 70);
+  assert.equal(entity.paint!.opacity, 70);
+  assert.ok(entity.brush!.strokes.some((stroke) => stroke.opacity === 70 && !stroke.fill));
+  assert.ok(entity.paint!.strokes.some((stroke) => stroke.opacity === 70 && stroke.fill));
+});
+
+test('붓의 투명도 바꾸기도 선과 채우기를 함께 옮긴다', () => {
+  const vm = runVm(wrap('draw_alpha = 20\ndraw_alpha += 30'));
+  vm.tick();
+
+  const entity = vm.targets[0]!.entity;
+  assert.equal(entity.brush!.opacity, 50);
+  assert.equal(entity.paint!.opacity, 50);
 });
 
 test('글상자 크기는 글을 쓰는 그 순간 다시 재어진다', () => {

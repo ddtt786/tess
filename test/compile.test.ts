@@ -1179,3 +1179,27 @@ end`;
   assert.match(fn.content, /"점프"/);
   assert.ok(!/get_pictures/.test(fn.content));
 });
+
+
+test('continue 는 이번 반복 건너뛰기, skip 은 판단 자리에 넣은 그 블록이 된다', () => {
+  const source = `scene "s":
+  object "o":
+    when start do
+      forever:
+        continue
+        skip
+      end
+    end
+  end
+end`;
+  const { project, errors } = compileProject(source, { path: 'x.tess' });
+  assert.deepEqual(errors, []);
+
+  const script = JSON.parse(project!.objects[0]!.script);
+  const [first, second] = script[0][1].statements[0];
+  assert.equal(first.type, 'continue_repeat');
+  // 프레임을 넘기지 않는 건너뛰기 — 판단 자리의 '이번 반복 건너뛰기' 를 not 으로 감싼다.
+  assert.equal(second.type, 'wait_until_true');
+  assert.equal(second.params[0].type, 'boolean_not');
+  assert.equal(second.params[0].params[1].type, 'continue_repeat');
+});

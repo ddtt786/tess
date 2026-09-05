@@ -10,6 +10,7 @@ import * as cast from './cast.ts';
 import {
   COLLISION,
   stage,
+  type BrushState,
   type Entity,
   type Stroke,
   type Target,
@@ -99,7 +100,7 @@ function roundedDecimals(value: unknown, decimals: number): unknown {
   return Number(`${Math.round(Number(`${value}e${decimals}`))}e-${decimals}`);
 }
 
-function newBrush() {
+function newBrush(): BrushState {
   return {
     color: '#ff0000',
     thickness: 1,
@@ -109,6 +110,17 @@ function newBrush() {
     strokes: [] as Stroke[],
     fill: false,
   };
+}
+
+/** `Entry.setBasicBrush` / `setBasicPaint` — made idle so it draws nothing yet. */
+function ensureBrush(entity: Entity, which: 'brush' | 'paint'): BrushState {
+  let state = entity[which];
+  if (!state) {
+    state = newBrush();
+    state.stop = true;
+    entity[which] = state;
+  }
+  return state;
 }
 
 export function createOps(vm: Vm) {
@@ -917,12 +929,9 @@ export function createOps(vm: Vm) {
     },
 
     setPenColor(entity: Entity, colour: string): void {
-      if (!entity.brush) {
-        entity.brush = newBrush();
-        entity.brush.stop = true;
-      }
+      const brush = ensureBrush(entity, 'brush');
       startStroke(entity, 'brush');
-      entity.brush.color = colour.startsWith('#') ? colour : `#${colour}`;
+      brush.color = colour.startsWith('#') ? colour : `#${colour}`;
     },
 
     setRandomPenColor(entity: Entity): void {
@@ -937,48 +946,39 @@ export function createOps(vm: Vm) {
     },
 
     setFillColor(entity: Entity, colour: string): void {
-      if (!entity.paint) {
-        entity.paint = newBrush();
-        entity.paint.stop = true;
-      }
+      const paint = ensureBrush(entity, 'paint');
       startStroke(entity, 'paint');
-      entity.paint.color = colour.startsWith('#') ? colour : `#${colour}`;
+      paint.color = colour.startsWith('#') ? colour : `#${colour}`;
     },
 
     changeThickness(entity: Entity, value: number): void {
-      if (!entity.brush) {
-        entity.brush = newBrush();
-        entity.brush.stop = true;
-      }
+      const brush = ensureBrush(entity, 'brush');
       startStroke(entity, 'brush');
-      entity.brush.thickness = Math.max(1, entity.brush.thickness + value);
+      brush.thickness = Math.max(1, brush.thickness + value);
     },
 
     setThickness(entity: Entity, value: number): void {
-      if (!entity.brush) {
-        entity.brush = newBrush();
-        entity.brush.stop = true;
-      }
+      const brush = ensureBrush(entity, 'brush');
       startStroke(entity, 'brush');
-      entity.brush.thickness = Math.max(1, value);
+      brush.thickness = Math.max(1, value);
     },
 
+    // Both transparency blocks move the pen and the fill together, unlike the
+    // colour and thickness blocks which each touch only their own state.
     changePenOpacity(entity: Entity, value: number): void {
-      if (!entity.brush) {
-        entity.brush = newBrush();
-        entity.brush.stop = true;
+      for (const which of ['brush', 'paint'] as const) {
+        const state = ensureBrush(entity, which);
+        startStroke(entity, which);
+        state.opacity = cast.clamp(state.opacity + value, 0, 100);
       }
-      startStroke(entity, 'brush');
-      entity.brush.opacity = cast.clamp(entity.brush.opacity + value, 0, 100);
     },
 
     setPenOpacity(entity: Entity, value: number): void {
-      if (!entity.brush) {
-        entity.brush = newBrush();
-        entity.brush.stop = true;
+      for (const which of ['brush', 'paint'] as const) {
+        const state = ensureBrush(entity, which);
+        startStroke(entity, which);
+        state.opacity = cast.clamp(value, 0, 100);
       }
-      startStroke(entity, 'brush');
-      entity.brush.opacity = cast.clamp(value, 0, 100);
     },
 
     eraseAll(entity: Entity): void {

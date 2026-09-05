@@ -34,7 +34,7 @@ const ASSIGN_OPERATOR_IDS = new Set(ASSIGN_OPERATORS.map(idx));
 /** Keywords that begin a statement form. */
 const STATEMENT_LEADERS = idxSet(
   kw.if, kw.repeat, kw.while, kw.until, kw.forever, kw.wait, kw.return,
-  kw.break, kw.skip, kw.restart, kw.stop, kw.start, kw.reset, kw.clear,
+  kw.break, kw.continue, kw.skip, kw.restart, kw.stop, kw.start, kw.reset, kw.clear,
   kw.send, kw.call, kw.clone, kw.del, kw.kill, kw.jump, kw.forward, kw.bounce,
   kw.move, kw.go, kw.turn, kw.steer, kw.look, kw.show, kw.hide, kw.next,
   kw.prev, kw.say, kw.think, kw.flip, kw.order, kw.write, kw.append,
@@ -569,7 +569,7 @@ export class TessParser extends CstParser {
           { GATE: () => $.leads(kw.forever), ALT: () => $.SUBRULE($.foreverStatement) },
           { GATE: () => $.leads(kw.wait), ALT: () => $.SUBRULE($.waitStatement) },
           { GATE: () => $.leads(kw.return), ALT: () => $.SUBRULE($.returnStatement) },
-          { GATE: () => $.leadsAny(kw.break, kw.skip, kw.restart), ALT: () => $.SUBRULE($.flowStatement) },
+          { GATE: () => $.leadsAny(kw.break, kw.continue, kw.skip, kw.restart), ALT: () => $.SUBRULE($.flowStatement) },
           { GATE: () => $.leads(kw.stop), ALT: () => $.SUBRULE($.stopStatement) },
           { GATE: () => $.leads(kw.start), ALT: () => $.SUBRULE($.startStatement) },
           { GATE: () => $.leads(kw.reset), ALT: () => $.SUBRULE($.resetStatement) },
@@ -644,6 +644,7 @@ export class TessParser extends CstParser {
     $.RULE('flowStatement', () => {
       $.OR([
         { ALT: () => $.CONSUME(kw.break, { LABEL: 'kind' }) },
+        { ALT: () => $.CONSUME(kw.continue, { LABEL: 'kind' }) },
         { ALT: () => $.CONSUME(kw.skip, { LABEL: 'kind' }) },
         { ALT: () => $.CONSUME(kw.restart, { LABEL: 'kind' }) },
       ]);

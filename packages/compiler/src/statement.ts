@@ -229,8 +229,17 @@ function compile(node: Stmt, ctx: Context): EntryBlock[] | null {
 
     case "Break":
       return one(ctx.block("stop_repeat", [null]));
-    case "Skip":
+    case "Continue":
       return one(ctx.block("continue_repeat", [null]));
+    // `skip` reads `continue_repeat` from a boolean slot, which restarts the
+    // loop without giving up the frame that a plain `continue_repeat` costs.
+    case "Skip":
+      return one(
+        ctx.block("wait_until_true", [
+          ctx.block("boolean_not", [null, ctx.block("continue_repeat", [null]), null]),
+          null,
+        ]),
+      );
     case "Restart":
       return one(ctx.block("restart_project", [null]));
     case "Stop":

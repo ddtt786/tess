@@ -820,7 +820,7 @@ function eventLines(thread: RawBlock[] | undefined, ctx: DecompileContext, inden
   // 저장된다. 그런 건 실제로 실행된 적이 없으니(엔트리도 안 돌린다) 억지로
   // when 으로 감싸 실행되게 만들지 않고, 내용만 주석으로 그대로 남겨서
   // "연결 안 된 상태"를 그대로 지킨다.
-  ctx.warnings.add(`연결되지 않은 블록 뭉치(맨 앞이 '${hat?.type}')를 원본처럼 실행되지 않게 주석으로 남겼습니다.`);
+  ctx.notices.add(`연결되지 않은 블록 뭉치(맨 앞이 '${hat?.type}')를 원본처럼 실행되지 않게 주석으로 남겼습니다.`);
   const raw = blocksToLines(thread, ctx); // 맨 앞도 그냥 평범한 블록으로 취급해서 통째로 옮긴다
   const commented = raw.map((line: string) => (line.trim() ? `${pad}# ${line}` : ''));
   return [

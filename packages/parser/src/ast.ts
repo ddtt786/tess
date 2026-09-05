@@ -304,6 +304,7 @@ export interface ReturnNode extends Base {
  */
 export type NullaryStatementType =
   | 'Break'
+  | 'Continue'
   | 'Skip'
   | 'Restart'
   | 'StopDraw'

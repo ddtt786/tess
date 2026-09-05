@@ -1887,3 +1887,125 @@ test('되돌리기의 strict 는 주의를 경고로 올린다', () => {
   assert.deepEqual(strict.notices, []);
   assert.deepEqual(strict.warnings, loose.notices);
 });
+
+
+/**
+ * 반복문 흐름 제어 두 가지를 담은 작품입니다. `continue_repeat` 은 그대로 다음
+ * 차례로 넘어가고, 판단 자리에 넣은 `not(continue_repeat)` 은 프레임을 넘기지
+ * 않고 다음 차례로 넘어갑니다.
+ */
+function loopFlowProject(): RawEntity {
+  return {
+    name: '흐름 제어',
+    speed: 60,
+    scenes: [{ id: 'scene1', name: '장면 1' }],
+    variables: [],
+    messages: [],
+    functions: [],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: 'obj1',
+      name: '주인공',
+      objectType: 'sprite',
+      scene: 'scene1',
+      rotateMethod: 'free',
+      selectedPictureId: null,
+      entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true },
+      sprite: { pictures: [], sounds: [] },
+      script: JSON.stringify([[
+        { type: 'when_run_button_click', params: [null], statements: [] },
+        {
+          type: 'repeat_inf',
+          params: [null, null],
+          statements: [[
+            { type: 'continue_repeat', params: [null], statements: [] },
+            {
+              type: 'wait_until_true',
+              params: [{
+                type: 'boolean_not',
+                params: [null, { type: 'continue_repeat', params: [null], statements: [] }, null],
+              }, null],
+              statements: [],
+            },
+          ]],
+        },
+      ]]),
+    }],
+  } as RawEntity;
+}
+
+test("'이번 반복 건너뛰기' 는 continue 로, 판단 자리에 넣은 트릭은 skip 으로 되돌린다", () => {
+  const result = decompileProject(loopFlowProject(), []);
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
+
+  assert.match(fragment, /^ {4}continue$/m);
+  assert.match(fragment, /^ {4}skip$/m);
+  assert.doesNotMatch(fragment, /decompile: continue_repeat/);
+  assert.deepEqual(result.warnings, []);
+});
+
+test('되돌린 continue · skip 은 원래 블록 모양 그대로 다시 컴파일된다', () => {
+  const result = decompileProject(loopFlowProject(), []);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-decompile-flow-'));
+  const mainFile = path.join(dir, 'main.tess');
+  fs.writeFileSync(mainFile, result.source);
+  for (const asset of result.assets) {
+    const target = path.join(dir, asset.path);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, asset.data);
+  }
+
+  const recompiled = compileProject(fs.readFileSync(mainFile, 'utf-8'), { path: mainFile, assetDirs: [dir] });
+  assert.deepEqual(recompiled.errors, []);
+  const types = JSON.stringify(JSON.parse(recompiled.project!.objects[0]!.script))
+    .match(/"type":"[a-z_]+"/g);
+  assert.deepEqual(types, [
+    '"type":"when_run_button_click"',
+    '"type":"repeat_inf"',
+    '"type":"continue_repeat"',
+    '"type":"wait_until_true"',
+    '"type":"boolean_not"',
+    '"type":"continue_repeat"',
+  ]);
+});
+
+/** 어느 이벤트에도 붙어 있지 않아 실행되지 않는 블록 뭉치를 가진 작품입니다. */
+function unattachedProject(): RawEntity {
+  return {
+    name: '떼어 놓은 블록',
+    speed: 60,
+    scenes: [{ id: 'scene1', name: '장면 1' }],
+    variables: [],
+    messages: [],
+    functions: [],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: 'obj1',
+      name: '주인공',
+      objectType: 'sprite',
+      scene: 'scene1',
+      rotateMethod: 'free',
+      selectedPictureId: null,
+      entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true },
+      sprite: { pictures: [], sounds: [] },
+      script: JSON.stringify([
+        [{ type: 'when_run_button_click', params: [null], statements: [] }],
+        [{
+          type: 'move_direction',
+          params: [{ type: 'number', params: ['10'] }, null],
+          statements: [],
+        }],
+      ]),
+    }],
+  } as RawEntity;
+}
+
+test('연결되지 않은 블록을 주석으로 남긴 것은 경고가 아니라 주의다', () => {
+  const result = decompileProject(unattachedProject(), []);
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
+
+  assert.match(fragment, /^# forward 10$/m);
+  assert.deepEqual(result.warnings, []);
+  assert.match(result.notices[0]!, /연결되지 않은 블록 뭉치/);
+});

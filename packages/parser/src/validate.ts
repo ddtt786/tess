@@ -6,7 +6,7 @@
  * 1. 글상자(text) 전용 명령이나 속성을 일반 오브젝트(object)에서 사용했는지 여부
  * 2. 함수 내에서 잘못된 오브젝트 지역 변수를 참조했는지 여부
  * 3. 함수 외부에서 `return`을 사용했는지 여부
- * 4. 반복문 외부에서 `break` 또는 `skip`을 사용했는지 여부
+ * 4. 반복문 외부에서 `break`, `continue`, `skip`을 사용했는지 여부
  * 5. `project` 블록이 중복으로 선언되었는지 여부
  */
 import { didYouMean } from '@tess/core';
@@ -216,9 +216,10 @@ export function validate(
         break;
 
       case 'Break':
+      case 'Continue':
       case 'Skip':
         if (ctx.loopDepth === 0) {
-          const word = statement.type === 'Break' ? 'break' : 'skip';
+          const word = { Break: 'break', Continue: 'continue', Skip: 'skip' }[statement.type];
           error(statement, `${word} 은(는) 반복문(repeat/while/until/forever) 안에서만 쓸 수 있습니다.`);
         }
         break;

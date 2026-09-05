@@ -501,7 +501,9 @@ export class TessAstVisitor extends BaseVisitor {
   }
 
   flowStatement(ctx: Ctx, node: CstNode): NullaryNode {
-    const kinds: Record<string, NullaryStatementType> = { break: 'Break', skip: 'Skip', restart: 'Restart' };
+    const kinds: Record<string, NullaryStatementType> = {
+      break: 'Break', continue: 'Continue', skip: 'Skip', restart: 'Restart',
+    };
     return { type: kinds[ctx.kind[0].image], loc: nodeLoc(node) };
   }
 

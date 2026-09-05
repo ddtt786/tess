@@ -104,6 +104,17 @@ function point(x: string, y: string): string {
   return `${looksLikeCall ? `(${x})` : x} ${y}`;
 }
 
+/**
+ * Recognises `wait_until_true(not(continue_repeat))` — the boolean slot that
+ * restarts a loop without spending a frame, which `skip` compiles to.
+ */
+function isSkipPattern(param: unknown): boolean {
+  const not = param as RawBlock | undefined;
+  if (not?.type !== "boolean_not") return false;
+  const inner = not.params?.[1] as RawBlock | undefined;
+  return inner?.type === "continue_repeat";
+}
+
 function statementLines(block: any, ctx: DecompileContext): string[] {
   if (!block || typeof block !== "object" || !block.type) return [];
   const p = block.params ?? [];
@@ -143,11 +154,11 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
     case "wait_second":
       return [`wait ${e(0)}`];
     case "wait_until_true":
-      return [`wait ${e(0)}`];
+      return isSkipPattern(at(0)) ? ["skip"] : [`wait ${e(0)}`];
     case "stop_repeat":
       return ["break"];
     case "continue_repeat":
-      return ["skip"];
+      return ["continue"];
     case "restart_project":
       return ["restart"];
     case "stop_object": {

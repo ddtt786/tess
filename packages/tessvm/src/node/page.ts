@@ -116,7 +116,6 @@ ${fonts}
 <header>
   <span class="title">${escapeHtml(options.name)}</span>
   <button id="run" class="primary">시작</button>
-  <button id="pause">일시정지</button>
   <button id="stop">정지</button>
   <label>화질
     <select id="quality">
@@ -239,9 +238,26 @@ try {
   window.tessPatchEnvironmentBlocks();
   window.tessLayoutCanvas();
   reportVmErrors(handle, sourceMap);
-  document.getElementById('run').onclick = () => handle.start();
-  document.getElementById('pause').onclick = () => handle.pause();
-  document.getElementById('stop').onclick = () => handle.stop();
+  // One button carries both halves: it starts a stopped project, holds a running
+  // one, and resumes a held one.
+  const runButton = document.getElementById('run');
+  const RUN_LABEL = { stop: '시작', run: '일시정지', pause: '이어서 하기' };
+  const showRunState = () => {
+    const state = handle.vm.state;
+    runButton.textContent = RUN_LABEL[state] || RUN_LABEL.stop;
+    runButton.classList.toggle('primary', state !== 'run');
+  };
+  runButton.onclick = () => {
+    if (handle.vm.state === 'run') handle.pause(); else handle.start();
+    showRunState();
+  };
+  document.getElementById('stop').onclick = () => {
+    handle.stop();
+    showRunState();
+  };
+  // The project can stop itself, so the label follows the vm rather than clicks.
+  setInterval(showRunState, 100);
+  showRunState();
 
   const quality = document.getElementById('quality');
   quality.value = String(config.quality);

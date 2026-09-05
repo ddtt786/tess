@@ -173,6 +173,9 @@ while true:
     break
   end
   if touching("coin"):
+    continue
+  end
+  if touching("gem"):
     skip
   end
   forward 2

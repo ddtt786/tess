@@ -161,9 +161,10 @@ test('실행 탭의 단추가 VM 을 시작·일시정지·정지시킨다', asy
 
   ui.click('run-btn');
   assert.equal(ui.vm.state, 'run');
-  ui.click('pause-btn');
+  /** 같은 단추가 실행 중에는 일시정지가 된다. */
+  ui.click('run-btn');
   assert.equal(ui.vm.state, 'pause');
-  /** 일시정지에서 시작하기는 처음부터가 아니라 이어서 실행한다. */
+  /** 일시정지에서 다시 누르면 처음부터가 아니라 이어서 실행한다. */
   ui.click('run-btn');
   assert.equal(ui.vm.state, 'run');
 

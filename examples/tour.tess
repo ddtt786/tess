@@ -213,7 +213,7 @@ scene "play_game":
         end
 
         if touching("coin"):
-          skip
+          continue
         end
 
         wait 0.02

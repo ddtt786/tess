@@ -227,9 +227,10 @@ test('정지한 뒤에도 시작하기로 다시 실행할 수 있다', async (t
 
   ui.click('run-btn');
   assert.equal(ui.engine.state, 'run');
-  ui.click('pause-btn');
+  /** 같은 단추가 실행 중에는 일시정지로 바뀝니다. */
+  ui.click('run-btn');
   assert.equal(ui.engine.state, 'pause');
-  /** 일시정지 상태에서 시작 버튼을 누르면 처음부터 다시 시작하지 않고 실행을 재개합니다. */
+  /** 일시정지 상태에서 누르면 처음부터 다시 시작하지 않고 실행을 재개합니다. */
   ui.click('run-btn');
   assert.equal(ui.engine.state, 'run');
 
@@ -248,17 +249,19 @@ test('실행 상태에 따라 버튼과 안내 글이 바뀐다', async (t) => {
   ui.click('stop-btn');
   await ui.settle();
   assert.match(stateText(), /멈춰/);
-  assert.equal(ui.byId('pause-btn')!.disabled, true); /** 정지 상태에서는 일시정지 버튼이 비활성화됩니다. */
+  assert.equal(ui.byId('stop-btn')!.disabled, true); /** 정지 상태에서는 정지 단추가 비활성화됩니다. */
+  assert.equal(ui.byId('run-btn')!.textContent, '시작하기');
   assert.equal(ui.byId('run-btn')!.disabled, false);
 
   ui.click('run-btn');
   await ui.settle();
   assert.match(stateText(), /실행 중/);
-  assert.equal(ui.byId('run-btn')!.disabled, true);
+  assert.equal(ui.byId('run-btn')!.textContent, '일시정지');
 
-  ui.click('pause-btn');
+  ui.click('run-btn');
   await ui.settle();
-  assert.equal(ui.byId('pause-btn')!.textContent, '이어서 하기');
+  assert.equal(ui.byId('run-btn')!.textContent, '이어서 하기');
+  assert.equal(ui.byId('pause-btn'), null);
 });
 
 test('부스트 모드 · 기기 · 터치를 디버그 창에서 정한 값으로 바꿔치기한다', async (t) => {
@@ -729,7 +732,7 @@ test('장면 바로가기는 멈춰 있거나 일시정지여도 그 장면을 �
 
   ui.tab('run');
   await ui.settle();
-  ui.click('pause-btn');
+  ui.click('run-btn'); /** 실행 중에는 같은 단추가 일시정지다. */
   assert.equal(ui.engine.state, 'pause');
   buttons = await openScenes(ui);
 

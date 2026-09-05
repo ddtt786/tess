@@ -163,6 +163,9 @@ scene "무대":
           break
         end
         if 점수 < 0:
+          continue
+        end
+        if 점수 == 1:
           skip
         end
         wait 0.02

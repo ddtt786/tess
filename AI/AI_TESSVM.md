@@ -98,6 +98,7 @@ function* (e, th) {
 | `wait_second` 가 `timeFlag` 가 0 이 될 때까지 `script` 반환   | `yield* O.waitSecond(…)`                |
 | `stop_repeat` → `breakLoop()` 는 PASS (같은 프레임에 이어감)  | `break;`                                |
 | `continue_repeat` → `continueLoop()` 는 BREAK                 | `{ yield 0; continue; }`                |
+| 판단 자리의 `not(continue_repeat)` — `continueLoop()` 이 반복 블록까지 스코프를 되감고, `wait_until_true` 가 돌려준 스코프는 어느 분기에도 안 걸려 그 프레임에 그대로 이어감 | `continue;` (프레임을 넘기지 않음) |
 | `func_<id>` 가 안 끝나면 BREAK, 다음 프레임에 이어서          | `yield* F[i](e, th, [인수…])`           |
 
 **반복은 한 바퀴마다 정확히 한 프레임**이고, `10번 반복` 뒤의 문장은 **11번째 프레임**에
@@ -394,6 +395,10 @@ resolution = (화면에 그려질 CSS 폭 / 640) × devicePixelRatio × 화질�
 createjs 기본값에 맡깁니다 — 기본값이 `butt` 끝과 `miter` 모서리라, 붓 자국은 시작한
 자리에서 정확히 끊기고 꺾인 곳은 뾰족합니다. 둥근 끝(`round`)으로 그리면 굵은 붓일수록
 양 끝이 반지름만큼 삐져나옵니다.
+
+**투명도는 선과 채우기에 함께 걸립니다.** 색·굵기 블록은 각각 붓과 채우기 하나만
+건드리지만, `붓의 투명도` 두 블록은 `sprite.brush` 와 `sprite.paint` 를 둘 다 바꿉니다
+(`block_brush.js` 의 `set_brush_tranparency` · `change_brush_transparency`).
 
 **투명한 붓은 겹쳐도 진해지지 않습니다.** 엔트리는 색·굵기·투명도가 바뀔 때까지 하나의
 캔버스 경로에 계속 이어 그리고 그 경로를 **한 번에** 칠합니다(`endStroke` →

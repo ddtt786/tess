@@ -230,7 +230,7 @@ Statement
 | 규칙              | 형태                                |
 | ----------------- | ----------------------------------- |
 | `WaitStatement`   | `wait E`                            |
-| `FlowStatement`   | `break` \| `skip` \| `restart`      |
+| `FlowStatement`   | `break` \| `continue` \| `skip` \| `restart` |
 | `ReturnStatement` | `return E`                          |
 | `StopStatement`   | 아래 참고                           |
 | `StartStatement`  | `start draw\|fill\|timer`           |
@@ -502,22 +502,22 @@ keyword = and | or | not | true | false | end_ | then | do | in | wait
 ```
 add        all        and        append     ask        at
 back       bgm        bounce     break      bubble     call
-clear      click      clone      cloned     clones     costume
-default    del        description do        draw       effects
-else       end_(end)  false      fill       flip       for
-forever    forward    fps        free       from       front
-function   go         hide       if         in         insert
-jump       key        kill       list       lock       look
-me         move       name       next       none       not
-object     or         order      other      play       prepend
-prev       project    remove     repeat     reset      restart
-return     rotation   say        scene      send       signal
-show       size       skip       sound      stage      stamp
-start      steer      stop       text       them       then
-think      this       timer      title      to         transparent
-true       turn       until      up         use        useobject
-usetext    var        vertical   visible    wait       when
-while      write      x          y
+clear      click      clone      cloned     clones     continue
+costume    default    del        description do         draw
+effects    else       end_(end)  false      fill       flip
+for        forever    forward    fps        free       from
+front      function   go         hide       if         in
+insert     jump       key        kill       list       lock
+look       me         move       name       next       none
+not        object     or         order      other      play
+prepend    prev       project    remove     repeat     reset
+restart    return     rotation   say        scene      send
+signal     show       size       skip       sound      stage
+stamp      start      steer      stop       text       them
+then       think      this       timer      title      to
+transparent true       turn       until      up         use
+useobject  usetext    var        vertical   visible    wait
+when       while      write      x          y
 ```
 
 (`end_`는 소스 문자열로는 `"end"`다. 재정의 불가능한 Ohm 내장 규칙 `end`를
@@ -630,7 +630,7 @@ say "숨었다"
 | `IfStatement_if` / `_ifElse`                                                              | `If`                                                                     |
 | `RepeatStatement` / `WhileStatement` / `UntilStatement` / `ForeverStatement`              | `Repeat` / `While` / `Until` / `Forever`                                 |
 | `WaitStatement`                                                                           | `Wait`                                                                   |
-| `FlowStatement_break` / `_skip` / `_restart`                                              | `Break` / `Skip` / `Restart`                                             |
+| `FlowStatement_break` / `_continue` / `_skip` / `_restart`                                | `Break` / `Continue` / `Skip` / `Restart`                                |
 | `ReturnStatement`                                                                         | `Return`                                                                 |
 | `StopStatement_*`                                                                         | `Stop` / `StopSound` / `StopDraw` / `StopFill` / `StopBgm` / `StopTimer` |
 | `StartStatement_*`                                                                        | `StartDraw` / `StartFill` / `StartTimer`                                 |

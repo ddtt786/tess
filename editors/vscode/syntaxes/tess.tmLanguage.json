@@ -131,7 +131,7 @@
         },
         {
           "name": "keyword.control.tess",
-          "match": "(?<![A-Za-z0-9_])(?:forever|restart|repeat|return|while|until|break|else|then|wait|skip|stop|end|if|do)(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_])(?:continue|forever|restart|repeat|return|while|until|break|else|then|wait|skip|stop|end|if|do)(?![A-Za-z0-9_])"
         },
         {
           "name": "keyword.control.event.tess",

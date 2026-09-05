@@ -21,6 +21,10 @@ const TABS = [
   { id: "errors", label: "오류" },
 ];
 const STATE_TEXT: Record<string, string> = { run: "실행 중", pause: "일시정지됨", stop: "멈춰 있음" };
+/** The run button's label, which is also what pressing it does next. */
+const RUN_TOGGLE_TEXT: Record<string, string> = {
+  run: "일시정지", pause: "이어서 하기", stop: "시작하기",
+};
 const DEFAULT_SECTION_HEIGHT = 200;
 
 // 이 크기 아래로 끌면 창이 딱 붙어서 0 이 되고, 다시 이만큼 끌어내면 딱 하고 펴진다.
@@ -330,6 +334,8 @@ const control = (action: () => void) => {
 const doRun = () => control(() => rt().run());
 const doPause = () => control(() => rt().pause());
 const doStop = () => control(() => rt().stop());
+/** One button both starts and holds: what it does next depends on the state. */
+const doRunToggle = () => (engineState() === "run" ? doPause() : doRun());
 
 // --- 실행 환경 흉내내기 -------------------------------------------------------
 const choice = (value: any) => (value === "" ? null : value === "true");
@@ -965,20 +971,10 @@ function RunTab() {
             {
               type: "button",
               id: "run-btn",
-              onClick: doRun,
-              disabled: !state.runState || state.runState === "run",
+              onClick: doRunToggle,
+              disabled: !state.runState,
             },
-            "시작하기",
-          ),
-          h(
-            "button",
-            {
-              type: "button",
-              id: "pause-btn",
-              onClick: doPause,
-              disabled: !state.runState || state.runState === "stop",
-            },
-            state.runState === "pause" ? "이어서 하기" : "일시정지",
+            RUN_TOGGLE_TEXT[state.runState] || RUN_TOGGLE_TEXT.stop,
           ),
           h(
             "button",
