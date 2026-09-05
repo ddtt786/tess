@@ -127,6 +127,18 @@ export function makeVmRuntime(handle: TessVmHandle) {
         entity: target.entity as Entity,
       }));
     },
+    /**
+     * Whether the entity's own pixels cover this stage point — the same test
+     * `when_object_click` uses. A costume with nothing at that spot answers no,
+     * so an empty full-stage board stops swallowing every pick.
+     */
+    hitTest(entity: Entity, x: number, y: number): boolean {
+      return vm.collision.touchingMouse(
+        entity,
+        x * stage.scale + stage.worldWidth / 2,
+        -y * stage.scale + stage.worldHeight / 2,
+      );
+    },
     /** Jumps to a scene and runs it. Events are dropped unless the vm is running. */
     goToScene(sceneId: string) {
       if (vm.state !== 'run') {

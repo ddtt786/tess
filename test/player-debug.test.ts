@@ -875,6 +875,69 @@ test('몇 번을 눌러도 계속 골라진다', async (t) => {
   assert.deepEqual(picked, ['— 엔트리봇', '— 치로', '— 엔트리봇', '— 치로']);
 });
 
+test('모양이 비어 있는 큰 판은 그 밑의 오브젝트를 가리지 않는다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug({
+    ...dataProject,
+    objects: [
+      { id: 'o2', name: '덮개', scene: 's1', script: '[]' },
+      { id: 'o1', name: '치로', scene: 's1', script: '[]' },
+    ],
+  });
+  ui.tab('objects');
+  await ui.settle();
+
+  // 무대를 통째로 덮는 960x540 짜리 판이 맨 앞에 있고, 그 모양에는 아무것도 없다.
+  const cover = stageActor('o2', '덮개');
+  cover.entity.getWidth = () => 960;
+  cover.entity.getHeight = () => 540;
+  const objects = [cover, stageActor('o1', '치로')];
+  const { canvas } = withStage(ui, objects);
+
+  // 모양의 픽셀까지 보는 실행기를 세운다 — 빈 판은 어느 자리에서도 아니라고 한다.
+  // 고르기가 실행기에게 묻는 것은 이 셋뿐이다.
+  const idle = () => undefined;
+  ui.window.tessRuntime = {
+    stageCanvas: () => canvas,
+    stageSize: () => ({ width: 480, height: 270 }),
+    currentObjects: () => objects,
+    hitTest: (entity: any) => entity.getWidth() !== 960,
+    // 패널이 실행기에 묻는 나머지는 이 시험과 상관이 없다.
+    state: () => 'stop',
+    run: idle, pause: idle, stop: idle, goToScene: idle, sendSignal: idle,
+    variable: () => null, list: () => null, object: () => null,
+    realBoost: () => false, patchEnvironment: idle, requestUpdate: idle,
+    layoutCanvas: idle, refreshRect: idle,
+  };
+
+  canvas.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
+    bubbles: true, cancelable: true, button: 0, ctrlKey: true, shiftKey: true,
+    clientX: 340, clientY: 185,
+  }));
+  await ui.settle();
+  assert.equal(ui.byId('object-info-name')!.textContent, '— 치로');
+});
+
+test('픽셀로 답하지 못하는 실행기에서는 상자로 고른다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug({
+    ...dataProject,
+    objects: [{ id: 'o1', name: '치로', scene: 's1', script: '[]' }],
+  });
+  ui.tab('objects');
+  await ui.settle();
+
+  const { canvas } = withStage(ui, [stageActor('o1', '치로')]);
+  canvas.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
+    bubbles: true, cancelable: true, button: 0, ctrlKey: true, shiftKey: true,
+    clientX: 340, clientY: 185,
+  }));
+  await ui.settle();
+  assert.equal(ui.byId('object-info-name')!.textContent, '— 치로');
+});
+
 test('그냥 누른 것은 디버거가 가로채지 않는다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();

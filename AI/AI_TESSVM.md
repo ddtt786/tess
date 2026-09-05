@@ -588,7 +588,7 @@ const rt = () => window.tessRuntime ?? entryRuntime;
 | 오브젝트 정보 · 고치기 | `vm.targetOf(id)` — `Entity` 가 이미 엔트리와 같은 이름을 씁니다 |
 | 장면 바로가기         | 실행을 켠 뒤 `selectScene` → `fireEvent('when_scene_start')`   |
 | 실행 환경 흉내내기    | `vm.boost`·`vm.touch`·`vm.deviceType` 에 곧바로 넣는다          |
-| 무대에서 오브젝트 고르기 | 지금 장면의 오브젝트를 앞에서부터 (`vm.currentTargets()`)     |
+| 무대에서 오브젝트 고르기 | 지금 장면의 오브젝트를 앞에서부터 (`vm.currentTargets()`), 모양의 픽셀로 판정 (`hitTest` → `collision.touchingMouse`) |
 
 **환경 흉내내기가 실행기마다 다릅니다.** 엔트리는 판단 블록의 `func` 을 감싸야 하지만
 (브라우저에 직접 묻기 때문입니다), tessvm 은 그 답을 VM 이 필드로 들고 있어서 값을 그냥

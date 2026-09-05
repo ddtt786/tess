@@ -222,6 +222,13 @@ const entryRuntime = {
    * 있지도 않은 다른 장면의 배경이 먼저 걸려서, 장면을 한 번 넘긴 뒤로는 엉뚱한
    * 오브젝트만 골라진다.
    */
+  /**
+   * entryjs 는 임의의 점에 대한 픽셀 판정을 내주지 않는다. `null` 은 "모르겠다"
+   * 라서, 고르기는 상자 판정으로 떨어진다.
+   */
+  hitTest(_entity: any, _x: number, _y: number): boolean | null {
+    return null;
+  },
   currentObjects(): any[] {
     const container = window.Entry && Entry.container;
     if (!container) return [];
@@ -1809,6 +1816,15 @@ function stageObjects() {
   }
 }
 
+/** 실행기가 픽셀로 답해 주면 그 답, 못 하면 `null`. 터져도 고르기는 이어 간다. */
+function pixelHit(entity: any, x: number, y: number): boolean | null {
+  try {
+    return rt().hitTest(entity, x, y) ?? null;
+  } catch (error) {
+    return null;
+  }
+}
+
 function objectAtPoint(clientX: number, clientY: number) {
   const point = toStagePoint(clientX, clientY);
   const objects = stageObjects();
@@ -1823,6 +1839,14 @@ function objectAtPoint(clientX: number, clientY: number) {
       // 완전히 투명한 오브젝트는 화면에 없는 것과 같다. 무대를 덮는 투명한 판이
       // 하나 있으면 어디를 눌러도 그것만 잡혀서 고르기가 안 되는 것처럼 보인다.
       if (entity.effect && entity.effect.alpha === 0) continue;
+      // 모양의 그 자리에 정말로 그림이 있는지까지 보는 실행기면 그 답을 그대로
+      // 쓴다. 상자만 보면 960x540 짜리 빈 판 하나가 무대 전체를 가로채, 그 밑의
+      // 오브젝트는 영영 고를 수 없다.
+      const exact = pixelHit(entity, point.x, point.y);
+      if (exact !== null) {
+        if (exact) return object;
+        continue;
+      }
       const halfWidth =
         Math.abs(entity.getWidth() * (entity.getScaleX() ?? 1)) / 2;
       const halfHeight =
