@@ -157,6 +157,26 @@ test('함수 호출은 값을 돌려주고 지역 변수는 호출마다 새로 
   assert.equal(valueOf(vm, 'b'), 2);
 });
 
+test('함수 안에서 멈춰도 값 함수는 반환식을 계산한다', () => {
+  const vm = runVm(
+    'function 앞(a, b):\n  var t = 0\n  t = a\n  if (b == 1):\n    stop\n  end\n  t = 99\n  return t\nend\n\n' +
+      wrap('a = 앞(7, 1)\nb = 앞(7, 0)', 'var a = 0\nvar b = 0'),
+  );
+  vm.tick();
+  assert.equal(valueOf(vm, 'a'), 7);
+  assert.equal(valueOf(vm, 'b'), 99);
+});
+
+test('값 함수가 멈춰도 호출한 쪽은 이어서 실행된다', () => {
+  const vm = runVm(
+    'function 앞():\n  stop\n  return 5\nend\n\n' +
+      wrap('a = 앞()\nb = 1', 'var a = 0\nvar b = 0'),
+  );
+  vm.tick();
+  assert.equal(valueOf(vm, 'a'), 5);
+  assert.equal(valueOf(vm, 'b'), 1);
+});
+
 test('복제본은 자기 몫의 오브젝트 지역 변수를 가진다', () => {
   const vm = runVm(`
 scene "s":

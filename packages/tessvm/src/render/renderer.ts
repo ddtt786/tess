@@ -65,6 +65,7 @@ export class PixiRenderer implements Renderer {
   readonly app = new Application();
   readonly world = new Container();
   private readonly sceneLayers = new Map<string, Container>();
+  private readonly sceneTargets = new Map<string, Target[]>();
   private readonly views = new Map<Entity, EntityView>();
   private readonly textures = new Map<string, Texture>();
   private readonly images = new Map<string, CanvasImageSource>();
@@ -174,11 +175,54 @@ export class PixiRenderer implements Renderer {
     for (const scene of scenes) {
       const layer = this.sceneLayers.get(scene.id)!;
       const own = targets.filter((target) => target.sceneId === scene.id);
+      this.sceneTargets.set(scene.id, own);
       // The last object in the list is furthest back.
       for (let i = own.length - 1; i >= 0; i -= 1) {
         const view = this.makeView(own[i]!.entity);
         this.views.set(own[i]!.entity, view);
         layer.addChild(view.root);
+      }
+    }
+  }
+
+  /**
+   * `Entry.stage.sortZorder` — entering a scene puts its objects back in list
+   * order (the first object on top) and drops whatever else was left in the
+   * list, so `오브젝트 순서 바꾸기` from a previous visit does not linger.
+   */
+  private sortScene(sceneId: string): void {
+    const layer = this.sceneLayers.get(sceneId);
+    const targets = this.sceneTargets.get(sceneId);
+    if (!layer || !targets) {
+      return;
+    }
+    for (const target of targets) {
+      const view = this.views.get(target.entity);
+      if (!view) {
+        continue;
+      }
+      for (const stamp of view.stamps) {
+        stamp.destroy();
+      }
+      view.stamps = [];
+      view.brush?.destroy();
+      view.paint?.destroy();
+      view.brush = null;
+      view.paint = null;
+    }
+    // Anything that is not an object's own display object goes.
+    for (const child of [...layer.children] as OwnedContainer[]) {
+      if (!child.__entity || child.__entity.isClone) {
+        layer.removeChild(child);
+        child.destroy();
+      }
+    }
+    let index = 0;
+    for (let i = targets.length - 1; i >= 0; i -= 1) {
+      const view = this.views.get(targets[i]!.entity);
+      if (view && layer.getChildIndex(view.root) >= 0) {
+        layer.setChildIndex(view.root, index);
+        index += 1;
       }
     }
   }
@@ -207,10 +251,12 @@ export class PixiRenderer implements Renderer {
       layer.destroy({ children: true });
     }
     this.sceneLayers.clear();
+    this.sceneTargets.clear();
     this.overlay?.clear();
   }
 
   setScene(sceneId: string): void {
+    this.sortScene(sceneId);
     for (const [id, layer] of this.sceneLayers) {
       layer.visible = id === sceneId;
     }

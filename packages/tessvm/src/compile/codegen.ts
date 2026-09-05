@@ -104,6 +104,8 @@ export class Codegen {
   private paramSlots: Map<string, number> | null = null;
   private funcLocals: Set<string> | null = null;
   private loopDepth = 0;
+  /** Set while compiling a function body; ending the executor jumps to this label. */
+  private funcLabel: string | null = null;
 
   constructor(input: CompileInput) {
     this.input = input;
@@ -185,8 +187,12 @@ export class Codegen {
     const locals = (fn.localVariables ?? [])
       .map((local) => `${literal(local.id)}: ${literal(local.value ?? 0)}`)
       .join(', ');
-    const body = this.compileStack(define.statements?.[0] ?? []);
-    let source = `function* (e, th, P) {\n  const L = {${locals}};\n${body}`;
+    const previousLabel = this.funcLabel;
+    this.funcLabel = 'fn';
+    const body = this.compileStack(define.statements?.[0] ?? [], '    ');
+    this.funcLabel = previousLabel;
+
+    let source = `function* (e, th, P) {\n  const L = {${locals}};\n  fn: {\n${body}  }\n`;
     if (define.type === 'function_create_value') {
       const result = this.value(define.params[3]);
       source += `  return ${result.code};\n`;
@@ -197,6 +203,14 @@ export class Codegen {
     this.funcLocals = null;
     this.loopDepth = previousLoopDepth;
     return source;
+  }
+
+  /**
+   * Ends the running executor. Inside a function that leaves the caller alive and,
+   * for a value function, still evaluates its return expression -- as entry does.
+   */
+  private endExecutor(): string {
+    return this.funcLabel ? `break ${this.funcLabel};` : 'return;';
   }
 
   private compileStack(blocks: RawBlock[], indent = '  '): string {
@@ -321,7 +335,7 @@ export class Codegen {
       case 'wait_until_true':
         return line(`while (!(${this.bool(p[0])})) { yield 0; }`);
       case 'stop_repeat':
-        return this.loopDepth > 0 ? line('break;') : line('return;');
+        return this.loopDepth > 0 ? line('break;') : line(this.endExecutor());
       case 'continue_repeat':
         return this.loopDepth > 0 ? line('{ yield 0; continue; }') : line('yield 0;');
       case 'stop_object':
@@ -342,9 +356,9 @@ export class Codegen {
       case 'message_cast_wait':
         return line(`yield* O.castMessageWait(${this.field(p[0])});`);
       case 'start_scene':
-        return line(`O.startScene(${this.field(p[0])}); return;`);
+        return line(`O.startScene(${this.field(p[0])}); O.die();`);
       case 'start_neighbor_scene':
-        return line(`O.startNeighborScene(${this.field(p[0])}); return;`);
+        return line(`O.startNeighborScene(${this.field(p[0])}); O.die();`);
       case 'switch_scope':
         return line(`e = O.entityOf(${this.field(p[0])}) || e;`);
 
@@ -536,13 +550,13 @@ export class Codegen {
       // `이 코드 멈추기` ends only the executor it sits in — inside a function
       // that is the function, and the caller carries on. Entry does the same.
       case 'thisThread':
-        return line('return;');
+        return line(this.endExecutor());
       case 'otherThread':
         return line('O.stopOtherThreads(e, th);');
       case 'other_objects':
         return line('O.stopOtherTargets(e);');
       default:
-        return line('return;');
+        return line(this.endExecutor());
     }
   }
 
@@ -852,9 +866,10 @@ export class Codegen {
       this.note(block.type);
       return { code: asValue ? 'undefined' : `${ind}/* missing ${block.type} */\n` };
     }
-    const args = block.params
-      .filter((param) => param !== null && param !== undefined)
-      .map((param) => this.raw(param));
+    // Entry hands the function every slot of the call block in order and the
+    // body reads them by declaration index (`register.params[paramMap[type]]`).
+    // Dropping empty slots would shift every argument after them.
+    const args = block.params.map((param) => this.raw(param));
     const call = `(yield* F[${index}](e, th, [${args.join(', ')}]))`;
     return { code: asValue ? call : `${ind}${call};\n` };
   }
