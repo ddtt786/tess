@@ -9,7 +9,7 @@ import { readTar } from './tar.ts';
 import { findLocalRuntime } from '@tess/player';
 import { safeIdentifier, tessString, tessNumber, tessLiteral, displayNamePart } from './ident.ts';
 import { autoParamName } from '@tess/core';
-import { blocksToLines, indent, functionDeclarationLines, colorExpr } from './stmt.ts';
+import { blocksToLines, commentLines, indent, functionDeclarationLines, colorExpr } from './stmt.ts';
 import { KEY_CODES } from '@tess/core';
 import type {
   CollectedAsset, DecompileContext, DecompileOptions, DecompileResult,
@@ -794,6 +794,13 @@ function parseFont(font: unknown) {
 // ---------------------------------------------------------------------------
 //  이벤트(hat 블록) -> when ... do
 // ---------------------------------------------------------------------------
+/** Rolls a diagnostic set back to what it held before. */
+function keepOnly(set: Set<string>, before: Set<string>): void {
+  for (const item of [...set]) {
+    if (!before.has(item)) set.delete(item);
+  }
+}
+
 function eventLines(thread: RawBlock[] | undefined, ctx: DecompileContext, indentLevel: number): string[] {
   if (!thread?.length) return [];
   const [hat, ...rest] = thread;
@@ -803,16 +810,28 @@ function eventLines(thread: RawBlock[] | undefined, ctx: DecompileContext, inden
   const indentBody = (lines: string[]) => Array.from({ length: indentLevel + 1 })
     .reduce<string[]>((acc) => indent(acc), lines);
 
+  // 이벤트에 달린 메모는 hat 블록이 들고 있다(compiler/index.ts applyComment).
+  const note = commentLines(hat).map((line) => `${pad}${line}`);
+
   const keyUp = matchKeyUpPattern(hat, rest);
   if (keyUp) {
     const body = indentBody(blocksToLines(keyUp.body, ctx));
-    return [`${pad}when key ${tessString(keyUp.key)} up do`, ...body, `${pad}end`, ''];
+    return [...note, `${pad}when key ${tessString(keyUp.key)} up do`, ...body, `${pad}end`, ''];
   }
 
   const header = eventHeader(hat, ctx);
   if (header) {
     const body = indentBody(blocksToLines(rest, ctx));
-    return [`${pad}${header} do`, ...body, `${pad}end`, ''];
+    return [...note, `${pad}${header} do`, ...body, `${pad}end`, ''];
+  }
+
+  // 'comment' 는 블록이 아니라 워크스페이스에 그냥 떠 있는 메모다. 블록에 붙은
+  // 메모는 그 블록의 `comment` 로 들어가고, 아무 데도 안 붙은 것만 이렇게 스레드
+  // 하나로 저장된다. 그대로 Tess 주석으로 옮긴다.
+  if (hat?.type === 'comment') {
+    const text = String((hat as { value?: unknown }).value ?? '').trimEnd();
+    if (!text.trim()) return [];
+    return [...text.split(/\r?\n/).map((line) => `${pad}# ${line}`.trimEnd()), ''];
   }
 
   // 스레드 맨 앞이라고 다 이벤트(hat) 블록은 아니다 — 엔트리 워크스페이스에
@@ -820,8 +839,14 @@ function eventLines(thread: RawBlock[] | undefined, ctx: DecompileContext, inden
   // 저장된다. 그런 건 실제로 실행된 적이 없으니(엔트리도 안 돌린다) 억지로
   // when 으로 감싸 실행되게 만들지 않고, 내용만 주석으로 그대로 남겨서
   // "연결 안 된 상태"를 그대로 지킨다.
-  ctx.notices.add(`연결되지 않은 블록 뭉치(맨 앞이 '${hat?.type}')를 원본처럼 실행되지 않게 주석으로 남겼습니다.`);
+  // 어차피 주석으로만 남을 코드라, 그걸 옮기다 나온 알림은 알려 줄 것이 못 된다 —
+  // 워크스페이스에 떨어져 있던 값 블록 하나까지 "아직 옮길 수 없습니다" 로 새어
+  // 나오던 자리다. 이 뭉치가 새로 만든 것만 걷어 내고 원래 있던 것은 남긴다.
+  const hadWarnings = new Set(ctx.warnings);
+  const hadNotices = new Set(ctx.notices);
   const raw = blocksToLines(thread, ctx); // 맨 앞도 그냥 평범한 블록으로 취급해서 통째로 옮긴다
+  keepOnly(ctx.warnings, hadWarnings);
+  keepOnly(ctx.notices, hadNotices);
   const commented = raw.map((line: string) => (line.trim() ? `${pad}# ${line}` : ''));
   return [
     `${pad}# [decompile] 아래는 엔트리 원본에서 어디에도 연결돼 있지 않던 블록입니다 (실행되지 않음):`,

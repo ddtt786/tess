@@ -63,8 +63,21 @@ export function indent(lines: string[]): string[] {
  */
 export function blocksToLines(blocks: RawBlock[] | undefined, ctx: DecompileContext): string[] {
   const lines: string[] = [];
-  for (const block of blocks ?? []) lines.push(...statementLines(block, ctx));
+  for (const block of blocks ?? []) {
+    lines.push(...commentLines(block), ...statementLines(block, ctx));
+  }
   return lines;
+}
+
+/**
+ * The note a block carries, as Tess comment lines above it. The compiler hangs
+ * both forms — the one on the same line and the group above — on the first
+ * block of the statement, so they all come back above it.
+ */
+export function commentLines(block: RawBlock | undefined): string[] {
+  const value = String(block?.comment?.value ?? '').trimEnd();
+  if (!value.trim()) return [];
+  return value.split(/\r?\n/).map((line) => `# ${line}`.trimEnd());
 }
 
 function branch(block: RawBlock, index: number, ctx: DecompileContext): string[] {
@@ -584,6 +597,7 @@ export function functionDeclarationLines(
   );
 
   const lines = [
+    ...commentLines(createBlock),
     `function ${fn.name}(${fn.params.join(", ")}):`,
     ...indent(locals),
     ...body,

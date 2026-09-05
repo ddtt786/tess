@@ -2001,11 +2001,140 @@ function unattachedProject(): RawEntity {
   } as RawEntity;
 }
 
-test('연결되지 않은 블록을 주석으로 남긴 것은 경고가 아니라 주의다', () => {
+test('연결되지 않은 블록을 주석으로 남기는 것은 아무것도 알리지 않는다', () => {
   const result = decompileProject(unattachedProject(), []);
   const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
 
   assert.match(fragment, /^# forward 10$/m);
   assert.deepEqual(result.warnings, []);
-  assert.match(result.notices[0]!, /연결되지 않은 블록 뭉치/);
+  assert.deepEqual(result.notices, []);
+});
+
+test('워크스페이스에 떨어져 있던 블록은 옮기지 못했다고 알리지 않는다', () => {
+  const project = unattachedProject();
+  const object = (project as any).objects[0];
+  object.script = JSON.stringify([
+    [{ type: 'when_run_button_click', params: [null], statements: [] }],
+    // 값 블록 하나만 덩그러니 놓인 스레드 — 코드가 아니라 남겨 둔 조각이다.
+    [{ type: 'calc_rand', params: [null, { type: 'number', params: ['1'] }, null, { type: 'number', params: ['10'] }, null], statements: [] }],
+  ]);
+
+  const result = decompileProject(project, []);
+  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(result.notices, []);
+});
+
+test('연결된 코드의 못 옮기는 블록은 그대로 알린다', () => {
+  const project = unattachedProject();
+  const object = (project as any).objects[0];
+  object.script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    { type: '아직_없는_블록', params: [], statements: [] },
+  ]]);
+
+  const result = decompileProject(project, []);
+  assert.match(result.warnings[0]!, /'아직_없는_블록' 은\(는\) 아직 옮길 수 없습니다/);
+});
+
+/** 어디에도 붙어 있지 않은 메모. 블록에 붙은 것은 그 블록의 `comment` 로 들어간다. */
+function loneCommentProject(): RawEntity {
+  const project = unattachedProject();
+  (project as any).objects[0].script = JSON.stringify([
+    [{ type: 'when_run_button_click', params: [null], statements: [] }],
+    { ...COMMENT_BLOCK, value: '메모 첫 줄\n메모 둘째 줄' },
+    { ...COMMENT_BLOCK, id: 'cmt2', value: '   ' },
+  ].map((thread) => (Array.isArray(thread) ? thread : [thread])));
+  return project;
+}
+
+const COMMENT_BLOCK = {
+  id: 'cmt1', x: 0, y: 0, width: 160, height: 160, value: '',
+  readOnly: false, visible: true, display: true, movable: true,
+  isOpened: true, deletable: 1, type: 'comment',
+};
+
+test('떠 있는 메모(comment)는 블록이 아니라 주석으로 되돌린다', () => {
+  const result = decompileProject(loneCommentProject(), []);
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
+
+  assert.match(fragment, /^# 메모 첫 줄$/m);
+  assert.match(fragment, /^# 메모 둘째 줄$/m);
+  // 빈 메모는 남길 내용이 없다.
+  assert.doesNotMatch(fragment, /지원하지 않는 블록/);
+  assert.doesNotMatch(fragment, /^#\s*$/m);
+  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(result.notices, []);
+});
+
+
+/** 블록에 붙은 메모(`block.comment`)를 가진 작품입니다. */
+function attachedCommentProject(): RawEntity {
+  const note = (value: string) => ({
+    x: 0, y: 0, width: 160, height: 100, value, readOnly: false, visible: true,
+    display: true, movable: true, isOpened: true, deletable: 1, type: 'comment',
+  });
+  const project = unattachedProject();
+  (project as any).objects[0].script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [], comment: note('시작할 때') },
+    {
+      type: 'move_direction',
+      params: [{ type: 'number', params: ['10'] }, null],
+      statements: [],
+      comment: note('앞으로\n두 줄짜리 메모'),
+    },
+    { type: 'bounce_wall', params: [null], statements: [], comment: note('   ') },
+  ]]);
+  return project;
+}
+
+test('블록에 붙은 메모는 그 문장 위의 주석으로 되돌아온다', () => {
+  const result = decompileProject(attachedCommentProject(), []);
+  const fragment = result.assets.find((a) => a.path === 'objects/주인공.tess')!.data.toString('utf-8');
+
+  // 이벤트에 붙은 메모는 hat 블록이 들고 있으므로 when 줄 위로 나온다.
+  assert.match(fragment, /^# 시작할 때\nwhen start do$/m);
+  assert.match(fragment, /^ {2}# 앞으로\n {2}# 두 줄짜리 메모\n {2}forward 10$/m);
+  // 빈 메모는 남길 내용이 없다.
+  assert.doesNotMatch(fragment, /^\s*#\s*$/m);
+  assert.deepEqual(result.warnings, []);
+});
+
+test('되돌린 주석은 다시 컴파일하면 같은 블록에 붙는다', () => {
+  const result = decompileProject(attachedCommentProject(), []);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tess-decompile-note-'));
+  const mainFile = path.join(dir, 'main.tess');
+  fs.writeFileSync(mainFile, result.source);
+  for (const asset of result.assets) {
+    const target = path.join(dir, asset.path);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, asset.data);
+  }
+
+  const recompiled = compileProject(fs.readFileSync(mainFile, 'utf-8'), { path: mainFile, assetDirs: [dir] });
+  assert.deepEqual(recompiled.errors, []);
+  const [hat, move] = JSON.parse(recompiled.project!.objects[0]!.script)[0];
+  assert.equal(hat.type, 'when_run_button_click');
+  assert.equal(hat.comment.value, '시작할 때');
+  assert.equal(move.type, 'move_direction');
+  assert.equal(move.comment.value, '앞으로\n두 줄짜리 메모');
+});
+
+test('함수 정의에 붙은 메모도 되돌아온다', () => {
+  const project = unattachedProject();
+  (project as any).functions = [{
+    id: 'fn1',
+    content: JSON.stringify([[{
+      type: 'function_create',
+      params: [{ type: 'function_field_label', params: ['인사'] }, null],
+      statements: [[]],
+      comment: {
+        x: 0, y: 0, width: 160, height: 100, value: '쓰는 법: 인사()', readOnly: false,
+        visible: true, display: true, movable: true, isOpened: true, deletable: 1, type: 'comment',
+      },
+    }]]),
+  }];
+
+  const result = decompileProject(project, []);
+  assert.match(result.source, /^# 쓰는 법: 인사\(\)\nfunction 인사\(\):$/m);
 });
