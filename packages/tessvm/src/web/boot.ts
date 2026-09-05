@@ -73,6 +73,90 @@ function keyCodeOf(event: KeyboardEvent): number {
   return event.keyCode || 0;
 }
 
+/**
+ * A worker that only ticks. Timers on a hidden page are clamped to one wake-up
+ * a second (and one a minute after a while), but a dedicated worker's are not,
+ * so this is what keeps the frames coming while the tab is in the background.
+ */
+const TICKER_WORKER = `let id = 0;
+onmessage = (e) => {
+  clearInterval(id);
+  id = e.data > 0 ? setInterval(() => postMessage(0), e.data) : 0;
+};`;
+
+/**
+ * Calls `step` once a frame. `requestAnimationFrame` follows the display while
+ * the page is visible; the browser stops it altogether once the tab is hidden,
+ * so a worker's timer takes over there and the project keeps running. `step`
+ * reads the clock itself, so a driver that fires late or unevenly only means
+ * the engine catches up on its own.
+ */
+function startFrameDriver(step: (now: number) => void): void {
+  const INTERVAL = 1000 / 60;
+  let raf = 0;
+  let timer = 0;
+  let worker: Worker | null = null;
+
+  const tick = () => step(performance.now());
+  const loop = () => {
+    raf = requestAnimationFrame(loop);
+    tick();
+  };
+
+  const makeWorker = () => {
+    try {
+      const url = URL.createObjectURL(new Blob([TICKER_WORKER], { type: 'text/javascript' }));
+      const made = new Worker(url);
+      URL.revokeObjectURL(url);
+      made.onmessage = tick;
+      return made;
+    } catch (error) {
+      // Blob workers can be barred (a page CSP, a hardened browser). A plain
+      // timer still runs in the background, just at whatever rate it is held to.
+      return null;
+    }
+  };
+
+  const startBackground = () => {
+    if (worker || timer) {
+      return;
+    }
+    worker = makeWorker();
+    if (worker) {
+      worker.postMessage(INTERVAL);
+    } else {
+      timer = window.setInterval(tick, INTERVAL);
+    }
+  };
+
+  const stopBackground = () => {
+    worker?.terminate();
+    worker = null;
+    if (timer) {
+      clearInterval(timer);
+      timer = 0;
+    }
+  };
+
+  const follow = () => {
+    if (document.hidden) {
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      startBackground();
+      return;
+    }
+    stopBackground();
+    if (!raf) {
+      raf = requestAnimationFrame(loop);
+    }
+  };
+
+  document.addEventListener('visibilitychange', follow);
+  follow();
+}
+
 export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   const container = options.container ?? document.body;
   const project =
@@ -181,7 +265,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   let frames = 0;
   let accumulated = 0;
 
-  const loop = (now: number) => {
+  const step = (now: number) => {
     vm.advance(now);
     if (stats) {
       frames += 1;
@@ -195,9 +279,8 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
         accumulated = 0;
       }
     }
-    requestAnimationFrame(loop);
   };
-  requestAnimationFrame(loop);
+  startFrameDriver(step);
 
   const handle: TessVmHandle = {
     vm,
