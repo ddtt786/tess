@@ -20,7 +20,7 @@ import {
   Text,
   Texture,
 } from 'pixi.js';
-import { stage, type Entity, type Picture, type Target } from '../runtime/model.ts';
+import { stage, type Entity, type Picture, type Stroke, type Target } from '../runtime/model.ts';
 import type { Renderer } from '../runtime/engine.ts';
 import { buildMask } from '../collision/mask-image.ts';
 import type { AlphaMask } from '../collision/mask.ts';
@@ -42,10 +42,40 @@ interface EntityView {
   filter: ColorMatrixFilter | null;
   pictureId: string | null;
   /** Pen strokes and fills, each drawn just under the entity that made them. */
-  brush: Graphics | null;
-  paint: Graphics | null;
+  brush: PenView | null;
+  paint: PenView | null;
   stamps: Sprite[];
 }
+
+/**
+ * One pen (the trail or the fill) of one entity.
+ *
+ * Entry draws into a canvas path and strokes it once per settings group, so a
+ * translucent pen keeps one flat colour however often it crosses itself. Each
+ * group therefore gets its own node here, and a translucent one is composited
+ * from a cached texture — drawing its pieces straight onto the stage would
+ * blend every overlap twice.
+ */
+interface PenView {
+  /** Sits in the scene list where entry would put the pen. */
+  root: Container;
+  groups: PenGroup[];
+}
+
+interface PenGroup {
+  /** Carries the group's alpha; caches itself while that alpha is below 1. */
+  node: Container;
+  graphics: Graphics;
+  /** What was drawn last time, so an unchanged group is left alone. */
+  drawn: string;
+}
+
+/** Pieces entry would have drawn into one canvas path. */
+const sameStyle = (a: Stroke, b: Stroke) =>
+  a.color === b.color &&
+  a.thickness === b.thickness &&
+  a.opacity === b.opacity &&
+  a.fill === b.fill;
 
 /** Back-reference so the scene list can answer "whose display object is this?". */
 interface OwnedContainer extends Container {
@@ -205,8 +235,8 @@ export class PixiRenderer implements Renderer {
         stamp.destroy();
       }
       view.stamps = [];
-      view.brush?.destroy();
-      view.paint?.destroy();
+      view.brush?.root.destroy({ children: true });
+      view.paint?.root.destroy({ children: true });
       view.brush = null;
       view.paint = null;
     }
@@ -301,8 +331,8 @@ export class PixiRenderer implements Renderer {
     for (const stamp of view.stamps) {
       stamp.destroy();
     }
-    view.brush?.destroy();
-    view.paint?.destroy();
+    view.brush?.root.destroy({ children: true });
+    view.paint?.root.destroy({ children: true });
     view.root.destroy({ children: true });
     this.views.delete(entity);
   }
@@ -622,7 +652,7 @@ export class PixiRenderer implements Renderer {
   //  Pen, stamps, layering
   // -------------------------------------------------------------------------
   /** A pen layer for this entity, created under it the way entry inserts one. */
-  private penLayer(view: EntityView, which: 'brush' | 'paint'): Graphics | null {
+  private penLayer(view: EntityView, which: 'brush' | 'paint'): PenView | null {
     const existing = view[which];
     if (existing) {
       return existing;
@@ -631,11 +661,27 @@ export class PixiRenderer implements Renderer {
     if (!layer) {
       return null;
     }
-    const graphics = new Graphics();
+    const root = new Container();
     const index = this.indexUnder(view.entity);
-    layer.addChildAt(graphics, index < 0 ? layer.children.length : index);
-    view[which] = graphics;
-    return graphics;
+    layer.addChildAt(root, index < 0 ? layer.children.length : index);
+    const pen: PenView = { root, groups: [] };
+    view[which] = pen;
+    return pen;
+  }
+
+  /** The group's node, made on first use and reused while the pen keeps drawing. */
+  private penGroup(pen: PenView, index: number): PenGroup {
+    const existing = pen.groups[index];
+    if (existing) {
+      return existing;
+    }
+    const graphics = new Graphics();
+    const node = new Container();
+    node.addChild(graphics);
+    pen.root.addChild(node);
+    const group: PenGroup = { node, graphics, drawn: '' };
+    pen.groups[index] = group;
+    return group;
   }
 
   penChanged(entity: Entity): void {
@@ -648,12 +694,12 @@ export class PixiRenderer implements Renderer {
       if (!state) {
         continue;
       }
-      const graphics = this.penLayer(view, which);
-      if (!graphics) {
+      const pen = this.penLayer(view, which);
+      if (!pen) {
         continue;
       }
-      graphics.clear();
-      const live =
+      // The piece being drawn right now is not in `strokes` yet.
+      const pieces =
         state.path.length >= 4
           ? [
               ...state.strokes,
@@ -666,28 +712,78 @@ export class PixiRenderer implements Renderer {
               },
             ]
           : state.strokes;
-      for (const stroke of live) {
-        const points = stroke.points;
-        if (points.length < 4) {
+
+      // Entry keeps adding to one canvas path until the colour, thickness or
+      // opacity changes, and draws that whole path in one go. Everything in
+      // such a group blends as a single shape, so a translucent pen keeps one
+      // flat colour where it crosses itself or picks up again after
+      // `stop_drawing`. Each group is drawn on its own node here for the same
+      // reason — pieces drawn one by one would blend every overlap twice.
+      let count = 0;
+      for (let i = 0; i < pieces.length; ) {
+        const style = pieces[i]!;
+        let end = i;
+        while (end < pieces.length && sameStyle(style, pieces[end]!)) {
+          end += 1;
+        }
+        const group = pieces.slice(i, end).filter((piece) => piece.points.length >= 4);
+        i = end;
+        if (group.length === 0) {
           continue;
         }
-        graphics.moveTo(points[0]!, -points[1]!);
-        for (let i = 2; i < points.length; i += 2) {
-          graphics.lineTo(points[i]!, -points[i + 1]!);
-        }
-        const alpha = 1 - stroke.opacity / 100;
-        if (stroke.fill) {
-          graphics.fill({ color: stroke.color, alpha });
-        } else {
-          graphics.stroke({
-            width: stroke.thickness,
-            color: stroke.color,
-            alpha,
-            cap: 'round',
-            join: 'round',
-          });
-        }
+        this.drawPenGroup(this.penGroup(pen, count), style, group);
+        count += 1;
       }
+      // Groups the pen no longer has (erased, or a scene reset) go.
+      for (const extra of pen.groups.splice(count)) {
+        extra.node.destroy({ children: true });
+      }
+    }
+  }
+
+  /** Draws one settings group, and composites it as one shape when translucent. */
+  private drawPenGroup(group: PenGroup, style: Stroke, pieces: Stroke[]): void {
+    const alpha = 1 - style.opacity / 100;
+    // Redrawing costs a fresh cached texture, so leave a group that has not moved.
+    const drawn = `${style.color}/${style.thickness}/${style.opacity}/${style.fill}/${
+      pieces.length
+    }/${pieces[pieces.length - 1]!.points.length}`;
+    if (group.drawn === drawn) {
+      return;
+    }
+    group.drawn = drawn;
+
+    const graphics = group.graphics;
+    graphics.clear();
+    for (const piece of pieces) {
+      const points = piece.points;
+      graphics.moveTo(points[0]!, -points[1]!);
+      for (let at = 2; at < points.length; at += 2) {
+        graphics.lineTo(points[at]!, -points[at + 1]!);
+      }
+    }
+    if (style.fill) {
+      graphics.fill({ color: style.color });
+    } else {
+      // `setStrokeStyle(thickness)` — entry leaves createjs at its defaults,
+      // which are butt caps and miter joins, so pen ends and corners are square.
+      graphics.stroke({
+        width: style.thickness,
+        color: style.color,
+        cap: 'butt',
+        join: 'miter',
+      });
+    }
+
+    group.node.alpha = alpha;
+    // A cached group is drawn once into a texture and then composited with the
+    // group's alpha, which is what keeps overlaps inside it from darkening. The
+    // cache holds the size it was made at, so a growing path is cached again.
+    if (group.node.isCachedAsTexture) {
+      group.node.cacheAsTexture(false);
+    }
+    if (alpha < 1) {
+      group.node.cacheAsTexture(true);
     }
   }
 
@@ -720,8 +816,11 @@ export class PixiRenderer implements Renderer {
     if (!view) {
       return;
     }
-    view.brush?.clear();
-    view.paint?.clear();
+    for (const pen of [view.brush, view.paint]) {
+      for (const group of pen?.groups.splice(0) ?? []) {
+        group.node.destroy({ children: true });
+      }
+    }
     for (const stamp of view.stamps) {
       stamp.destroy();
     }

@@ -1737,9 +1737,15 @@ test('변수의 글자 하나 읽기는 이름[번호] 로 되돌려 자리 번�
   assert.equal(value.params[3].type, 'calc_rand');
 });
 
-// 엔트리 소수점 부분(unnatural) 은 Tess 함수가 없어서 자리표시자 문자열로 나갔다 —
-// 숫자 자리에 글자가 들어가 계산이 깨졌다. |x| mod 1 이 모든 x 에서 같은 값이다.
-test('소수점 부분(unnatural) 은 같은 값을 내는 계산으로 되돌아온다', () => {
+/**
+ * 엔트리 소수점 부분(unnatural) 은 Tess 함수가 없어서 자리표시자 문자열로 나갔다 —
+ * 숫자 자리에 글자가 들어가 계산이 깨졌다. 대신 쓸 계산은 **빼기**여야 한다:
+ * 엔트리는 이 블록을 `BigNumber(x).minus(floor(x))` 로 10진 계산하므로 49.1 이
+ * 정확히 0.1 이 되는데, 나머지(`%`) 블록은 2진 부동소수 그대로라
+ * 0.09999999999999787 이 된다. 그 소수 자릿수를 글자로 읽어 쓰는 작품
+ * (deltarune) 에서는 전혀 다른 값이 나온다.
+ */
+test('소수점 부분(unnatural) 은 10진으로 빼는 계산으로 되돌아온다', () => {
   const { source, warnings, blocks } = recompiledThread(valueProject([
     {
       type: 'move_x',
@@ -1749,11 +1755,13 @@ test('소수점 부분(unnatural) 은 같은 값을 내는 계산으로 되돌�
   ]));
 
   assert.deepEqual(warnings, []);
-  assert.match(source, /^ {2}x \+= \(abs\(-1\.3\) % 1\)$/m);
+  assert.match(source, /^ {2}x \+= \(abs\(-1\.3\) - floor\(abs\(-1\.3\)\)\)$/m);
   const value = blocks.find((b) => b.type === 'move_x').params[0];
-  assert.equal(value.type, 'quotient_and_mod');
-  assert.equal(value.params[5], 'MOD');
-  assert.equal(value.params[1].params[3], 'abs');
+  /** 10진으로 계산하는 블록은 `calc_basic` 의 빼기다 (나머지 블록이 아니다). */
+  assert.equal(value.type, 'calc_basic');
+  assert.equal(value.params[1], 'MINUS');
+  assert.equal(value.params[0].params[3], 'abs');
+  assert.equal(value.params[2].params[3], 'floor');
 });
 
 // 엔트리 calc_operation 은 연산자 이름의 첫 `_` 뒤를 잘라내고 고르기 때문에

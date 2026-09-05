@@ -80,7 +80,14 @@ function targetName(ctx: DecompileContext, raw: unknown): string {
   if (raw === 'self' || raw === 'mouse') return raw;
   if (typeof raw === 'string' && raw.startsWith('wall')) return raw;
   const object = ctx.objectsById.get(raw as string);
-  return object ? object.identifier : String(raw);
+  if (object) return object.identifier;
+  // 원본에서 지워진 오브젝트를 가리키는 블록이다(엔트리는 그런 블록을 그냥 두고
+  // 실행할 때 거짓으로 친다). 이름을 만들 수 없으니 아이디를 그대로 남기고, 되돌린
+  // 소스가 왜 그 자리에서 컴파일 에러를 내는지 알 수 있게 알린다.
+  ctx.warnings.add(
+    `'${String(raw)}' 을(를) 가리키는 블록이 있지만 그 오브젝트가 작품에 없습니다 — 아이디를 그대로 남겼습니다.`,
+  );
+  return String(raw);
 }
 
 /**
@@ -189,11 +196,18 @@ export function exprOf(block: any, ctx: DecompileContext): string {
       const op = at(3);
       if (op === 'square') return `(${exprOf(at(1), ctx)} ** 2)`;
       if (op === 'root') return `(${exprOf(at(1), ctx)} ** 0.5)`;
-      // Entry's fractional-part operator is `|x| mod 1`: it takes x - floor(x)
-      // and then, for a negative x, 1 - that. Tess has no single call for it,
-      // and `%` on the absolute value is the same number for every x (entryjs
-      // MOD is `l - r * floor(l / r)`, so it floors the way Entry does).
-      if (op === 'unnatural') return `(abs(${exprOf(at(1), ctx)}) % 1)`;
+      // Entry's fractional-part operator (`소수 부분`) subtracts with BigNumber:
+      // `BigNumber(x).minus(floor(x))`, so 49.1 gives exactly 0.1. `%` is not the
+      // same thing — entryjs runs MOD as plain `l - r * floor(l / r)` in binary
+      // floating point, which gives 0.09999999999999787 instead, and a work that
+      // reads the decimal digits off that string (deltarune does) then computes
+      // something else entirely. `-` is the block that subtracts decimally, so
+      // the fraction is written out with it. `abs` covers the negative side:
+      // entry's operator answers the fraction of |x| there too.
+      if (op === 'unnatural') {
+        const value = `abs(${exprOf(at(1), ctx)})`;
+        return `(${value} - floor(${value}))`;
+      }
       const fn = REVERSE_MATH[op];
       return fn ? `${fn}(${exprOf(at(1), ctx)})` : placeholder(ctx, block);
     }

@@ -78,6 +78,8 @@ pnpm 워크스페이스 모노레포입니다. 패키지는 아래로만 의존�
 | `packages/core/src/suggest.js`                  | 편집 거리 기반 오타 추천(`didYouMean`)                   |
 | `packages/player/src/server.js`                 | 미리보기 서버 — 실행기·에셋·자동 새로고침                |
 | `packages/player/src/debug-ui.js`               | 디버그 패널 UI (preact 로 만든 브라우저 모듈)            |
+| `packages/player/src/debug-style.ts`            | 디버그 패널 CSS — 두 실행 페이지가 함께 붙인다           |
+| `packages/tessvm/src/web/debug.ts`              | 디버그 패널이 tessvm 을 보는 어댑터                      |
 | `packages/decompiler/src/index.js`              | `.ent` → Tess 소스(오브젝트마다 `objects/이름.tess` 조각 파일 + `useobject`/`usetext`) |
 
 **문법과 동작을 완전히 분리**했습니다. `parser/` 에는 "엔트리" 라는 말이 한 줄도 없고,
@@ -407,13 +409,25 @@ y ≈ x^p 일 때   y ← y × (1 + p·ln x − ln y)      오차 ε → ε²/2
 
 ```
 $ node index.js run examples/all_blocks.tess
-all_blocks.tess -> http://127.0.0.1:41234/
-  실행기: CDN (https://unpkg.com/@entrylabs/entry@4.0.22)
-  자동 새로고침: 켜짐 (--no-reload 로 끌 수 있습니다)
-  Ctrl+C 로 끕니다.
+  주소      http://127.0.0.1:2014/
+  실행기    tessvm (PixiJS)
+  새로고침  켜짐  --no-reload 로 끌 수 있습니다
 ```
 
-컴파일한 작품을 그 자리에서 띄우고 브라우저를 엽니다. 서버가 주는 것은
+**`run` 은 tessvm 으로 띄웁니다.** 같은 규칙으로 훨씬 빠르게 돌고, 엔트리 실행기와 그
+서드파티 라이브러리를 받아 오지 않아도 됩니다([AI_TESSVM.md](./AI_TESSVM.md)).
+엔트리 실행기(entryjs)로 보고 싶으면 `--entry` 를 붙입니다 — 아래 이야기는 그쪽입니다.
+
+```
+$ node index.js run examples/all_blocks.tess --entry
+  주소      http://127.0.0.1:2013/
+  실행기    설치된 @entrylabs/entry
+```
+
+두 실행기는 **같은 컴파일 결과와 같은 디버그 패널**을 받습니다. 다른 것은 그 작품을
+무엇이 돌리는가 하나뿐이라, 어느 쪽에서 이상하면 다른 쪽과 대 볼 수 있습니다.
+
+컴파일한 작품을 그 자리에서 띄우고 브라우저를 엽니다. `--entry` 서버가 주는 것은
 
 | 주소                       | 내용                                          |
 | -------------------------- | --------------------------------------------- |
@@ -492,6 +506,22 @@ playentry.org 에서 여는 방법을 안내합니다.
 그린다. preact 가 실제로 달라진 DOM 만 고치므로 이것으로 충분하다 — arrow-js 때
 표현식마다 따라다니느라 생겼던 회피책(줄을 지우지 않고 `hidden` 으로만 감추기,
 목록을 배열로만 돌려주기)은 전부 사라졌다.
+
+**실행기는 어댑터 하나로만 만난다.** 패널 코드 어디에도 `window.Entry` 를 직접 만지는
+곳은 없고, `rt()` 가 돌려주는 어댑터로만 실행기를 봅니다.
+
+```js
+const rt = () => window.tessRuntime ?? entryRuntime;
+```
+
+`entryRuntime` 이 엔트리 실행기용 기본 구현이고, tessvm 은 자기 어댑터를
+`window.tessRuntime` 에 걸어 둡니다(`packages/tessvm/src/web/debug.ts`). 그래서 같은
+패널이 두 실행기를 그대로 몹니다 — 실행 제어·자료·오브젝트·장면·환경 흉내내기·오류까지.
+실행기마다 다른 것은 어댑터 안에만 있습니다(예: 캔버스를 찾는 법, 무대 칸 크기,
+환경 판단 블록을 감쌀지 값을 그냥 넣을지).
+
+패널 스타일은 `packages/player/src/debug-style.ts` 한 곳에 있습니다 — 엔트리 실행 페이지와
+tessvm 실행 페이지가 같은 CSS 를 붙이기 때문입니다.
 
 **안 보이는 탭은 아예 그리지 않는다.** 블록이 35,000개인 작품도 있어서, 켜져 있지도
 않은 탭의 블록 트리를 0.4초마다 다시 만들면 그것만으로 느려진다.
@@ -1040,6 +1070,7 @@ deltarune.ent  모양 311개 · 소리 102개 · 변수 288개
 | 지워진 장면으로 가는 `jump`           | 실행될 수 없으므로 `# [decompile] ...` 주석으로 남깁니다       |
 | 지워진 오브젝트의 지역 변수           | 전역으로 옮깁니다 (예전에는 아무 말 없이 사라졌습니다)         |
 | 리스트 id 를 담은 `get_variable`      | 그대로 옮기고 경고합니다 — 엔트리도 실행할 때 못 찾습니다      |
+| 지워진 오브젝트를 가리키는 블록       | 아이디를 그대로 남기고 경고합니다 (`touching`·`go`·좌푯값 …)   |
 
 모두 경고를 남깁니다. `deltarune.ent` 를 되돌린 소스의 컴파일 에러가 이 처리들로
 40개에서 0개가 되었습니다.
@@ -1052,10 +1083,24 @@ deltarune.ent  모양 311개 · 소리 102개 · 변수 288개
 | ------------------------------------- | --------------------------------------------------------------- |
 | `color` (붓 색 고르기)                | `#ffdc69` — `text_color` 와 같은 원시 색 블록입니다             |
 | `calc_operation` 의 `asin`·`acos`·`atan` | `asin(x)` — entryjs 가 `_` 뒤를 잘라 `asin_radian` 과 같은 계산입니다 |
-| `calc_operation` 의 `unnatural`       | `(abs(x) % 1)` — 모든 x 에서 같은 값입니다                      |
+| `calc_operation` 의 `unnatural`       | `(abs(x) - floor(abs(x)))` — 빼기여야 10진으로 맞습니다        |
 | `is_press_some_key` 의 기호 키        | `key_down("=")` — 아래 키 이름 항목 참고                        |
 
 `factorial` 만 아직 자리표시자입니다 — Tess 로는 한 식으로 적을 수 없습니다.
+
+**소수 부분은 나머지(`%`)로 쓰면 안 됩니다.** 두 계산은 수학적으로 같지만 엔트리
+안에서는 다릅니다 — `unnatural` 은 `BigNumber(x).minus(floor(x))` 로 **10진**
+계산이라 49.1 이 정확히 0.1 이 되고, 나머지 블록은 `l - r * floor(l / r)` 를 2진
+부동소수 그대로 해서 0.10000000000000142 가 됩니다. 빼기 블록(`calc_basic` MINUS)이
+BigNumber 를 쓰므로 `(abs(x) - floor(abs(x)))` 가 엔트리와 같은 값입니다.
+
+그 차이가 실제로 작품을 깨뜨렸습니다. `deltarune.ent` 의 초상화 애니메이션은
+`소수 부분`의 **자릿수를 글자로 잘라 읽어** "몇 번째 모양까지 돌릴지" 를 정합니다
+(`slice(소수부, 3, 길이)`). 나머지로 되돌리면 `0.1` 대신 `0.10000000000000142` 가
+나와서 그 값이 50 이 아니라 10000000000000192 가 되고, 말하는 동안 모양이 끝없이
+넘어가다 96개를 한 바퀴 돌아 **1번 모양('ERROR!' 그림)** 이 얼굴 위에 뜹니다.
+(엔트리에서 같은 자리를 재어 확인했습니다 — 되돌린 소스의 `도착` 값이 엔트리에서도
+같은 쓰레기 값이었고, 빼기로 고친 뒤에는 두 쪽 모두 50 입니다.)
 
 **키 이름을 엔트리 목록에 맞췄습니다.** `KEY_CODES` 에 기호 키(`;` `=` `,` `-` `.`
 `/` `~` `[` `backslash` `]` `'`, 코드 186~192·219~222)가 빠져 있었습니다. 이름이
@@ -1363,6 +1408,7 @@ pnpm test
 | `test/power.test.js`         | 거듭제곱·n제곱근이 내는 값을 `Math.pow` 와 비교                                |
 | `test/player.test.js`        | `run` 서버의 응답과 파일 경로                                                  |
 | `test/player-debug.test.js`  | 디버그 패널 — 탭 · 실행 제어 · 환경 흉내내기 · 자료 보기/고치기 · 오브젝트 정보 · 무대에서 고르기 · 딱 붙이기 · XSS (jsdom) |
+| `test/tessvm-debug.test.ts`  | 같은 패널을 tessvm 어댑터 위에 올려서 확인 — 실행 제어 · 자료 · 오브젝트 · 장면 · 환경 · 오류 (jsdom) |
 | `test/cli.test.js`           | `check` 가 컴파일 단계까지, 조각 파일 안까지 검사하는지                        |
 | `test/highlight.test.js`     | VS Code 문법 강조를 실제 토크나이저로 검사                                     |
 | `test/examples.test.js`      | `examples/` 의 모든 `.tess` 가 에러 없이 통과 (조각을 불러오는 진입점은 컴파일까지) |

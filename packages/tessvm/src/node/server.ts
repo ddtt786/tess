@@ -11,8 +11,15 @@ import path from 'node:path';
 import { stripTypeScriptTypes } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
-import { assetRoutes, withServedAssets } from '@tess/player';
-import type { AssetFile, EntryProject } from '@tess/compiler';
+import {
+  assetRoutes,
+  debugUiSource,
+  findPreactDir,
+  withServedAssets,
+  DEBUG_UI_PATH,
+  PREACT_PATH,
+} from '@tess/player';
+import type { AssetFile, EntryProject, SourceMap } from '@tess/compiler';
 import { playerPage } from './page.ts';
 import { DEFAULT_STAGE_HEIGHT, DEFAULT_STAGE_WIDTH } from '../runtime/model.ts';
 
@@ -23,6 +30,8 @@ export interface ServeOptions {
   assets: AssetFile[];
   assetDirs: string[];
   name: string;
+  /** Block id → the `.tess` line that made it, for the debug panel. */
+  sourceMap?: SourceMap;
   port?: number;
   quality?: number;
   /** Leave unset to follow the project's own `speed`. */
@@ -38,8 +47,14 @@ export interface ServeOptions {
 export interface RunningServer {
   url: string;
   port: number;
+  /** What the CLI shows as the runner behind this server. */
+  runtime: string;
   close(): Promise<void>;
-  update(next: { project: EntryProject; assets: AssetFile[] }): void;
+  update(next: {
+    project: EntryProject;
+    assets: AssetFile[];
+    sourceMap?: SourceMap;
+  }): void;
 }
 
 const SRC_DIR = fileURLToPath(new URL('../', import.meta.url));
@@ -71,6 +86,8 @@ export async function serveVm(options: ServeOptions): Promise<RunningServer> {
   let routes = assetRoutes(options.assets, options.assetDirs);
   let served = withServedAssets(options.project, routes.rewrites);
   let projectJson = JSON.stringify(served);
+  let sourceMapJson = JSON.stringify(options.sourceMap ?? {});
+  const preactDir = findPreactDir();
   const listeners = new Set<http.ServerResponse>();
 
   const server = http.createServer((request, response) => {
@@ -92,6 +109,26 @@ export async function serveVm(options: ServeOptions): Promise<RunningServer> {
 
     if (url === '/project.json') {
       return send(response, 200, MIME['.json']!, projectJson);
+    }
+
+    if (url === '/sourcemap.json') {
+      return send(response, 200, MIME['.json']!, sourceMapJson);
+    }
+
+    if (request.method === 'POST' && url === '/__log') {
+      return receiveLog(request, response);
+    }
+
+    // The debug panel and the preact it uses: same file, same url as the entry runner.
+    if (url === DEBUG_UI_PATH) {
+      return send(response, 200, MIME['.js']!, debugUiSource());
+    }
+    if (preactDir && url.startsWith(PREACT_PATH)) {
+      const file = path.join(preactDir, url.slice(PREACT_PATH.length));
+      if (file.startsWith(preactDir) && fs.existsSync(file)) {
+        return sendFile(response, file, MIME['.mjs']!);
+      }
+      return send(response, 404, 'text/plain', 'not found');
     }
 
     if (url === '/__reload') {
@@ -133,6 +170,7 @@ export async function serveVm(options: ServeOptions): Promise<RunningServer> {
   return {
     url: `http://127.0.0.1:${port}/`,
     port,
+    runtime: 'tessvm (PixiJS)',
     async close() {
       for (const listener of listeners) {
         listener.end();
@@ -143,11 +181,36 @@ export async function serveVm(options: ServeOptions): Promise<RunningServer> {
       routes = assetRoutes(next.assets, options.assetDirs);
       served = withServedAssets(next.project, routes.rewrites);
       projectJson = JSON.stringify(served);
+      sourceMapJson = JSON.stringify(next.sourceMap ?? {});
       for (const listener of listeners) {
         listener.write('data: reload\n\n');
       }
     },
   };
+}
+
+/** Prints an error the browser hit into the terminal this server runs in. */
+function receiveLog(request: http.IncomingMessage, response: http.ServerResponse): void {
+  let body = '';
+  request.on('data', (chunk: Buffer) => {
+    body += chunk;
+    if (body.length > 1_000_000) {
+      request.destroy();
+    }
+  });
+  request.on('end', () => {
+    try {
+      const { kind, message, stack, time } = JSON.parse(body);
+      const when = new Date(time ?? Date.now()).toLocaleTimeString('ko-KR', { hour12: false });
+      console.error(`\n[${when}] ${kind ?? '오류'}: ${message ?? '(메시지 없음)'}`);
+      if (stack) {
+        console.error(stack);
+      }
+    } catch {
+      // An unreadable body is not worth stopping the server for.
+    }
+    response.writeHead(204).end();
+  });
 }
 
 function send(response: http.ServerResponse, status: number, type: string, body: string): void {
@@ -156,10 +219,16 @@ function send(response: http.ServerResponse, status: number, type: string, body:
 }
 
 function sendFile(response: http.ServerResponse, file: string, type: string): void {
-  const stat = fs.statSync(file);
+  let size = 0;
+  try {
+    size = fs.statSync(file).size;
+  } catch {
+    // The file went away between the check and here.
+    return send(response, 404, 'text/plain', 'not found');
+  }
   response.writeHead(200, {
     'content-type': type,
-    'content-length': stat.size,
+    'content-length': size,
     'cache-control': 'no-cache',
   });
   fs.createReadStream(file).pipe(response);

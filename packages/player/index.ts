@@ -5,11 +5,12 @@
  * 
  * @note `debug-ui.ts` 파일은 클라이언트 사이드에서 사용하기 위해 타입만 제거한 후 브라우저로 제공되므로, 여기서는 임포트하지 않습니다.
  */
-export { serveProject, findLocalRuntime, findPreactDir, DEFAULT_PORT } from "./src/server.ts";
+export { serveProject, findLocalRuntime, findPreactDir, debugUiSource, DEFAULT_PORT } from "./src/server.ts";
 export type { RunningServer, ServeOptions } from "./src/server.ts";
 export type { AssetRoutes } from "./src/asset-routes.ts";
 export type { PlayerPageOptions } from "./src/template.ts";
 export { assetRoutes, withServedAssets } from "./src/asset-routes.ts";
+export { DEBUG_PANEL_STYLE } from "./src/debug-style.ts";
 export {
   playerPage,
   THIRD_PARTY_SCRIPTS,

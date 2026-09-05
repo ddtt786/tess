@@ -88,6 +88,18 @@ declare global {
      */
     tessSourceMap?: Record<string, any>;
 
+    /**
+     * 디버그 패널이 실행기를 만나는 유일한 통로입니다. 없으면 패널은 엔트리
+     * 실행기(`window.Entry`)에 붙습니다. tessvm 은 패널을 불러오기 전에 자기
+     * 어댑터를 여기 걸어 둡니다 (`packages/tessvm/src/web/debug.ts`).
+     *
+     * @example
+     * ```typescript
+     * window.tessRuntime = makeVmRuntime(handle);
+     * ```
+     */
+    tessRuntime?: any;
+
     // --- 실행 페이지가 설치하고 디버그 패널이 호출하는 함수들 ------------------------
     /** 
      * 디버그 패널에 로그를 수신할 콜백을 전달합니다. 패널이 준비되기 전 도착한 로그들을 다시 재생해 줍니다. 

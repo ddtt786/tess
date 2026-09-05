@@ -226,7 +226,7 @@ test('캔버스 그리기 해상도는 처음 한 번만 정하고, 그 뒤에�
     assert.match(ui, /if \(resolutionFixed\) return;/);
     assert.match(ui, /resolutionFixed = true;/);
 
-    const layout = ui.slice(ui.indexOf('function layoutCanvas()'), ui.indexOf('window.addEventListener(\'resize\''));
+    const layout = ui.slice(ui.indexOf('function layoutCanvas()'), ui.indexOf('window.tessLayoutCanvas ='));
     assert.match(layout, /canvas\.style\.width/);
     assert.match(layout, /canvas\.style\.height/);
     assert.doesNotMatch(layout, /canvasEl\.width\s*=/);
@@ -245,11 +245,14 @@ test('물어보기 입력창을 캔버스 해상도에 맞춰 키운다', async 
     assert.match(ui, /const ENTRY_BUFFER_WIDTH = 640;/);
     const scale = ui.slice(ui.indexOf('const scaleInputFieldToBuffer'), ui.indexOf('const setCanvasResolution'));
     assert.match(scale, /stage\.showInputField = /);
+    /** 소스는 홑따옴표로도 겹따옴표로도 쓰일 수 있으므로 둘 다 받는다. */
+    const quoted = (name: string) => new RegExp(`['"]${name}['"]`);
+    const at = (name: string) => scale.search(quoted(name));
     for (const name of ['fontSize', 'borderWidth', 'borderRadius', 'padding', 'width', 'height', 'x', 'y']) {
-      assert.ok(scale.includes(`'${name}'`), `${name} 도 같이 키워야 한다`);
+      assert.match(scale, quoted(name), `${name} 도 같이 키워야 한다`);
     }
     /** 크기 관련 속성들을 먼저 설정한 후 위치를 변경해야, 마지막 setter에서 렌더링이 올바르게 갱신됩니다. */
-    assert.ok(scale.indexOf("'width'") < scale.indexOf("'x'"));
+    assert.ok(at('width') < at('x'));
     assert.ok(ui.includes('scaleInputFieldToBuffer(bufferW);'));
   });
 });
@@ -268,7 +271,7 @@ test('무대 배치가 바뀌면 엔트리가 캐시한 캔버스 위치를 새�
     const layout = ui.slice(ui.indexOf('function layoutCanvas()'), ui.indexOf('window.addEventListener(\'resize\''));
     assert.match(layout, /refreshBoundRect\(\);/);
     /** 패널이 열릴 때 무대 캔버스가 CSS 트랜지션을 통해 이동하므로, 애니메이션 종료 후 경계 좌표를 다시 갱신합니다. */
-    assert.match(ui, /propertyName === 'padding-right'/);
+    assert.match(ui, /propertyName === ['"]padding-right['"]/);
   });
 });
 
@@ -280,7 +283,7 @@ test('디버그 UI 와 preact 를 모듈로 내보낸다', async () => {
     const ui = await fetch(`${server.url}debug-ui.js`);
     assert.equal(ui.status, 200);
     const uiSource = await ui.text();
-    const preactFile = uiSource.match(/from '\/preact\/([^']+)'/)![1];
+    const preactFile = uiSource.match(/from ['"]\/preact\/([^'"]+)['"]/)![1];
     assert.equal((await fetch(`${server.url}preact/${preactFile}`)).status, 200);
     /** `preact` 폴더 외부의 파일에는 접근할 수 없도록 제한해야 합니다. */
     const escaped = await fetch(`${server.url}preact/${encodeURIComponent('../../../package.json')}`);
@@ -362,10 +365,10 @@ test('디버그 패널의 부스트 모드 흉내내기는 그대로 남는다',
    */
   await withServer({}, async (server: any) => {
     const ui = await (await fetch(`${server.url}debug-ui.js`)).text();
-    assert.match(ui, /wrap\('is_boost_mode', \(\) => choice\(state\.env\.boost\)\)/);
-    assert.match(ui, /'env-boost'/);
+    assert.match(ui, /wrap\(['"]is_boost_mode['"], \(\) => choice\(env\.boost\)\)/);
+    assert.match(ui, /['"]env-boost['"]/);
     /** 실제 웹 렌더러의 모드 상태는 디버그 패널에 표시 용도로만 유지됩니다. */
     assert.match(ui, /realBoost: false,/);
-    assert.match(ui, /state\.realBoost = Boolean\(Entry\.options && Entry\.options\.useWebGL\)/);
+    assert.match(ui, /Boolean\(window\.Entry && Entry\.options && Entry\.options\.useWebGL\)/);
   });
 });

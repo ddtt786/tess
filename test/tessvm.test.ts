@@ -476,6 +476,25 @@ test('글꼴 문자열은 굵기·기울임·소수점 크기를 모두 읽는�
 // ---------------------------------------------------------------------------
 //  예제 작품
 // ---------------------------------------------------------------------------
+/**
+ * deltarune 의 초상화 애니메이션이 이 값에 걸려 있었다 — 소수 자릿수를 글자로
+ * 읽어 쓰는 작품에서 0.1 과 0.09999999999999787 은 완전히 다른 결과가 된다.
+ * 엔트리의 빼기는 BigNumber 라 정확히 0.1 이고, 나머지 블록은 그렇지 않다.
+ */
+test('소수 부분은 빼기로 구하면 10진으로 딱 떨어진다', () => {
+  const vm = runVm(
+    wrap(`
+      정확한 = (abs(49.1) - floor(abs(49.1)))
+      나머지로 = (abs(49.1) % 1)
+    `, 'var 정확한 = 0\nvar 나머지로 = 0'),
+  );
+  vm.tick();
+  const value = (name: string) => String(vm.variables.find((item) => item.name === name)!.getValue());
+  assert.equal(value('정확한'), '0.1');
+  /** 나머지 블록은 엔트리와 똑같이 2진 부동소수 그대로다 (`l - r * floor(l / r)`). */
+  assert.equal(value('나머지로'), String(49.1 - 1 * Math.floor(49.1 / 1)));
+});
+
 test('예제 작품이 오류 없이 돌아간다', () => {
   for (const file of ['examples/tour.tess', 'examples/all_blocks.tess', 'examples/cat_run.tess']) {
     const source = readIfExists(file);

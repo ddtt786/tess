@@ -36,5 +36,7 @@ export { Table, columnIndex, cellToRowCol } from './src/runtime/table.ts';
 export { loadProject, assetDirsFor } from './src/node/load.ts';
 export type { LoadedProject, LoadOptions } from './src/node/load.ts';
 export { serveVm, DEFAULT_PORT } from './src/node/server.ts';
+export { makeVmRuntime } from './src/web/debug.ts';
+export type { EnvChoices } from './src/web/debug.ts';
 export type { ServeOptions, RunningServer } from './src/node/server.ts';
 export { SilentAudioEngine } from './src/audio/silent.ts';

@@ -157,73 +157,189 @@ const closePanel = () => setOpen(false);
 // ============================================================================
 //  2. 실행기 붙이기
 // ============================================================================
+// 패널은 실행기를 어댑터 하나로만 만난다. 기본은 엔트리 실행기(entryjs)이고,
+// tessvm 은 이 모듈이 뜨기 전에 자기 어댑터를 `window.tessRuntime` 에 걸어 둔다 —
+// 같은 패널이 두 실행기를 모두 몬다. 찾기는 부를 때마다 하므로 실행기가 늦게 떠도
+// 된다.
 const engine = () => (window.Entry && Entry.engine) || null;
-const engineState = () => {
-  const e = engine();
-  if (!e || typeof e.isState !== "function") return "";
-  for (const s of ["run", "pause", "stop"]) {
-    try {
-      if (e.isState(s)) return s;
-    } catch (error) {
-      /* 다음 상태를 본다 */
+
+/** Everything the panel needs from a runtime. `entryRuntime` is the default. */
+const entryRuntime = {
+  /** `run` · `pause` · `stop`, or `""` while no runtime answers. */
+  state(): string {
+    const e = engine();
+    if (!e || typeof e.isState !== "function") return "";
+    for (const s of ["run", "pause", "stop"]) {
+      try {
+        if (e.isState(s)) return s;
+      } catch (error) {
+        /* 다음 상태를 본다 */
+      }
     }
+    return "";
+  },
+  run() {
+    const e = engine();
+    if (!e) return;
+    if (entryRuntime.state() === "pause") e.togglePause();
+    else e.toggleRun();
+  },
+  pause() {
+    engine()?.togglePause();
+  },
+  stop() {
+    engine()?.toggleStop();
+  },
+  variable(id: string) {
+    const box = (window.Entry && Entry.variableContainer) || null;
+    return box && box.getVariable ? box.getVariable(id) : null;
+  },
+  list(id: string) {
+    const box = (window.Entry && Entry.variableContainer) || null;
+    return box && box.getList ? box.getList(id) : null;
+  },
+  sendSignal(id: string) {
+    Entry.engine.fireEvent("when_message_cast", id);
+  },
+  /** `{ object, entity }` — the object as the project declares it, plus its live entity. */
+  object(objectId: string) {
+    const object =
+      window.Entry && Entry.container && Entry.container.getObject
+        ? Entry.container.getObject(objectId)
+        : null;
+    return object && object.entity ? { object, entity: object.entity } : null;
+  },
+  /**
+   * 지금 장면에 있는 오브젝트만, 앞에 있는 것부터.
+   *
+   * `Entry.container.objects_` 에는 **모든 장면의** 오브젝트가 다 들어 있고, 다른 장면
+   * 것도 `getVisible()` 이 참인 채로 제자리에 남아 있다(마녀 작품 기준 558개 중 지금
+   * 장면은 13개, 다른 장면인데 보이는 것으로 잡히는 게 285개). 이걸 그대로 훑으면 화면에
+   * 있지도 않은 다른 장면의 배경이 먼저 걸려서, 장면을 한 번 넘긴 뒤로는 엉뚱한
+   * 오브젝트만 골라진다.
+   */
+  currentObjects(): any[] {
+    const container = window.Entry && Entry.container;
+    if (!container) return [];
+    try {
+      const current = container.getCurrentObjects?.();
+      if (Array.isArray(current)) return current;
+    } catch (error) {
+      /* 아래에서 직접 걸러 낸다 */
+    }
+    const all = Array.isArray(container.objects_) ? container.objects_ : [];
+    const sceneId = window.Entry?.scene?.selectedScene?.id;
+    if (!sceneId) return all;
+    return all.filter(
+      (object: any) => (object.scene?.id ?? object.scene) === sceneId,
+    );
+  },
+  /**
+   * Jumps to a scene and runs it, the same way entry's "start scene" block does
+   * (`Entry.scene.selectScene` + `Entry.engine.fireEvent('when_scene_start')`).
+   *
+   * selectScene only swaps what the stage draws: without the event the scene's
+   * "when scene starts" scripts never run, so the scene opens frozen. The engine
+   * drops every event unless it is running, so it is started or resumed first.
+   */
+  goToScene(sceneId: string) {
+    const scene = Entry.scene.getSceneById(sceneId);
+    const runner = engine();
+    if (!scene) return;
+    Entry.scene.selectScene(scene);
+    if (!runner) return;
+    // Events are dropped while stopped or paused, so run the engine first
+    if (entryRuntime.state() === "pause") runner.togglePause();
+    else if (entryRuntime.state() !== "run") runner.toggleRun();
+    runner.fireEvent("when_scene_start");
+  },
+  /** Ask the runtime to redraw after the panel changed something. */
+  requestUpdate() {
+    if (window.Entry) Entry.requestUpdate = true;
+  },
+  /** Renderer the runtime actually draws with — WebGL or 2D. */
+  realBoost(): boolean {
+    return Boolean(window.Entry && Entry.options && Entry.options.useWebGL);
+  },
+  // 브라우저에 직접 묻는 판단 블록들이라, func 을 감싸 패널에서 고른 값을 돌려준다.
+  // `env` 는 패널이 들고 있는 그 객체라, 감싼 함수는 늘 지금 고른 값을 읽는다.
+  patchEnvironment(env: { boost: string; device: string; touch: string }) {
+    const blocks = window.Entry && Entry.block;
+    if (!blocks) return;
+    const wrap = (type: string, forced: (args: any[]) => any) => {
+      const spec = blocks[type];
+      if (!spec || typeof spec.func !== "function" || spec.tessWrapped) return;
+      const original = spec.func;
+      spec.func = function (this: any, ...args: any[]) {
+        const value = forced(args);
+        return value === null ? original.apply(this, args) : value;
+      };
+      spec.tessWrapped = true;
+    };
+    wrap("is_boost_mode", () => choice(env.boost));
+    wrap("is_touch_supported", () => choice(env.touch));
+    wrap("is_current_device_type", (args) => {
+      if (env.device === "") return null;
+      try {
+        return args[1].getField("DEVICE", args[1]) === env.device;
+      } catch (e) {
+        return null;
+      }
+    });
+  },
+  /** 엔트리 무대의 논리 크기. 화면에 어떻게 늘어나 있든 좌표는 늘 이 칸으로 센다. */
+  stageSize() {
+    return { width: 480, height: 270 };
+  },
+  stageCanvas: () => entryStageCanvas(),
+  layoutCanvas: () => entryLayoutCanvas(),
+  refreshRect: () => refreshBoundRect(),
+};
+
+export type DebugRuntime = typeof entryRuntime;
+
+const rt = (): DebugRuntime => window.tessRuntime ?? entryRuntime;
+
+/** 실행기 호출은 죄다 이 밖으로 나가므로, 터져도 패널은 살아 있어야 한다. */
+const guard = <T,>(what: string, fallback: T, action: () => T): T => {
+  try {
+    return action();
+  } catch (error) {
+    failed(what, error);
+    return fallback;
   }
-  return "";
+};
+
+const engineState = () => {
+  try {
+    return rt().state();
+  } catch (error) {
+    return "";
+  }
 };
 
 const failed = (what: string, error: any) => window.tessReportError(what, error);
 
-const control = (action: any) => {
-  try {
-    action(engine());
-  } catch (error) {
-    failed("실행 제어", error);
-  }
+const control = (action: () => void) => {
+  guard("실행 제어", undefined, action);
   state.runState = engineState();
   setTimeout(() => {
     state.runState = engineState();
   }, 60);
 };
-const doRun = () =>
-  control((e: any) => {
-    if (!e) return;
-    if (engineState() === "pause") e.togglePause();
-    else e.toggleRun();
-  });
-const doPause = () => control((e: any) => e && e.togglePause());
-const doStop = () => control((e: any) => e && e.toggleStop());
+const doRun = () => control(() => rt().run());
+const doPause = () => control(() => rt().pause());
+const doStop = () => control(() => rt().stop());
 
 // --- 실행 환경 흉내내기 -------------------------------------------------------
-// 브라우저에 직접 묻는 판단 블록들이라, func 을 감싸 패널에서 고른 값을 돌려준다.
 const choice = (value: any) => (value === "" ? null : value === "true");
 
 /** Renderer entry actually runs on — what "실제 값 그대로" resolves to for boost mode. */
 const realBoostLabel = () => (state.realBoost ? "켜짐 (WebGL)" : "꺼짐 (2D)");
 
 window.tessPatchEnvironmentBlocks = function patchEnvironmentBlocks() {
-  const blocks = window.Entry && Entry.block;
-  if (!blocks) return;
-  state.realBoost = Boolean(Entry.options && Entry.options.useWebGL);
-  const wrap = (type: string, forced: (args: any[]) => any) => {
-    const spec = blocks[type];
-    if (!spec || typeof spec.func !== "function" || spec.tessWrapped) return;
-    const original = spec.func;
-    spec.func = function (this: any, ...args: any[]) {
-      const value = forced(args);
-      return value === null ? original.apply(this, args) : value;
-    };
-    spec.tessWrapped = true;
-  };
-  wrap("is_boost_mode", () => choice(state.env.boost));
-  wrap("is_touch_supported", () => choice(state.env.touch));
-  wrap("is_current_device_type", (args) => {
-    if (state.env.device === "") return null;
-    try {
-      return args[1].getField("DEVICE", args[1]) === state.env.device;
-    } catch (e) {
-      return null;
-    }
-  });
+  state.realBoost = guard("실행 환경 읽기", false, () => rt().realBoost());
+  guard("실행 환경 흉내내기", undefined, () => rt().patchEnvironment(state.env));
 };
 
 // --- 자료 -------------------------------------------------------------------
@@ -233,19 +349,16 @@ const preview = (value: any) => {
   return text.length > 80 ? text.slice(0, 80) + "…" : text;
 };
 
-const container = () => (window.Entry && Entry.variableContainer) || null;
 const liveVariable = (id: string) => {
-  const box = container();
   try {
-    return box && box.getVariable ? box.getVariable(id) : null;
+    return rt().variable(id);
   } catch (e) {
     return null;
   }
 };
 const liveList = (id: string) => {
-  const box = container();
   try {
-    return box && box.getList ? box.getList(id) : null;
+    return rt().list(id);
   } catch (e) {
     return null;
   }
@@ -385,11 +498,7 @@ const setEntryVisible = (entry: any, visible: boolean) => {
 };
 
 const sendSignal = (id: string) => {
-  try {
-    Entry.engine.fireEvent("when_message_cast", id);
-  } catch (error) {
-    failed("신호 보내기", error);
-  }
+  guard("신호 보내기", undefined, () => rt().sendSignal(id));
 };
 
 /** 함수 머리 사슬에서 이름·인자 개수·종류를 읽는다 */
@@ -423,11 +532,7 @@ const describeFunction = (fn: any) => {
 // --- 오브젝트 ----------------------------------------------------------------
 const liveEntity = (objectId: string) => {
   try {
-    const object =
-      window.Entry && Entry.container && Entry.container.getObject
-        ? Entry.container.getObject(objectId)
-        : null;
-    return object && object.entity ? { object, entity: object.entity } : null;
+    return rt().object(objectId);
   } catch (error) {
     return null;
   }
@@ -454,7 +559,7 @@ const setEntityNumber = (name: string) => (objectId: string, text: string) => {
   }
   try {
     if (typeof live.entity[name] === "function") live.entity[name](value);
-    if (window.Entry) Entry.requestUpdate = true;
+    rt().requestUpdate();
   } catch (error) {
     failed("오브젝트 값 바꾸기", error);
   }
@@ -515,7 +620,7 @@ const setPicture = (objectId: string, pictureId: any) => {
     const picture =
       live && live.object.getPicture ? live.object.getPicture(pictureId) : null;
     if (picture) live!.entity.setImage(picture);
-    if (window.Entry) Entry.requestUpdate = true;
+    rt().requestUpdate();
   } catch (error) {
     failed("모양 바꾸기", error);
   }
@@ -527,7 +632,7 @@ const setRotateMethod = (objectId: string, method: any) => {
   try {
     if (live && typeof live.object.setRotateMethod === "function")
       live.object.setRotateMethod(method);
-    if (window.Entry) Entry.requestUpdate = true;
+    rt().requestUpdate();
   } catch (error) {
     failed("회전 방식 바꾸기", error);
   }
@@ -539,7 +644,7 @@ const setEntityVisible = (objectId: string, visible: boolean) => {
   try {
     if (live && typeof live.entity.setVisible === "function")
       live.entity.setVisible(Boolean(visible));
-    if (window.Entry) Entry.requestUpdate = true;
+    rt().requestUpdate();
   } catch (error) {
     failed("보이기 바꾸기", error);
   }
@@ -551,7 +656,7 @@ const setEntityText = (objectId: string, text: string) => {
   try {
     if (live && typeof live.entity.setText === "function")
       live.entity.setText(String(text));
-    if (window.Entry) Entry.requestUpdate = true;
+    rt().requestUpdate();
   } catch (error) {
     failed("글 내용 바꾸기", error);
   }
@@ -575,28 +680,9 @@ const showObject = (object: any) => {
   touch();
 };
 
-/**
- * Jumps to a scene and runs it, the same way entry's "start scene" block does
- * (`Entry.scene.selectScene` + `Entry.engine.fireEvent('when_scene_start')`).
- *
- * selectScene only swaps what the stage draws: without the event the scene's
- * "when scene starts" scripts never run, so the scene opens frozen. The engine
- * drops every event unless it is running, so it is started or resumed first.
- */
+/** 그 장면으로 넘어가서 그 장면을 실행한다 (실행기마다 하는 일은 어댑터에 있다). */
 const goToScene = (sceneId: string) => {
-  try {
-    const scene = Entry.scene.getSceneById(sceneId);
-    const runner = engine();
-    if (scene) Entry.scene.selectScene(scene);
-    if (scene && runner) {
-      // Events are dropped while stopped or paused, so run the engine first
-      if (engineState() === "pause") runner.togglePause();
-      else if (engineState() !== "run") runner.toggleRun();
-      runner.fireEvent("when_scene_start");
-    }
-  } catch (error) {
-    failed("장면 바로가기", error);
-  }
+  guard("장면 바로가기", undefined, () => rt().goToScene(sceneId));
   state.runState = engineState();
   touch();
 };
@@ -845,6 +931,9 @@ function RunTab() {
           value,
           onChange: (event: any) => {
             state.env[id.replace("env-", "")] = event.target.value;
+            // 엔트리는 감싼 블록이 그때그때 이 값을 읽지만, 실행기에 값을 직접
+            // 넣는 쪽(tessvm)은 고를 때마다 다시 넣어 줘야 한다.
+            window.tessPatchEnvironmentBlocks();
           },
         },
         options.map(([v, text]: [string, string]) =>
@@ -1175,7 +1264,11 @@ function objectInfoRows() {
     ];
   }
 
-  const isText = live.entity.text !== undefined;
+  // 글상자인지는 오브젝트 종류로 가른다 — 실행기에 따라 글이 없는 오브젝트도
+  // `entity.text` 를 빈 문자열로 들고 있다.
+  const isText = live.object && live.object.objectType
+    ? live.object.objectType === "textBox"
+    : live.entity.text !== undefined;
   const rows = [];
   for (const field of ENTITY_FIELDS) {
     const value = field.get(live.entity);
@@ -1631,19 +1724,15 @@ window.tessSelectObjectById = selectObjectById;
  */
 const PICK_WINDOW = 400;
 
-// 엔트리 무대의 논리 크기. 화면에 어떻게 늘어나 있든 좌표는 늘 이 칸으로 센다.
-const STAGE_WIDTH = 480;
-const STAGE_HEIGHT = 270;
-
 /**
- * 실행 화면을 그리는 캔버스.
+ * 엔트리 실행 화면을 그리는 캔버스.
  *
  * 그냥 `#workspace canvas` 로 찾으면 안 된다 — 부스트 모드(WebGL)에서는 PIXI 가
  * 글자 따위를 그리려고 눈에 안 보이는 도우미 캔버스를 열 몇 개나 먼저 만들어 둬서,
  * 첫 번째로 걸리는 것이 크기 0 짜리 엉뚱한 캔버스다. 그러면 좌표를 못 재서 무대를
  * 눌러도 고르기가 아예 시작되지 않는다. 엔트리가 붙이는 이름으로 집는다.
  */
-function stageCanvas() {
+function entryStageCanvas() {
   const named = document.getElementById("entryCanvas");
   if (named) return named;
 
@@ -1661,15 +1750,27 @@ function stageCanvas() {
   return best;
 }
 
-/** 화면 좌표를 무대 좌표로. 무대는 가운데가 (0,0) 이고 y 가 위로 자란다. */
+function stageCanvas() {
+  try {
+    return rt().stageCanvas();
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * 화면 좌표를 무대 좌표로. 무대는 가운데가 (0,0) 이고 y 가 위로 자란다.
+ * 무대 칸의 크기는 실행기가 정한다 — tessvm 은 480×270 이 아닐 수 있다.
+ */
 function toStagePoint(clientX: number, clientY: number) {
   const canvas = stageCanvas();
   if (!canvas) return null;
   const rect = canvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
+  const size = rt().stageSize();
   return {
-    x: ((clientX - rect.left) / rect.width) * STAGE_WIDTH - STAGE_WIDTH / 2,
-    y: STAGE_HEIGHT / 2 - ((clientY - rect.top) / rect.height) * STAGE_HEIGHT,
+    x: ((clientX - rect.left) / rect.width) * size.width - size.width / 2,
+    y: size.height / 2 - ((clientY - rect.top) / rect.height) * size.height,
   };
 }
 
@@ -1699,36 +1800,17 @@ function insideStage(event: any) {
 /**
  * 그 자리에 있는 오브젝트를 앞에 있는 것부터 찾는다.
  *
- * 엔트리가 쏘는 `entityClick` 만 기다리면 안 된다 — 그 이벤트는 늘 오지 않는다.
+ * 실행기가 쏘는 클릭 이벤트만 기다리면 안 된다 — 그 이벤트는 늘 오지 않는다.
  * 멈춰 있을 때는 "눌러서 시작" 덮개(<div>)가 클릭을 먼저 먹어서 캔버스까지 가지도
  * 않고, 실행 중이어도 렌더러에 따라 다음 차례로 넘어간다. 경계 상자로 직접 맞히면
  * 멈춰 있든 돌고 있든, 2D 든 WebGL 이든 언제나 답이 나온다.
- *
- * `Entry.container.objects_` 는 앞에 있는 것이 먼저다.
- */
-/**
- * 지금 장면에 있는 오브젝트만, 앞에 있는 것부터.
- *
- * `Entry.container.objects_` 에는 **모든 장면의** 오브젝트가 다 들어 있고, 다른 장면
- * 것도 `getVisible()` 이 참인 채로 제자리에 남아 있다(마녀 작품 기준 558개 중 지금
- * 장면은 13개, 다른 장면인데 보이는 것으로 잡히는 게 285개). 이걸 그대로 훑으면 화면에
- * 있지도 않은 다른 장면의 배경이 먼저 걸려서, 장면을 한 번 넘긴 뒤로는 엉뚱한
- * 오브젝트만 골라진다.
  */
 function stageObjects() {
-  const container = window.Entry && Entry.container;
-  if (!container) return [];
   try {
-    const current = container.getCurrentObjects?.();
-    if (Array.isArray(current)) return current;
+    return rt().currentObjects();
   } catch (error) {
-    /* 아래에서 직접 걸러 낸다 */
+    return [];
   }
-
-  const all = Array.isArray(container.objects_) ? container.objects_ : [];
-  const sceneId = window.Entry?.scene?.selectedScene?.id;
-  if (!sceneId) return all;
-  return all.filter((object: any) => (object.scene?.id ?? object.scene) === sceneId);
 }
 
 function objectAtPoint(clientX: number, clientY: number) {
@@ -1848,13 +1930,7 @@ window.tessDescribeListIndexError = function describeListIndexError(
 
     let listName = listId;
     let count = null;
-    const list =
-      listId &&
-      window.Entry &&
-      Entry.variableContainer &&
-      Entry.variableContainer.getList
-        ? Entry.variableContainer.getList(listId)
-        : null;
+    const list = listId ? liveList(listId) : null;
     if (list) {
       if (typeof list.getName === "function") listName = list.getName();
       if (typeof list.getArray === "function") count = list.getArray().length;
@@ -1976,8 +2052,8 @@ const refreshBoundRect = () => {
     stage.updateBoundRect();
 };
 
-/** 남은 공간에 16:9 로 꽉 차도록 캔버스의 CSS 크기만 맞춘다 */
-window.tessLayoutCanvas = function layoutCanvas() {
+/** 남은 공간에 16:9 로 꽉 차도록 캔버스의 CSS 크기만 맞춘다 (엔트리 실행기) */
+const entryLayoutCanvas = function layoutCanvas() {
   const workspace = document.getElementById("workspace");
   const canvas = document.getElementById("entryCanvas");
   if (!workspace || !canvas) return;
@@ -1999,6 +2075,10 @@ window.tessLayoutCanvas = function layoutCanvas() {
   setCanvasResolution();
   refreshBoundRect();
 };
+/** 무대를 다시 맞춘다 — 실행기마다 하는 일은 어댑터에 있다. */
+window.tessLayoutCanvas = function tessLayoutCanvas() {
+  guard("무대 배치", undefined, () => rt().layoutCanvas());
+};
 window.addEventListener("resize", () => window.tessLayoutCanvas());
 
 // Opening the panel slides the stage sideways over a CSS transition, so its
@@ -2013,6 +2093,6 @@ setInterval(() => {
   state.runState = engineState();
   if (state.open && (state.tab === "data" || state.tab === "objects"))
     state.tick += 1;
-  if (window.Entry && window.tessWatchStagePicks) window.tessWatchStagePicks();
-  refreshBoundRect();
+  window.tessWatchStagePicks?.();
+  guard("무대 위치 재기", undefined, () => rt().refreshRect());
 }, 400);

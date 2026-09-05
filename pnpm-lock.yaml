@@ -282,6 +282,9 @@ importers:
       '@tess/player':
         specifier: workspace:*
         version: link:../player
+      '@tess/vm':
+        specifier: workspace:*
+        version: link:../tessvm
 
   packages/compiler:
     dependencies:

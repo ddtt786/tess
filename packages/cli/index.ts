@@ -28,11 +28,26 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import type {
+  AssetFile,
   CompileCache,
   CompileOptions,
   EntryProject,
+  SourceMap,
 } from "@tess/compiler";
-import type { RunningServer } from "@tess/player";
+import type { RunningServer as EntryServer } from "@tess/player";
+import type { RunningServer as VmServer } from "@tess/vm";
+
+/**
+ * 서버 하나로 보는 두 실행기. `run` 은 tessvm 으로 띄우고, `--entry` 면 엔트리
+ * 실행기로 띄운다 — 지켜보다 다시 불러오는 쪽에서는 이 둘을 구분할 필요가 없다.
+ */
+type RunningServer = (EntryServer | VmServer) & {
+  update(next: {
+    project: EntryProject;
+    assets?: AssetFile[];
+    sourceMap?: SourceMap;
+  }): void;
+};
 
 /** Everything the command line can set. */
 interface CliOptions {
@@ -43,6 +58,12 @@ interface CliOptions {
   noOpen?: boolean;
   noReload?: boolean;
   boost?: boolean;
+  /** `run` 을 엔트리 실행기(entryjs)로 돌린다. 기본은 tessvm 이다. */
+  entry?: boolean;
+  /** tessvm 으로 돌릴 때의 화질 배수 · 무대 크기 · 틱 속도. */
+  quality?: number;
+  stage?: { width: number; height: number };
+  fps?: number;
   warnings?: boolean;
   sizes?: boolean;
   keepSvg?: boolean;
@@ -58,12 +79,13 @@ import {
   makeEntryBundle,
 } from "@tess/compiler";
 import { serveProject } from "@tess/player";
+import { serveVm } from "@tess/vm";
 import * as out from "./src/output.ts";
 
 const USAGE = `사용법
   node index.ts check      <파일.tess>          문법 및 의미 검사 (컴파일 테스트 포함)
   node index.ts build      <파일.tess> [-o 출력] 엔트리 작품으로 컴파일
-  node index.ts run        <파일.tess>          컴파일 후 브라우저에서 실행
+  node index.ts run        <파일.tess>          컴파일 후 브라우저에서 실행 (tessvm)
   node index.ts ast        <파일.tess>          AST 구조 출력
   node index.ts decompile  <파일.ent> [-o 폴더]  기존 엔트리 작품을 Tess 소스로 디컴파일
 
@@ -76,10 +98,17 @@ const USAGE = `사용법
   --assets <폴더>    모양 및 소리 파일을 검색할 폴더를 지정합니다. (여러 번 지정 가능)
   --name <이름>      작품 이름을 지정합니다. (기본값: project 블록의 title)
   --port <번호>      run 명령 시 사용할 포트 번호를 지정합니다.
-                     (기본값: 2013, 사용 중인 경우 빈 포트 자동 할당)
+                     (기본값: tessvm 2014 · 엔트리 실행기 2013,
+                      사용 중인 경우 빈 포트 자동 할당)
   --no-open          run 명령 시 브라우저를 자동으로 열지 않도록 설정합니다.
   --no-reload        run 명령 시 소스가 변경되어도 자동 새로고침을 하지 않습니다.
-  --boost            run 명령 시 부스트 모드(WebGL 렌더러)를 활성화합니다.
+  --entry            run 명령을 엔트리 실행기(entryjs)로 돌립니다.
+                     (기본값은 tessvm 입니다 — 같은 규칙으로 훨씬 빠르게 돕니다.)
+  --quality <배수>   run 명령 시 화질 배수 1 · 2 · 4 (tessvm 전용, 기본 1)
+  --stage <가로x세로> run 명령 시 무대 크기 (tessvm 전용, 기본 480x270)
+  --fps <값>         run 명령 시 틱 속도 (tessvm 전용, 기본은 작품이 정한 speed)
+  --boost            부스트 모드. 엔트리 실행기(--entry)에서는 WebGL 렌더러로 돌리고,
+                     tessvm 에서는 '부스트 모드인가?' 가 참을 돌려주게 합니다.
                      (참고: build 명령에는 적용되지 않습니다.)
   --strict           느슨한 실행을 끕니다. 컴파일 에러가 하나라도 있으면 build/run을
                      중단하고, '주의'로 알리던 것을 '경고'로 올려서 보여줍니다.
@@ -102,6 +131,15 @@ function parseArgs(argv: string[]) {
     else if (arg === "--no-open") options.noOpen = true;
     else if (arg === "--no-reload") options.noReload = true;
     else if (arg === "--boost") options.boost = true;
+    else if (arg === "--entry") options.entry = true;
+    else if (arg === "--quality") options.quality = Number(argv[++i]);
+    else if (arg === "--fps") options.fps = Number(argv[++i]);
+    else if (arg === "--stage") {
+      const [width, height] = String(argv[++i] ?? "").split(/[x×,]/);
+      if (Number(width) && Number(height)) {
+        options.stage = { width: Number(width), height: Number(height) };
+      }
+    }
     else if (arg === "--warnings") options.warnings = true;
     else if (arg === "--sizes") options.sizes = true;
     else if (arg === "--keep-svg") options.keepSvg = true;
@@ -231,6 +269,41 @@ async function runBuild(file: string, options: CliOptions): Promise<number> {
   return 0;
 }
 
+/**
+ * 작품을 띄울 서버를 연다. 기본은 tessvm 이고, `--entry` 면 엔트리 실행기다.
+ *
+ * 둘은 같은 컴파일 결과(project·assets·sourceMap)를 받아 같은 디버그 패널을 단다.
+ * 다른 것은 그 작품을 무엇이 돌리는가 하나뿐이다.
+ */
+function openServer(
+  file: string,
+  options: CliOptions,
+  result: { project: EntryProject | null; assets: AssetFile[]; sourceMap?: SourceMap },
+  reload: boolean,
+): Promise<RunningServer> {
+  const assetDirs = assetDirsFor(file, options);
+  const shared = {
+    project: result.project!,
+    assets: result.assets,
+    assetDirs,
+    name: result.project!.name,
+    port: options.port,
+    reload,
+    sourceMap: result.sourceMap,
+    boost: options.boost,
+  };
+  if (options.entry) {
+    return serveProject({ ...shared, cwd: path.dirname(path.resolve(file)) });
+  }
+  return serveVm({
+    ...shared,
+    quality: options.quality,
+    fps: options.fps,
+    stageWidth: options.stage?.width,
+    stageHeight: options.stage?.height,
+  });
+}
+
 /** 컴파일해서 브라우저에서 열어 본다 */
 async function runProject(
   file: string,
@@ -269,17 +342,7 @@ async function runProject(
 
   const reload = !options.noReload;
   const spin = out.working("서버 여는 중");
-  const server = await serveProject({
-    project: result.project!,
-    assets: result.assets,
-    assetDirs,
-    name: result.project!.name,
-    port: options.port,
-    cwd: path.dirname(path.resolve(file)),
-    reload,
-    sourceMap: result.sourceMap,
-    boost: options.boost,
-  });
+  const server = await openServer(file, options, result, reload);
 
   spin.done("서버 준비");
 
@@ -291,7 +354,14 @@ async function runProject(
       reload ? "켜짐  " + out.dim("--no-reload 로 끌 수 있습니다") : "꺼짐",
     ],
   ];
-  if (options.boost) rows.push(["부스트", "켜짐  " + out.dim("WebGL 렌더러")]);
+  if (options.boost) {
+    rows.push([
+      "부스트",
+      options.entry
+        ? "켜짐  " + out.dim("WebGL 렌더러")
+        : "켜짐  " + out.dim("'부스트 모드인가?' 가 참"),
+    ]);
+  }
   out.note(out.details(rows), "실행 중");
 
   out.outro(out.dim("Ctrl+C 로 끕니다."));

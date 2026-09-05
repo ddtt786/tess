@@ -128,6 +128,7 @@ async function run(loaded: Loaded, options: Options): Promise<number> {
     project: loaded.project,
     assets: loaded.assets,
     assetDirs: loaded.assetDirs,
+    sourceMap: loaded.sourceMap,
     name: loaded.name,
     port: options.port,
     quality: options.quality,

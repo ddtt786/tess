@@ -102,10 +102,15 @@ const CDN = 'https://unpkg.com/@entrylabs/entry@4.0.22';
 
 const DEBUG_UI_FILE = fileURLToPath(new URL('./debug-ui.ts', import.meta.url));
 
-// The debug panel is authored in TypeScript but served to a browser, so the
-// annotations are erased on the way out. Stripping replaces types with spaces,
-// keeping every line and column aligned with the source.
-function debugUiScript() {
+/**
+ * 브라우저로 내보낼 디버그 패널 소스입니다. tessvm 서버도 같은 파일을 같은 주소로
+ * 내보내므로 두 실행기가 똑같은 패널을 씁니다.
+ *
+ * The debug panel is authored in TypeScript but served to a browser, so the
+ * annotations are erased on the way out. Stripping replaces types with spaces,
+ * keeping every line and column aligned with the source.
+ */
+export function debugUiSource() {
   return stripTypeScriptTypes(fs.readFileSync(DEBUG_UI_FILE, 'utf-8'), { mode: 'strip' });
 }
 
@@ -253,7 +258,7 @@ export function serveProject({
     }
     if (!localRuntime && boost && url.startsWith('/lib/')) return proxyRuntimeFile(url, response);
 
-    if (url === DEBUG_UI_PATH) return send(response, 200, '.js', debugUiScript());
+    if (url === DEBUG_UI_PATH) return send(response, 200, '.js', debugUiSource());
 
     // 디버그 패널 UI 가 import 하는 preact
     if (preactDir && url.startsWith(PREACT_PATH)) {

@@ -32,6 +32,10 @@ export interface TessVmHandle {
   audio: WebAudioEngine;
   /** Live stage metrics — read `stage.width` · `stage.height`. */
   stage: typeof stage;
+  /** What this runner started with; the debug panel's "as it really is" restores these. */
+  defaultBoost: boolean;
+  defaultTouch: boolean;
+  defaultDeviceType: 'desktop' | 'tablet' | 'mobile';
   start(): void;
   stop(): void;
   pause(): void;
@@ -92,14 +96,17 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   await renderer.init();
 
   const audio = new WebAudioEngine();
+  const boost = options.boost ?? false;
+  const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  const deviceType = /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
   const vm = new Vm({
     renderer,
     audio,
     speech: new SpeechSynthesisEngine(),
     fps: options.fps,
-    boost: options.boost ?? false,
-    touch: 'ontouchstart' in window || navigator.maxTouchPoints > 0,
-    deviceType: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop',
+    boost,
+    touch,
+    deviceType,
   });
 
   vm.load(project);
@@ -135,14 +142,38 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
 
   bindInput(vm, renderer, view);
 
-  const resize = () => {
-    const rect = view.getBoundingClientRect();
-    renderer.layout(rect.width || stage.worldWidth, rect.height || stage.worldHeight);
+  // The canvas is fitted into the box the host gives us, and that box holds the
+  // canvas: writing a new canvas size from inside a ResizeObserver callback
+  // feeds straight back into the same observer. Two things break that loop —
+  // a box that has not changed is not laid out again, and the layout itself is
+  // written in a later frame instead of inside the observation pass.
+  let lastWidth = 0;
+  let lastHeight = 0;
+  const layout = (force: boolean) => {
+    const width = view.clientWidth || stage.worldWidth;
+    const height = view.clientHeight || stage.worldHeight;
+    if (!force && width === lastWidth && height === lastHeight) {
+      return;
+    }
+    lastWidth = width;
+    lastHeight = height;
+    renderer.layout(width, height);
+  };
+  const resize = () => layout(true);
+  let queued = 0;
+  const layoutSoon = () => {
+    if (queued) {
+      return;
+    }
+    queued = requestAnimationFrame(() => {
+      queued = 0;
+      layout(false);
+    });
   };
   resize();
   window.addEventListener('resize', resize);
   if (typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(resize).observe(view);
+    new ResizeObserver(layoutSoon).observe(view);
   }
 
   const stats = options.showStats ? makeStats(frame) : null;
@@ -173,6 +204,9 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     renderer,
     audio,
     stage,
+    defaultBoost: boost,
+    defaultTouch: touch,
+    defaultDeviceType: deviceType,
     start: () => vm.start(),
     stop: () => {
       vm.stop();
@@ -243,6 +277,11 @@ function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
     }
   });
   const up = () => {
+    // A release outside the stage still clears the press. A release that never
+    // began on the stage (a click on the debug panel, say) is not the work's.
+    if (!vm.mouseDown && !vm.clickedEntityId) {
+      return;
+    }
     vm.mouseDown = false;
     vm.fireEvent('mouse_click_cancled');
     const clicked = vm.clickedEntityId;
@@ -256,7 +295,7 @@ function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
       }
     }
   };
-  view.addEventListener('pointerup', up);
+  window.addEventListener('pointerup', up);
   window.addEventListener('pointercancel', up);
 }
 

@@ -152,6 +152,8 @@ export class Vm implements Project {
   mouseDown = false;
   clickedEntityId: string | null = null;
   errors: VmError[] = [];
+  /** Called right after an error is recorded, for the debug panel to report it. */
+  onError: ((error: VmError) => void) | null = null;
 
   /** `Entry.engine.projectTimer` — off until a `초시계 시작하기` block runs. */
   private timerInit = false;
@@ -566,11 +568,13 @@ export class Vm implements Project {
         // The script asked to end itself; that is not a failure.
         return;
       }
-      this.errors.push({
+      const record: VmError = {
         message: error instanceof Error ? error.message : String(error),
         blockId: thread.script.blockId,
         targetId: thread.target.id,
-      });
+      };
+      this.errors.push(record);
+      this.onError?.(record);
     }
   }
 
