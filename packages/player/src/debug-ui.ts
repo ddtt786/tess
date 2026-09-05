@@ -120,7 +120,8 @@ const state = observable({
     "objects-info": DEFAULT_SECTION_HEIGHT,
   },
   tick: 0, // 실행기에서 그때그때 읽는 값들을 다시 읽게 하는 카운터
-  picking: false, // Ctrl+Shift 로 무대에서 오브젝트를 고르는 중
+  inspecting: false, // 고르기 도구가 켜져 있는가 — 대는 곳이 그대로 골라진다
+  pinned: false, // 눌러서 지금 고른 것에 붙박아 두었는가
 });
 
 const touch = () => {
@@ -1003,12 +1004,14 @@ function RunTab() {
           "p",
           {
             class:
-              "debug-note debug-pick-hint" + (state.picking ? " active" : ""),
+              "debug-note debug-pick-hint" + (state.inspecting ? " active" : ""),
             id: "pick-hint",
           },
-          state.picking
-            ? "오브젝트를 고르는 중… 실행 화면에서 누르세요."
-            : "Ctrl+Shift 를 누른 채 실행 화면의 오브젝트를 누르면 오브젝트 탭에서 그 오브젝트가 열립니다.",
+          state.inspecting
+            ? state.pinned
+              ? "골라 둔 오브젝트에 붙박여 있습니다. 실행 화면을 한 번 더 누르면 풀립니다."
+              : "실행 화면에 마우스를 대면 그 오브젝트가 열립니다. 누르면 거기에 붙박습니다."
+            : "패널 머리의 고르기 단추를 켜면, 실행 화면에서 마우스를 댄 오브젝트가 오브젝트 탭에 바로 열립니다.",
         ),
       ],
     },
@@ -1507,6 +1510,20 @@ function Panel() {
       h(
         "button",
         {
+          id: "inspect-btn",
+          type: "button",
+          class: "debug-inspect" + (state.inspecting ? " active" : ""),
+          "aria-pressed": state.inspecting ? "true" : "false",
+          "aria-label": "무대에서 오브젝트 고르기",
+          title:
+            "무대에서 오브젝트 고르기 — 마우스를 댄 것이 열리고, 누르면 거기에 붙박습니다",
+          onClick: toggleInspect,
+        },
+        inspectIcon(),
+      ),
+      h(
+        "button",
+        {
           id: "debug-close",
           type: "button",
           "aria-label": "닫기",
@@ -1711,21 +1728,47 @@ const selectObjectById = (objectId: string) => {
 
 window.tessSelectObjectById = selectObjectById;
 
+/** The pointer-in-a-frame glyph every devtools uses for this tool. */
+function inspectIcon() {
+  return h(
+    "svg",
+    { width: "15", height: "15", viewBox: "0 0 16 16", "aria-hidden": "true" },
+    [
+      h("path", {
+        key: "frame",
+        d: "M2.5 5.5v-3h3M13.5 5.5v-3h-3M2.5 10.5v3h3",
+        fill: "none",
+        stroke: "currentColor",
+        "stroke-width": "1.4",
+        "stroke-linecap": "round",
+      }),
+      h("path", {
+        key: "arrow",
+        d: "M7 6.4l5.6 3.2-2.4.6 1.5 2.7-1.3.8-1.5-2.7-1.6 1.9z",
+        fill: "currentColor",
+      }),
+    ],
+  );
+}
+
 /**
- * Ctrl+Shift + 실행 화면 클릭 -> 그 오브젝트를 디버거에서 고른다.
- *
- * 어느 오브젝트를 눌렀는지는 엔트리가 이미 알고 있다 — 오브젝트마다 붙은 마우스
- * 핸들러가 `entityClick` 이벤트를 쏘고, 거기 실린 entity 의 `parent` 가 그 오브젝트다
- * (entryjs class/entity.js). 그림 모양 그대로 맞히므로 우리가 좌표로 다시 계산하는
- * 것보다 정확하고, PIXI/createjs 어느 쪽으로 그리든 똑같이 동작한다.
- *
- * 예전에는 고르는 창을 `setTimeout(…, 0)` 으로 열었는데, 그래서 잘 안 먹었다.
- * `entityClick` 은 우리가 듣는 pointerdown 과 같은 차례에 오지 않는다 — createjs 는
- * 뒤이어 오는 mousedown 에서, PIXI(부스트 모드)는 제 ticker 에서 쏘기 때문에 둘 다
- * 다음 차례로 넘어간다. 0ms 짜리 창은 그 전에 닫혀 버린다. 그래서 창을 넉넉히 열어
- * 두고, 오브젝트를 고르는 순간(또는 시간이 다 되면) 닫는다.
+ * 고르기 도구를 켜고 끈다. 끄면 붙박아 둔 것도 같이 풀린다 — 다시 켰을 때
+ * "왜 안 따라오지" 하는 상태로 시작하지 않게.
  */
-const PICK_WINDOW = 400;
+function toggleInspect() {
+  state.inspecting = !state.inspecting;
+  state.pinned = false;
+  showInspectCursor();
+}
+
+/** 도구가 켜져 있는 동안에는 무대 위 커서를 십자선으로 바꾼다. */
+function showInspectCursor() {
+  const canvas = stageCanvas();
+  const host = canvas?.parentElement ?? canvas;
+  if (host && host.classList) {
+    host.classList.toggle("debug-inspecting", state.inspecting);
+  }
+}
 
 /**
  * 엔트리 실행 화면을 그리는 캔버스.
@@ -1871,53 +1914,68 @@ window.tessWatchStagePicks = function watchStagePicks() {
   stagePicksArmed = true;
 
   /**
-   * Ctrl+Shift 로 무대를 누른 것인가.
-   *
-   * 이 판정에는 남아 있는 상태가 하나도 없다 — 누를 때마다 이벤트만 보고 새로
-   * 판단한다. 예전에는 "고르는 중" 플래그와 실행기 함수 바꿔치기를 걸어 뒀는데,
-   * 그 중 하나라도 되돌아오지 못하면 그 뒤로는 영영 안 먹었다.
+   * 무대 위에서 일어난 일인가. 도구가 꺼져 있으면 어떤 이벤트도 우리 것이 아니다 —
+   * 남아 있는 상태로 판단하지 않고 그때그때 이벤트만 본다.
    */
-  const isPick = (event: any) =>
-    event.ctrlKey && event.shiftKey && event.button === 0 && insideStage(event);
+  const ours = (event: any) => state.inspecting && insideStage(event);
 
-  // 눌렀다는 표시만 잠깐 켠다. 화면에 보이기만 할 뿐 고르는 일에는 관여하지 않는다.
-  let hintTimer: ReturnType<typeof setTimeout> | undefined;
-  const flashHint = () => {
-    state.picking = true;
-    clearTimeout(hintTimer);
-    hintTimer = setTimeout(() => {
-      state.picking = false;
-    }, PICK_WINDOW);
+  // 같은 오브젝트 위에서 마우스가 움직일 때마다 패널을 다시 그리지는 않는다.
+  let shownId: string | null = null;
+
+  const track = (clientX: number, clientY: number) => {
+    const object = objectAtPoint(clientX, clientY);
+    const id = object && object.id ? String(object.id) : null;
+    if (id === shownId) return;
+    shownId = id;
+    if (id) selectObjectById(id);
   };
 
+  const onMove = (event: any) => {
+    if (!ours(event) || state.pinned) return;
+    track(event.clientX, event.clientY);
+  };
+
+  /**
+   * 누르면 지금 고른 것에 붙박고, 한 번 더 누르면 풀린다. 이 클릭은 디버깅하려고
+   * 누른 것이라 작품까지 내려보내지 않는다 — 실행기가 못 보므로 "오브젝트를
+   * 클릭했을 때" 도 돌지 않고, 멈춰 있는 작품을 시작시키지도 않는다.
+   */
   const onDown = (event: any) => {
-    if (!isPick(event)) return;
-    // 이 클릭은 디버깅하려고 누른 것이다. 작품을 시작시키거나 진행시키면 안 되므로
-    // 덮개도 캔버스도 이 이벤트를 보지 못하게 여기서 끊는다. 실행기까지 못 가므로
-    // "오브젝트를 클릭했을 때" 도 돌지 않는다.
+    if (!ours(event)) return;
     event.preventDefault();
     event.stopPropagation();
-    flashHint();
-
-    const object = objectAtPoint(event.clientX, event.clientY);
-    if (object && object.id) selectObjectById(object.id);
+    if (state.pinned) {
+      state.pinned = false;
+      shownId = null;
+      track(event.clientX, event.clientY);
+      return;
+    }
+    track(event.clientX, event.clientY);
+    state.pinned = shownId !== null;
   };
 
   // 누른 뒤에 잇따라 오는 것들도 같은 기준으로 삼킨다. 멈춰 있는 작품 위에 덮인
   // "눌러서 시작" 판은 click 으로 시작하므로, 이걸 막지 않으면 오브젝트를 살펴보려던
   // 클릭이 작품을 시작시켜 버린다.
   const swallow = (event: any) => {
-    if (!isPick(event)) return;
+    if (!ours(event)) return;
     event.preventDefault();
     event.stopPropagation();
   };
 
+  // 도구를 켜 둔 채 무대를 벗어나면 따라가던 것을 그대로 열어 둔다 — 패널로 마우스를
+  // 가져가는 동안 골라 둔 것이 사라지면 살펴볼 수가 없다.
+  document.addEventListener("pointermove", onMove, true);
+  document.addEventListener("mousemove", onMove, true);
   // createjs 는 mousedown, PIXI 는 pointerdown 을 쓴다. 둘 다 듣는다.
   document.addEventListener("pointerdown", onDown, true);
   document.addEventListener("mousedown", onDown, true);
   document.addEventListener("mouseup", swallow, true);
   document.addEventListener("pointerup", swallow, true);
   document.addEventListener("click", swallow, true);
+  document.addEventListener("keydown", (event: any) => {
+    if (event.key === "Escape" && state.inspecting) toggleInspect();
+  });
 };
 
 /** value_of_index_from_list 의 "can not insert value to array" 를 리스트 이름·길이가 담긴 메시지로 바꾼다 */

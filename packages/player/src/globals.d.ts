@@ -144,7 +144,7 @@ declare global {
      */
     tessRenderProjectDebug(project: any): void;
     /** 
-     * 무대에서 `Ctrl+Shift` 클릭으로 오브젝트를 선택하는 동작을 감지하기 시작합니다. 
+     * 고르기 도구가 무대의 마우스 움직임과 클릭을 볼 수 있게 감지를 시작합니다. 
      *
      * @example
      * ```typescript

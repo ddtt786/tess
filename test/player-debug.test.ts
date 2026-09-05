@@ -797,6 +797,21 @@ function withStage(ui: any, objects: any, current = objects) {
   return { canvas, center: { clientX: 340, clientY: 185 } };
 }
 
+/** 고르기 도구를 켠다 — 패널 머리의 단추가 그 토글이다. */
+function armInspector(ui: any) {
+  ui.click('inspect-btn');
+}
+
+/**
+ * 무대 위에서 마우스를 움직이거나 누른다. 도구가 켜져 있으면 댄 자리의 오브젝트가
+ * 그대로 골라지고, 누르면 거기에 붙박는다.
+ */
+function overStage(ui: any, canvas: any, type: string, clientX: number, clientY: number) {
+  canvas.dispatchEvent(new ui.window.MouseEvent(type, {
+    bubbles: true, cancelable: true, button: 0, clientX, clientY,
+  }));
+}
+
 /**
  * 무대 좌표에 배치된 100x100 크기의 단일 오브젝트 데이터를 생성합니다.
  *
@@ -819,7 +834,7 @@ function stageActor(id: string, name: string, x = 0, y = 0) {
   };
 }
 
-test('Ctrl+Shift 로 무대를 누르면 그 오브젝트가 디버거에서 열린다', async (t) => {
+test('고르기를 켜고 무대에 마우스를 대면 그 오브젝트가 디버거에서 열린다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();
   ui.window.tessRenderProjectDebug({
@@ -834,9 +849,13 @@ test('Ctrl+Shift 로 무대를 누르면 그 오브젝트가 디버거에서 열
   assert.equal(ui.byId('object-info-name')!.textContent, '— 다른'); /** 초기 상태에서는 목록의 첫 번째 오브젝트가 표시됩니다. */
 
   const { canvas, center } = withStage(ui, [stageActor('o1', '치로')]);
-  canvas.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
-    bubbles: true, cancelable: true, button: 0, ctrlKey: true, shiftKey: true, ...center,
-  }));
+  // 도구가 꺼져 있으면 무대는 우리 것이 아니다.
+  overStage(ui, canvas, 'pointermove', center.clientX, center.clientY);
+  await ui.settle();
+  assert.equal(ui.byId('object-info-name')!.textContent, '— 다른');
+
+  armInspector(ui);
+  overStage(ui, canvas, 'pointermove', center.clientX, center.clientY);
   await ui.settle();
 
   assert.equal(ui.byId('object-info-name')!.textContent, '— 치로');
@@ -847,7 +866,7 @@ test('Ctrl+Shift 로 무대를 누르면 그 오브젝트가 디버거에서 열
  * 오브젝트 선택 기능이 반복적인 클릭 상호작용에서도 일관되게 동작하는지 확인합니다.
  * 매 클릭 이벤트마다 독립적으로 판단하여 선택 상태가 갱신되어야 합니다.
  */
-test('몇 번을 눌러도 계속 골라진다', async (t) => {
+test('마우스를 옮길 때마다 그 자리의 오브젝트로 계속 따라간다', async (t) => {
   const ui = await mountDebugPanel(t);
   await ui.settle();
   ui.window.tessRenderProjectDebug({
@@ -862,17 +881,86 @@ test('몇 번을 눌러도 계속 골라진다', async (t) => {
 
   /** 상단(y=100) 위치에는 엔트리봇 객체를, 중앙에는 치로 객체를 배치합니다. */
   const { canvas } = withStage(ui, [stageActor('o2', '엔트리봇', 0, 100), stageActor('o1', '치로')]);
-  const click = (clientX: any, clientY: any) => canvas.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
-    bubbles: true, cancelable: true, button: 0, ctrlKey: true, shiftKey: true, clientX, clientY,
-  }));
+  armInspector(ui);
 
   const picked = [];
   for (let i = 0; i < 4; i += 1) {
-    click(340, i % 2 === 0 ? 85 : 185); /** 엔트리봇과 치로 위치를 번갈아가며 클릭합니다. */
+    /** 엔트리봇과 치로 자리를 번갈아가며 마우스를 댑니다. */
+    overStage(ui, canvas, 'pointermove', 340, i % 2 === 0 ? 85 : 185);
     await ui.settle();
     picked.push(ui.byId('object-info-name')!.textContent);
   }
   assert.deepEqual(picked, ['— 엔트리봇', '— 치로', '— 엔트리봇', '— 치로']);
+});
+
+test('누르면 그 오브젝트에 붙박고, 한 번 더 누르면 다시 따라간다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug({
+    ...dataProject,
+    objects: [
+      { id: 'o1', name: '치로', scene: 's1', script: '[]' },
+      { id: 'o2', name: '엔트리봇', scene: 's1', script: '[]' },
+    ],
+  });
+  ui.tab('objects');
+  await ui.settle();
+
+  const { canvas } = withStage(ui, [stageActor('o2', '엔트리봇', 0, 100), stageActor('o1', '치로')]);
+  armInspector(ui);
+
+  overStage(ui, canvas, 'pointermove', 340, 85);
+  await ui.settle();
+  assert.equal(ui.byId('object-info-name')!.textContent, '— 엔트리봇');
+
+  // 눌러서 붙박아 두면 마우스를 옮겨도 그대로다.
+  overStage(ui, canvas, 'pointerdown', 340, 85);
+  await ui.settle();
+  overStage(ui, canvas, 'pointermove', 340, 185);
+  await ui.settle();
+  assert.equal(ui.byId('object-info-name')!.textContent, '— 엔트리봇');
+
+  // 한 번 더 누르면 풀리고, 누른 그 자리 것으로 곧바로 넘어간다.
+  overStage(ui, canvas, 'pointerdown', 340, 185);
+  await ui.settle();
+  assert.equal(ui.byId('object-info-name')!.textContent, '— 치로');
+  overStage(ui, canvas, 'pointermove', 340, 85);
+  await ui.settle();
+  assert.equal(ui.byId('object-info-name')!.textContent, '— 엔트리봇');
+});
+
+test('고르기를 끄면 붙박은 것도 풀리고 무대를 놓아 준다', async (t) => {
+  const ui = await mountDebugPanel(t);
+  await ui.settle();
+  ui.window.tessRenderProjectDebug({
+    ...dataProject,
+    objects: [
+      { id: 'o1', name: '치로', scene: 's1', script: '[]' },
+      { id: 'o2', name: '엔트리봇', scene: 's1', script: '[]' },
+    ],
+  });
+  ui.tab('objects');
+  await ui.settle();
+
+  const { canvas } = withStage(ui, [stageActor('o2', '엔트리봇', 0, 100), stageActor('o1', '치로')]);
+  armInspector(ui);
+  overStage(ui, canvas, 'pointermove', 340, 85);
+  overStage(ui, canvas, 'pointerdown', 340, 85);
+  await ui.settle();
+  assert.equal(ui.byId('inspect-btn')!.getAttribute('aria-pressed'), 'true');
+
+  ui.click('inspect-btn');
+  await ui.settle();
+  assert.equal(ui.byId('inspect-btn')!.getAttribute('aria-pressed'), 'false');
+
+  // 꺼진 뒤에는 무대를 건드려도 고르지 않고, 이벤트도 막지 않는다.
+  const event = new ui.window.MouseEvent('pointerdown', {
+    bubbles: true, cancelable: true, button: 0, clientX: 340, clientY: 185,
+  });
+  canvas.dispatchEvent(event);
+  await ui.settle();
+  assert.equal(event.defaultPrevented, false);
+  assert.equal(ui.byId('object-info-name')!.textContent, '— 엔트리봇');
 });
 
 test('모양이 비어 있는 큰 판은 그 밑의 오브젝트를 가리지 않는다', async (t) => {
@@ -911,10 +999,8 @@ test('모양이 비어 있는 큰 판은 그 밑의 오브젝트를 가리지 �
     layoutCanvas: idle, refreshRect: idle,
   };
 
-  canvas.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
-    bubbles: true, cancelable: true, button: 0, ctrlKey: true, shiftKey: true,
-    clientX: 340, clientY: 185,
-  }));
+  armInspector(ui);
+  overStage(ui, canvas, 'pointermove', 340, 185);
   await ui.settle();
   assert.equal(ui.byId('object-info-name')!.textContent, '— 치로');
 });
@@ -930,10 +1016,8 @@ test('픽셀로 답하지 못하는 실행기에서는 상자로 고른다', asy
   await ui.settle();
 
   const { canvas } = withStage(ui, [stageActor('o1', '치로')]);
-  canvas.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
-    bubbles: true, cancelable: true, button: 0, ctrlKey: true, shiftKey: true,
-    clientX: 340, clientY: 185,
-  }));
+  armInspector(ui);
+  overStage(ui, canvas, 'pointermove', 340, 185);
   await ui.settle();
   assert.equal(ui.byId('object-info-name')!.textContent, '— 치로');
 });
@@ -963,7 +1047,7 @@ test('그냥 누른 것은 디버거가 가로채지 않는다', async (t) => {
 });
 
 test('고르는 클릭은 무대까지 내려가지 않는다', async (t) => {
-  /** Ctrl+Shift 클릭 이벤트는 디버깅을 위한 객체 선택 용도이므로, 작품의 스크립트 실행(마우스 클릭 이벤트 등)을 트리거하지 않아야 합니다. */
+  /** 고르기 도구를 켠 동안의 클릭은 살펴보려는 것이므로, 작품의 스크립트 실행(마우스 클릭 이벤트 등)을 트리거하지 않아야 합니다. */
   const ui = await mountDebugPanel(t);
   await ui.settle();
   ui.window.tessRenderProjectDebug(dataProject);
@@ -975,10 +1059,9 @@ test('고르는 클릭은 무대까지 내려가지 않는다', async (t) => {
   canvas.addEventListener('pointerdown', () => reached.push('stage'));
   canvas.addEventListener('click', () => reached.push('stage'));
 
+  armInspector(ui);
   for (const type of ['pointerdown', 'click']) {
-    canvas.dispatchEvent(new ui.window.MouseEvent(type, {
-      bubbles: true, cancelable: true, button: 0, ctrlKey: true, shiftKey: true, ...center,
-    }));
+    overStage(ui, canvas, type, center.clientX, center.clientY);
   }
   await ui.settle();
   assert.deepEqual(reached, [], '무대는 이 클릭을 보지 못한다');
@@ -1007,9 +1090,8 @@ test('다른 장면의 오브젝트는 고르지 않는다', async (t) => {
   /** 객체 목록은 장면 순서대로 저장되어 있습니다. 두 번째 장면에 속하는 객체만 선택되는지 검증합니다. */
   const { canvas, center } = withStage(ui, [intro, battle], [battle]);
 
-  canvas.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
-    bubbles: true, cancelable: true, button: 0, ctrlKey: true, shiftKey: true, ...center,
-  }));
+  armInspector(ui);
+  overStage(ui, canvas, 'pointermove', center.clientX, center.clientY);
   await ui.settle();
 
   assert.equal(ui.byId('object-info-name')!.textContent, '— 전투배경');
@@ -1044,9 +1126,8 @@ test('부스트 모드처럼 캔버스가 여럿이어도 무대에서 오브젝
   /** 무대의 (0,0) 좌표는 캔버스의 중심입니다. 객체가 중심에 100x100 크기로 위치한 상태에서 이벤트 좌표 매핑을 검증합니다. */
   ui.entity.x = 0;
   ui.entity.y = 0;
-  stage.dispatchEvent(new ui.window.MouseEvent('pointerdown', {
-    bubbles: true, button: 0, ctrlKey: true, shiftKey: true, clientX: 340, clientY: 185,
-  }));
+  armInspector(ui);
+  overStage(ui, stage, 'pointermove', 340, 185);
   await ui.settle();
 
   assert.equal(ui.byId('object-info-name')!.textContent, '— 치로');

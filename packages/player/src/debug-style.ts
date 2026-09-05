@@ -38,7 +38,17 @@ export const DEBUG_PANEL_STYLE = `
   #debug-panel.collapsed > #debug-resize-handle { width: 11px; left: -11px; background: #4f80ff33; }
   .debug-header { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid #0002; flex: none; }
   .debug-header h2 { font-size: 15px; margin: 0; }
-  .debug-header button { margin-left: auto; border: none; background: none; font-size: 18px; cursor: pointer; color: inherit; line-height: 1; }
+  .debug-header button { border: none; background: none; font-size: 18px; cursor: pointer; color: inherit; line-height: 1; }
+  /* 고르기 단추가 머리글 오른쪽 끝으로 붙고, 닫기가 그 뒤에 온다 */
+  .debug-header .debug-inspect { margin-left: auto; }
+  .debug-header #debug-close { padding-left: 10px; }
+  .debug-inspect {
+    display: flex; align-items: center; padding: 3px 5px; border-radius: 5px; opacity: .65;
+  }
+  .debug-inspect:hover { opacity: 1; background: #4f80ff22; }
+  .debug-inspect.active { opacity: 1; color: #4f80ff; background: #4f80ff22; }
+  /* 도구를 켜 두면 무대 위에서 고를 자리를 겨눈다 */
+  .debug-inspecting, .debug-inspecting canvas { cursor: crosshair !important; }
   .debug-section {
     position: relative; border-bottom: 1px solid #0001; padding: 10px 16px 14px;
     flex: 0 0 auto; box-sizing: border-box;
@@ -120,7 +130,7 @@ export const DEBUG_PANEL_STYLE = `
                         border: 1px solid #0003; background: none; color: inherit; }
   .debug-field select option { color: initial; }
   .debug-note { font-size: 12px; opacity: .55; margin: 8px 0 0; line-height: 1.6; }
-  /* Ctrl+Shift 로 무대에서 오브젝트를 고르는 중이라는 표시 */
+  /* 고르기 도구가 켜져 있다는 표시 */
   .debug-pick-hint {
     border-left: 2px solid transparent; padding-left: 8px; margin-left: -10px;
     transition: opacity .12s, border-color .12s, color .12s;
