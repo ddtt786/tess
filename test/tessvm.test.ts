@@ -7,6 +7,9 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { compileProject } from '@tess/compiler';
 import type { EntryProject } from '@tess/compiler';
 import {
@@ -20,6 +23,8 @@ import {
   setStageSize,
   stage,
 } from '@tess/vm';
+
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Compiles Tess source and hands back a started VM. */
 function runVm(source: string): Vm {
@@ -321,6 +326,27 @@ test('글자 효과 끄기도 걸린다', () => {
 end`);
   vm.tick();
   assert.equal(vm.targets[0]!.entity.fontBold, false);
+});
+
+test('붓은 점마다가 아니라 프레임마다 한 번만 다시 그린다', () => {
+  // 붓이 점 하나마다 자기 획을 통째로 다시 그리면 한 프레임이 점 개수의 제곱만큼
+  // 든다 — 한 프레임에 점 수천 개를 찍는 작품이 몇 초마다 끊기던 자리다. PixiRenderer
+  // 는 화면 없이 만들 수 없으므로 그 약속을 소스에서 지킨다.
+  const source = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/renderer.ts'),
+    'utf-8',
+  );
+  const penChanged = source.slice(source.indexOf('  penChanged(entity: Entity): void {'));
+  const body = penChanged.slice(0, penChanged.indexOf('\n  }'));
+  assert.match(body, /this\.penDirty\.add\(entity\);/, 'penChanged 는 표시만 한다');
+  assert.doesNotMatch(body, /drawPenGroup|penGroup\(/, 'penChanged 에서 다시 그리지 않는다');
+
+  const flush = source.slice(source.indexOf('  flush(): void {'));
+  assert.match(
+    flush.slice(0, flush.indexOf('\n  }')),
+    /for \(const entity of this\.penDirty\)[\s\S]*this\.redrawPen\(entity\)/,
+    'flush 가 프레임마다 한 번 몰아서 그린다',
+  );
 });
 
 // ---------------------------------------------------------------------------

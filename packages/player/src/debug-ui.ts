@@ -103,7 +103,7 @@ const state = observable({
   runState: "",
   env: { boost: "", device: "", touch: "" },
   // 실행기가 실제로 도는 렌더러 (run --boost). 흉내내기 값과 달리 못 바꾼다.
-  realBoost: false,
+  realBoost: null as boolean | null, // 실행기가 부스트로 렌더러를 가르지 않으면 null
   scenes: [],
   currentId: "",
   currentName: "",
@@ -269,8 +269,12 @@ const entryRuntime = {
   requestUpdate() {
     if (window.Entry) Entry.requestUpdate = true;
   },
-  /** Renderer the runtime actually draws with — WebGL or 2D. */
-  realBoost(): boolean {
+  /**
+   * Renderer the runtime actually draws with — WebGL or 2D. `null` from a
+   * runtime where boost mode picks no renderer, and so has no current value
+   * worth showing.
+   */
+  realBoost(): boolean | null {
     return Boolean(window.Entry && Entry.options && Entry.options.useWebGL);
   },
   // 브라우저에 직접 묻는 판단 블록들이라, func 을 감싸 패널에서 고른 값을 돌려준다.
@@ -352,7 +356,7 @@ const choice = (value: any) => (value === "" ? null : value === "true");
 const realBoostLabel = () => (state.realBoost ? "켜짐 (WebGL)" : "꺼짐 (2D)");
 
 window.tessPatchEnvironmentBlocks = function patchEnvironmentBlocks() {
-  state.realBoost = guard("실행 환경 읽기", false, () => rt().realBoost());
+  state.realBoost = guard("실행 환경 읽기", null, () => rt().realBoost());
   guard("실행 환경 흉내내기", undefined, () => rt().patchEnvironment(state.env));
 };
 
@@ -1024,12 +1028,21 @@ function RunTab() {
           ["true", "켜짐 (참)"],
           ["false", "꺼짐 (거짓)"],
         ]),
-        h("p", { class: "debug-note" }, [
-          "지금 실행기는 부스트 모드 " + realBoostLabel() + " 입니다 (",
-          h("code", null, "run --boost"),
-          " 로 정합니다). 위에서 고른 값은 '부스트 모드인가?' 블록이 돌려주는 값만 바꾸고," +
-            " 실제로 쓰는 렌더러는 그대로입니다.",
-        ]),
+        // 부스트로 렌더러가 갈리는 실행기에서만 지금 값을 알려 준다. tessvm 은 늘
+        // WebGL 하나뿐이라 "지금은 켜짐/꺼짐" 이라고 할 것이 없다.
+        state.realBoost === null
+          ? h(
+              "p",
+              { class: "debug-note" },
+              "이 실행기는 부스트 모드와 상관없이 늘 WebGL 로 그립니다. 위에서 고른 값은" +
+                " '부스트 모드인가?' 블록이 돌려주는 값만 바꿉니다.",
+            )
+          : h("p", { class: "debug-note" }, [
+              "지금 실행기는 부스트 모드 " + realBoostLabel() + " 입니다 (",
+              h("code", null, "run --boost"),
+              " 로 정합니다). 위에서 고른 값은 '부스트 모드인가?' 블록이 돌려주는 값만 바꾸고," +
+                " 실제로 쓰는 렌더러는 그대로입니다.",
+            ]),
         field("env-device", "기기 종류", state.env.device, [
           ["", "실제 값 그대로"],
           ["desktop", "컴퓨터"],

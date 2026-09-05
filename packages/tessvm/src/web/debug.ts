@@ -150,8 +150,11 @@ export function makeVmRuntime(handle: TessVmHandle) {
     /** Draws one frame so edits show while the work is paused or stopped. */
     requestUpdate: redraw,
 
-    /** tessvm always draws with WebGL. */
-    realBoost: () => true,
+    /**
+     * Boost mode picks no renderer here — tessvm has the WebGL one and nothing
+     * else — so there is no "this is the current value" to show.
+     */
+    realBoost: () => null,
     /**
      * Writes the panel's answers straight into the vm. Entry has to wrap the
      * block functions because they ask the browser; the vm keeps each answer in

@@ -99,9 +99,10 @@ export interface VmOptions {
   stageWidth?: number;
   stageHeight?: number;
   /**
-   * What `boost_mode?` answers. Off by default: playentry.org plays projects
-   * with boost off, and works written for it check this to warn the player.
-   * tessvm always draws with WebGL either way.
+   * What `boost_mode?` answers. On by default: boost mode is entry's switch
+   * between its 2D and WebGL renderers, and tessvm only has the WebGL one, so
+   * the flag is the whole of it here. Works that check it do so to tell the
+   * player to turn it on.
    */
   boost?: boolean;
   deviceType?: 'desktop' | 'tablet' | 'mobile';
@@ -182,7 +183,7 @@ export class Vm implements Project {
     if (options.stageWidth && options.stageHeight) {
       setStageSize(options.stageWidth, options.stageHeight);
     }
-    this.boost = options.boost ?? false;
+    this.boost = options.boost ?? true;
     this.deviceType = options.deviceType ?? 'desktop';
     this.touch = options.touch ?? false;
     this.maxCatchUp = options.maxCatchUp ?? 4;

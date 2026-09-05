@@ -107,9 +107,9 @@ const USAGE = `사용법
   --quality <배수>   run 명령 시 화질 배수 1 · 2 · 4 (tessvm 전용, 기본 1)
   --stage <가로x세로> run 명령 시 무대 크기 (tessvm 전용, 기본 480x270)
   --fps <값>         run 명령 시 틱 속도 (tessvm 전용, 기본은 작품이 정한 speed)
-  --boost            부스트 모드. 엔트리 실행기(--entry)에서는 WebGL 렌더러로 돌리고,
-                     tessvm 에서는 '부스트 모드인가?' 가 참을 돌려주게 합니다.
-                     (참고: build 명령에는 적용되지 않습니다.)
+  --boost            엔트리 실행기(--entry)를 WebGL 렌더러로 돌립니다.
+                     tessvm 은 늘 WebGL 이라 '부스트 모드인가?' 가 언제나 참이고,
+                     이 옵션과 상관이 없습니다. (build 명령에는 적용되지 않습니다.)
   --strict           느슨한 실행을 끕니다. 컴파일 에러가 하나라도 있으면 build/run을
                      중단하고, '주의'로 알리던 것을 '경고'로 올려서 보여줍니다.
                      (기본값은 느슨한 실행입니다 — 에러가 난 문장만 빼고 진행합니다.)
@@ -354,13 +354,10 @@ async function runProject(
       reload ? "켜짐  " + out.dim("--no-reload 로 끌 수 있습니다") : "꺼짐",
     ],
   ];
-  if (options.boost) {
-    rows.push([
-      "부스트",
-      options.entry
-        ? "켜짐  " + out.dim("WebGL 렌더러")
-        : "켜짐  " + out.dim("'부스트 모드인가?' 가 참"),
-    ]);
+  // 부스트로 렌더러가 갈리는 것은 엔트리 실행기뿐이다 — tessvm 은 늘 WebGL 이라
+  // 지금 켜졌는지 꺼졌는지 알릴 것이 없다.
+  if (options.boost && options.entry) {
+    rows.push(["부스트", "켜짐  " + out.dim("WebGL 렌더러")]);
   }
   out.note(out.details(rows), "실행 중");
 

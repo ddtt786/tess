@@ -19,7 +19,7 @@ export interface BootOptions {
   /** Overrides the project's own `speed`; leave unset to follow it. */
   fps?: number;
   showStats?: boolean;
-  /** What `boost_mode?` answers; the renderer is WebGL regardless. */
+  /** What `boost_mode?` answers. On by default — the renderer is WebGL anyway. */
   boost?: boolean;
   /** Stage size in entry units. Entry's own stage is 480×270. */
   stageWidth?: number;
@@ -180,7 +180,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   await renderer.init();
 
   const audio = new WebAudioEngine();
-  const boost = options.boost ?? false;
+  const boost = options.boost ?? true;
   const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   const deviceType = /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
   const vm = new Vm({

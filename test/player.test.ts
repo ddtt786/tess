@@ -368,7 +368,7 @@ test('디버그 패널의 부스트 모드 흉내내기는 그대로 남는다',
     assert.match(ui, /wrap\(['"]is_boost_mode['"], \(\) => choice\(env\.boost\)\)/);
     assert.match(ui, /['"]env-boost['"]/);
     /** 실제 웹 렌더러의 모드 상태는 디버그 패널에 표시 용도로만 유지됩니다. */
-    assert.match(ui, /realBoost: false,/);
+    assert.match(ui, /realBoost: null\s*,/);
     assert.match(ui, /Boolean\(window\.Entry && Entry\.options && Entry\.options\.useWebGL\)/);
   });
 });

@@ -97,6 +97,8 @@ export class PixiRenderer implements Renderer {
   private readonly sceneLayers = new Map<string, Container>();
   private readonly sceneTargets = new Map<string, Target[]>();
   private readonly views = new Map<Entity, EntityView>();
+  /** Entities whose pen layer `flush` still has to redraw. */
+  private readonly penDirty = new Set<Entity>();
   private readonly textures = new Map<string, Texture>();
   private readonly images = new Map<string, CanvasImageSource>();
   private readonly loading = new Map<string, Promise<void>>();
@@ -325,6 +327,7 @@ export class PixiRenderer implements Renderer {
 
   removeEntity(entity: Entity): void {
     const view = this.views.get(entity);
+    this.penDirty.delete(entity);
     if (!view) {
       return;
     }
@@ -450,6 +453,12 @@ export class PixiRenderer implements Renderer {
         this.sync(entity, view);
         entity.dirty = false;
       }
+    }
+    if (this.penDirty.size) {
+      for (const entity of this.penDirty) {
+        this.redrawPen(entity);
+      }
+      this.penDirty.clear();
     }
     this.overlay?.flush();
     this.app.renderer.render(this.app.stage);
@@ -684,7 +693,18 @@ export class PixiRenderer implements Renderer {
     return group;
   }
 
+  /**
+   * The pen moved. Entry redraws its pen layer once a frame, and so does this —
+   * the work below walks every stroke the entity has laid down, and the pen is
+   * told about **every point**. Rebuilding there made a frame cost O(points²),
+   * which is what a work that draws a few thousand vertices a frame feels as a
+   * stall. The rebuild waits for `flush`, which runs once a frame anyway.
+   */
   penChanged(entity: Entity): void {
+    this.penDirty.add(entity);
+  }
+
+  private redrawPen(entity: Entity): void {
     const view = this.views.get(entity);
     if (!view) {
       return;
@@ -813,6 +833,7 @@ export class PixiRenderer implements Renderer {
 
   eraseAll(entity: Entity): void {
     const view = this.views.get(entity);
+    this.penDirty.delete(entity);
     if (!view) {
       return;
     }

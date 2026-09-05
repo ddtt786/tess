@@ -32,7 +32,7 @@ const USAGE = `사용법
   --no-open         브라우저를 열지 않는다
   --no-stats        무대 아래 프레임 표시를 끈다
   --no-start        페이지를 열어도 바로 시작하지 않는다
-  --boost           '부스트 모드인가?' 가 참을 돌려주게 한다
+  --no-boost        '부스트 모드인가?' 가 거짓을 돌려주게 한다 (기본은 참)
                     (그리기는 언제나 WebGL 이고, 이 값만 바뀝니다)`;
 
 interface Options {
@@ -58,7 +58,7 @@ function parseArgs(argv: string[]): { options: Options; rest: string[] } {
     open: true,
     stats: true,
     autoStart: true,
-    boost: false,
+    boost: true,
   };
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
@@ -78,6 +78,7 @@ function parseArgs(argv: string[]): { options: Options; rest: string[] } {
     else if (arg === '--no-stats') options.stats = false;
     else if (arg === '--no-start') options.autoStart = false;
     else if (arg === '--boost') options.boost = true;
+    else if (arg === '--no-boost') options.boost = false;
     else rest.push(arg);
   }
   return { options, rest };
