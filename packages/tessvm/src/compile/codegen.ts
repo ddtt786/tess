@@ -327,11 +327,12 @@ export class Codegen {
       case 'stop_object':
         return this.stopObject(String(p[0] ?? ''), ind);
       case 'restart_project':
-        return line('O.restart(); return;');
+        return line('O.restart(); O.die();');
       case 'create_clone':
         return line(`O.createClone(e, ${this.field(p[0])});`);
+      // Removing a clone ends every script of that clone, this one included.
       case 'delete_clone':
-        return line('if (e.isClone) { e.removeClone(); return; }');
+        return line('if (e.isClone) { e.removeClone(); O.die(); }');
       case 'remove_all_clones':
         return line('O.removeAllClones(e);');
 
@@ -527,11 +528,13 @@ export class Codegen {
     const line = (code: string) => `${ind}${code}\n`;
     switch (target) {
       case 'all':
-        return line('O.stopAll(); return;');
+        return line('O.stopAll(); O.die();');
       case 'thisOnly':
-        return line('O.stopEntity(e); return;');
+        return line('O.stopEntity(e); O.die();');
       case 'thisObject':
-        return line('O.stopTarget(e); return;');
+        return line('O.stopTarget(e); O.die();');
+      // `이 코드 멈추기` ends only the executor it sits in — inside a function
+      // that is the function, and the caller carries on. Entry does the same.
       case 'thisThread':
         return line('return;');
       case 'otherThread':

@@ -5,15 +5,54 @@
  * 값과 그 값을 바꾸는 규칙을 그대로 옮기되, 화면 갱신은 하지 않습니다. 좌표를 바꾸면
  * `dirty` 표시만 남기고 렌더러가 프레임 끝에 한 번만 반영합니다.
  */
-import { clamp, mod, num } from './cast.ts';
+import { clamp, mod, num, parseNumber } from './cast.ts';
 
-/** Stage extent in entry coordinates. */
-export const STAGE_WIDTH = 480;
-export const STAGE_HEIGHT = 270;
-/** Canvas the collision test rasterises into, and the scale that takes it there. */
-export const WORLD_WIDTH = 640;
-export const WORLD_HEIGHT = 360;
-export const WORLD_SCALE = WORLD_WIDTH / STAGE_WIDTH;
+/** Entry's own stage: 480×270 units drawn onto a 640×360 canvas. */
+export const DEFAULT_STAGE_WIDTH = 480;
+export const DEFAULT_STAGE_HEIGHT = 270;
+/**
+ * How many canvas pixels one stage unit covers. Entry puts the stage container
+ * at `scale = 640/480`, and the pixel collision test rasterises in that space,
+ * so keeping the ratio keeps collisions identical at any stage size.
+ */
+export const WORLD_SCALE = 4 / 3;
+
+/** The stage the whole runtime measures against. One project, one stage. */
+export interface StageMetrics {
+  /** Stage units across, e.g. 480 — coordinates run -width/2 … width/2. */
+  width: number;
+  height: number;
+  halfWidth: number;
+  halfHeight: number;
+  /** Canvas pixels per stage unit. */
+  scale: number;
+  worldWidth: number;
+  worldHeight: number;
+}
+
+function metrics(width: number, height: number): StageMetrics {
+  return {
+    width,
+    height,
+    halfWidth: width / 2,
+    halfHeight: height / 2,
+    scale: WORLD_SCALE,
+    worldWidth: width * WORLD_SCALE,
+    worldHeight: height * WORLD_SCALE,
+  };
+}
+
+export const stage: StageMetrics = metrics(DEFAULT_STAGE_WIDTH, DEFAULT_STAGE_HEIGHT);
+
+/**
+ * Resizes the stage. Everything that measures the stage — collisions, walls,
+ * dialog clamping, monitors, the renderer — reads `stage`, so this is the only
+ * place the size lives.
+ */
+export function setStageSize(width: number, height: number): StageMetrics {
+  Object.assign(stage, metrics(Math.max(1, Math.round(width)), Math.max(1, Math.round(height))));
+  return stage;
+}
 
 /** `Entry.Utils.COLLISION`. */
 export const COLLISION = { NONE: 0, UP: 1, RIGHT: 2, LEFT: 3, DOWN: 4 } as const;
@@ -67,6 +106,32 @@ export interface Stroke {
   fill: boolean;
 }
 
+/**
+ * `Entry.EntityObject.setFont` — `"bold italic 20px Nanum Gothic"`. The size can
+ * be fractional, so it is read with `parseFloat`, not a digit pattern.
+ */
+export function parseFont(font: string): {
+  size: number;
+  family: string;
+  bold: boolean;
+  italic: boolean;
+} {
+  const parts = String(font ?? '').trim().split(/\s+/).filter(Boolean);
+  let bold = false;
+  let italic = false;
+  while (parts.length && (parts[0] === 'bold' || parts[0] === 'italic')) {
+    if (parts[0] === 'bold') {
+      bold = true;
+    } else {
+      italic = true;
+    }
+    parts.shift();
+  }
+  const size = parseFloat(parts.shift() ?? '') || 20;
+  const family = parts.join(' ').trim() || 'Nanum Gothic';
+  return { size, family, bold, italic };
+}
+
 export interface VoiceProps {
   speaker: string;
   speed: number;
@@ -77,6 +142,29 @@ export interface VoiceProps {
 export interface DialogState {
   message: string;
   mode: 'speak' | 'think' | 'ask';
+}
+
+/** Shared id → name → 1-based index lookup for costumes and sounds. */
+function lookup<T extends { id: string; name: string }>(items: T[], value: unknown): T | null {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+  const key = String(value).trim();
+  for (const item of items) {
+    if (item.id === key) {
+      return item;
+    }
+  }
+  for (const item of items) {
+    if (item.name === key) {
+      return item;
+    }
+  }
+  const index = parseNumber(key);
+  if (index !== false && Number(index) > 0 && Number(index) <= items.length) {
+    return items[Number(index) - 1] ?? null;
+  }
+  return null;
 }
 
 let entitySeq = 0;
@@ -295,7 +383,25 @@ export class Entity {
 
   setText(text: string): void {
     this.text = text;
+    this.measure();
     this.touch();
+  }
+
+  /**
+   * `Entry.EntityObject.updateTextbox` — a text box that does not wrap keeps
+   * its width and height in step with the text it holds, and other blocks read
+   * those (`크기`, 충돌). Entry measures inside `setText`, so this has to be
+   * immediate rather than something the renderer fixes up next frame.
+   */
+  measure(): void {
+    if (this.type !== 'textBox' || this.lineBreak) {
+      return;
+    }
+    const size = this.target.project.measureTextBox?.(this);
+    if (size) {
+      this.width = size.width;
+      this.height = size.height;
+    }
   }
 
   /** `setImage` keeps the registration point where it sat relative to the middle. */
@@ -326,13 +432,13 @@ export class Entity {
     this.touch();
   }
 
-  /** The 2×3 world matrix that maps texture pixels to the 640×360 collision space. */
+  /** The 2×3 world matrix that maps texture pixels to the collision space. */
   worldMatrix(out: Float64Array): Float64Array {
     const rad = (this.rotation * Math.PI) / 180;
     const cos = Math.cos(rad);
     const sin = Math.sin(rad);
-    const sx = this.scaleX * WORLD_SCALE;
-    const sy = this.scaleY * WORLD_SCALE;
+    const sx = this.scaleX * stage.scale;
+    const sy = this.scaleY * stage.scale;
     const a = cos * sx;
     const b = sin * sx;
     const c = -sin * sy;
@@ -341,8 +447,8 @@ export class Entity {
     out[1] = b;
     out[2] = c;
     out[3] = d;
-    out[4] = this.x * WORLD_SCALE + WORLD_WIDTH / 2 - (a * this.regX + c * this.regY);
-    out[5] = -this.y * WORLD_SCALE + WORLD_HEIGHT / 2 - (b * this.regX + d * this.regY);
+    out[4] = this.x * stage.scale + stage.worldWidth / 2 - (a * this.regX + c * this.regY);
+    out[5] = -this.y * stage.scale + stage.worldHeight / 2 - (b * this.regX + d * this.regY);
     return out;
   }
 
@@ -377,6 +483,8 @@ export class Target {
   rotateMethod: string;
   pictures: Picture[] = [];
   sounds: Sound[] = [];
+  /** `selectedPicture` — what `getPicture()` with no argument answers. */
+  defaultPicture: Picture | null = null;
   entity!: Entity;
   clones: Entity[] = [];
   /** Scripts compiled for this object; index matches `project.scripts`. */
@@ -395,45 +503,34 @@ export class Target {
     this.rotateMethod = rotateMethod;
   }
 
-  getPicture(idOrName: string): Picture | null {
-    const key = String(idOrName);
-    for (const picture of this.pictures) {
-      if (picture.id === key) {
-        return picture;
-      }
-    }
-    for (const picture of this.pictures) {
-      if (picture.name === key) {
-        return picture;
-      }
-    }
-    return this.pictures[0] ?? null;
+  /**
+   * `Entry.EntryObject.getPicture` — id, then name, then a **1-based index**.
+   * Nothing matching is `null`, not the first costume: `모양을 2로 바꾸기` is
+   * common, and falling back to the first one silently shows the wrong image.
+   */
+  getPicture(value: unknown): Picture | null {
+    return lookup(this.pictures, value) ?? (value ? null : this.defaultPicture ?? this.pictures[0] ?? null);
   }
 
-  getNextPicture(id: string): Picture | null {
-    const index = this.pictures.findIndex((picture) => picture.id === id);
-    return this.pictures[(index + 1) % this.pictures.length] ?? null;
+  /** Index of a costume the way `getPictureIndex` reports it (-1 when absent). */
+  private pictureIndex(value: unknown): number {
+    const picture = lookup(this.pictures, value);
+    return picture ? this.pictures.indexOf(picture) : -1;
   }
 
-  getPrevPicture(id: string): Picture | null {
-    const index = this.pictures.findIndex((picture) => picture.id === id);
+  getNextPicture(value: unknown): Picture | null {
     const length = this.pictures.length;
-    return this.pictures[(index - 1 + length) % length] ?? null;
+    const index = this.pictureIndex(value);
+    return this.pictures[index === length - 1 ? 0 : index + 1] ?? null;
   }
 
-  getSound(idOrName: string): Sound | null {
-    const key = String(idOrName);
-    for (const sound of this.sounds) {
-      if (sound.id === key) {
-        return sound;
-      }
-    }
-    for (const sound of this.sounds) {
-      if (sound.name === key) {
-        return sound;
-      }
-    }
-    return null;
+  getPrevPicture(value: unknown): Picture | null {
+    const index = this.pictureIndex(value);
+    return this.pictures[index === 0 ? this.pictures.length - 1 : index - 1] ?? null;
+  }
+
+  getSound(value: unknown): Sound | null {
+    return lookup(this.sounds, value) ?? (value ? null : this.sounds[0] ?? null);
   }
 
   addClone(source: Entity): Entity {
@@ -465,7 +562,9 @@ export class Target {
     clone.textAlign = source.textAlign;
     clone.lineBreak = source.lineBreak;
     this.clones.push(clone);
-    this.project.renderer?.addEntity(clone);
+    // The renderer slots a clone right under the entity it came from, so it
+    // needs to know which one that was.
+    this.project.renderer?.addEntity(clone, source);
     return clone;
   }
 
@@ -620,7 +719,7 @@ export class Thread {
 }
 
 export interface RendererLike {
-  addEntity(entity: Entity): void;
+  addEntity(entity: Entity, source?: Entity): void;
   removeEntity(entity: Entity): void;
   flush(): void;
 }
@@ -637,4 +736,6 @@ export interface Project {
   renderer: RendererLike | null;
   stopped: boolean;
   stopThreadsOf(entity: Entity): void;
+  /** Measured size of a text box's current text, when a measurer is attached. */
+  measureTextBox?(entity: Entity): { width: number; height: number } | null;
 }

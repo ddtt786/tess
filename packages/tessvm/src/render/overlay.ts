@@ -5,7 +5,7 @@
  */
 import { Container, Graphics, Text } from 'pixi.js';
 import { entityBounds, type Rect } from '../collision/detect.ts';
-import { WORLD_SCALE, type Entity, type Variable } from '../runtime/model.ts';
+import { stage, type Entity, type Variable } from '../runtime/model.ts';
 
 const DIALOG_PADDING = 10;
 const DIALOG_FONT = 15;
@@ -37,10 +37,10 @@ function stageBounds(entity: Entity): Rect {
   const rect: Rect = { x: 0, y: 0, width: 0, height: 0 };
   entityBounds(entity, rect);
   return {
-    x: (rect.x - 320) / WORLD_SCALE,
-    y: (rect.y - 180) / WORLD_SCALE,
-    width: rect.width / WORLD_SCALE,
-    height: rect.height / WORLD_SCALE,
+    x: (rect.x - stage.worldWidth / 2) / stage.scale,
+    y: (rect.y - stage.worldHeight / 2) / stage.scale,
+    width: rect.width / stage.scale,
+    height: rect.height / stage.scale,
   };
 }
 
@@ -59,12 +59,16 @@ export class Overlay {
   private timerShown: () => boolean = () => false;
   private currentScene: () => string = () => '';
 
-  constructor(stage: Container) {
-    // The overlay lives in the same 640×360 space the world does.
-    this.root.position.set(320, 180);
-    this.root.scale.set(WORLD_SCALE);
+  constructor(parent: Container) {
     this.root.addChild(this.monitorLayer, this.dialogLayer);
-    stage.addChild(this.root);
+    parent.addChild(this.root);
+    this.applyStageSize();
+  }
+
+  /** Keeps the overlay in the same space the world container uses. */
+  applyStageSize(): void {
+    this.root.position.set(stage.worldWidth / 2, stage.worldHeight / 2);
+    this.root.scale.set(stage.scale);
   }
 
   bind(options: {
@@ -156,14 +160,17 @@ export class Overlay {
     const bound = stageBounds(entity);
     const width = Math.max(view.text.width, 17);
     const height = view.text.height;
-    const north = bound.y - 20 - 2 > -135;
+    const north = bound.y - 20 - 2 > -stage.halfHeight;
     const east = bound.x + bound.width / 2 < 0;
     view.root.y = north
-      ? Math.max(bound.y - height / 2 - 20 - DIALOG_PADDING, -135 + height / 2 + DIALOG_PADDING)
-      : Math.min(bound.y + bound.height + height / 2 + 20 + DIALOG_PADDING, 135 - height / 2 - DIALOG_PADDING);
+      ? Math.max(bound.y - height / 2 - 20 - DIALOG_PADDING, -stage.halfHeight + height / 2 + DIALOG_PADDING)
+      : Math.min(
+          bound.y + bound.height + height / 2 + 20 + DIALOG_PADDING,
+          stage.halfHeight - height / 2 - DIALOG_PADDING,
+        );
     view.root.x = east
-      ? Math.min(bound.x + bound.width + width / 2, 240 - width / 2 - DIALOG_PADDING)
-      : Math.max(bound.x - width / 2, -240 + width / 2 + DIALOG_PADDING);
+      ? Math.min(bound.x + bound.width + width / 2, stage.halfWidth - width / 2 - DIALOG_PADDING)
+      : Math.max(bound.x - width / 2, -stage.halfWidth + width / 2 + DIALOG_PADDING);
     // A dialog belongs to its object's scene, so it leaves with the scene.
     view.root.visible = entity.visible && entity.target.sceneId === this.currentScene();
     this.drawNotch(view, north ? 'n' : 's', east ? 'e' : 'w', width, height);
@@ -327,7 +334,13 @@ export class Overlay {
         this.answerMonitor = this.makeMonitor();
       }
       this.answerMonitor.root.visible = true;
-      this.drawValueMonitor(this.answerMonitor, '대답', String(this.answerValue()), -230, -85);
+      this.drawValueMonitor(
+        this.answerMonitor,
+        '대답',
+        String(this.answerValue()),
+        -stage.halfWidth + 10,
+        -stage.halfHeight + 50,
+      );
     } else if (this.answerMonitor) {
       this.answerMonitor.root.visible = false;
     }
@@ -340,8 +353,8 @@ export class Overlay {
         this.timerMonitor,
         '초시계',
         this.timerValue().toFixed(1),
-        -230,
-        -105,
+        -stage.halfWidth + 10,
+        -stage.halfHeight + 30,
       );
     } else if (this.timerMonitor) {
       this.timerMonitor.root.visible = false;

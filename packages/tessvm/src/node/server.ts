@@ -14,6 +14,7 @@ import type { AddressInfo } from 'node:net';
 import { assetRoutes, withServedAssets } from '@tess/player';
 import type { AssetFile, EntryProject } from '@tess/compiler';
 import { playerPage } from './page.ts';
+import { DEFAULT_STAGE_HEIGHT, DEFAULT_STAGE_WIDTH } from '../runtime/model.ts';
 
 export const DEFAULT_PORT = 2014;
 
@@ -24,7 +25,10 @@ export interface ServeOptions {
   name: string;
   port?: number;
   quality?: number;
+  /** Leave unset to follow the project's own `speed`. */
   fps?: number;
+  stageWidth?: number;
+  stageHeight?: number;
   stats?: boolean;
   reload?: boolean;
   autoStart?: boolean;
@@ -76,11 +80,13 @@ export async function serveVm(options: ServeOptions): Promise<RunningServer> {
       return send(response, 200, MIME['.html']!, playerPage({
         name: options.name,
         quality: options.quality ?? 1,
-        fps: options.fps ?? 60,
+        fps: options.fps,
         stats: options.stats ?? true,
         reload: options.reload ?? false,
         autoStart: options.autoStart ?? true,
         boost: options.boost ?? false,
+        stageWidth: options.stageWidth ?? DEFAULT_STAGE_WIDTH,
+        stageHeight: options.stageHeight ?? DEFAULT_STAGE_HEIGHT,
       }));
     }
 

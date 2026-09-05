@@ -8,7 +8,7 @@
 import { Vm, type EntryProjectLike } from '../runtime/engine.ts';
 import { PixiRenderer } from '../render/renderer.ts';
 import { SpeechSynthesisEngine, WebAudioEngine } from '../audio/sound.ts';
-import { STAGE_HEIGHT, STAGE_WIDTH, WORLD_SCALE, WORLD_WIDTH, WORLD_HEIGHT, type Entity } from '../runtime/model.ts';
+import { setStageSize, stage, type Entity } from '../runtime/model.ts';
 
 export interface BootOptions {
   projectUrl?: string;
@@ -16,19 +16,29 @@ export interface BootOptions {
   container?: HTMLElement;
   autoStart?: boolean;
   quality?: number;
+  /** Overrides the project's own `speed`; leave unset to follow it. */
   fps?: number;
   showStats?: boolean;
   /** What `boost_mode?` answers; the renderer is WebGL regardless. */
   boost?: boolean;
+  /** Stage size in entry units. Entry's own stage is 480×270. */
+  stageWidth?: number;
+  stageHeight?: number;
 }
 
 export interface TessVmHandle {
   vm: Vm;
   renderer: PixiRenderer;
   audio: WebAudioEngine;
+  /** Live stage metrics — read `stage.width` · `stage.height`. */
+  stage: typeof stage;
   start(): void;
   stop(): void;
   pause(): void;
+  /** Re-fits the canvas after the window or the quality setting changed. */
+  relayout(): void;
+  /** Resizes the stage itself, in entry units. */
+  setStageSize(width: number, height: number): void;
 }
 
 /** Legacy key codes entry stores in `when_some_key_pressed`. */
@@ -65,11 +75,20 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     options.project ??
     ((await (await fetch(options.projectUrl ?? '/project.json')).json()) as EntryProjectLike);
 
-  const stage = document.createElement('div');
-  stage.className = 'tessvm-stage';
-  container.appendChild(stage);
+  if (options.stageWidth && options.stageHeight) {
+    setStageSize(options.stageWidth, options.stageHeight);
+  }
 
-  const renderer = new PixiRenderer({ parent: stage, quality: options.quality ?? 1 });
+  const view = document.createElement('div');
+  view.className = 'tessvm-stage';
+  container.appendChild(view);
+  // The canvas and everything pinned to it live in one box, so the readout
+  // below can sit just outside the picture instead of over it.
+  const frame = document.createElement('div');
+  frame.className = 'tessvm-frame';
+  view.appendChild(frame);
+
+  const renderer = new PixiRenderer({ parent: frame, quality: options.quality ?? 1 });
   await renderer.init();
 
   const audio = new WebAudioEngine();
@@ -77,7 +96,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     renderer,
     audio,
     speech: new SpeechSynthesisEngine(),
-    fps: options.fps ?? 60,
+    fps: options.fps,
     boost: options.boost ?? false,
     touch: 'ontouchstart' in window || navigator.maxTouchPoints > 0,
     deviceType: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop',
@@ -92,12 +111,15 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     timerVisible: () => vm.timerVisible,
     scene: () => vm.currentSceneId,
   });
-  await renderer.preload(vm.targets);
+  // Only the opening scene is worth waiting for; the rest streams in.
+  await renderer.preload(vm.targets, vm.currentSceneId);
   void audio.preload(vm.targets.flatMap((target) => target.sounds));
-  // Paint the opening frame even when the project is not started yet.
+  // Paint the opening frame even when the project is not started yet, then
+  // measure the text boxes again once the entry web fonts have arrived.
   renderer.flush();
+  void renderer.waitForFonts();
 
-  const question = makeQuestionField(stage, (value) => {
+  const question = makeQuestionField(frame, (value) => {
     vm.pendingAnswer = value;
   });
   const originalShow = renderer.showQuestion.bind(renderer);
@@ -111,19 +133,19 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     question.hide();
   };
 
-  bindInput(vm, renderer, stage);
+  bindInput(vm, renderer, view);
 
   const resize = () => {
-    const rect = stage.getBoundingClientRect();
-    renderer.layout(rect.width || WORLD_WIDTH, rect.height || WORLD_HEIGHT);
+    const rect = view.getBoundingClientRect();
+    renderer.layout(rect.width || stage.worldWidth, rect.height || stage.worldHeight);
   };
   resize();
   window.addEventListener('resize', resize);
   if (typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(resize).observe(stage);
+    new ResizeObserver(resize).observe(view);
   }
 
-  const stats = options.showStats ? makeStats(stage) : null;
+  const stats = options.showStats ? makeStats(frame) : null;
   let last = performance.now();
   let frames = 0;
   let accumulated = 0;
@@ -135,7 +157,9 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
       accumulated += now - last;
       last = now;
       if (accumulated >= 500) {
-        stats.textContent = `${Math.round((frames * 1000) / accumulated)} fps · ${vm.frame} tick`;
+        stats.textContent =
+          `${Math.round((frames * 1000) / accumulated)} fps · ${vm.frame} tick` +
+          ` · ${vm.frameRate}Hz · ${stage.width}×${stage.height}`;
         frames = 0;
         accumulated = 0;
       }
@@ -148,6 +172,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     vm,
     renderer,
     audio,
+    stage,
     start: () => vm.start(),
     stop: () => {
       vm.stop();
@@ -155,6 +180,18 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
       renderer.flush();
     },
     pause: () => vm.pause(),
+    relayout: resize,
+    setStageSize(width: number, height: number) {
+      setStageSize(width, height);
+      renderer.applyStageSize();
+      for (const target of vm.targets) {
+        target.forEachEntity((entity) => {
+          entity.touch();
+        });
+      }
+      resize();
+      renderer.flush();
+    },
   };
 
   if (options.autoStart !== false) {
@@ -164,12 +201,12 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   return handle;
 }
 
-function bindInput(vm: Vm, renderer: PixiRenderer, stage: HTMLElement): void {
+function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
   const toStage = (clientX: number, clientY: number) => {
     const rect = renderer.canvasRect();
     return {
-      x: STAGE_WIDTH * ((clientX - rect.left) / rect.width - 0.5),
-      y: -STAGE_HEIGHT * ((clientY - rect.top) / rect.height - 0.5),
+      x: stage.width * ((clientX - rect.left) / rect.width - 0.5),
+      y: -stage.height * ((clientY - rect.top) / rect.height - 0.5),
     };
   };
 
@@ -194,8 +231,8 @@ function bindInput(vm: Vm, renderer: PixiRenderer, stage: HTMLElement): void {
     vm.mouseY = point.y;
   };
 
-  stage.addEventListener('pointermove', (event) => move(event.clientX, event.clientY));
-  stage.addEventListener('pointerdown', (event) => {
+  view.addEventListener('pointermove', (event) => move(event.clientX, event.clientY));
+  view.addEventListener('pointerdown', (event) => {
     move(event.clientX, event.clientY);
     vm.mouseDown = true;
     vm.fireEvent('mouse_clicked');
@@ -219,14 +256,14 @@ function bindInput(vm: Vm, renderer: PixiRenderer, stage: HTMLElement): void {
       }
     }
   };
-  stage.addEventListener('pointerup', up);
+  view.addEventListener('pointerup', up);
   window.addEventListener('pointercancel', up);
 }
 
 /** Front-most entity under the pointer, tested against its own pixels. */
 function pick(vm: Vm, _renderer: PixiRenderer): Entity | null {
-  const worldX = vm.mouseX * WORLD_SCALE + WORLD_WIDTH / 2;
-  const worldY = -vm.mouseY * WORLD_SCALE + WORLD_HEIGHT / 2;
+  const worldX = vm.mouseX * stage.scale + stage.worldWidth / 2;
+  const worldY = -vm.mouseY * stage.scale + stage.worldHeight / 2;
   const scene = vm.currentSceneId;
   for (const target of vm.targets) {
     if (target.sceneId !== scene) {
@@ -241,7 +278,7 @@ function pick(vm: Vm, _renderer: PixiRenderer): Entity | null {
   return null;
 }
 
-function makeQuestionField(stage: HTMLElement, submit: (value: string) => void) {
+function makeQuestionField(view: HTMLElement, submit: (value: string) => void) {
   const wrap = document.createElement('form');
   wrap.className = 'tessvm-ask';
   wrap.hidden = true;
@@ -257,7 +294,7 @@ function makeQuestionField(stage: HTMLElement, submit: (value: string) => void) 
     submit(input.value);
     input.value = '';
   });
-  stage.appendChild(wrap);
+  view.appendChild(wrap);
   return {
     show() {
       wrap.hidden = false;
@@ -270,11 +307,10 @@ function makeQuestionField(stage: HTMLElement, submit: (value: string) => void) 
   };
 }
 
-function makeStats(stage: HTMLElement): HTMLElement {
+function makeStats(view: HTMLElement): HTMLElement {
   const element = document.createElement('div');
   element.className = 'tessvm-stats';
-  stage.appendChild(element);
+  view.appendChild(element);
   return element;
 }
 
-export { STAGE_WIDTH, STAGE_HEIGHT, WORLD_HEIGHT };

@@ -9,9 +9,7 @@ import { BOUNCE_THRESHOLD, TOUCH_THRESHOLD } from '../collision/detect.ts';
 import * as cast from './cast.ts';
 import {
   COLLISION,
-  WORLD_HEIGHT,
-  WORLD_SCALE,
-  WORLD_WIDTH,
+  stage,
   type Entity,
   type Stroke,
   type Target,
@@ -21,6 +19,19 @@ import { cellToRowCol, columnIndex } from './table.ts';
 import type { Vm } from './engine.ts';
 
 export type Ops = ReturnType<typeof createOps>;
+
+/**
+ * Thrown to unwind a script that was told to stop from inside itself. Entry
+ * ends the executor and its `execute` loop bails out at the very next check,
+ * so nothing after the stopping block runs — including the rest of a function
+ * the block was called from.
+ */
+export class ThreadStop extends Error {
+  constructor() {
+    super('thread stopped');
+    this.name = 'ThreadStop';
+  }
+}
 
 const SQRT3 = Math.sqrt(3);
 const HALF_SQRT2 = Math.SQRT2 / 2;
@@ -223,7 +234,7 @@ export function createOps(vm: Vm) {
     },
 
     *moveXYTime(entity: Entity, seconds: number, dx: number, dy: number) {
-      let frames = Math.max(Math.floor(seconds * vm.fps), 1);
+      let frames = Math.max(Math.floor(seconds * vm.frameRate), 1);
       const stepX = dx / frames;
       const stepY = dy / frames;
       const step = () => {
@@ -242,7 +253,7 @@ export function createOps(vm: Vm) {
     },
 
     *locateXYTime(entity: Entity, seconds: number, x: number, y: number) {
-      let frames = Math.max(Math.floor(seconds * vm.fps), 1);
+      let frames = Math.max(Math.floor(seconds * vm.frameRate), 1);
       const step = () => {
         entity.setX(entity.x + (x - entity.x) / frames);
         entity.setY(entity.y + (y - entity.y) / frames);
@@ -259,7 +270,7 @@ export function createOps(vm: Vm) {
     },
 
     *locateObjectTime(entity: Entity, seconds: number, targetId: string) {
-      const frames = Math.floor(seconds * vm.fps);
+      const frames = Math.floor(seconds * vm.frameRate);
       const point = ops.pointOf(targetId);
       if (!point) {
         return;
@@ -299,7 +310,7 @@ export function createOps(vm: Vm) {
     },
 
     *rotateByTime(entity: Entity, seconds: number, angle: number) {
-      let frames = Math.max(Math.floor(seconds * vm.fps), 1);
+      let frames = Math.max(Math.floor(seconds * vm.frameRate), 1);
       const stepAngle = angle / frames;
       const step = () => {
         entity.setRotation(entity.rotation + stepAngle);
@@ -315,7 +326,7 @@ export function createOps(vm: Vm) {
     },
 
     *directionByTime(entity: Entity, seconds: number, angle: number) {
-      let frames = Math.max(Math.floor(seconds * vm.fps), 1);
+      let frames = Math.max(Math.floor(seconds * vm.frameRate), 1);
       const stepAngle = angle / frames;
       const step = () => {
         entity.setDirection(entity.direction + stepAngle);
@@ -492,11 +503,16 @@ export function createOps(vm: Vm) {
     //  Flow
     // -----------------------------------------------------------------------
     *waitSecond(seconds: number) {
-      const until = vm.clock + (60 / vm.fps) * seconds * 1000;
+      const until = vm.clock + (60 / vm.frameRate) * seconds * 1000;
       yield 0;
       while (vm.clock < until) {
         yield 0;
       }
+    },
+
+    /** Ends the running script here and now; nothing after this call runs. */
+    die(): never {
+      throw new ThreadStop();
     },
 
     stopAll(): void {
@@ -737,11 +753,13 @@ export function createOps(vm: Vm) {
       } else if (effect === 'through') {
         entity.strike = on;
       }
+      entity.measure();
       entity.touch();
     },
 
     textFont(entity: Entity, font: string): void {
       entity.fontFamily = font;
+      entity.measure();
       entity.touch();
     },
 
@@ -1369,8 +1387,8 @@ export function createOps(vm: Vm) {
       if (targetId === 'mouse') {
         return vm.collision.touchingMouse(
           entity,
-          vm.mouseX * WORLD_SCALE + WORLD_WIDTH / 2,
-          -vm.mouseY * WORLD_SCALE + WORLD_HEIGHT / 2,
+          vm.mouseX * stage.scale + stage.worldWidth / 2,
+          -vm.mouseY * stage.scale + stage.worldHeight / 2,
         );
       }
       const target = targetFor(targetId);

@@ -15,6 +15,8 @@ import {
   Thread,
   Variable,
   initialEffects,
+  parseFont,
+  setStageSize,
   type VariableKind,
   type VoiceProps,
   type CompiledScript,
@@ -25,9 +27,14 @@ import {
   type Sound,
 } from './model.ts';
 import { Table } from './table.ts';
-import { createOps, type Ops } from './ops.ts';
+import { ThreadStop, createOps, type Ops } from './ops.ts';
 
-export const DEFAULT_FPS = 60;
+/**
+ * Tick rate used when the project does not declare one. Entry drives its loop
+ * with `setInterval(Math.floor(1000 / Entry.FPS))`, so its real cadence sits a
+ * little above the nominal number.
+ */
+export const DEFAULT_FPS = 64;
 export const MAX_CLONES = 360;
 
 export interface EntryProjectLike {
@@ -47,7 +54,12 @@ export interface SpeechEngine {
   stop(): void;
 }
 
-export interface Renderer extends RendererLike {
+/** Measures a text box exactly the way the renderer will draw it. */
+export interface TextMeasurer {
+  measureTextBox(entity: Entity): { width: number; height: number } | null;
+}
+
+export interface Renderer extends RendererLike, Partial<TextMeasurer> {
   /** Called once per project load, before any entity is added. */
   attach?(targets: Target[], scenes: Scene[]): void;
   /** `FRONT` · `BACK` · `FORWARD` · `BACKWARD`, as the block names them. */
@@ -81,7 +93,11 @@ export interface VmOptions {
   renderer?: Renderer | null;
   audio?: AudioEngine | null;
   speech?: SpeechEngine | null;
+  /** Overrides the project's own `speed`. Leave unset to follow the project. */
   fps?: number;
+  /** Stage size in entry units; entry's own stage is 480×270. */
+  stageWidth?: number;
+  stageHeight?: number;
   /**
    * What `boost_mode?` answers. Off by default: playentry.org plays projects
    * with boost off, and works written for it check this to warn the player.
@@ -114,7 +130,8 @@ export class Vm implements Project {
   readonly collision: CollisionSystem;
   ops!: Ops;
 
-  fps: number;
+  /** `Entry.FPS` — drives the tick step and every `초` → 프레임 conversion. */
+  frameRate: number;
   boost: boolean;
   deviceType: 'desktop' | 'tablet' | 'mobile';
   touch: boolean;
@@ -136,9 +153,10 @@ export class Vm implements Project {
   clickedEntityId: string | null = null;
   errors: VmError[] = [];
 
+  /** `Entry.engine.projectTimer` — off until a `초시계 시작하기` block runs. */
+  private timerInit = false;
+  private timerPaused = false;
   private timerStart = 0;
-  private timerPaused = true;
-  private timerPausedAt = 0;
   private timerBase = 0;
   timerVisible = false;
 
@@ -150,13 +168,18 @@ export class Vm implements Project {
   private lastTime = 0;
   private accumulator = 0;
   private readonly maxCatchUp: number;
+  private readonly requestedFps: number | undefined;
   unknownBlocks = new Map<string, number>();
 
   constructor(options: VmOptions = {}) {
     this.renderer = options.renderer ?? null;
     this.audio = options.audio ?? null;
     this.speech = options.speech ?? null;
-    this.fps = options.fps ?? DEFAULT_FPS;
+    this.requestedFps = options.fps;
+    this.frameRate = options.fps ?? DEFAULT_FPS;
+    if (options.stageWidth && options.stageHeight) {
+      setStageSize(options.stageWidth, options.stageHeight);
+    }
     this.boost = options.boost ?? false;
     this.deviceType = options.deviceType ?? 'desktop';
     this.touch = options.touch ?? false;
@@ -172,10 +195,17 @@ export class Vm implements Project {
     return this.state === 'stop';
   }
 
+  measureTextBox(entity: Entity): { width: number; height: number } | null {
+    return this.renderer?.measureTextBox?.(entity) ?? null;
+  }
+
   // -------------------------------------------------------------------------
   //  Loading
   // -------------------------------------------------------------------------
   load(project: EntryProjectLike): void {
+    // `Entry.FPS = project.speed ? project.speed : 60` — a work can ask for a
+    // slower loop, and every timed block counts frames at that rate.
+    this.frameRate = this.requestedFps ?? (Number(project.speed) || DEFAULT_FPS);
     this.scenes = project.scenes.map((scene) => ({ id: scene.id, name: scene.name }));
     this.sceneById = new Map(this.scenes.map((scene) => [scene.id, scene]));
     this.currentSceneId = this.scenes[0]?.id ?? '';
@@ -246,6 +276,11 @@ export class Vm implements Project {
         fileurl: sound.fileurl,
         duration: Number(sound.duration ?? 0),
       }));
+      const selected = raw.selectedPictureId as string | undefined;
+      target.defaultPicture =
+        (selected ? target.pictures.find((picture) => picture.id === selected) : null) ??
+        target.pictures[0] ??
+        null;
       target.entity = this.makeEntity(target, raw.entity as Record<string, unknown>, raw);
       this.targets.push(target);
       this.targetById.set(target.id, target);
@@ -255,6 +290,7 @@ export class Vm implements Project {
     this.snapshot();
     this.renderer?.attach?.(this.targets, this.scenes);
     for (const target of this.targets) {
+      target.entity.measure();
       this.renderer?.addEntity(target.entity);
     }
     this.renderer?.setScene?.(this.currentSceneId);
@@ -285,21 +321,17 @@ export class Vm implements Project {
       entity.text = String(raw.text ?? m.text ?? '');
       entity.colour = String(m.colour ?? '#000000');
       entity.bgColor = String(m.bgColor ?? 'transparent');
-      entity.fontSize = Number(m.fontSize ?? 20);
       entity.textAlign = Number(m.textAlign ?? 0);
       entity.lineBreak = Boolean(m.lineBreak);
       entity.underLine = Boolean(m.underLine);
       entity.strike = Boolean(m.strike);
-      const font = String(m.font ?? '20px Nanum Gothic');
-      entity.fontBold = /bold/i.test(font);
-      entity.fontItalic = /italic/i.test(font);
-      entity.fontFamily = font.replace(/bold|italic|\d+px/gi, '').trim() || 'Nanum Gothic';
+      const font = parseFont(String(m.font ?? '20px Nanum Gothic'));
+      entity.fontSize = font.size;
+      entity.fontFamily = font.family;
+      entity.fontBold = font.bold;
+      entity.fontItalic = font.italic;
     } else {
-      const selected = raw.selectedPictureId as string | undefined;
-      entity.picture =
-        (selected ? target.pictures.find((picture) => picture.id === selected) : null) ??
-        target.pictures[0] ??
-        null;
+      entity.picture = target.defaultPicture;
       if (entity.picture && !entity.width) {
         entity.width = entity.picture.dimension.width;
         entity.height = entity.picture.dimension.height;
@@ -428,7 +460,7 @@ export class Vm implements Project {
     this.frame = 0;
     this.lastTime = 0;
     this.accumulator = 0;
-    this.resetTimer();
+    this.clearTimer();
     this.fireEvent('start');
   }
 
@@ -446,8 +478,8 @@ export class Vm implements Project {
 
   pause(): void {
     if (this.state === 'run') {
+      // The clock stops with the engine, so the project timer stops with it too.
       this.state = 'pause';
-      this.timerPausedAt = this.clock;
     }
   }
 
@@ -459,13 +491,7 @@ export class Vm implements Project {
       }
       target.clones = [];
       target.threads = [];
-      loadEntitySnapshot(target.entity);
-      target.entity.dialog = null;
-      this.renderer?.syncDialog?.(target.entity);
-      target.entity.brush = null;
-      target.entity.paint = null;
-      target.entity.stamps = [];
-      target.entity.touch();
+      this.resetEntity(target.entity);
     }
     for (const variable of this.variables) {
       variable.loadSnapshot();
@@ -477,6 +503,7 @@ export class Vm implements Project {
     this.currentSceneId = this.scenes[0]?.id ?? '';
     this.audio?.setVolume(1);
     this.audio?.setSpeed(1);
+    this.clearTimer();
     this.renderer?.setScene?.(this.currentSceneId);
     this.renderer?.hideQuestion?.();
   }
@@ -487,7 +514,7 @@ export class Vm implements Project {
       this.lastTime = timestamp;
       return;
     }
-    const step = 1000 / this.fps;
+    const step = 1000 / this.frameRate;
     if (!this.lastTime) {
       this.lastTime = timestamp - step;
     }
@@ -506,7 +533,7 @@ export class Vm implements Project {
   }
 
   /** One engine frame. */
-  tick(deltaMs = 1000 / this.fps): void {
+  tick(deltaMs = 1000 / this.frameRate): void {
     this.clock += deltaMs;
     this.frame += 1;
     this.collision.beginFrame();
@@ -535,6 +562,10 @@ export class Vm implements Project {
       thread.step();
     } catch (error) {
       thread.done = true;
+      if (error instanceof ThreadStop) {
+        // The script asked to end itself; that is not a failure.
+        return;
+      }
       this.errors.push({
         message: error instanceof Error ? error.message : String(error),
         blockId: thread.script.blockId,
@@ -613,6 +644,11 @@ export class Vm implements Project {
     this.renderer?.setScene?.(scene.id);
   }
 
+  /**
+   * `Entry.container.resetSceneDuringRun` — leaving a scene puts its objects
+   * back the way they started: snapshot restored, effects and pen cleared,
+   * clones gone, scripts stopped.
+   */
   private resetSceneDuringRun(sceneId: string): void {
     for (const target of this.targets) {
       if (target.sceneId !== sceneId) {
@@ -625,10 +661,21 @@ export class Vm implements Project {
       for (const clone of target.clones.slice()) {
         clone.removeClone();
       }
-      target.entity.dialog = null;
-      this.renderer?.syncDialog?.(target.entity);
-      target.entity.touch();
+      this.resetEntity(target.entity);
     }
+  }
+
+  /** `Entry.EntityObject.reset` — snapshot back, effects and drawings gone. */
+  private resetEntity(entity: Entity): void {
+    loadEntitySnapshot(entity);
+    entity.effect = initialEffects();
+    entity.dialog = null;
+    entity.brush = null;
+    entity.paint = null;
+    entity.stamps = [];
+    this.renderer?.syncDialog?.(entity);
+    this.renderer?.eraseAll?.(entity);
+    entity.touch();
   }
 
   addClone(target: Target, source: Entity): Entity | null {
@@ -652,27 +699,57 @@ export class Vm implements Project {
   // -------------------------------------------------------------------------
   //  Timer
   // -------------------------------------------------------------------------
-  resetTimer(): void {
-    this.timerBase = 0;
-    this.timerStart = this.clock;
+  /** Back to the state a freshly loaded project has: stopped and reading 0. */
+  clearTimer(): void {
+    this.timerInit = false;
     this.timerPaused = false;
+    this.timerBase = 0;
+    this.timerStart = 0;
   }
 
+  /** `초시계 시작하기` — starts it the first time, resumes it after a stop. */
   startTimer(): void {
+    if (!this.timerInit) {
+      this.timerInit = true;
+      this.timerPaused = false;
+      this.timerBase = 0;
+      this.timerStart = this.clock;
+      return;
+    }
     if (this.timerPaused) {
       this.timerStart = this.clock - this.timerBase;
       this.timerPaused = false;
     }
   }
 
+  /** `초시계 정지하기`. */
   pauseTimer(): void {
-    if (!this.timerPaused) {
+    if (this.timerInit && !this.timerPaused) {
       this.timerBase = this.clock - this.timerStart;
       this.timerPaused = true;
     }
   }
 
+  /**
+   * `Entry.engine.resetTimer` — does nothing before the timer has been started
+   * once, and resetting a stopped timer puts it back to "never started".
+   */
+  resetTimer(): void {
+    if (!this.timerInit) {
+      return;
+    }
+    const wasPaused = this.timerPaused;
+    this.timerBase = 0;
+    this.timerStart = this.clock;
+    if (wasPaused) {
+      this.timerInit = false;
+    }
+  }
+
   timerValue(): number {
+    if (!this.timerInit) {
+      return 0;
+    }
     const elapsed = this.timerPaused ? this.timerBase : this.clock - this.timerStart;
     return Math.max(elapsed / 1000, 0);
   }
@@ -692,9 +769,13 @@ interface EntitySnapshot {
   visible: boolean;
   picture: Picture | null;
   text: string;
-  colour: string;
-  bgColor: string;
+  textAlign: number;
+  lineBreak: boolean;
   fontSize: number;
+  fontBold: boolean;
+  fontItalic: boolean;
+  underLine: boolean;
+  strike: boolean;
 }
 
 const snapshots = new WeakMap<Entity, EntitySnapshot>();
@@ -714,9 +795,13 @@ function takeEntitySnapshot(entity: Entity): void {
     visible: entity.visible,
     picture: entity.picture,
     text: entity.text,
-    colour: entity.colour,
-    bgColor: entity.bgColor,
+    textAlign: entity.textAlign,
+    lineBreak: entity.lineBreak,
     fontSize: entity.fontSize,
+    fontBold: entity.fontBold,
+    fontItalic: entity.fontItalic,
+    underLine: entity.underLine,
+    strike: entity.strike,
   });
 }
 
@@ -726,6 +811,7 @@ function loadEntitySnapshot(entity: Entity): void {
     return;
   }
   Object.assign(entity, saved);
+  entity.measure();
   entity.scaleOriginX = saved.scaleX;
   entity.scaleOriginY = saved.scaleY;
   entity.effect = initialEffects();

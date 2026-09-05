@@ -20,14 +20,16 @@ export {
   Target,
   Thread,
   Variable,
-  STAGE_HEIGHT,
-  STAGE_WIDTH,
-  WORLD_HEIGHT,
+  DEFAULT_STAGE_HEIGHT,
+  DEFAULT_STAGE_WIDTH,
   WORLD_SCALE,
-  WORLD_WIDTH,
+  parseFont,
+  setStageSize,
+  stage,
 } from './src/runtime/model.ts';
+export type { StageMetrics } from './src/runtime/model.ts';
 export * as cast from './src/runtime/cast.ts';
-export { CollisionSystem, entityBounds, WALLS } from './src/collision/detect.ts';
+export { CollisionSystem, entityBounds, wallRect } from './src/collision/detect.ts';
 export { MaskStore, maskFromPixels, solidMask } from './src/collision/mask.ts';
 export type { AlphaMask, MaskLoader } from './src/collision/mask.ts';
 export { Table, columnIndex, cellToRowCol } from './src/runtime/table.ts';

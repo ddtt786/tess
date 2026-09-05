@@ -44,9 +44,22 @@ export class WebAudioEngine implements AudioEngine {
     return this.context;
   }
 
-  /** Fetches and decodes every sound up front so playback never lags on first use. */
-  async preload(sounds: Sound[]): Promise<void> {
-    await Promise.all(sounds.map((sound) => this.buffer(sound)));
+  /**
+   * Fetches and decodes sounds ahead of time, a few at a time. Asking for a
+   * thousand files at once starves the costume loads the first frame needs.
+   */
+  async preload(sounds: Sound[], limit = 6): Promise<void> {
+    let next = 0;
+    const runners = new Array(Math.min(limit, sounds.length)).fill(0).map(async () => {
+      while (next < sounds.length) {
+        const sound = sounds[next];
+        next += 1;
+        if (sound) {
+          await this.buffer(sound);
+        }
+      }
+    });
+    await Promise.all(runners);
   }
 
   private buffer(sound: Sound): Promise<AudioBuffer | null> {

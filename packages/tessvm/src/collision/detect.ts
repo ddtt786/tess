@@ -7,14 +7,7 @@
  * 역변환으로 찾아봅니다. 판정 결과는 프레임 안에서 재사용하고, 서로 멀리 있는 것은
  * 격자로 먼저 걸러 냅니다.
  */
-import {
-  COLLISION,
-  WORLD_HEIGHT,
-  WORLD_SCALE,
-  WORLD_WIDTH,
-  type Entity,
-  type Target,
-} from '../runtime/model.ts';
+import { COLLISION, stage, type Entity, type Target } from '../runtime/model.ts';
 import type { AlphaMask, MaskStore } from './mask.ts';
 
 export interface Rect {
@@ -28,15 +21,27 @@ export interface Rect {
 export const TOUCH_THRESHOLD = 0.2;
 export const BOUNCE_THRESHOLD = 0;
 
-const WALL_DEPTH = 30 * WORLD_SCALE;
+/** Entry's walls are 30 stage units thick, sitting just outside the stage. */
+const WALL_DEPTH = 30;
 
-/** The four wall bands, in world pixels, just outside the visible stage. */
-export const WALLS: Record<string, Rect> = {
-  wall_up: { x: 0, y: -WALL_DEPTH, width: WORLD_WIDTH, height: WALL_DEPTH },
-  wall_down: { x: 0, y: WORLD_HEIGHT, width: WORLD_WIDTH, height: WALL_DEPTH },
-  wall_left: { x: -WALL_DEPTH, y: 0, width: WALL_DEPTH, height: WORLD_HEIGHT },
-  wall_right: { x: WORLD_WIDTH, y: 0, width: WALL_DEPTH, height: WORLD_HEIGHT },
-};
+/** One of the four wall bands, in world pixels, for the stage as it is now. */
+export function wallRect(side: string): Rect | null {
+  const depth = WALL_DEPTH * stage.scale;
+  const width = stage.worldWidth;
+  const height = stage.worldHeight;
+  switch (side) {
+    case 'wall_up':
+      return { x: 0, y: -depth, width, height: depth };
+    case 'wall_down':
+      return { x: 0, y: height, width, height: depth };
+    case 'wall_left':
+      return { x: -depth, y: 0, width: depth, height };
+    case 'wall_right':
+      return { x: width, y: 0, width: depth, height };
+    default:
+      return null;
+  }
+}
 
 const matrixA = new Float64Array(6);
 const matrixB = new Float64Array(6);
@@ -218,7 +223,7 @@ export class CollisionSystem {
         this.touchingWall(entity, 'wall_right', threshold)
       );
     }
-    const wall = WALLS[side];
+    const wall = wallRect(side);
     if (!wall) {
       return false;
     }

@@ -23,12 +23,14 @@ const USAGE = `사용법
 옵션
   --port <번호>     run 이 쓸 포트 (기본 ${DEFAULT_PORT}, 사용 중이면 빈 포트)
   --quality <배수>  화질 배수 1 · 2 · 4 (기본 1 — 화면 크기와 기기 배율에 맞춘다)
-  --fps <값>        틱 속도 (기본 60 — 엔트리와 같다)
+  --fps <값>        틱 속도. 안 주면 작품이 정한 값(project.speed)을 따르고,
+                    그것도 없으면 64 로 돕니다 — 엔트리와 같은 규칙입니다.
+  --stage <가로x세로> 무대 크기 (기본 480x270 — 엔트리와 같다. 예: --stage 960x540)
   --ticks <횟수>    bench 가 돌릴 프레임 수 (기본 6000)
   --assets <폴더>   모양·소리를 찾을 폴더 (여러 번 지정 가능)
   --keep <폴더>     .ent 를 되돌린 Tess 소스를 남길 폴더
   --no-open         브라우저를 열지 않는다
-  --no-stats        화면 오른쪽 위 프레임 표시를 끈다
+  --no-stats        무대 아래 프레임 표시를 끈다
   --no-start        페이지를 열어도 바로 시작하지 않는다
   --boost           '부스트 모드인가?' 가 참을 돌려주게 한다
                     (그리기는 언제나 WebGL 이고, 이 값만 바뀝니다)`;
@@ -36,7 +38,9 @@ const USAGE = `사용법
 interface Options {
   port?: number;
   quality: number;
-  fps: number;
+  fps?: number;
+  stageWidth?: number;
+  stageHeight?: number;
   ticks: number;
   assets: string[];
   keep?: string;
@@ -49,7 +53,6 @@ interface Options {
 function parseArgs(argv: string[]): { options: Options; rest: string[] } {
   const options: Options = {
     quality: 1,
-    fps: 60,
     ticks: 6000,
     assets: [],
     open: true,
@@ -63,6 +66,11 @@ function parseArgs(argv: string[]): { options: Options; rest: string[] } {
     if (arg === '--port') options.port = Number(argv[++i]);
     else if (arg === '--quality') options.quality = Number(argv[++i]);
     else if (arg === '--fps') options.fps = Number(argv[++i]);
+    else if (arg === '--stage') {
+      const [width, height] = String(argv[++i] ?? '').split(/[x×,]/);
+      options.stageWidth = Number(width) || undefined;
+      options.stageHeight = Number(height) || undefined;
+    }
     else if (arg === '--ticks') options.ticks = Number(argv[++i]);
     else if (arg === '--assets') options.assets.push(argv[++i]!);
     else if (arg === '--keep') options.keep = argv[++i];
@@ -124,6 +132,8 @@ async function run(loaded: Loaded, options: Options): Promise<number> {
     port: options.port,
     quality: options.quality,
     fps: options.fps,
+    stageWidth: options.stageWidth,
+    stageHeight: options.stageHeight,
     stats: options.stats,
     autoStart: options.autoStart,
     boost: options.boost,
@@ -143,7 +153,13 @@ async function run(loaded: Loaded, options: Options): Promise<number> {
 }
 
 function bench(loaded: Loaded, options: Options): number {
-  const vm = new Vm({ renderer: null, audio: new SilentAudioEngine(), fps: options.fps });
+  const vm = new Vm({
+    renderer: null,
+    audio: new SilentAudioEngine(),
+    fps: options.fps,
+    stageWidth: options.stageWidth,
+    stageHeight: options.stageHeight,
+  });
   const compileStart = performance.now();
   vm.load(loaded.project as never);
   const compileMs = performance.now() - compileStart;
@@ -160,7 +176,7 @@ function bench(loaded: Loaded, options: Options): number {
   const elapsed = performance.now() - start;
   const perTick = elapsed / options.ticks;
   console.log(`${loaded.name}`);
-  console.log(`  컴파일   ${compileMs.toFixed(1)} ms  (오브젝트 ${vm.targets.length})`);
+  console.log(`  컴파일   ${compileMs.toFixed(1)} ms  (오브젝트 ${vm.targets.length} · ${vm.frameRate}fps)`);
   console.log(`  ${options.ticks} 틱  ${elapsed.toFixed(1)} ms  (틱당 ${perTick.toFixed(4)} ms)`);
   console.log(`  여유     ${(16.67 / perTick).toFixed(0)}× (60fps 한 프레임 예산 대비)`);
   if (vm.errors.length) {

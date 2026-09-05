@@ -192,6 +192,24 @@ export function mod(value: number, divisor: number): number {
   return snap(r, Math.max(decimals(value), decimals(divisor)));
 }
 
+/**
+ * `Entry.parseNumber` — a number, or a numeric string, or `false`. Strings that
+ * start with `0` come back as strings so `"007"` stays a name, not seven.
+ */
+export function parseNumber(value: unknown): number | string | false {
+  if (typeof value === 'string') {
+    if ((isNumber(value) && value[0] === '0') || (value[0] === '0' && value[1]?.toLowerCase() === 'x')) {
+      return value;
+    }
+    if (isNumber(value)) {
+      return Number(value);
+    }
+  } else if (typeof value === 'number' && isNumber(value)) {
+    return value;
+  }
+  return false;
+}
+
 /** `Number(value.toFixed(places))` — how entry rounds the size it reports. */
 export function fixed(value: number, places: number): number {
   return Number(value.toFixed(places));

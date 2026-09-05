@@ -16,6 +16,9 @@ import {
   cast,
   entityBounds,
   maskFromPixels,
+  parseFont,
+  setStageSize,
+  stage,
 } from '@tess/vm';
 
 /** Compiles Tess source and hands back a started VM. */
@@ -305,14 +308,149 @@ test('무대 밖으로 나가면 벽에 닿는다', () => {
   assert.equal(collision.touchingWall(a, 'wall_left', 0.2), false);
 });
 
-test('경계 상자는 640×360 무대 좌표로 나온다', () => {
+test('경계 상자는 무대 픽셀 좌표로 나온다', () => {
   const { vm } = collisionVm(() => squareMask(20));
   const a = vm.targets[0]!.entity;
   const box = { x: 0, y: 0, width: 0, height: 0 };
   entityBounds(a, box);
   // 20×20 그림이 4/3 배로 그려지므로 무대 좌표에서 가운데 26.67px 사각형이다.
   assert.ok(Math.abs(box.width - (20 * 4) / 3) < 1e-6);
-  assert.ok(Math.abs(box.x - (320 - (20 * 4) / 3 / 2)) < 1e-6);
+  assert.ok(Math.abs(box.x - (stage.worldWidth / 2 - (20 * 4) / 3 / 2)) < 1e-6);
+});
+
+test('무대 크기를 바꾸면 벽과 좌표계가 같이 움직인다', () => {
+  const { vm, collision } = collisionVm(() => squareMask(20));
+  const a = vm.targets[0]!.entity;
+  a.setX(238);
+  collision.beginFrame();
+  assert.equal(collision.touchingWall(a, 'wall_right', 0.2), true);
+  try {
+    setStageSize(960, 540);
+    collision.beginFrame();
+    // 무대가 넓어졌으니 같은 자리는 이제 벽에서 멀다.
+    assert.equal(collision.touchingWall(a, 'wall_right', 0.2), false);
+    a.setX(478);
+    collision.beginFrame();
+    assert.equal(collision.touchingWall(a, 'wall_right', 0.2), true);
+  } finally {
+    setStageSize(480, 270);
+  }
+});
+
+test('작품이 정한 speed 가 곧 프레임 속도다', () => {
+  const result = compileProject('project:\n  fps 29\nend\n\n' + wrap('a = 1', 'var a = 0'), {
+    path: 'test.tess',
+  });
+  assert.ok(result.project);
+  const vm = new Vm({ renderer: null, audio: null });
+  vm.load(result.project as unknown as never);
+  assert.equal(vm.frameRate, 29);
+
+  const override = new Vm({ renderer: null, audio: null, fps: 120 });
+  override.load(result.project as unknown as never);
+  assert.equal(override.frameRate, 120);
+});
+
+test('초시계는 시작하기 전까지 0 이고, 멈춘 채 초기화하면 꺼진다', () => {
+  const vm = runVm(wrap('wait 0.1'));
+  // 엔트리의 `resetTimer` 는 한 번도 시작하지 않은 초시계에는 아무 일도 안 한다.
+  vm.resetTimer();
+  for (let i = 0; i < 10; i += 1) {
+    vm.tick();
+  }
+  assert.equal(vm.timerValue(), 0);
+
+  vm.startTimer();
+  for (let i = 0; i < 30; i += 1) {
+    vm.tick();
+  }
+  assert.ok(Math.abs(vm.timerValue() - 30 / vm.frameRate) < 1e-6);
+
+  // 멈춘 뒤에는 시간이 흐르지 않는다.
+  vm.pauseTimer();
+  const held = vm.timerValue();
+  for (let i = 0; i < 30; i += 1) {
+    vm.tick();
+  }
+  assert.equal(vm.timerValue(), held);
+
+  // 멈춘 채로 초기화하면 '한 번도 시작하지 않은' 상태로 돌아간다.
+  vm.resetTimer();
+  vm.tick();
+  assert.equal(vm.timerValue(), 0);
+  vm.resetTimer();
+  for (let i = 0; i < 10; i += 1) {
+    vm.tick();
+  }
+  assert.equal(vm.timerValue(), 0);
+});
+
+test('돌고 있는 초시계를 초기화하면 0 부터 다시 센다', () => {
+  const vm = runVm(wrap('wait 10'));
+  vm.startTimer();
+  for (let i = 0; i < 30; i += 1) {
+    vm.tick();
+  }
+  vm.resetTimer();
+  for (let i = 0; i < 15; i += 1) {
+    vm.tick();
+  }
+  assert.ok(Math.abs(vm.timerValue() - 15 / vm.frameRate) < 1e-6);
+});
+
+test('글상자 크기는 글을 쓰는 그 순간 다시 재어진다', () => {
+  const result = compileProject(
+    `scene "s":
+  text "t":
+    text_content = "짧게"
+    when start do
+      write "아주 아주 긴 글자입니다"
+    end
+  end
+end`,
+    { path: 'test.tess' },
+  );
+  assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+  const vm = new Vm({ renderer: null, audio: null });
+  // 재는 일은 렌더러가 하지만, VM 은 프레임을 넘기지 않고 그 자리에서 물어본다.
+  const measured: string[] = [];
+  vm.renderer = {
+    addEntity() {},
+    removeEntity() {},
+    flush() {},
+    measureTextBox(entity) {
+      measured.push(entity.text);
+      return { width: entity.text.length * 10, height: 22 };
+    },
+  };
+  vm.load(result.project as unknown as never);
+  vm.start();
+  vm.tick();
+  const entity = vm.targets[0]!.entity;
+  assert.equal(entity.text, '아주 아주 긴 글자입니다');
+  assert.equal(entity.width, '아주 아주 긴 글자입니다'.length * 10);
+  assert.ok(measured.includes('아주 아주 긴 글자입니다'));
+});
+
+test('글꼴 문자열은 굵기·기울임·소수점 크기를 모두 읽는다', () => {
+  assert.deepEqual(parseFont('20px DungGeunMo'), {
+    size: 20,
+    family: 'DungGeunMo',
+    bold: false,
+    italic: false,
+  });
+  assert.deepEqual(parseFont('bold 16.5441px Nanum Gothic'), {
+    size: 16.5441,
+    family: 'Nanum Gothic',
+    bold: true,
+    italic: false,
+  });
+  assert.deepEqual(parseFont('bold italic 12px Nanum Pen Script'), {
+    size: 12,
+    family: 'Nanum Pen Script',
+    bold: true,
+    italic: true,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -344,3 +482,34 @@ function readIfExists(file: string): string | null {
     return null;
   }
 }
+
+test('모양은 아이디·이름 다음에 1부터 세는 번호로 찾는다', () => {
+  const source = `
+scene "s":
+  object "o":
+    costume 첫번째 "a.png" size 10 10
+    costume 두번째 "b.png" size 10 10
+    costume 세번째 "c.png" size 10 10
+  end
+end`;
+  const result = compileProject(source, { path: 'test.tess' });
+  assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+  const vm = new Vm({ renderer: null, audio: null });
+  vm.load(result.project as unknown as never);
+  const target = vm.targets[0]!;
+
+  assert.equal(target.getPicture('두번째')?.name, '두번째');
+  assert.equal(target.getPicture(target.pictures[2]!.id)?.name, '세번째');
+  // 번호는 1부터. 엔트리의 `모양을 2로 바꾸기` 가 이 길로 온다.
+  assert.equal(target.getPicture('2')?.name, '두번째');
+  assert.equal(target.getPicture(3)?.name, '세번째');
+  // 없는 것은 첫 모양이 아니라 아무것도 아니어야 한다.
+  assert.equal(target.getPicture('없는이름'), null);
+  assert.equal(target.getPicture('9'), null);
+  assert.equal(target.getPicture('0'), null);
+
+  // 다음/이전 모양은 번호로 준 값에서도 이어진다.
+  assert.equal(target.getNextPicture('2')?.name, '세번째');
+  assert.equal(target.getNextPicture('3')?.name, '첫번째');
+  assert.equal(target.getPrevPicture('1')?.name, '세번째');
+});
