@@ -622,12 +622,17 @@ export class Vm implements Project {
     return started;
   }
 
+  /**
+   * `Entry.Code.clearExecutorsByEntity` — the threads are only marked ended;
+   * `tick` drops them on its next pass. Splicing here would pull the threads
+   * behind them into slots the running loop has already gone past, so those
+   * would sit out the frame — a whole batch of clones deleting themselves
+   * would then need one frame per pair instead of one frame in total.
+   */
   stopThreadsOf(entity: Entity): void {
-    const threads = entity.target.threads;
-    for (let i = threads.length - 1; i >= 0; i -= 1) {
-      if (threads[i]!.entity === entity) {
-        threads[i]!.stop();
-        threads.splice(i, 1);
+    for (const thread of entity.target.threads) {
+      if (thread.entity === entity) {
+        thread.stop();
       }
     }
   }

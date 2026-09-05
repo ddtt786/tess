@@ -548,13 +548,11 @@ export function createOps(vm: Vm) {
       target.threads = [];
     },
 
+    // Marked, not spliced — see `Vm.stopThreadsOf`.
     stopOtherThreads(entity: Entity, current: unknown): void {
-      const threads = entity.target.threads;
-      for (let i = threads.length - 1; i >= 0; i -= 1) {
-        const thread = threads[i]!;
+      for (const thread of entity.target.threads) {
         if (thread !== current && thread.entity === entity) {
           thread.stop();
-          threads.splice(i, 1);
         }
       }
     },
@@ -754,15 +752,16 @@ export function createOps(vm: Vm) {
       return (source?.text ?? '').replace(/\n/gim, ' ');
     },
 
+    /** `EntityObject.applyEffectByNameAndValue` — the field carries entry's own name. */
     textEffect(entity: Entity, effect: string, mode: string): void {
       const on = mode === 'on';
-      if (effect === 'bold') {
+      if (effect === 'fontBold') {
         entity.fontBold = on;
-      } else if (effect === 'italic') {
+      } else if (effect === 'fontItalic') {
         entity.fontItalic = on;
-      } else if (effect === 'underline') {
+      } else if (effect === 'underLine') {
         entity.underLine = on;
-      } else if (effect === 'through') {
+      } else if (effect === 'strike') {
         entity.strike = on;
       }
       entity.measure();

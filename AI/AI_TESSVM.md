@@ -118,6 +118,17 @@ function* (e, th) {
 복사해서 `entity.localVars` 에 같은 인덱스로 담아 둡니다. 전역 변수는 배열 하나를 그대로
 씁니다.
 
+### 스레드를 멈출 때는 표시만 하고, 배열에서 빼지 않는다
+
+`Entry.Code.clearExecutorsByEntity` 는 실행기에 `end()` 만 걸어 두고 배열은 건드리지
+않습니다. 실제로 빼는 것은 `tick` 이고, 거기서는 `executors.splice(i--, 1)` 로 자기 자리
+번호를 같이 되돌립니다. tessvm 의 `stopThreadsOf` · `stopOtherThreads` 도 `done` 만
+세우고, `Vm.tick` 이 다음 바퀴에 걸러 냅니다.
+
+도는 중에 배열에서 빼면 뒤에 있던 스레드가 이미 지나온 자리로 당겨져 **그 프레임을
+통째로 건너뜁니다.** 복제본 한 무리가 같은 프레임에 저마다 `del clone` 을 하면 한 프레임에
+절반씩만 지워져서, 한꺼번에 사라져야 할 글자들이 하나씩 사라지는 것처럼 보입니다.
+
 ### 함수 인자는 칸 번호로 읽는다
 
 엔트리는 호출 블록의 슬롯을 **순서 그대로** `executor.register.params` 에 싣고, 본체는
@@ -282,6 +293,12 @@ F[0] = function* (e, th, P) {
 
 장면에 들어가면 `Entry.stage.sortZorder` 가 한 번 돌므로 tessvm 도 `sortScene()` 을
 같은 자리에서 부릅니다.
+
+### 글자 효과 칸은 엔트리 속성 이름 그대로다
+
+`text_change_effect` 의 첫 칸은 `fontBold` · `fontItalic` · `underLine` · `strike` 입니다
+(`EntityObject.applyEffectByNameAndValue` 가 그대로 switch 하는 이름). 굵게·기울임 같은
+보기 좋은 이름으로 받으면 어느 가지에도 걸리지 않아 블록이 조용히 아무 일도 안 합니다.
 
 ## 9. 모양·소리 고르기 — 번호도 이름이다
 

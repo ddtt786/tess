@@ -222,6 +222,107 @@ end`);
   assert.equal(Number(target.clones[0]!.localVars?.[vm.variables.indexOf(shared)]?.getValue()), 9);
 });
 
+test('스스로 지우는 복제본들은 한 프레임에 모두 사라진다', () => {
+  const vm = runVm(`var 지워 = 0
+
+scene "s":
+  object "o":
+    when start do
+      repeat 6:
+        clone
+      end
+    end
+    when cloned do
+      forever:
+        if (지워 == 1):
+          del clone
+        end
+      end
+    end
+  end
+end`);
+  const target = vm.targets[0]!;
+  for (let i = 0; i < 10; i += 1) {
+    vm.tick();
+  }
+  assert.equal(target.clones.length, 6);
+
+  // 지우는 복제본의 스레드를 그 자리에서 빼내면, 뒤에 있던 스레드가 앞으로
+  // 당겨지면서 그 프레임을 건너뛴다 — 그러면 한 프레임에 절반씩만 사라진다.
+  vm.variables.find((item) => item.name === '지워')!.setValue(1);
+  vm.tick();
+  assert.equal(target.clones.length, 0);
+});
+
+test("'stop other' 로 앞선 스크립트가 멈춰도 뒤의 복제본은 그 프레임을 돈다", () => {
+  // 스레드 차례는 [본체1, 본체2, 복제본] 이다. 본체2 가 본체1 을 그 자리에서
+  // 빼내면 복제본이 한 칸 앞으로 당겨져 그 프레임을 통째로 건너뛴다.
+  const vm = runVm(`var 돎 = 0
+
+scene "s":
+  object "o":
+    when start do
+      forever:
+        wait 0.001
+      end
+    end
+    when start do
+      clone
+      forever:
+        stop other
+      end
+    end
+    when cloned do
+      forever:
+        돎 += 1
+      end
+    end
+  end
+end`);
+  // 복제본은 'stop other' 와 같은 프레임에 생겨나 그 프레임부터 돈다.
+  vm.tick();
+  assert.equal(valueOf(vm, '돎'), 1);
+  vm.tick();
+  assert.equal(valueOf(vm, '돎'), 2);
+});
+
+// ---------------------------------------------------------------------------
+//  글상자
+// ---------------------------------------------------------------------------
+test('글자 효과 블록은 엔트리가 쓰는 이름 그대로 걸린다', () => {
+  const vm = runVm(`scene "s":
+  text "t":
+    text_content = "가나다"
+    when start do
+      text_bold = true
+      text_italic = true
+      text_underline = true
+      text_strikethrough = true
+    end
+  end
+end`);
+  vm.tick();
+  const entity = vm.targets[0]!.entity;
+  assert.equal(entity.fontBold, true);
+  assert.equal(entity.fontItalic, true);
+  assert.equal(entity.underLine, true);
+  assert.equal(entity.strike, true);
+});
+
+test('글자 효과 끄기도 걸린다', () => {
+  const vm = runVm(`scene "s":
+  text "t":
+    text_content = "가나다"
+    text_bold = true
+    when start do
+      text_bold = false
+    end
+  end
+end`);
+  vm.tick();
+  assert.equal(vm.targets[0]!.entity.fontBold, false);
+});
+
 // ---------------------------------------------------------------------------
 //  JIT 컴파일 결과
 // ---------------------------------------------------------------------------
