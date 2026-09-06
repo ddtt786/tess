@@ -5,31 +5,12 @@
  * deflated IDAT of 8-bit RGBA rows, one IEND.
  */
 import zlib from 'node:zlib';
+import { crc32 } from './pack.ts';
 
 const BACKGROUND = [0x16, 0xd7, 0x99];
 const MARK = [0xff, 0xff, 0xff];
 /** Samples per pixel side; smooths the corner curve and the mark's edges. */
 const SAMPLES = 4;
-
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let i = 0; i < 256; i += 1) {
-    let value = i;
-    for (let bit = 0; bit < 8; bit += 1) {
-      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-    }
-    table[i] = value >>> 0;
-  }
-  return table;
-})();
-
-function crc32(bytes: Buffer): number {
-  let crc = 0xffffffff;
-  for (const byte of bytes) {
-    crc = CRC_TABLE[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
 
 function chunk(type: string, data: Buffer): Buffer {
   const head = Buffer.alloc(4);

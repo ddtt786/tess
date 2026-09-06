@@ -318,6 +318,15 @@ importers:
         specifier: ^7.5.22
         version: 7.5.22
 
+  packages/extension:
+    dependencies:
+      '@tess/vm':
+        specifier: workspace:*
+        version: link:../tessvm
+      pixi.js:
+        specifier: ^8.20.1
+        version: 8.20.1
+
   packages/parser:
     dependencies:
       '@babel/code-frame':

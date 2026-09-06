@@ -3,3 +3,4 @@ build
 temp
 examples/ent
 packages/extension/dist
+packages/extension/tessvm-extension.zip

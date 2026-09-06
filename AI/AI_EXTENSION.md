@@ -5,17 +5,23 @@
 돌리게** 합니다. 만들기 화면(`/ws`)은 건드리지 않습니다 — 바뀌는 것은 실행기 하나뿐입니다.
 
 ```bash
-pnpm build:extension        # packages/extension/dist 를 만든다
+pnpm build:extension        # dist 폴더와 tessvm-extension.zip 을 만든다
 ```
 
 크롬: `chrome://extensions` → 개발자 모드 → 압축해제된 확장 프로그램을 로드 → `dist`.
-파이어폭스: `about:debugging#/runtime/this-firefox` → 임시 부가 기능 로드 → `dist/manifest.json`.
+파이어폭스: `about:debugging#/runtime/this-firefox` → 임시 부가 기능 로드 → **`tessvm-extension.zip`**.
+
+파이어폭스에 폴더 대신 zip 을 주는 이유가 있습니다. 파일 선택창으로 `manifest.json` 을
+고르면 샌드박스(플랫팩)에서는 **그 파일 하나만** 열람 권한이 붙어서, 옆에 있는 파일을
+읽는 순간 `NS_ERROR_FILE_NOT_FOUND` 로 설치가 통째로 실패합니다. zip 은 파일 하나라
+그 문제가 없습니다.
 
 | 파일                        | 역할                                                    |
 | --------------------------- | ------------------------------------------------------- |
 | `manifest.json`             | MV3 매니페스트 (크롬·파이어폭스 공용)                   |
 | `build.ts`                  | 타입만 지워 `dist` 를 만드는 빌드                       |
 | `icons.ts`                  | 툴바 아이콘 PNG 생성기                                  |
+| `pack.ts`                   | zip 작성기와 CRC-32 (아이콘도 같은 CRC 를 쓴다)          |
 | `src/browser.ts`            | `browser`/`chrome` 두 이름을 하나로 맞춘 얇은 어댑터    |
 | `src/content.ts`            | 격리 세계 — 엔트리 iframe 을 비우고 자리를 만든다       |
 | `src/page/main.ts`          | 페이지 세계 진입점 — 자리를 찾아 실행기를 붙인다        |
@@ -42,7 +48,21 @@ tessvm 은 작품을 열 때 블록 트리를 자바스크립트 소스로 만�
 
 격리 세계의 내용 스크립트는 `chrome.runtime.getURL('page/main.js')` 를 가리키는
 `<script type="module">` 하나를 문서에 넣습니다. 모듈이므로 나머지 파일은 확장 주소를
-기준으로 상대 경로로 따라 들어옵니다.
+기준으로 상대 경로로 따라 들어옵니다. 그 스크립트가 오지 못하면 빈 상자만 남으므로,
+`onerror` 가 마운트 지점에 이유를 적습니다.
+
+### 내용 스크립트만은 모듈이 아니다
+
+`content_scripts` 에 적은 파일은 브라우저가 **클래식 스크립트**로 읽습니다. `import` 가
+하나라도 있으면 `Cannot use import statement outside a module` 로 파싱 자체가 실패하고,
+**그 파일의 어떤 줄도 실행되지 않습니다.** 오류가 눈에 잘 띄지 않아서 "확장을 켰는데
+아무 일도 일어나지 않는다" 로만 나타납니다.
+
+그래서 `build.ts` 는 내용 스크립트만 따로 다룹니다 — 임포트를 따라가 의존성부터 차례로
+늘어놓고, `import`·`export` 문법을 지운 뒤 하나의 IIFE 로 이어 붙입니다. 붙인 결과는
+`new Function` 으로 한 번 파싱해 봅니다. 남은 모듈 문법도, 두 파일이 같은 이름을 선언한
+경우도 여기서 걸립니다. 페이지 쪽(`page/main.js`)과 팝업은 문서가 모듈로 불러오므로
+그대로 둡니다.
 
 ## 2. 엔트리 실행기를 멈추는 자리
 
@@ -162,8 +182,21 @@ playentry 는 SPA 라 작품 사이를 오갈 때 문서가 그대로입니다. 
 ```
 packages/tessvm/src/web/boot.ts   →  dist/vendor/tessvm/web/boot.js
 packages/extension/src/page/…     →  dist/page/…
+packages/extension/src/content.ts →  dist/content.js  (의존성까지 이어 붙인 클래식 스크립트)
 pixi.js                           →  dist/vendor/pixi.mjs   (pixi.min.mjs, 소스맵 주석 제거)
 ```
+
+빌드가 끝나기 전에 세 가지를 확인합니다. 셋 다 **설치할 때가 아니라 쓸 때** 조용히
+터지는 것들이라 빌드에서 잡습니다.
+
+| 검사            | 무엇을 막나                                                         |
+| --------------- | ------------------------------------------------------------------- |
+| `new Function`  | 내용 스크립트에 모듈 문법이 남아 아무 줄도 실행되지 않는 것         |
+| `checkLinks`    | 고쳐 쓴 임포트 주소가 없는 파일을 가리키는 것                       |
+| `checkManifest` | 매니페스트가 없는 파일을 가리키는 것 (파이어폭스는 설치를 거부한다) |
+
+번역 파일(`_locales`)은 두지 않습니다. 문구가 하나뿐이라 `default_locale` 을 두면
+얻는 것 없이 "폴더를 읽을 수 있어야 설치된다" 는 조건만 늘어납니다.
 
 ## 7. 확인한 것
 
@@ -175,5 +208,12 @@ pixi.js                           →  dist/vendor/pixi.mjs   (pixi.min.mjs, 소
 - 시작·일시정지·이어서 하기·정지, 좌표 표시, 부스트 스위치, 오류 줄 동작
 - 마운트 지점이 엔트리 iframe 과 같은 자리·같은 크기(792×495), 페이지 레이아웃 변화 없음
 
+빌드된 `dist/content.js` 자체도 브라우저가 읽는 방식 그대로 — 클래식 스크립트로, 확장
+API 만 흉내 낸 채 — 작품 페이지와 같은 모양의 문서에 걸어 확인했습니다.
+
+- 엔트리 실행기(`/iframe/…`) 요청 **0건**, 프레임은 `about:blank` 에 `visibility: hidden`
+- 끄면 원래 주소가 돌아오고 그때 처음 요청이 나감, 다시 켜면 도로 비워지고 실행기가 붙음
+
 자동화된 클릭에는 사용자 제스처가 없어 `requestFullscreen` 이 거부되므로, 전체화면만
-손으로 확인해야 합니다(`document.fullscreenEnabled` 는 참).
+손으로 확인해야 합니다(`document.fullscreenEnabled` 는 참). 파이어폭스는 이 환경에
+설치되어 있지 않아 직접 띄워 보지 못했습니다.

@@ -52,6 +52,16 @@ function inject(): void {
   const script = document.createElement('script');
   script.type = 'module';
   script.src = api.runtime.getURL('page/main.js');
+  // A runner that never arrives would leave an empty box and no reason for it.
+  script.onerror = () => {
+    for (const item of held) {
+      const host = hostAfter(item.frame);
+      if (host) {
+        host.textContent = '실행기를 불러오지 못했습니다. 확장을 다시 불러와 주세요.';
+        host.setAttribute('style', 'display:grid;place-items:center;font:13px sans-serif;color:#c0392b');
+      }
+    }
+  };
   parent.append(style, script);
 }
 
