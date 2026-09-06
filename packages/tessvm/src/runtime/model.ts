@@ -61,6 +61,12 @@ export interface Picture {
   id: string;
   name: string;
   fileurl: string;
+  /**
+   * The same costume as a raster image, where one sits next to the vector one.
+   * Entry keeps both for a drawing made in its own editor and its runner always
+   * takes this; tessvm takes the vector unless it is too big or turned off.
+   */
+  pngurl?: string;
   dimension: { width: number; height: number };
   imageType?: string;
 }

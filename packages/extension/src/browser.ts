@@ -31,13 +31,23 @@ const globals = globalThis as unknown as { browser?: ExtensionApi; chrome?: Exte
 export const api = (globals.browser ?? globals.chrome) as ExtensionApi;
 
 export const ENABLED_KEY = 'enabled';
+/** Whether a costume drawn as a vector is loaded as one. */
+export const SVG_KEY = 'svg';
 
-/** On unless it has been turned off. */
-export async function isEnabled(): Promise<boolean> {
-  const stored = await api.storage.local.get({ [ENABLED_KEY]: true });
-  return stored[ENABLED_KEY] !== false;
+export interface Settings {
+  enabled: boolean;
+  svg: boolean;
 }
 
-export async function setEnabled(value: boolean): Promise<void> {
-  await api.storage.local.set({ [ENABLED_KEY]: value });
+/** Both are on unless they have been turned off. */
+export async function readSettings(): Promise<Settings> {
+  const stored = await api.storage.local.get({ [ENABLED_KEY]: true, [SVG_KEY]: true });
+  return {
+    enabled: stored[ENABLED_KEY] !== false,
+    svg: stored[SVG_KEY] !== false,
+  };
+}
+
+export async function write(key: string, value: boolean): Promise<void> {
+  await api.storage.local.set({ [key]: value });
 }

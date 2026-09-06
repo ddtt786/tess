@@ -70,6 +70,26 @@ interface PenGroup {
   drawn: string;
 }
 
+/** Sharper than nominal, but never past the pixel cap. */
+function svgResolution(picture: Picture): number {
+  const longest = Math.max(picture.dimension.width, picture.dimension.height, 1);
+  return Math.max(1, Math.min(SVG_SCALE, SVG_MAX_SIDE / longest));
+}
+
+/**
+ * A drawing's own size — `width`/`height` when it has them, else the viewBox.
+ * `@tess/decompiler` reads the same two the same way when it unpacks a work.
+ */
+function svgSize(head: string): { width: number; height: number } | null {
+  const width = /\swidth\s*=\s*["']([\d.]+)/.exec(head);
+  const height = /\sheight\s*=\s*["']([\d.]+)/.exec(head);
+  if (width && height) {
+    return { width: Number(width[1]), height: Number(height[1]) };
+  }
+  const box = /\sviewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(head);
+  return box ? { width: Number(box[1]), height: Number(box[2]) } : null;
+}
+
 /** Pieces entry would have drawn into one canvas path. */
 const sameStyle = (a: Stroke, b: Stroke) =>
   a.color === b.color &&
@@ -89,7 +109,28 @@ export interface RendererOptions {
   quality?: number;
   background?: string;
   antialias?: boolean;
+  /** Take the vector costume where one exists. On unless turned off. */
+  svg?: boolean;
 }
+
+/**
+ * Entry's vector paint editor works on a 960×540 canvas. A drawing that fits it
+ * was saved as it was drawn, so the vector and the raster entry captured beside
+ * it are the same picture. A bigger one was re-framed on save — the raster keeps
+ * the framing, the vector does not — so above this only the raster is right.
+ */
+export const PAINT_CANVAS = { width: 960, height: 540 };
+
+/**
+ * How much sharper than its nominal size a vector costume is rasterised. That
+ * extra detail is the only reason to keep the vector at all; at 1× it carries
+ * the same as the raster and the canvas round trip only loses. The pixel cap
+ * keeps a big drawing from eating the texture budget.
+ */
+const SVG_SCALE = 2;
+const SVG_MAX_SIDE = 2048;
+/** Only the head of the file is read to decide what is in it. */
+const SVG_PEEK = 4096;
 
 export class PixiRenderer implements Renderer {
   readonly app = new Application();
@@ -106,6 +147,8 @@ export class PixiRenderer implements Renderer {
   private quality: number;
   private ready = false;
   private lastResolution = 0;
+  private fontsWait: Promise<void> | null = null;
+  private readonly svgPicks = new Map<string, boolean>();
   private readonly measureStyle = new TextStyle();
 
   constructor(options: RendererOptions = {}) {
@@ -410,19 +453,109 @@ export class PixiRenderer implements Renderer {
   //  Textures
   // -------------------------------------------------------------------------
   /**
-   * Loads the costumes the first scene needs and waits only for those; the
-   * rest stream in behind it. A big work can carry two thousand images, and
-   * asking the browser for all of them at once stalls the whole page.
+   * Loads every costume before the work is allowed to run, the way entry holds
+   * a work behind its loading bar. The first scene goes first so the opening
+   * frame is ready as early as possible, and they are fetched a few at a time —
+   * a work can carry two thousand images and asking for all of them at once
+   * stalls the page.
    */
-  async preload(targets: Target[], sceneId?: string): Promise<void> {
+  async preload(
+    targets: Target[],
+    sceneId?: string,
+    onLoaded?: () => void,
+  ): Promise<void> {
     const inScene: Picture[] = [];
     const rest: Picture[] = [];
     for (const target of targets) {
       const bucket = !sceneId || target.sceneId === sceneId ? inScene : rest;
       bucket.push(...target.pictures);
     }
-    await pool(inScene, LOAD_CONCURRENCY, (picture) => this.loadPicture(picture));
-    void pool(rest, LOAD_CONCURRENCY, (picture) => this.loadPicture(picture));
+    const one = async (picture: Picture) => {
+      await this.loadPicture(picture);
+      onLoaded?.();
+    };
+    await pool(inScene, LOAD_CONCURRENCY, one);
+    await pool(rest, LOAD_CONCURRENCY, one);
+  }
+
+  /** How many costumes `preload` will work through. */
+  static costumeCount(targets: Target[]): number {
+    return targets.reduce((total, target) => total + target.pictures.length, 0);
+  }
+
+  /**
+   * Which file this costume is loaded from. A vector with no raster twin is
+   * loaded as it comes; where both exist the vector is only taken when it is
+   * really a drawing — see `vectorIsBetter`.
+   */
+  private async pickUrl(picture: Picture): Promise<string> {
+    if (picture.imageType !== 'svg' || !picture.fileurl.endsWith('.svg')) {
+      return picture.fileurl;
+    }
+    if (!picture.pngurl) {
+      // Nothing else to load. Text in it will still come out in a fallback face.
+      await this.fontsReady();
+      return picture.fileurl;
+    }
+    if (this.options.svg === false) {
+      return picture.pngurl;
+    }
+    await this.fontsReady();
+    return (await this.vectorIsBetter(picture)) ? picture.fileurl : picture.pngurl;
+  }
+
+  /**
+   * Whether taking the vector over the raster beside it actually gains anything.
+   * Most of what entry stores as `.svg` is not a drawing this can use:
+   *
+   * - **its own size has to be the size the work draws it at.** Entry's paint
+   *   editor re-frames a costume on save and only the raster keeps that framing,
+   *   so a vector of any other size comes out stretched;
+   * - a `<image>` holding a base64 raster — rasterising that resamples a picture
+   *   that was already pixels, and the file is many times the size of the twin;
+   * - a `<text>` — an svg used as an image is rendered in a document of its own
+   *   that cannot reach the page's web fonts, so the letters come out in a
+   *   fallback face while entry's raster has them as they were written.
+   *
+   * Only what is left is worth the vector. The read is cached, and the browser
+   * serves the second one from its own cache.
+   */
+  private async vectorIsBetter(picture: Picture): Promise<boolean> {
+    const url = picture.fileurl;
+    const known = this.svgPicks.get(url);
+    if (known !== undefined) {
+      return known;
+    }
+    let better = false;
+    try {
+      const head = (await (await fetch(url)).text()).slice(0, SVG_PEEK);
+      const size = svgSize(head);
+      better =
+        size !== null &&
+        Math.round(size.width) === Math.round(picture.dimension.width) &&
+        Math.round(size.height) === Math.round(picture.dimension.height) &&
+        size.width <= PAINT_CANVAS.width &&
+        size.height <= PAINT_CANVAS.height &&
+        !/<image[\s>]/i.test(head) &&
+        !/<text[\s>]/i.test(head);
+    } catch {
+      // Unreadable: the raster twin is the safe one.
+    }
+    this.svgPicks.set(url, better);
+    return better;
+  }
+
+  /**
+   * An svg is rasterised in a document of its own, and entry's web fonts have
+   * to have arrived before that happens or the text in it comes out in a
+   * fallback face. Rasters and sounds do not care, so only this waits.
+   */
+  private fontsReady(): Promise<void> {
+    if (!this.fontsWait) {
+      const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+      this.fontsWait = fonts ? fonts.ready.then(() => undefined).catch(() => undefined) : Promise.resolve();
+    }
+    return this.fontsWait;
   }
 
   async loadPicture(picture: Picture): Promise<void> {
@@ -436,7 +569,12 @@ export class PixiRenderer implements Renderer {
     }
     const job = (async () => {
       try {
-        const texture = (await Assets.load(picture.fileurl)) as Texture;
+        const url = await this.pickUrl(picture);
+        const texture = (await Assets.load(
+          url.endsWith('.svg')
+            ? { src: url, data: { resolution: svgResolution(picture) } }
+            : url,
+        )) as Texture;
         this.textures.set(picture.id, texture);
         const resource = texture.source?.resource as CanvasImageSource | undefined;
         if (resource) {

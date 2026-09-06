@@ -24,11 +24,19 @@ export class WebAudioEngine implements AudioEngine {
   private bgm: Playing | null = null;
   private volume = 1;
   private speed = 1;
+  private paused = false;
+  /**
+   * Sounds asked for while their file is still on the way. Without these a
+   * `stop` or a scene change only reaches what is already playing, and the
+   * request that was still loading starts afterwards — the work then sings in
+   * the wrong scene, and a bgm asked for twice ends up playing twice over.
+   */
+  private readonly pending = new Set<{ entityId: string; bgm: boolean; live: boolean }>();
 
   /** Browsers only allow audio after a gesture, so the context opens lazily. */
   private ensure(): AudioContext | null {
     if (this.context) {
-      if (this.context.state === 'suspended') {
+      if (this.context.state === 'suspended' && !this.paused) {
         void this.context.resume();
       }
       return this.context;
@@ -48,7 +56,7 @@ export class WebAudioEngine implements AudioEngine {
    * Fetches and decodes sounds ahead of time, a few at a time. Asking for a
    * thousand files at once starves the costume loads the first frame needs.
    */
-  async preload(sounds: Sound[], limit = 6): Promise<void> {
+  async preload(sounds: Sound[], limit = 6, onLoaded?: () => void): Promise<void> {
     let next = 0;
     const runners = new Array(Math.min(limit, sounds.length)).fill(0).map(async () => {
       while (next < sounds.length) {
@@ -56,6 +64,7 @@ export class WebAudioEngine implements AudioEngine {
         next += 1;
         if (sound) {
           await this.buffer(sound);
+          onLoaded?.();
         }
       }
     });
@@ -99,8 +108,9 @@ export class WebAudioEngine implements AudioEngine {
     }
     const buffer = this.buffers.get(sound.id);
     if (!buffer) {
+      const ticket = this.ticket(entityId, false);
       void this.buffer(sound).then((loaded) => {
-        if (loaded) {
+        if (loaded && this.claim(ticket)) {
           this.start(loaded, entityId, startMs, durationMs, false);
         }
       });
@@ -110,16 +120,41 @@ export class WebAudioEngine implements AudioEngine {
   }
 
   playBgm(sound: Sound): void {
+    // One background track at a time. Without this a second call while the first
+    // is still loading leaves two copies playing over each other, and only the
+    // later one can ever be stopped.
+    this.stopBgm();
     const buffer = this.buffers.get(sound.id);
     if (!buffer) {
+      const ticket = this.ticket('', true);
       void this.buffer(sound).then((loaded) => {
-        if (loaded) {
+        if (loaded && this.claim(ticket)) {
           this.bgm = this.start(loaded, '', 0, undefined, true);
         }
       });
       return;
     }
     this.bgm = this.start(buffer, '', 0, undefined, true);
+  }
+
+  private ticket(entityId: string, bgm: boolean) {
+    const item = { entityId, bgm, live: true };
+    this.pending.add(item);
+    return item;
+  }
+
+  private claim(item: { entityId: string; bgm: boolean; live: boolean }): boolean {
+    this.pending.delete(item);
+    return item.live;
+  }
+
+  /** Drops the waiting requests a stop has just made pointless. */
+  private cancel(matches: (item: { entityId: string; bgm: boolean }) => boolean): void {
+    for (const item of this.pending) {
+      if (matches(item)) {
+        item.live = false;
+      }
+    }
   }
 
   private start(
@@ -155,14 +190,27 @@ export class WebAudioEngine implements AudioEngine {
   }
 
   stopAll(): void {
+    this.cancel(() => true);
     for (const entry of [...this.playing]) {
       this.stopEntry(entry);
     }
   }
 
+  /** `Entry.Utils.pauseSoundInstances` — held where they are, not thrown away. */
+  pause(): void {
+    this.paused = true;
+    void this.context?.suspend().catch(() => undefined);
+  }
+
+  resume(): void {
+    this.paused = false;
+    void this.context?.resume().catch(() => undefined);
+  }
+
   /** Releases the audio context; browsers only allow a handful per page. */
   close(): void {
     this.stopAll();
+    this.stopBgm();
     this.buffers.clear();
     this.loading.clear();
     void this.context?.close().catch(() => undefined);
@@ -171,6 +219,7 @@ export class WebAudioEngine implements AudioEngine {
   }
 
   stopEntity(entityId: string): void {
+    this.cancel((item) => item.entityId === entityId);
     for (const entry of [...this.playing]) {
       if (entry.entityId === entityId) {
         this.stopEntry(entry);
@@ -179,6 +228,7 @@ export class WebAudioEngine implements AudioEngine {
   }
 
   stopExcept(entityId: string): void {
+    this.cancel((item) => item.entityId !== entityId);
     for (const entry of [...this.playing]) {
       if (entry.entityId !== entityId) {
         this.stopEntry(entry);
@@ -187,6 +237,7 @@ export class WebAudioEngine implements AudioEngine {
   }
 
   stopBgm(): void {
+    this.cancel((item) => item.bgm);
     if (this.bgm) {
       this.stopEntry(this.bgm);
       this.bgm = null;
@@ -229,23 +280,85 @@ export class WebAudioEngine implements AudioEngine {
  * `읽어주기` 블록을 브라우저의 음성 합성으로 대신합니다. 엔트리는 playentry.org 의
  * TTS 서버가 만든 mp3 를 받아 재생하므로 목소리는 다르고, 인터넷 없이도 됩니다.
  */
+/**
+ * The voices entry's `읽어주기` offers. They are clova voices on entry's own
+ * service and cannot be reproduced here, so each one is pinned to a korean
+ * voice the browser has, with the pitch nudged the way the name suggests. What
+ * matters most is that a korean voice is chosen at all: without one the browser
+ * reads hangul with whatever its default is, which is what makes it unlistenable.
+ */
+const SPEAKERS: Record<string, { pitch: number; rate: number }> = {
+  kyuri: { pitch: 1.05, rate: 1 },
+  jinho: { pitch: 0.8, rate: 1 },
+  hana: { pitch: 1.1, rate: 0.95 },
+  dinna: { pitch: 1.15, rate: 0.95 },
+  brown: { pitch: 0.85, rate: 0.95 },
+  minions: { pitch: 1.5, rate: 1.15 },
+  sally: { pitch: 1.25, rate: 1.05 },
+  nsabina: { pitch: 1, rate: 0.95 },
+  nmammon: { pitch: 0.7, rate: 0.9 },
+  nmeow: { pitch: 1.6, rate: 1.1 },
+  nwoof: { pitch: 0.75, rate: 1 },
+};
+
 export class SpeechSynthesisEngine {
-  speak(text: string, voice: { speed: number; pitch: number; volume: number }): Promise<void> {
+  private voice: SpeechSynthesisVoice | null = null;
+  private looked = false;
+
+  /**
+   * The list is empty until the browser has loaded it, so it is looked up again
+   * until something korean turns up.
+   */
+  private korean(): SpeechSynthesisVoice | null {
+    const synth = (globalThis as { speechSynthesis?: SpeechSynthesis }).speechSynthesis;
+    if (this.voice || !synth) {
+      return this.voice;
+    }
+    const voices = synth.getVoices();
+    if (!voices.length) {
+      if (!this.looked) {
+        this.looked = true;
+        synth.addEventListener?.('voiceschanged', () => {
+          this.voice = null;
+          this.korean();
+        });
+      }
+      return null;
+    }
+    const korean = voices.filter((item) => item.lang.replace('_', '-').startsWith('ko'));
+    this.voice = korean.find((item) => item.localService) ?? korean[0] ?? null;
+    return this.voice;
+  }
+
+  speak(text: string, voice: { speaker?: string; speed: number; pitch: number; volume: number }): Promise<void> {
     const synth = (globalThis as { speechSynthesis?: SpeechSynthesis }).speechSynthesis;
     if (!synth || !text) {
       return Promise.resolve();
     }
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ko-KR';
+    const speaker = SPEAKERS[voice.speaker ?? 'kyuri'] ?? SPEAKERS.kyuri!;
+    const picked = this.korean();
+    if (picked) {
+      utterance.voice = picked;
+    }
+    utterance.lang = picked?.lang ?? 'ko-KR';
     // Entry's speed and pitch fields run -1…1 around the middle setting.
-    utterance.rate = Math.max(0.1, Math.min(10, 1 + voice.speed * 0.5));
-    utterance.pitch = Math.max(0, Math.min(2, 1 + voice.pitch * 0.5));
+    utterance.rate = Math.max(0.1, Math.min(10, speaker.rate * (1 + voice.speed * 0.5)));
+    utterance.pitch = Math.max(0, Math.min(2, speaker.pitch * (1 + voice.pitch * 0.5)));
     utterance.volume = voice.volume;
     return new Promise((resolve) => {
       utterance.onend = () => resolve();
       utterance.onerror = () => resolve();
       synth.speak(utterance);
     });
+  }
+
+  pause(): void {
+    (globalThis as { speechSynthesis?: SpeechSynthesis }).speechSynthesis?.pause();
+  }
+
+  resume(): void {
+    (globalThis as { speechSynthesis?: SpeechSynthesis }).speechSynthesis?.resume();
   }
 
   stop(): void {

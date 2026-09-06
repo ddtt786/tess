@@ -894,9 +894,10 @@ function buildObject(object: CompiledObject, ctx: Context): EntryObject {
 
 /** 엔트리 프로젝트는 초시계와 대답 항목을 변수 목록에 함께 담는다 */
 function addSystemVariables(ctx: Context) {
+  // `Entry.variableContainer.generateTimer` — `240 - (이름 길이 × 12 + 70)`.
   ctx.variables.push({
     name: '초시계', id: ctx.newId(), visible: false, value: 0, variableType: 'timer',
-    isCloud: false, isRealTime: false, cloudDate: false, object: null, x: 232, y: -144,
+    isCloud: false, isRealTime: false, cloudDate: false, object: null, x: 134, y: -70,
   });
   ctx.variables.push({
     name: '대답', id: ctx.newId(), visible: false, value: 0, variableType: 'answer',

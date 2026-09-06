@@ -45,6 +45,41 @@ function capturedPngFor(fileurl: string | undefined, entriesByPath: Map<string, 
   return entriesByPath.has(png) ? png : null;
 }
 
+/**
+ * Whether the vector is the file worth keeping for this costume.
+ *
+ * It has to be the size the work draws it at — entry's paint editor re-frames a
+ * costume on save and only the raster it captures keeps that framing — it has to
+ * fit the 960×540 canvas, and it has to be a drawing: three quarters of what
+ * entry stores as `.svg` is a base64 raster in an `<image>` or has `<text>` in
+ * it, and for both of those the raster beside it is the better file.
+ */
+function vectorIsBetter(
+  svg: Buffer | undefined,
+  dimension: { width?: number; height?: number } | undefined,
+): boolean {
+  const size = svgSize(svg);
+  if (!size || !svg) return false;
+  if (size.width > PAINT_CANVAS.width || size.height > PAINT_CANVAS.height) return false;
+  if (Math.round(size.width) !== Math.round(dimension?.width ?? -1)) return false;
+  if (Math.round(size.height) !== Math.round(dimension?.height ?? -1)) return false;
+  const head = svg.subarray(0, 4096).toString('utf-8');
+  return !/<image[\s>]/i.test(head) && !/<text[\s>]/i.test(head);
+}
+
+const PAINT_CANVAS = { width: 960, height: 540 };
+
+/** The drawing's own size — `width`/`height` when it has them, else the viewBox. */
+function svgSize(svg: Buffer | undefined): { width: number; height: number } | null {
+  if (!svg) return null;
+  const head = svg.subarray(0, 2048).toString('utf-8');
+  const width = /\swidth\s*=\s*["']([\d.]+)/.exec(head);
+  const height = /\sheight\s*=\s*["']([\d.]+)/.exec(head);
+  if (width && height) return { width: Number(width[1]), height: Number(height[1]) };
+  const box = /\sviewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(head);
+  return box ? { width: Number(box[1]), height: Number(box[2]) } : null;
+}
+
 /** 엔트리 번들에 들어 있는 기본 리소스의 실제 바이트열. 못 찾으면 null */
 function builtinAssetBytes(fileurl: string | undefined, runtimeDir: string | null): Buffer | null {
   const match = BUILTIN_ASSET.exec(fileurl ?? '');
@@ -556,11 +591,29 @@ function buildContext(
 
   for (const [, info] of ctx.picturesById) {
     const pic = info.source;
-    const png = ctx.keepSvg ? null : capturedPngFor(pic.fileurl, entriesByPath);
-    const ext = png
+    const png = capturedPngFor(pic.fileurl, entriesByPath);
+    // A vector that fits the paint canvas was never re-framed, so it still lines
+    // up with the raster and either can be used. Both go out, and the runner
+    // picks; anything bigger keeps the raster the editor captured.
+    const vector =
+      ctx.keepSvg ||
+      (pic.imageType === 'svg' &&
+        vectorIsBetter(entriesByPath.get(pic.fileurl ?? ''), pic.dimension));
+    const useRaster = png !== null && !vector;
+    const ext = useRaster
       ? '.png'
       : (pic.imageType ? `.${pic.imageType}` : path.extname(pic.fileurl || '') || '.png');
-    info.relativePath = registerAsset(info, 'image', ext, png ?? pic.fileurl);
+    info.relativePath = registerAsset(info, 'image', ext, useRaster ? png : pic.fileurl);
+    // `--keep-svg` asks for the vector and nothing else; otherwise the raster goes
+    // out beside it so the runner still has both.
+    if (!useRaster && !ctx.keepSvg && png && info.relativePath?.endsWith('.svg')) {
+      const twin = `${info.relativePath.slice(0, -4)}.png`;
+      const data = entriesByPath.get(png);
+      if (data && !usedAssetPaths.has(twin)) {
+        usedAssetPaths.add(twin);
+        ctx.collectedAssets.push({ path: twin, data });
+      }
+    }
     info.blankImage = BLANK_IMAGE.test(pic.fileurl ?? '');
   }
   for (const [, info] of ctx.soundsById) {

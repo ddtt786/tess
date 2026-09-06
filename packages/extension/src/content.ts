@@ -11,7 +11,7 @@
  * element instead would both collapse that box and take a node out from under
  * the page's own view code.
  */
-import { api, isEnabled, ENABLED_KEY } from './browser.ts';
+import { api, readSettings, ENABLED_KEY, SVG_KEY } from './browser.ts';
 
 const IFRAME_MARK = '/iframe/';
 /** `data-tessvm-held` — set on a frame this has already taken over. */
@@ -27,6 +27,7 @@ interface Held {
 }
 
 let enabled: boolean | null = null;
+let svg = true;
 let injected = false;
 const held: Held[] = [];
 
@@ -89,6 +90,7 @@ function mount(item: Held): void {
   if (group) {
     host.dataset.tessvmGroup = group;
   }
+  host.dataset.tessvmSvg = svg ? '1' : '0';
   item.frame.after(host);
   inject();
   window.postMessage({ __tessvm: 'scan' }, location.origin);
@@ -186,17 +188,28 @@ observer.observe(document.documentElement, {
 sweep(document.documentElement);
 
 api.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local' || !(ENABLED_KEY in changes)) {
+  if (area !== 'local') {
     return;
   }
-  enabled = changes[ENABLED_KEY]?.newValue !== false;
+  if (SVG_KEY in changes) {
+    svg = changes[SVG_KEY]?.newValue !== false;
+    // The runner reads this when it starts, so the players have to be built again.
+    window.postMessage({ __tessvm: 'unmount' }, location.origin);
+    for (const item of held) {
+      hostAfter(item.frame)?.remove();
+    }
+  }
+  if (ENABLED_KEY in changes) {
+    enabled = changes[ENABLED_KEY]?.newValue !== false;
+  }
   if (!enabled) {
     window.postMessage({ __tessvm: 'unmount' }, location.origin);
   }
   applyAll();
 });
 
-void isEnabled().then((value) => {
-  enabled = value;
+void readSettings().then((settings) => {
+  enabled = settings.enabled;
+  svg = settings.svg;
   applyAll();
 });

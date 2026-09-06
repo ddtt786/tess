@@ -70,6 +70,7 @@ export function mountPlayer(
   host: HTMLElement,
   projectId: string,
   groupId: string | null = null,
+  svg = true,
 ): MountedPlayer {
   ensureAskStyle();
   // Idle from the start so the cover shows while the work is still on its way.
@@ -82,6 +83,9 @@ export function mountPlayer(
   const cover = el('div', 'tessvm-cover', view);
   const startButton = el('button', 'tessvm-start', cover);
   startButton.type = 'button';
+  // Only once the work is loaded does this do anything, so it stays out of the
+  // way until then.
+  startButton.hidden = true;
   startButton.title = '시작하기';
   startButton.setAttribute('aria-label', '시작하기');
   startButton.innerHTML = ICONS.play;
@@ -187,6 +191,13 @@ export function mountPlayer(
         autoStart: false,
         keyTarget: root,
         boost: true,
+        svg,
+        // Nothing may be pressed until the work's files are all in.
+        onProgress: (done, all) => {
+          status.textContent = all
+            ? `불러오는 중… ${Math.floor((done / all) * 100)}%`
+            : '불러오는 중…';
+        },
       });
     } catch (error) {
       status.textContent = '';
@@ -199,19 +210,27 @@ export function mountPlayer(
       return;
     }
     status.textContent = '';
+    startButton.hidden = false;
     ready(handle);
   }
 
   function ready(live: TessVmHandle): void {
     const seen = new Set<string>();
+    let shown = '';
 
     const showState = () => {
       const state = live.vm.state;
-      root.classList.toggle('is-idle', state === 'stop');
-      root.classList.toggle('is-paused', state === 'pause');
-      pauseButton.innerHTML = state === 'pause' ? ICONS.play : ICONS.pause;
-      pauseButton.title = state === 'pause' ? '이어서 하기' : '일시정지';
-      pauseButton.setAttribute('aria-label', pauseButton.title);
+      // Only when it really changed. Rewriting the button's markup on every beat
+      // takes the node the press landed on out of the document before the release,
+      // and the browser then never makes that a click.
+      if (state !== shown) {
+        shown = state;
+        root.classList.toggle('is-idle', state === 'stop');
+        root.classList.toggle('is-paused', state === 'pause');
+        pauseButton.innerHTML = state === 'pause' ? ICONS.play : ICONS.pause;
+        pauseButton.title = state === 'pause' ? '이어서 하기' : '일시정지';
+        pauseButton.setAttribute('aria-label', pauseButton.title);
+      }
       coords.textContent = `X: ${Math.round(live.vm.mouseX)}  Y: ${Math.round(live.vm.mouseY)}`;
     };
     const start = () => {

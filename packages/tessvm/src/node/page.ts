@@ -17,6 +17,7 @@ export interface PageOptions {
   reload: boolean;
   autoStart: boolean;
   boost: boolean;
+  svg: boolean;
   stageWidth: number;
   stageHeight: number;
 }
@@ -58,7 +59,24 @@ main {
   padding: 12px calc(12px + var(--debug-panel-width)) 34px 12px;
   transition: padding-right .15s ease-out;
 }
-#stage { min-width: 0; min-height: 0; }
+#stage { min-width: 0; min-height: 0; position: relative; }
+/* The work waits behind this until it is started, the way entry's player does. */
+#tessvm-cover {
+  position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px; background: #00000059;
+}
+#tessvm-cover[hidden] { display: none !important; }
+#tessvm-start {
+  width: 88px; height: 88px; padding: 0; border: 0; border-radius: 50%;
+  background: #fff; color: #4f80ff; cursor: pointer; display: grid;
+  place-items: center; box-shadow: 0 6px 24px #0007;
+  transition: transform .12s ease-out;
+}
+#tessvm-start:hover { transform: scale(1.06); }
+#tessvm-start:disabled { opacity: .5; cursor: default; transform: none; }
+#tessvm-start svg { width: 40px; height: 40px; margin-left: 5px; fill: currentColor; }
+#tessvm-cover .note { color: #e8eaed; font-size: 13px; }
+#tessvm-cover .note:empty { display: none; }
 .tessvm-stage { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
 .tessvm-stage canvas { display: block; box-shadow: 0 8px 30px #0008; }
 ${ASK_FIELD_STYLE}
@@ -88,6 +106,7 @@ export function playerPage(options: PageOptions): string {
     showStats: options.stats,
     autoStart: options.autoStart,
     boost: options.boost,
+    svg: options.svg,
     stageWidth: options.stageWidth,
     stageHeight: options.stageHeight,
   });
@@ -129,7 +148,16 @@ ${fonts}
     디버그 <span id="debug-badge" class="badge" hidden>0</span>
   </button>
 </header>
-<main><div id="stage"></div></main>
+<main>
+  <div id="stage">
+    <div id="tessvm-cover">
+      <button id="tessvm-start" type="button" title="시작하기" aria-label="시작하기" disabled>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.6 3.1 12.9 8l-8.3 4.9Z"/></svg>
+      </button>
+      <div class="note" id="tessvm-cover-note">불러오는 중…</div>
+    </div>
+  </div>
+</main>
 <div id="tessvm-error"></div>
 <aside id="debug-panel" aria-hidden="true"></aside>
 
@@ -216,7 +244,17 @@ try {
   window.tessSourceMap = sourceMap;
   window.tessRenderProjectDebug(project);
 
+  const runButtonEarly = document.getElementById('run');
+  const cover = document.getElementById('tessvm-cover');
+  const coverStart = document.getElementById('tessvm-start');
+  const coverNote = document.getElementById('tessvm-cover-note');
+  runButtonEarly.disabled = true;
   const handle = await boot({
+    onProgress: (done, all) => {
+      coverNote.textContent = all
+        ? '불러오는 중… ' + Math.floor((done / all) * 100) + '%'
+        : '불러오는 중…';
+    },
     project,
     container: document.getElementById('stage'),
     quality: config.quality,
@@ -224,6 +262,7 @@ try {
     showStats: config.showStats,
     autoStart: config.autoStart,
     boost: config.boost,
+    svg: config.svg,
     stageWidth: config.stageWidth,
     stageHeight: config.stageHeight,
   });
@@ -234,12 +273,21 @@ try {
   reportVmErrors(handle, sourceMap);
   // One button carries both halves: it starts a stopped project, holds a running
   // one, and resumes a held one.
-  const runButton = document.getElementById('run');
+  const runButton = runButtonEarly;
+  runButton.disabled = false;
+  // Nothing runs until this is pressed; the files are all in by now.
+  coverStart.disabled = false;
+  coverNote.textContent = '';
+  coverStart.onclick = () => {
+    handle.start();
+    showRunState();
+  };
   const RUN_LABEL = { stop: '시작', run: '일시정지', pause: '이어서 하기' };
   const showRunState = () => {
     const state = handle.vm.state;
     runButton.textContent = RUN_LABEL[state] || RUN_LABEL.stop;
     runButton.classList.toggle('primary', state !== 'run');
+    cover.hidden = state !== 'stop';
   };
   runButton.onclick = () => {
     if (handle.vm.state === 'run') handle.pause(); else handle.start();

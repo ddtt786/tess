@@ -35,6 +35,7 @@ export interface EntryWork extends EntryProjectLike {
 
 interface RawAsset {
   fileurl?: string;
+  pngurl?: string;
   filename?: string;
   imageType?: string;
   ext?: string;
@@ -50,12 +51,8 @@ function uploadsBase(): string {
 }
 
 /** `Entry.EntryObject.getImagePath` — two-level hash folders, then `image/`. */
-function imageUrl(picture: RawAsset): string {
-  if (picture.fileurl) {
-    return picture.fileurl;
-  }
+function imageUrl(picture: RawAsset, type: string): string {
   const name = String(picture.filename ?? '');
-  const type = picture.imageType === 'svg' ? 'svg' : 'png';
   return `${uploadsBase()}/${name.slice(0, 2)}/${name.slice(2, 4)}/image/${name}.${type}`;
 }
 
@@ -68,12 +65,23 @@ function soundUrl(sound: RawAsset): string {
   return `${uploadsBase()}/${name.slice(0, 2)}/${name.slice(2, 4)}/${name}${sound.ext || '.mp3'}`;
 }
 
-/** Fills in the asset urls the runner needs, in place. */
+/**
+ * Fills in the asset urls the runner needs, in place.
+ *
+ * A costume drawn in entry's vector editor is kept twice, as `.svg` and `.png`,
+ * and entry's own runner always takes the raster. Both are handed over here and
+ * the renderer chooses — the vector while it is small enough to be worth it.
+ */
 function withAssetUrls(work: EntryWork): EntryWork {
   for (const object of work.objects ?? []) {
     const sprite = (object as { sprite?: { pictures?: RawAsset[]; sounds?: RawAsset[] } }).sprite;
     for (const picture of sprite?.pictures ?? []) {
-      picture.fileurl = imageUrl(picture);
+      if (picture.imageType === 'svg') {
+        picture.fileurl = picture.fileurl ?? imageUrl(picture, 'svg');
+        picture.pngurl = imageUrl(picture, 'png');
+      } else {
+        picture.fileurl = picture.fileurl ?? imageUrl(picture, 'png');
+      }
     }
     for (const sound of sprite?.sounds ?? []) {
       sound.fileurl = soundUrl(sound);

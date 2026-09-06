@@ -42,6 +42,7 @@ export interface ServeOptions {
   reload?: boolean;
   autoStart?: boolean;
   boost?: boolean;
+  svg?: boolean;
 }
 
 export interface RunningServer {
@@ -100,8 +101,9 @@ export async function serveVm(options: ServeOptions): Promise<RunningServer> {
         fps: options.fps,
         stats: options.stats ?? true,
         reload: options.reload ?? false,
-        autoStart: options.autoStart ?? true,
+        autoStart: options.autoStart ?? false,
         boost: options.boost ?? true,
+        svg: options.svg ?? true,
         stageWidth: options.stageWidth ?? DEFAULT_STAGE_WIDTH,
         stageHeight: options.stageHeight ?? DEFAULT_STAGE_HEIGHT,
       }));

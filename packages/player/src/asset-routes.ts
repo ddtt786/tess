@@ -159,6 +159,9 @@ export function withServedAssets(project: EntryProject, rewrites: Map<string, st
   return rewriteUrls(project, rewrites) as EntryProject;
 }
 
+/** 작품 안에서 파일을 가리키는 키. `pngurl` 은 벡터 모양의 그림판 사본이다. */
+const URL_KEYS = new Set(['fileurl', 'pngurl']);
+
 /**
  * 객체 내의 모든 파일 URL을 순회하며 재작성 규칙에 따라 변환합니다.
  *
@@ -177,7 +180,7 @@ function rewriteUrls(value: unknown, rewrites: Map<string, string>): unknown {
 
   const out: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    out[key] = key === 'fileurl' && typeof item === 'string' && rewrites.has(item)
+    out[key] = URL_KEYS.has(key) && typeof item === 'string' && rewrites.has(item)
       ? rewrites.get(item)
       : rewriteUrls(item, rewrites);
   }

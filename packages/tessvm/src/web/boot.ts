@@ -14,6 +14,7 @@ export interface BootOptions {
   projectUrl?: string;
   project?: EntryProjectLike;
   container?: HTMLElement;
+  /** Off by default — a work waits to be started, the way entry's player does. */
   autoStart?: boolean;
   quality?: number;
   /** Overrides the project's own `speed`; leave unset to follow it. */
@@ -29,6 +30,10 @@ export interface BootOptions {
    * keeps the keys to the player when the page around it has its own inputs.
    */
   keyTarget?: HTMLElement;
+  /** Take the vector costume where the work has one. On unless turned off. */
+  svg?: boolean;
+  /** Called while the work's files come in, before it is allowed to run. */
+  onProgress?(loaded: number, total: number): void;
 }
 
 export interface TessVmHandle {
@@ -192,7 +197,11 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   frame.className = 'tessvm-frame';
   view.appendChild(frame);
 
-  const renderer = new PixiRenderer({ parent: frame, quality: options.quality ?? 1 });
+  const renderer = new PixiRenderer({
+    parent: frame,
+    quality: options.quality ?? 1,
+    svg: options.svg ?? true,
+  });
   await renderer.init();
 
   const audio = new WebAudioEngine();
@@ -218,9 +227,23 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     timerVisible: () => vm.timerVisible,
     scene: () => vm.currentSceneId,
   });
-  // Only the opening scene is worth waiting for; the rest streams in.
-  await renderer.preload(vm.targets, vm.currentSceneId);
-  void audio.preload(vm.targets.flatMap((target) => target.sounds));
+  // Nothing runs until every costume and every sound is in. Entry holds a work
+  // behind its loading bar for the same reason: a file that arrives after the
+  // work has started arrives at the wrong moment — a sound asked for while it
+  // was still coming would begin after the stop or the scene change that was
+  // meant to silence it, and a costume would pop in a frame late.
+  const sounds = vm.targets.flatMap((target) => target.sounds);
+  const total = PixiRenderer.costumeCount(vm.targets) + sounds.length;
+  let loaded = 0;
+  const arrived = () => {
+    loaded += 1;
+    options.onProgress?.(loaded, total);
+  };
+  options.onProgress?.(0, total);
+  await Promise.all([
+    renderer.preload(vm.targets, vm.currentSceneId, arrived),
+    audio.preload(sounds, 6, arrived),
+  ]);
   // Paint the opening frame even when the project is not started yet, then
   // measure the text boxes again once the entry web fonts have arrived.
   renderer.flush();
@@ -313,7 +336,12 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     defaultBoost: boost,
     defaultTouch: touch,
     defaultDeviceType: deviceType,
-    start: () => vm.start(),
+    start: () => {
+      // Keys are read from the player, so it has to hold focus before the work
+      // can be played at all.
+      (options.keyTarget ?? view).focus?.({ preventScroll: true });
+      vm.start();
+    },
     stop: () => {
       vm.stop();
       vm.reset();
@@ -348,7 +376,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     },
   };
 
-  if (options.autoStart !== false) {
+  if (options.autoStart) {
     vm.start();
   }
   (window as unknown as { tessvm: TessVmHandle }).tessvm = handle;
@@ -398,13 +426,45 @@ function bindInput(
     vm.mouseY = point.y;
   };
 
+  // Entry lets a list box be dragged around the stage. It reads pointers through
+  // its own drag helper; here there is one pointer path, so a press that lands on
+  // a list starts a drag and the work is not told about that press at all.
+  type Dragged = Parameters<NonNullable<typeof renderer.overlayView>['scrollTo']>[0];
+  let dragging:
+    | { variable: Dragged; fromRow: number; fromY: number; rowsPerPixel: number }
+    | null = null;
+
   on(view, 'pointermove', (raw) => {
     const event = raw as PointerEvent;
     move(event.clientX, event.clientY);
   });
+  on(window, 'pointermove', (raw) => {
+    if (!dragging) {
+      return;
+    }
+    const event = raw as PointerEvent;
+    const point = toStage(event.clientX, event.clientY);
+    // The overlay counts y downwards, the stage upwards.
+    const rows = (-point.y - dragging.fromY) * dragging.rowsPerPixel;
+    renderer.overlayView?.scrollTo(dragging.variable, dragging.fromRow + rows);
+    renderer.flush();
+  });
   on(view, 'pointerdown', (raw) => {
     const event = raw as PointerEvent;
     move(event.clientX, event.clientY);
+    // A press inside a list box takes hold of it and scrolls; the work is not
+    // told about that press.
+    const list = renderer.overlayView?.listAt(vm.mouseX, -vm.mouseY);
+    if (list) {
+      dragging = {
+        variable: list.variable,
+        fromRow: renderer.overlayView!.scrollOf(list.variable),
+        fromY: -vm.mouseY,
+        rowsPerPixel: list.rowsPerPixel,
+      };
+      event.preventDefault();
+      return;
+    }
     vm.mouseDown = true;
     vm.fireEvent('mouse_clicked');
     const hit = pick(vm, renderer);
@@ -414,6 +474,10 @@ function bindInput(
     }
   });
   const up = () => {
+    if (dragging) {
+      dragging = null;
+      return;
+    }
     // A release outside the stage still clears the press. A release that never
     // began on the stage (a click on the debug panel, say) is not the work's.
     if (!vm.mouseDown && !vm.clickedEntityId) {

@@ -120,6 +120,8 @@ export interface EntryPicture {
   name: string;
   filename: string;
   fileurl: string;
+  /** 같은 모양의 그림판 사본. 벡터로 그린 모양에만 있다. */
+  pngurl?: string;
   imageType?: string;
   dimension?: { width: number; height: number };
   ext?: string;

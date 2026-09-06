@@ -52,6 +52,8 @@ export interface EntryProjectLike {
 export interface SpeechEngine {
   speak(text: string, voice: VoiceProps): Promise<void>;
   stop(): void;
+  pause?(): void;
+  resume?(): void;
 }
 
 /** Measures a text box exactly the way the renderer will draw it. */
@@ -83,6 +85,9 @@ export interface AudioEngine {
   stopAll(): void;
   stopEntity(entityId: string): void;
   stopExcept(entityId: string): void;
+  /** Holds what is playing where it is; `resume` picks it back up. */
+  pause?(): void;
+  resume?(): void;
   setVolume(volume: number): void;
   getVolume(): number;
   setSpeed(speed: number): void;
@@ -270,6 +275,7 @@ export class Vm implements Project {
         id: picture.id,
         name: picture.name,
         fileurl: picture.fileurl,
+        pngurl: picture.pngurl,
         dimension: picture.dimension ?? { width: 0, height: 0 },
         imageType: picture.imageType,
       }));
@@ -455,6 +461,9 @@ export class Vm implements Project {
     if (this.state === 'pause') {
       this.state = 'run';
       this.lastTime = 0;
+      // `Entry.Utils.recoverSoundInstances` — what was held goes on from there.
+      this.audio?.resume?.();
+      this.speech?.resume?.();
       return;
     }
     this.reset();
@@ -477,12 +486,16 @@ export class Vm implements Project {
     }
     this.audio?.stopAll();
     this.audio?.stopBgm();
+    this.speech?.stop();
   }
 
   pause(): void {
     if (this.state === 'run') {
       // The clock stops with the engine, so the project timer stops with it too.
       this.state = 'pause';
+      // `Entry.engine.togglePause` holds the sounds rather than ending them.
+      this.audio?.pause?.();
+      this.speech?.pause?.();
     }
   }
 

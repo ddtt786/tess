@@ -1,11 +1,12 @@
 /**
- * @fileoverview The toolbar panel: one switch, written straight to storage.
+ * @fileoverview The toolbar panel: switches written straight to storage.
  *
- * Open work pages watch the same key, so the change lands without a reload.
+ * Open work pages watch the same keys, so a change lands without a reload.
  */
-import { isEnabled, setEnabled } from '../browser.ts';
+import { readSettings, write, ENABLED_KEY, SVG_KEY } from '../browser.ts';
 
-const input = document.getElementById('enabled') as HTMLInputElement;
+const enabled = document.getElementById('enabled') as HTMLInputElement;
+const svg = document.getElementById('svg') as HTMLInputElement;
 const note = document.getElementById('note') as HTMLElement;
 
 const NOTE = {
@@ -13,14 +14,17 @@ const NOTE = {
   off: '엔트리 기본 실행기를 그대로 씁니다.',
 };
 
-function show(value: boolean): void {
-  input.checked = value;
-  note.textContent = value ? NOTE.on : NOTE.off;
-}
-
-input.addEventListener('change', () => {
-  show(input.checked);
-  void setEnabled(input.checked);
+enabled.addEventListener('change', () => {
+  note.textContent = enabled.checked ? NOTE.on : NOTE.off;
+  void write(ENABLED_KEY, enabled.checked);
 });
 
-void isEnabled().then(show);
+svg.addEventListener('change', () => {
+  void write(SVG_KEY, svg.checked);
+});
+
+void readSettings().then((settings) => {
+  enabled.checked = settings.enabled;
+  svg.checked = settings.svg;
+  note.textContent = settings.enabled ? NOTE.on : NOTE.off;
+});

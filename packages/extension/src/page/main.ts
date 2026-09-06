@@ -21,7 +21,10 @@ function scan(): void {
     if (players.has(host) || !id) {
       continue;
     }
-    players.set(host, mountPlayer(host, id, host.dataset.tessvmGroup ?? null));
+    players.set(
+      host,
+      mountPlayer(host, id, host.dataset.tessvmGroup ?? null, host.dataset.tessvmSvg !== '0'),
+    );
   }
 }
 

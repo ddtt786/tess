@@ -219,6 +219,17 @@ export function makeAsset(
   }
 
   if (resolved) ctx.assetFiles.push({ source: resolved, target: asset.fileurl });
+
+  // 벡터 모양 옆에 같은 이름의 그림판 사본이 있으면 그것도 함께 싣는다.
+  // 엔트리는 벡터로 그린 모양을 두 벌로 보관하고 실행기는 사본 쪽을 쓴다.
+  if (isImage && resolved && ext === '.svg') {
+    const twin = resolved.replace(/\.svg$/i, '.png');
+    if (fs.existsSync(twin)) {
+      const target = fileUrlFor(kind, filename, '.png');
+      asset.pngurl = target;
+      ctx.assetFiles.push({ source: twin, target });
+    }
+  }
   return asset;
 }
 

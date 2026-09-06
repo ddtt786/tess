@@ -15,8 +15,29 @@ const DIALOG_BG = '#ffffff';
 const MONITOR_VARIABLE = '#4f80ff';
 const MONITOR_ANSWER = '#F57DF1';
 const MONITOR_TIMER = '#f4af18';
-const MONITOR_FONT = 10;
-const MONITOR_HEIGHT = 20;
+const MONITOR_FAMILY = 'Nanum Gothic, sans-serif';
+const MONITOR_BORDER = '#aac5d5';
+const MONITOR_BG = '#ffffff';
+/** `Entry.Variable` — `FONT` is `10pt`, `VALUE_FONT` is `9pt`; a point is 4/3 px. */
+const MONITOR_FONT = 40 / 3;
+const MONITOR_VALUE_FONT = 12;
+/** `BORDER` and `RECT_RADIUS` on `Entry.Variable`. */
+const MONITOR_INSET = 6;
+const MONITOR_RADIUS = 7;
+/** `GL_VAR_POS` · `GL_LIST_POS` — in the webgl path these are the text's top. */
+const LABEL_Y = -9.5;
+const VALUE_Y = -8.5;
+const LIST_INDEX_Y = 5;
+const LIST_VALUE_Y = 6;
+const LIST_ROW_HEIGHT = 20;
+/** The strip the title sits on; below it the rows begin. */
+const LIST_TITLE_HEIGHT = 23;
+/** Where the scroll bar starts and how tall it is (`scrollButton_`). */
+const LIST_BAR_TOP = LIST_TITLE_HEIGHT + 4;
+const LIST_BAR_HEIGHT = 20;
+/** Where entry puts the built-in monitors when the work does not say. */
+const ANSWER_HOME = { x: 150, y: -100 };
+const TIMER_HOME = { x: 134, y: -70 };
 
 interface DialogView {
   root: Container;
@@ -32,6 +53,7 @@ interface MonitorView {
   frame: Graphics;
   label: Text;
   value: Text;
+  /** List rows live here; a value monitor leaves it empty. */
   items: Container | null;
 }
 
@@ -54,6 +76,8 @@ export class Overlay {
   private readonly dialogs = new Map<Entity, DialogView>();
   private readonly monitors = new Map<Variable, MonitorView>();
   private variables: Variable[] = [];
+  /** First row shown in a list box, moved by dragging the rows or the bar. */
+  private readonly scrolled = new Map<Variable, number>();
   private answerMonitor: MonitorView | null = null;
   private timerMonitor: MonitorView | null = null;
   private answerValue: () => string | number = () => '';
@@ -91,6 +115,7 @@ export class Overlay {
   }
 
   clear(): void {
+    this.scrolled.clear();
     for (const view of this.dialogs.values()) {
       view.root.destroy({ children: true });
     }
@@ -132,7 +157,7 @@ export class Overlay {
     const notch = new Graphics();
     const text = new Text({
       text: state.message,
-      style: { fontFamily: 'Nanum Gothic, sans-serif', fontSize: DIALOG_FONT, fill: '#000000' },
+      style: { fontFamily: MONITOR_FAMILY, fontSize: DIALOG_FONT, fill: '#000000' },
       resolution: 2,
     });
     root.addChild(frame, notch, text);
@@ -214,25 +239,29 @@ export class Overlay {
   // -------------------------------------------------------------------------
   //  Monitors
   // -------------------------------------------------------------------------
+  private static text(size: number, fill: string): Text {
+    return new Text({
+      text: '',
+      style: { fontFamily: MONITOR_FAMILY, fontSize: size, fill },
+      resolution: 2,
+    });
+  }
+
   private makeMonitor(): MonitorView {
     const root = new Container();
     const frame = new Graphics();
-    const label = new Text({
-      text: '',
-      style: { fontFamily: 'Nanum Gothic, sans-serif', fontSize: MONITOR_FONT, fill: '#000000' },
-      resolution: 2,
-    });
-    const value = new Text({
-      text: '',
-      style: { fontFamily: 'Nanum Gothic, sans-serif', fontSize: MONITOR_FONT, fill: '#ffffff' },
-      resolution: 2,
-    });
-    label.position.set(4, 4);
+    const label = Overlay.text(MONITOR_FONT, '#000000');
+    const value = Overlay.text(MONITOR_VALUE_FONT, '#ffffff');
     root.addChild(frame, label, value);
     this.monitorLayer.addChild(root);
     return { root, frame, label, value, items: null };
   }
 
+  /**
+   * `Entry.Variable._adjustSingleViewBox` — a white pill with the name on it and
+   * a coloured box holding the value, 24 units tall, hanging 14 above the point
+   * the work stores as the variable's position.
+   */
   private drawValueMonitor(
     view: MonitorView,
     name: string,
@@ -243,51 +272,155 @@ export class Overlay {
   ): void {
     view.label.text = name;
     view.value.text = text;
-    const labelWidth = view.label.width;
-    const valueWidth = Math.max(view.value.width + 10, 24);
-    const width = labelWidth + valueWidth + 12;
+    const nameWidth = view.label.width;
+    const valueWidth = view.value.width;
     view.frame
       .clear()
-      .roundRect(0, 0, width, MONITOR_HEIGHT, 4)
-      .fill({ color: '#ffffff' })
-      .stroke({ width: 1, color: '#a0a0a0' })
-      .roundRect(labelWidth + 8, 3, valueWidth, MONITOR_HEIGHT - 6, 4)
-      .fill({ color });
-    view.value.position.set(labelWidth + 8 + (valueWidth - view.value.width) / 2, 4);
+      .roundRect(0, -14, nameWidth + valueWidth + 35, 24, 4)
+      .fill({ color: MONITOR_BG })
+      .stroke({ width: 1, color: MONITOR_BORDER })
+      .roundRect(nameWidth + 14, -10, valueWidth + 15, 16, MONITOR_RADIUS)
+      .fill({ color })
+      .stroke({ width: 1, color });
+    view.label.position.set(4, LABEL_Y);
+    view.value.position.set(nameWidth + 21, VALUE_Y);
     view.root.position.set(x, y);
   }
 
-  private drawListMonitor(view: MonitorView, variable: Variable): void {
+  /**
+   * `Entry.ListVariable.updateView` — a titled box of numbered rows, each 20 tall
+   * with the value on a coloured strip. The box is `width + 7` by `height + 22`,
+   * so the size the work stores is the room the rows get, not the whole frame.
+   */
+  private drawListMonitor(
+    view: MonitorView,
+    variable: Variable,
+    at: { x: number; y: number },
+  ): void {
     const width = variable.width || 100;
     const height = variable.height || 120;
-    view.label.text = variable.name;
+    const rows = variable.array;
     view.value.text = '';
     view.frame
       .clear()
-      .roundRect(0, 0, width, height, 4)
-      .fill({ color: '#ffffff' })
-      .stroke({ width: 1, color: '#a0a0a0' })
-      .rect(0, 0, width, 18)
-      .fill({ color: MONITOR_VARIABLE });
-    view.label.style.fill = '#ffffff';
-    view.label.position.set(4, 3);
+      .roundRect(0, 0, width + 7, height + 22, MONITOR_RADIUS)
+      .fill({ color: MONITOR_BG })
+      .stroke({ width: 1, color: MONITOR_BORDER });
+
+    view.label.style.fill = '#000000';
+    view.label.text = variable.name;
+    view.label.position.set((width - view.label.width) / 2 + 3, MONITOR_INSET - 1);
+
     if (!view.items) {
       view.items = new Container();
       view.root.addChild(view.items);
     }
     const items = view.items;
-    items.removeChildren().forEach((child) => child.destroy());
-    const rows = Math.min(variable.array.length, Math.floor((height - 22) / 16));
-    for (let i = 0; i < rows; i += 1) {
-      const row = new Text({
-        text: `${i + 1}  ${variable.array[i]!.data}`,
-        style: { fontFamily: 'Nanum Gothic, sans-serif', fontSize: MONITOR_FONT, fill: '#000000' },
-        resolution: 2,
-      });
-      row.position.set(4, 22 + i * 16);
+    items.removeChildren().forEach((child) => child.destroy({ children: true }));
+
+    const visible = Math.floor((height - 15) / LIST_ROW_HEIGHT);
+    const overflow = visible < rows.length;
+    const first = Math.max(0, Math.min(this.scrollOf(variable), rows.length - visible));
+    const stripWidth = width - 2 * MONITOR_INSET - (overflow ? 30 : 20) - 6 + 14;
+    for (let seat = 0; seat < visible && first + seat < rows.length; seat += 1) {
+      const at = first + seat;
+      const row = new Container();
+      row.position.set(MONITOR_INSET, seat * LIST_ROW_HEIGHT + LIST_TITLE_HEIGHT);
+      const index = Overlay.text(MONITOR_FONT, '#000000');
+      index.text = String(at + 1);
+      index.position.set(0, LIST_INDEX_Y);
+      const strip = new Graphics()
+        .roundRect(18, 4, stripWidth, 17, 2)
+        .fill({ color: MONITOR_VARIABLE });
+      const value = Overlay.text(MONITOR_VALUE_FONT, '#ffffff');
+      value.text = Overlay.fitText(value, String(rows[at]!.data ?? ''), stripWidth - 12);
+      value.position.set(24, LIST_VALUE_Y);
+      row.addChild(index, strip, value);
       items.addChild(row);
     }
-    view.root.position.set(variable.x, variable.y);
+    const run = this.barRun(variable);
+    if (run) {
+      view.frame
+        .roundRect(width - 9, run.top + (run.span * first) / run.room, 6, LIST_BAR_HEIGHT, 3)
+        .fill({ color: MONITOR_BORDER });
+    }
+    view.root.position.set(at.x, at.y);
+  }
+
+  /** First row shown; `Entry.ListVariable` calls this its scroll position. */
+  scrollOf(variable: Variable): number {
+    return this.scrolled.get(variable) ?? 0;
+  }
+
+  scrollTo(variable: Variable, row: number): void {
+    const visible = Math.floor(((variable.height || 120) - 15) / LIST_ROW_HEIGHT);
+    const last = Math.max(0, variable.array.length - visible);
+    this.scrolled.set(variable, Math.max(0, Math.min(last, Math.round(row))));
+  }
+
+  /**
+   * The list box under a stage point, if there is one — in the overlay's own
+   * space, where y counts downwards. `Entry.Variable` hands its view to a drag
+   * helper; here pointers come through one path, so the hit test lives here and
+   * the dragging is done where that path is.
+   *
+   * The rows and the bar beside them both scroll; the title strip does not.
+   */
+  listAt(x: number, y: number): { variable: Variable; rowsPerPixel: number } | null {
+    for (const [variable, view] of this.monitors) {
+      if (!variable.isList || !variable.visible || !view.root.visible) {
+        continue;
+      }
+      const boxWidth = (variable.width || 100) + 7;
+      const boxHeight = (variable.height || 120) + 22;
+      const left = view.root.x;
+      const top = view.root.y;
+      const inside = x >= left && x <= left + boxWidth && y >= top && y <= top + boxHeight;
+      if (!inside || y - top < LIST_TITLE_HEIGHT) {
+        continue;
+      }
+      const run = this.barRun(variable);
+      // On the bar the list follows the run; on the rows it follows the finger.
+      const onBar = run !== null && x - left >= (variable.width || 100) - 12;
+      return {
+        variable,
+        rowsPerPixel: onBar && run ? run.room / run.span : 1 / LIST_ROW_HEIGHT,
+      };
+    }
+    return null;
+  }
+
+  /**
+   * The run the scroll bar travels, from just under the title to the bottom of
+   * the box. One place, so the bar the eye sees and the bar the pointer grabs
+   * cannot drift apart — at the last row it has to sit at the end of the run.
+   */
+  private barRun(variable: Variable): { top: number; span: number; room: number } | null {
+    const height = variable.height || 120;
+    const visible = Math.floor((height - 15) / LIST_ROW_HEIGHT);
+    const room = variable.array.length - visible;
+    if (room <= 0) {
+      return null;
+    }
+    // The bar runs beside the rows, not beside the box: at the first row it lines
+    // up with the first strip, at the last row with the last one.
+    const lastStripBottom = (visible - 1) * LIST_ROW_HEIGHT + LIST_TITLE_HEIGHT + 21;
+    const bottom = lastStripBottom - LIST_BAR_HEIGHT;
+    return { top: LIST_BAR_TOP, span: Math.max(1, bottom - LIST_BAR_TOP), room };
+  }
+
+  /** `updateView` shortens a row that does not fit and marks it with `..`. */
+  private static fitText(view: Text, text: string, room: number): string {
+    view.text = text;
+    if (view.width <= room) {
+      return text;
+    }
+    let cut = text;
+    while (cut.length > 1 && view.width > room) {
+      cut = `${cut.slice(0, -3)}..`;
+      view.text = cut;
+    }
+    return cut;
   }
 
   /** `Entry.Variable.updateView` — integers show raw, decimals get two places. */
@@ -323,15 +456,16 @@ export class Overlay {
         this.monitors.set(variable, view);
       }
       view.root.visible = true;
+      const at = this.homeOf(variable);
       if (variable.isList) {
-        this.drawListMonitor(view, variable);
+        this.drawListMonitor(view, variable, at);
       } else {
         this.drawValueMonitor(
           view,
           variable.name,
           Overlay.formatValue(variable.value),
-          variable.x,
-          variable.y,
+          at.x,
+          at.y,
           MONITOR_VARIABLE,
         );
       }
@@ -339,18 +473,42 @@ export class Overlay {
     this.flushBuiltin();
   }
 
+  /**
+   * `Variable.generateView` — a work usually stores where its box sits, and
+   * entry only lays one out itself when both numbers are missing. Zero counts as
+   * missing there, so it does here too.
+   */
+  private homeOf(variable: Variable): { x: number; y: number } {
+    if (variable.x && variable.y) {
+      return { x: variable.x, y: variable.y };
+    }
+    const index = this.variables.indexOf(variable);
+    const count = this.variables.length;
+    return {
+      x: 10 - 240 + Math.floor((count % 66) / 11) * 80,
+      y: index * 28 + 20 - 135 - Math.floor(count / 11) * 264,
+    };
+  }
+
+  /**
+   * The answer and the timer are variables too — the work stores where their
+   * boxes sit, and entry falls back to a place of its own for each.
+   */
   private flushBuiltin(): void {
+    const answer = this.variables.find((variable) => variable.kind === 'answer');
+    const timer = this.variables.find((variable) => variable.kind === 'timer');
     if (this.answerShown()) {
       if (!this.answerMonitor) {
         this.answerMonitor = this.makeMonitor();
       }
       this.answerMonitor.root.visible = true;
+      const at = Overlay.builtinHome(answer, ANSWER_HOME);
       this.drawValueMonitor(
         this.answerMonitor,
         '대답',
         String(this.answerValue()),
-        -stage.halfWidth + 10,
-        -stage.halfHeight + 50,
+        at.x,
+        at.y,
         MONITOR_ANSWER,
       );
     } else if (this.answerMonitor) {
@@ -361,16 +519,24 @@ export class Overlay {
         this.timerMonitor = this.makeMonitor();
       }
       this.timerMonitor.root.visible = true;
+      const at = Overlay.builtinHome(timer, TIMER_HOME);
       this.drawValueMonitor(
         this.timerMonitor,
-        '초시계',
+        timer?.name || '초시계',
         this.timerValue().toFixed(1),
-        -stage.halfWidth + 10,
-        -stage.halfHeight + 30,
+        at.x,
+        at.y,
         MONITOR_TIMER,
       );
     } else if (this.timerMonitor) {
       this.timerMonitor.root.visible = false;
     }
+  }
+
+  private static builtinHome(
+    variable: Variable | undefined,
+    home: { x: number; y: number },
+  ): { x: number; y: number } {
+    return variable?.x && variable.y ? { x: variable.x, y: variable.y } : home;
   }
 }
