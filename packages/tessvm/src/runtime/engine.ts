@@ -487,6 +487,12 @@ export class Vm implements Project {
     this.audio?.stopAll();
     this.audio?.stopBgm();
     this.speech?.stop();
+    // Stopping out of a pause has to lift the pause as well: nothing is being
+    // held any more, and an audio context left suspended makes the next run
+    // silent all the way through.
+    this.audio?.resume?.();
+    this.speech?.resume?.();
+    this.clearQuestion();
   }
 
   pause(): void {
@@ -513,15 +519,13 @@ export class Vm implements Project {
       variable.loadSnapshot();
     }
     this.answer = '';
-    this.question = null;
-    this.pendingAnswer = null;
     this.errors = [];
     this.currentSceneId = this.scenes[0]?.id ?? '';
     this.audio?.setVolume(1);
     this.audio?.setSpeed(1);
     this.clearTimer();
     this.renderer?.setScene?.(this.currentSceneId);
-    this.renderer?.hideQuestion?.();
+    this.clearQuestion();
   }
 
   /** Drives the engine from a real timestamp, keeping a fixed 60 Hz tick. */
@@ -664,6 +668,14 @@ export class Vm implements Project {
     }
     this.resetSceneDuringRun(this.currentSceneId);
     this.currentSceneId = scene.id;
+    // `Entry.scene.selectScene` — leaving a scene silences the sounds it left
+    // running. The scripts that started them are gone with the scene, so
+    // nothing is left that could stop them later. Background music carries
+    // over: entry files it apart from the sounds this clears.
+    if (this.state === 'run') {
+      this.audio?.stopAll();
+      this.speech?.stop();
+    }
     this.renderer?.setScene?.(scene.id);
   }
 
@@ -686,6 +698,16 @@ export class Vm implements Project {
       }
       this.resetEntity(target.entity);
     }
+    // `Entry.stage.hideInputField` — the script that asked is gone with the
+    // scene, so the box it was waiting on goes with it.
+    this.clearQuestion();
+  }
+
+  /** Takes down the `묻고 기다리기` box and the answer it was waiting for. */
+  private clearQuestion(): void {
+    this.question = null;
+    this.pendingAnswer = null;
+    this.renderer?.hideQuestion?.();
   }
 
   /** `Entry.EntityObject.reset` — snapshot back, effects and drawings gone. */

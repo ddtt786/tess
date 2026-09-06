@@ -4,6 +4,9 @@
  * 소리 파일은 한 번만 받아서 디코딩해 두고 그 뒤로는 버퍼를 재사용합니다. 재생 속도
  * (`playbackRate`)와 소리 크기는 엔트리처럼 작품 전체에 하나씩만 있고, 이미 나고 있는
  * 소리에도 곧바로 적용됩니다.
+ *
+ * 배경음악은 소리와 따로 놉니다 — 엔트리가 `Entry.bgmInstances` 로 갈라 두어서
+ * 소리 크기·재생 속도·소리 멈추기 블록이 닿지 않습니다. `AI/AI_TESSVM.md` 참고.
  */
 import type { AudioEngine } from '../runtime/engine.ts';
 import type { Sound } from '../runtime/model.ts';
@@ -12,11 +15,15 @@ interface Playing {
   source: AudioBufferSourceNode;
   gain: GainNode;
   entityId: string;
-  timer: number | null;
 }
 
 export class WebAudioEngine implements AudioEngine {
   private context: AudioContext | null = null;
+  /**
+   * Carries the sounds, not the background music. Entry keeps the two in
+   * separate lists (`Entry.soundInstances` and `Entry.bgmInstances`) and the
+   * volume, speed and stop blocks all walk the first one only.
+   */
   private master: GainNode | null = null;
   private readonly buffers = new Map<string, AudioBuffer>();
   private readonly loading = new Map<string, Promise<AudioBuffer | null>>();
@@ -37,7 +44,7 @@ export class WebAudioEngine implements AudioEngine {
   private ensure(): AudioContext | null {
     if (this.context) {
       if (this.context.state === 'suspended' && !this.paused) {
-        void this.context.resume();
+        void this.context.resume().catch(() => undefined);
       }
       return this.context;
     }
@@ -110,7 +117,7 @@ export class WebAudioEngine implements AudioEngine {
     if (!buffer) {
       const ticket = this.ticket(entityId, false);
       void this.buffer(sound).then((loaded) => {
-        if (loaded && this.claim(ticket)) {
+        if (this.claim(ticket) && loaded) {
           this.start(loaded, entityId, startMs, durationMs, false);
         }
       });
@@ -128,13 +135,13 @@ export class WebAudioEngine implements AudioEngine {
     if (!buffer) {
       const ticket = this.ticket('', true);
       void this.buffer(sound).then((loaded) => {
-        if (loaded && this.claim(ticket)) {
-          this.bgm = this.start(loaded, '', 0, undefined, true);
+        if (this.claim(ticket) && loaded) {
+          this.start(loaded, '', 0, undefined, true);
         }
       });
       return;
     }
-    this.bgm = this.start(buffer, '', 0, undefined, true);
+    this.start(buffer, '', 0, undefined, true);
   }
 
   private ticket(entityId: string, bgm: boolean) {
@@ -157,26 +164,31 @@ export class WebAudioEngine implements AudioEngine {
     }
   }
 
+  /**
+   * Background music runs beside the sounds rather than among them:
+   * `Entry.Utils.playBGM` plays it once at full volume and files it in
+   * `Entry.bgmInstances`, which the volume, speed and stop-sound blocks never
+   * walk. Only `stop_bgm` and the next `play_bgm` reach it.
+   */
   private start(
     buffer: AudioBuffer,
     entityId: string,
     startMs: number,
     durationMs: number | undefined,
-    loop: boolean,
-  ): Playing | null {
+    bgm: boolean,
+  ): void {
     const context = this.ensure();
     if (!context || !this.master) {
-      return null;
+      return;
     }
     const source = context.createBufferSource();
     source.buffer = buffer;
-    source.loop = loop;
-    source.playbackRate.value = this.speed;
+    source.playbackRate.value = bgm ? 1 : this.speed;
     const gain = context.createGain();
     source.connect(gain);
-    gain.connect(this.master);
+    gain.connect(bgm ? context.destination : this.master);
     const offset = Math.max(0, startMs / 1000);
-    const entry: Playing = { source, gain, entityId, timer: null };
+    const entry: Playing = { source, gain, entityId };
     if (durationMs !== undefined) {
       source.start(0, offset, durationMs / 1000);
     } else {
@@ -184,13 +196,20 @@ export class WebAudioEngine implements AudioEngine {
     }
     source.onended = () => {
       this.playing.delete(entry);
+      if (this.bgm === entry) {
+        this.bgm = null;
+      }
     };
-    this.playing.add(entry);
-    return entry;
+    if (bgm) {
+      this.bgm = entry;
+    } else {
+      this.playing.add(entry);
+    }
   }
 
+  /** `Entry.Utils.forceStopSounds` — the background music plays on. */
   stopAll(): void {
-    this.cancel(() => true);
+    this.cancel((item) => !item.bgm);
     for (const entry of [...this.playing]) {
       this.stopEntry(entry);
     }
@@ -219,7 +238,7 @@ export class WebAudioEngine implements AudioEngine {
   }
 
   stopEntity(entityId: string): void {
-    this.cancel((item) => item.entityId === entityId);
+    this.cancel((item) => !item.bgm && item.entityId === entityId);
     for (const entry of [...this.playing]) {
       if (entry.entityId === entityId) {
         this.stopEntry(entry);
@@ -228,7 +247,7 @@ export class WebAudioEngine implements AudioEngine {
   }
 
   stopExcept(entityId: string): void {
-    this.cancel((item) => item.entityId !== entityId);
+    this.cancel((item) => !item.bgm && item.entityId !== entityId);
     for (const entry of [...this.playing]) {
       if (entry.entityId !== entityId) {
         this.stopEntry(entry);

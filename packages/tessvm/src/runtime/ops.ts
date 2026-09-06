@@ -867,17 +867,21 @@ export function createOps(vm: Vm) {
     stopSounds(entity: Entity, target: string): void {
       if (target === 'thisOnly') {
         vm.audio?.stopEntity(entity.id);
-      } else if (target === 'other_objects') {
+        return;
+      }
+      if (target === 'other_objects') {
         vm.audio?.stopExcept(entity.id);
       } else {
         vm.audio?.stopAll();
       }
+      // `읽어주기` is a sound instance too, and entry files it under `global`
+      // rather than under an object, so every target but `thisOnly` reaches it.
+      vm.speech?.stop();
     },
 
     playBgm(entity: Entity, id: string): void {
       const sound = entity.target.getSound(id);
       if (sound) {
-        vm.audio?.stopBgm();
         vm.audio?.playBgm(sound);
       }
     },
