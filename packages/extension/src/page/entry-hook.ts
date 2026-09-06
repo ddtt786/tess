@@ -1,6 +1,9 @@
 /**
  * @fileoverview Hooks entry's own runner so tessvm can stand in for it.
  *
+ * This is for the pages where a work is played — `playentry.org/project/<id>`
+ * and the full-screen and embedded views of it — not the block editor.
+ *
  * Entry keeps its page, its buttons and its state machine; only the part that
  * actually executes blocks is taken away. Every script start in entry — the
  * start button, keys, mouse, messages, clones — goes through
@@ -190,21 +193,33 @@ export class EntryBridge {
   }
 
   /**
-   * The work as it stands right now. `exportProject` picks up edits made in the
-   * workspace since it was loaded; the loaded copy is the fallback for pages
-   * where exporting is not available.
+   * The work to run. On a play page it is exactly what entry was handed, so
+   * that copy is used as it is — `exportProject` re-serialises the whole
+   * runtime, needs the editor's interface state, and stops the engine on its
+   * way through. It is kept only as the fallback for a page whose load we
+   * arrived too late to see.
    */
   snapshot(): Record<string, unknown> | null {
-    const entry = this.entry;
+    if (this.loaded) return this.loaded;
     try {
-      const exported = entry?.exportProject?.({});
+      const exported = this.entry?.exportProject?.({});
       if (exported && typeof exported === 'object') {
         return exported as Record<string, unknown>;
       }
     } catch {
-      // A page without the workspace UI cannot capture its interface state.
+      // A page without the editor cannot capture its interface state.
     }
-    return this.loaded;
+    return null;
+  }
+
+  /**
+   * True on the block editor. Entry names the play views `minimize`,
+   * `invisible`, `phone` and `mobile`, and the editor `workspace`; the path is
+   * read as well for the moment before entry has settled its own type.
+   */
+  isEditor(): boolean {
+    if (this.entry?.type === 'workspace') return true;
+    return /^\/ws(\/|$)/.test(window.location.pathname);
   }
 
   /** Gives entry its runner back, whatever state the page is in. */

@@ -1,6 +1,7 @@
 # tessvm 확장 프로그램
 
-playentry.org 에서 작품을 실행할 때 실행기를 [tessvm](../../AI/AI_TESSVM.md) 으로 바꿉니다.
+`playentry.org/project/<id>` 에서 작품을 실행할 때 실행기를
+[tessvm](../../AI/AI_TESSVM.md) 으로 바꿉니다. 만들기 페이지는 건드리지 않습니다.
 
 ```bash
 pnpm install
@@ -13,6 +14,9 @@ pnpm build:extension     # dist/chrome · dist/firefox
   `packages/extension/dist/firefox/manifest.json`
 
 도구 모음 아이콘을 눌러 켜고 끕니다. 끄면 엔트리 실행기를 그대로 씁니다.
+
+시작·일시정지·정지는 사이트의 단추로도, 무대 왼쪽 위 `tessvm` 배지를 눌러 열리는
+판에서도 할 수 있습니다.
 
 작품에 `$tessvm` 이라는 이름의 변수를 만들어 두면, tessvm 으로 실행할 때 그 값이 1 이
 됩니다. 엔트리 실행기로 실행하면 작품이 적어 둔 값 그대로입니다.

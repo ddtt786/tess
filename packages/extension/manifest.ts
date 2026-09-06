@@ -9,7 +9,8 @@
 export const NAME = 'tessvm — 엔트리 작품 실행기 바꾸기';
 export const VERSION = '0.1.0';
 export const DESCRIPTION =
-  '엔트리 작품을 Tess 로 컴파일해 tessvm 으로 실행합니다. 작품에 $tessvm 변수가 있으면 1 로 둡니다.';
+  'playentry.org 에서 작품을 실행할 때 엔트리 실행기 대신 tessvm 으로 돌립니다. '
+  + '작품을 Tess 로 컴파일해 실행하고, $tessvm 변수가 있으면 1 로 둡니다.';
 
 export const MATCHES = ['https://playentry.org/*', 'https://*.playentry.org/*'];
 
@@ -60,7 +61,9 @@ function base(): Record<string, unknown> {
         matches: MATCHES,
         js: ['content.js'],
         run_at: 'document_start',
-        all_frames: false,
+        // The play page embeds the stage in a frame of its own in some views;
+        // the runner only acts where it finds entry, so every frame is watched.
+        all_frames: true,
       },
     ],
     web_accessible_resources: [{ resources: ['page.js'], matches: MATCHES }],

@@ -1,9 +1,15 @@
-# 확장 프로그램 — playentry.org 의 실행기를 tessvm 으로 바꾼다
+# 확장 프로그램 — 작품 실행 페이지의 실행기를 tessvm 으로 바꾼다
 
-`packages/extension` 은 크롬과 파이어폭스에서 도는 확장 프로그램입니다. playentry.org 에서
-작품을 실행할 때 **엔트리 실행기 대신 tessvm** 이 그 작품을 돌립니다. 돌릴 것은 페이지가
-들고 있는 엔트리 작품을 **Tess 소스로 되돌린 뒤 다시 컴파일한 것**이며, 작품에 `$tessvm`
-변수가 있으면 실행 직전에 1 로 둡니다.
+`packages/extension` 은 크롬과 파이어폭스에서 도는 확장 프로그램입니다. **작품을 실행하는
+페이지** — `playentry.org/project/<id>` 와 그것의 전체 화면·삽입 화면 — 에서 **엔트리
+실행기 대신 tessvm** 이 그 작품을 돌립니다. 돌릴 것은 페이지가 들고 있는 엔트리 작품을
+**Tess 소스로 되돌린 뒤 다시 컴파일한 것**이며, 작품에 `$tessvm` 변수가 있으면 실행 직전에
+1 로 둡니다.
+
+**만들기(작업실) 페이지는 건드리지 않습니다.** 거기서는 실행기가 편집의 일부이기 때문입니다
+— 도는 블록이 하이라이트되고, 디버거가 그 위를 따라가고, 멈추면 그 자리가 보입니다.
+`Entry.type` 이 `workspace` 이거나 주소가 `/ws` 아래이면 엔트리 실행기를 그대로 둡니다
+(실행 화면은 `minimize`·`invisible`·`phone`·`mobile` 입니다).
 
 ```bash
 pnpm build:extension              # dist/chrome · dist/firefox 를 만든다
@@ -14,8 +20,8 @@ node packages/extension/build.ts --watch   # src 를 지켜보며 다시 만든�
 ## 1. 무엇이 무엇을 실행하는가
 
 ```
-playentry.org 의 작품(project.json)
-      │  Entry.exportProject()      ← 작업실에서 고친 것까지 그대로
+Entry.loadProject 이 받은 작품(project.json)
+      │                            ← 실행 페이지의 작품은 이것이 곧 최종본이다
       ▼
 @tess/decompiler ──▶ main.tess + objects/*.tess
       ▼
@@ -54,13 +60,15 @@ Tess 로 되돌린 뒤 실행하는 것과 확장 프로그램이 하는 일은 
 | 코드                | 어디에서                 | 왜 거기여야 하는가                                             |
 | ------------------- | ------------------------ | -------------------------------------------------------------- |
 | `content.js`        | 격리된 세계              | 확장 API(`storage`)를 쓸 수 있는 유일한 곳                     |
+
 | `page.js`           | 페이지 자신의 세계       | `Entry` 는 페이지 전역이고, JIT 은 `new Function` 을 쓴다      |
 | `background.js`     | 서비스 워커 · 이벤트 페이지 | 탭과 무관한 설정·배지·네트워크 규칙                          |
 
 페이지 세계에서는 `chrome.storage` 를 볼 수 없으므로, 설정은 `window.postMessage` 로
 건너갑니다(`src/common/protocol.ts`). 콘텐츠 스크립트는 `document_start` 에 `page.js` 를
 `<script src>` 로 꽂고, 저장소를 읽은 뒤 설정을 보냅니다 — 저장소 읽기는 비동기라
-그것을 기다리면 entryjs 보다 늦기 때문입니다.
+그것을 기다리면 entryjs 보다 늦기 때문입니다. 실행 화면이 프레임 안에 들어가는 경우가
+있어 모든 프레임에 꽂습니다(`all_frames`); 실행기는 `Entry` 를 찾은 곳에서만 움직입니다.
 
 메시지는 `event.source` 가 이 창이고 `event.origin` 이 이 페이지의 출처일 때만 받습니다.
 작품이 띄운 프레임에서 온 메시지는 그 자리에서 버려집니다.
@@ -84,12 +92,25 @@ Entry.engine.captureKeyEvent    ──┘
 `toggleRun`·`toggleStop`·`togglePause`·`loadProject` 다섯 개뿐이고, 그 밖의 entryjs 는
 손대지 않습니다.
 
-- `toggleRun` — 누르는 즉시 작품을 뜨고(`exportProject`), 소유 표시를 세운 뒤 원본을
-  부릅니다. 엔트리의 상태와 단추는 평소대로 바뀌고, 스크립트만 돌지 않습니다.
+- `toggleRun` — 소유 표시를 세운 뒤 원본을 부릅니다. 엔트리의 상태와 단추는 평소대로
+  바뀌고, 스크립트만 돌지 않습니다. 돌릴 작품은 `loadProject` 가 받아 둔 그것입니다 —
+  실행 페이지에서는 그것이 곧 최종본이고, `exportProject` 는 편집기의 상태를 필요로 하며
+  지나가는 길에 엔진까지 멈추므로 늦게 붙었을 때의 대비책으로만 씁니다.
 - `toggleStop` — 소유를 내려놓고 원본을 부릅니다. 엔트리가 스냅숏으로 오브젝트와 변수를
   되돌리므로 무대가 처음 상태로 돌아옵니다.
 - `togglePause` — 원본을 부른 뒤 `engine.state` 를 보고 tessvm 을 멈추거나 잇습니다.
-- `loadProject` — 새 작품이 들어왔다는 뜻이므로 만들어 둔 tessvm 을 버립니다.
+- `loadProject` — 돌릴 작품을 받아 두고, 만들어 둔 tessvm 을 버립니다.
+
+### 실행 조작은 tessvm 의 것이다
+
+시작·일시정지·정지는 tessvm 이 전부 지원하므로(`vm.start`·`vm.pause`·`vm.stop`), 무대
+왼쪽 위 배지를 눌러 열리는 판에 그 세 단추를 둡니다. **누르면 tessvm 을 먼저 움직이고**,
+그다음에 엔트리의 상태 기계를 같은 자리로 옮겨 사이트의 단추가 반대를 가리키지 않게
+합니다 — 반대 방향은 없습니다. 그 되돌림 중에는 표시를 세워, 우리가 움직인 단추가
+우리에게 다시 돌아오지 않게 합니다.
+
+엔트리 자신의 시작·정지 단추도 그대로 살아 있습니다. 둘 중 무엇을 눌러도 같은 곳에
+닿습니다.
 
 `Entry` 는 `window` 에 프로퍼티를 걸어 두고 기다립니다 — entryjs 가 자기 전역을 올려놓는
 순간 붙습니다. 프로퍼티를 다시 정의할 수 없는 페이지(전역 변수로 선언된 경우)를 위해
@@ -228,12 +249,14 @@ tessvm 은 블록을 자바스크립트 소스로 만들어 `new Function` 으�
   그것을 되돌립니다. 오브젝트 순서·모양 수·주소·`$tessvm`·**tessvm 이 모르는 블록의
   집합이 왕복 전후로 같은가** 를 봅니다. 마지막 것이 왕복이 아무것도 잃지 않았다는 뜻입니다.
   `examples/ent/*.ent` 가 있으면 실제 작품으로도 같은 검사를 합니다.
-- `test/entry-hook.test.ts` — 가짜 `Entry` 로 가로채기를 봅니다. 핵심은 하나입니다:
-  tessvm 이 실행을 맡는 동안 엔트리 쪽 스크립트가 하나도 시작되지 않는가, 그리고 정지
-  뒤에 다시 시작되는가.
-- `test/runner.test.ts` — **실제로 배포되는 번들을 그대로 만들어** jsdom 페이지에서
-  돌립니다. jsdom 에는 WebGL 이 없어 tessvm 이 화면을 세우다 실패하므로, 넘겨받는 것과
-  실패했을 때 엔트리로 되돌려주는 것을 한 번에 볼 수 있습니다.
+- `test/entry-hook.test.ts` — 가짜 `Entry` 로 가로채기를 봅니다. 핵심은 둘입니다:
+  tessvm 이 실행을 맡는 동안 엔트리 쪽 스크립트가 하나도 시작되지 않는가(그리고 정지
+  뒤에 다시 시작되는가), 그리고 만들기 페이지는 손대지 않는가.
+- `test/overlay.test.ts` — 판의 실행 조작이 눌리고, 지금 할 수 없는 것은 눌리지 않는지.
+- `test/runner.test.ts` — **실제로 배포되는 번들을 그대로 만들어** jsdom 으로 연
+  `playentry.org/project/<id>` 에서 돌립니다. jsdom 에는 WebGL 이 없어 tessvm 이 화면을
+  세우다 실패하므로, 넘겨받는 것과 실패했을 때 엔트리로 되돌려주는 것을 한 번에 볼 수
+  있습니다. `/ws` 로 열면 넘겨받지 않는 것도 같이 봅니다.
 
 ## 11. 지금 하지 못하는 것
 

@@ -1,10 +1,14 @@
 /**
  * @fileoverview The runner, in playentry.org's own page.
  *
- * It has to be here rather than in the content script's world: `Entry` is a
- * page global, and the JIT compiles the work with `new Function`. The extension
- * APIs are out of reach from here, so settings arrive over `postMessage` from
- * the content script.
+ * This stands in for entry's runner where a work is played —
+ * `playentry.org/project/<id>` and the full-screen and embedded views of it.
+ * The block editor is left alone: there the runner is part of the editing loop.
+ *
+ * The code has to be in the page's own world rather than the content script's:
+ * `Entry` is a page global, and the JIT compiles the work with `new Function`.
+ * The extension APIs are out of reach from here, so settings arrive over
+ * `postMessage` from the content script.
  */
 import { DEFAULT_SETTINGS, type Settings } from '../common/settings.ts';
 import { CHANNEL, isContentMessage, type PageMessage, type RunnerStatus } from '../common/protocol.ts';
@@ -16,6 +20,8 @@ import { TESSVM_VARIABLE, type BuildResult } from './pipeline.ts';
 
 let settings: Settings = { ...DEFAULT_SETTINGS };
 let overlay: StageOverlay | null = null;
+/** Set while we are driving entry's buttons, so its hooks do not answer back. */
+let entrySync = false;
 const runner = new TessvmRunner();
 
 /** Whether the page lets us compile — the JIT needs `new Function`. */
@@ -43,28 +49,82 @@ function stageOverlay(): StageOverlay {
       post({ channel: CHANNEL, from: 'page', type: 'save', settings });
       handOverToEntry('사용자가 엔트리 실행기로 되돌렸습니다.');
     });
+    // The run is tessvm's, so the run controls act on tessvm first. Entry's
+    // page is told afterwards, so its own buttons keep showing the truth.
+    overlay.onTransport({
+      start: () => {
+        runner.start();
+        showTransport();
+        syncEntry('run');
+      },
+      pause: () => {
+        runner.pause();
+        showTransport();
+        syncEntry('pause');
+      },
+      stop: () => {
+        runner.stop();
+        showTransport();
+        syncEntry('stop');
+      },
+    });
   }
   return overlay;
 }
 
+/** Puts the panel's controls in step with what tessvm is actually doing. */
+function showTransport(): void {
+  overlay?.setTransport(runner.state);
+}
+
+/**
+ * Moves entry's own state machine to match, so its start and stop buttons are
+ * not left saying the opposite of what tessvm is doing. Never the other way
+ * round: tessvm is what is running the work.
+ */
+function syncEntry(want: 'run' | 'pause' | 'stop'): void {
+  const engine = bridge.entry?.engine as
+    | { state?: string; toggleRun?: () => void; toggleStop?: () => void; togglePause?: () => void }
+    | undefined;
+  if (!engine || engine.state === want) return;
+  entrySync = true;
+  try {
+    if (want === 'stop') engine.toggleStop?.();
+    else if (want === 'pause') engine.togglePause?.();
+    else if (engine.state === 'pause') engine.togglePause?.();
+    else engine.toggleRun?.();
+  } catch {
+    // Entry's page is a courtesy here; tessvm has already done the real work.
+  } finally {
+    entrySync = false;
+  }
+}
+
 const bridge = new EntryBridge({
-  wantsControl: () => settings.enabled,
+  // The block editor keeps entry's runner: there the runner is half of the
+  // editing loop (a block lights up as it runs, the debugger steps through it).
+  wantsControl: () => settings.enabled && !bridge.isEditor(),
   onProjectLoaded() {
     // A newly loaded work makes whatever is booted useless. Mid-run this does
     // not happen — entry stops the engine before it loads anything.
     if (!bridge.controlled) runner.dispose();
   },
   onRun(project) {
+    // Not when the button entry just moved was moved by us.
+    if (entrySync) return;
     void takeRun(project);
   },
   onStop() {
+    if (entrySync) return;
     runner.stop();
     overlay?.hide();
     report({ active: false, detail: 'tessvm 대기 중' });
   },
   onPause(paused) {
+    if (entrySync) return;
     if (paused) runner.pause();
     else runner.start();
+    showTransport();
   },
 });
 
@@ -123,6 +183,7 @@ async function takeRun(project: Record<string, unknown> | null): Promise<void> {
     runner.start();
     view.setStatus(build.route === 'tess' ? 'tessvm · Tess' : 'tessvm · 직접', 'ready');
     view.setDetail(describe(build, bootMs));
+    showTransport();
     report({
       active: true,
       detail: `tessvm 실행 중 (${build.route === 'tess' ? 'Tess 경유' : '직접'})`,

@@ -39,6 +39,14 @@ export class TessvmRunner {
     return this.handle !== null;
   }
 
+  /** What tessvm is doing right now, for the run controls to read. */
+  get state(): 'stopped' | 'running' | 'paused' {
+    const vmState = this.handle?.vm.state;
+    if (vmState === 'run') return 'running';
+    if (vmState === 'pause') return 'paused';
+    return 'stopped';
+  }
+
   /**
    * Converts and boots the work, reusing what is already up when the work and
    * the settings that shape it have not changed.

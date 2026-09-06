@@ -63,10 +63,17 @@ const STYLE = `
 #${HOST_ID}.tessvm-ext-open .tessvm-ext-panel { display: block; }
 #${HOST_ID} .tessvm-ext-panel h4 { margin: 0 0 6px; font-size: 12px; color: #fff; }
 #${HOST_ID} .tessvm-ext-panel button {
-  margin-top: 8px; font: inherit; padding: 4px 10px; border-radius: 6px;
+  font: inherit; padding: 4px 10px; border-radius: 6px;
   border: 1px solid #ffffff2e; background: #1c2230; color: #e8eaee; cursor: pointer;
 }
-#${HOST_ID} .tessvm-ext-panel button:hover { background: #262d3d; }
+#${HOST_ID} .tessvm-ext-panel button:hover:not(:disabled) { background: #262d3d; }
+#${HOST_ID} .tessvm-ext-panel button:disabled { opacity: .4; cursor: default; }
+#${HOST_ID} .tessvm-ext-controls {
+  display: flex; gap: 6px; margin: 10px 0 8px; flex-wrap: wrap;
+}
+#${HOST_ID} .tessvm-ext-controls button.primary {
+  border-color: #4f80ff66; background: #24304d;
+}
 `;
 
 export type OverlayTone = 'ready' | 'busy' | 'failed';
@@ -77,6 +84,9 @@ export class StageOverlay {
   private readonly badgeText: HTMLSpanElement;
   private readonly panel: HTMLDivElement;
   private readonly panelBody: HTMLDivElement;
+  private readonly startButton: HTMLButtonElement;
+  private readonly pauseButton: HTMLButtonElement;
+  private readonly stopButton: HTMLButtonElement;
   private readonly disableButton: HTMLButtonElement;
   private anchor: HTMLElement | null = null;
   private follow = 0;
@@ -109,10 +119,18 @@ export class StageOverlay {
     const title = document.createElement('h4');
     title.textContent = 'tessvm 실행기';
     this.panelBody = document.createElement('div');
-    this.disableButton = document.createElement('button');
-    this.disableButton.type = 'button';
-    this.disableButton.textContent = '엔트리 실행기로 되돌리기';
-    this.panel.append(title, this.panelBody, this.disableButton);
+
+    // tessvm drives the run itself, so the run controls belong to it. Entry's
+    // own buttons stay wired as well; both end up in the same place.
+    const controls = document.createElement('div');
+    controls.className = 'tessvm-ext-controls';
+    this.startButton = makeButton('시작하기', 'primary');
+    this.pauseButton = makeButton('일시정지');
+    this.stopButton = makeButton('정지하기');
+    controls.append(this.startButton, this.pauseButton, this.stopButton);
+
+    this.disableButton = makeButton('엔트리 실행기로 되돌리기');
+    this.panel.append(title, this.panelBody, controls, this.disableButton);
     this.host.appendChild(this.panel);
 
     document.body.appendChild(this.host);
@@ -197,6 +215,25 @@ export class StageOverlay {
     this.disableButton.addEventListener('click', handler);
   }
 
+  /** Wires the run controls to whatever is driving tessvm. */
+  onTransport(handlers: {
+    start: () => void;
+    pause: () => void;
+    stop: () => void;
+  }): void {
+    this.startButton.addEventListener('click', handlers.start);
+    this.pauseButton.addEventListener('click', handlers.pause);
+    this.stopButton.addEventListener('click', handlers.stop);
+  }
+
+  /** Greys out the controls that would do nothing in the state tessvm is in. */
+  setTransport(state: 'stopped' | 'running' | 'paused'): void {
+    this.startButton.textContent = state === 'paused' ? '이어하기' : '시작하기';
+    this.startButton.disabled = state === 'running';
+    this.pauseButton.disabled = state !== 'running';
+    this.stopButton.disabled = state === 'stopped';
+  }
+
   dispose(): void {
     if (this.noticeTimer) {
       clearTimeout(this.noticeTimer);
@@ -211,6 +248,14 @@ export class StageOverlay {
     document.removeEventListener('fullscreenchange', this.reposition);
     this.host.remove();
   }
+}
+
+function makeButton(label: string, className = ''): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = label;
+  if (className) button.className = className;
+  return button;
 }
 
 function injectStyle(): void {

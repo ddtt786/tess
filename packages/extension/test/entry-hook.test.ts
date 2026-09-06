@@ -1,13 +1,14 @@
 /**
- * 엔트리 실행기를 가로채는 부분을 가짜 `Entry` 로 검사합니다. 실제 사이트가 없어도
- * 확인해야 하는 것은 하나입니다 — tessvm 이 실행을 맡는 동안 엔트리 쪽 스크립트가
- * 단 하나도 시작되지 않는가.
+ * 작품 실행 페이지에서 엔트리 실행기를 가로채는 부분을 가짜 `Entry` 로 검사합니다.
+ * 실제 사이트가 없어도 확인해야 하는 것은 하나입니다 — tessvm 이 실행을 맡는 동안
+ * 엔트리 쪽 스크립트가 단 하나도 시작되지 않는가.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 const dom = new JSDOM('<!doctype html><body><canvas id="entryCanvas"></canvas></body>', {
+  url: 'https://playentry.org/project/6a9b8f8dc769f2b3c8b13d20',
   pretendToBeVisual: true,
 });
 const scope = globalThis as unknown as { window?: unknown; document?: unknown };
@@ -27,7 +28,7 @@ interface Calls {
 function fakeEntry(exported: Record<string, unknown> | null = { name: '내보낸 작품' }) {
   const raised: string[] = [];
   const entry = {
-    type: 'workspace',
+    type: 'minimize',
     defaultPath: '',
     soundPath: '',
     engine: {
@@ -131,8 +132,10 @@ test('꺼져 있으면 엔트리 실행기가 그대로 돈다', () => {
   bridge.uninstall();
 });
 
-test('작품을 불러오면 알려 주고, 내보내기가 막히면 그 작품을 대신 쓴다', () => {
-  const { entry } = fakeEntry(null);
+test('실행 페이지에서는 불러온 작품을 그대로 돌린다', () => {
+  // 실행 페이지의 작품은 엔트리가 받은 그대로다. exportProject 는 편집기의 상태를
+  // 필요로 하고 지나가는 길에 엔진을 멈추므로, 늦게 붙었을 때의 대비책으로만 둔다.
+  const { entry } = fakeEntry({ name: '내보낸 작품' });
   const { bridge, calls } = install(() => true, entry);
 
   entry.loadProject({ name: '불러온 작품' });
@@ -141,6 +144,37 @@ test('작품을 불러오면 알려 주고, 내보내기가 막히면 그 작품
   entry.engine.toggleRun();
   assert.deepEqual(calls.run, [{ name: '불러온 작품' }]);
 
+  bridge.uninstall();
+});
+
+test('불러오는 것을 놓쳤으면 내보내기로 작품을 얻는다', () => {
+  const { entry } = fakeEntry({ name: '내보낸 작품' });
+  const { bridge, calls } = install(() => true, entry);
+
+  entry.engine.toggleRun();
+  assert.deepEqual(calls.run, [{ name: '내보낸 작품' }]);
+
+  bridge.uninstall();
+});
+
+test('만들기 페이지는 엔트리 실행기의 자리로 남겨 둔다', () => {
+  const { entry, raised } = fakeEntry();
+  entry.type = 'workspace';
+  // 실제 배선과 같게, 편집기인지까지 보고 넘겨받을지 정한다.
+  const { bridge, calls } = install(() => entry.type !== 'workspace', entry);
+  assert.equal(bridge.isEditor(), true);
+
+  entry.engine.toggleRun();
+  assert.deepEqual(calls.run, []);
+  assert.deepEqual(raised, ['start'], '만들기 페이지에서는 엔트리가 그대로 돌아야 한다');
+
+  bridge.uninstall();
+});
+
+test('실행 페이지는 편집기가 아니다', () => {
+  const { entry } = fakeEntry();
+  const { bridge } = install(() => true, entry);
+  assert.equal(bridge.isEditor(), false);
   bridge.uninstall();
 });
 

@@ -1,5 +1,5 @@
 /**
- * 실제로 배포되는 번들을 그대로 만들어, 그것이 페이지에서 엔트리 실행기를
+ * 실제로 배포되는 번들을 그대로 만들어, 작품 실행 페이지에서 엔트리 실행기를
  * 넘겨받는지 확인합니다. jsdom 에는 WebGL 이 없으므로 tessvm 은 화면을 세우다
  * 실패하는데, 그때 작품이 엔트리 실행기로 되돌아가는 것까지 같이 봅니다.
  */
@@ -29,10 +29,13 @@ interface Harness {
   entry: Record<string, unknown>;
 }
 
-/** A page with entry's canvas, entry's runner, and our page script on it. */
-function openPage(t: { after(fn: () => void): void }): Harness {
+/** 작품 실행 페이지 한 장 — 엔트리 캔버스와 엔트리 실행기, 그리고 우리 스크립트. */
+function openPage(
+  t: { after(fn: () => void): void },
+  { url = 'https://playentry.org/project/6a9b8f8dc769f2b3c8b13d20', type = 'minimize' } = {},
+): Harness {
   const dom = new JSDOM('<!doctype html><body><canvas id="entryCanvas"></canvas></body>', {
-    url: 'https://playentry.org/ws/1',
+    url,
     pretendToBeVisual: true,
     runScripts: 'outside-only',
   });
@@ -50,7 +53,7 @@ function openPage(t: { after(fn: () => void): void }): Harness {
     },
   };
   const entry: Record<string, unknown> = {
-    type: 'workspace',
+    type,
     defaultPath: '',
     soundPath: '',
     container,
@@ -109,7 +112,7 @@ test('페이지에 얹히면 설정을 달라고 알린다', async (t) => {
   assert.deepEqual({ ...page.posted[0] }, { channel: 'tessvm-entry', from: 'page', type: 'ready' });
 });
 
-test('켜져 있으면 시작하기를 tessvm 이 넘겨받는다', async (t) => {
+test('실행 페이지에서 시작하기를 누르면 tessvm 이 넘겨받는다', async (t) => {
   const page = openPage(t);
   enable(page);
   await settled(400);
@@ -139,6 +142,16 @@ test('tessvm 이 화면을 세우지 못하면 엔트리 실행기로 되돌린�
   // 알림은 엔트리 화면을 가리지도, 클릭을 막지도 않아야 한다.
   const host = page.window.document.getElementById('tessvm-ext-host')!;
   assert.ok(host.classList.contains('tessvm-ext-notice'));
+});
+
+test('만들기 페이지는 엔트리 실행기의 자리로 남겨 둔다', async (t) => {
+  const page = openPage(t, { url: 'https://playentry.org/ws/1', type: 'workspace' });
+  enable(page);
+  await settled(400);
+
+  (page.entry.engine as { toggleRun(): void }).toggleRun();
+  assert.deepEqual(page.raised, ['start'], '만들기 페이지에서는 엔트리가 그대로 돌아야 한다');
+  assert.equal(page.window.document.getElementById('tessvm-ext-host'), null);
 });
 
 test('꺼져 있으면 엔트리 실행기를 그대로 둔다', async (t) => {
