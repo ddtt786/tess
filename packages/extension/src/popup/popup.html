@@ -1,33 +1,36 @@
 <!doctype html>
 <html lang="ko">
+
 <head>
-<meta charset="utf-8">
-<title>tessvm</title>
-<link rel="stylesheet" href="popup.css">
+  <meta charset="utf-8">
+  <title>tessvm</title>
+  <link rel="stylesheet" href="popup.css">
 </head>
+
 <body>
-<main class="panel">
-  <h1>tessvm 실행기</h1>
-  <p class="sub">엔트리 작품 페이지의 실행 화면을 tessvm 으로 바꿉니다.</p>
-  <label class="row">
-    <span class="label">작품 실행기 바꾸기</span>
-    <input id="enabled" type="checkbox" checked>
-    <span class="switch"></span>
-  </label>
-  <p id="note" class="note"></p>
-  <label class="row">
-    <span class="label">벡터 모양 그대로 쓰기</span>
-    <input id="svg" type="checkbox" checked>
-    <span class="switch"></span>
-  </label>
-  <p class="note">벡터로 그린 모양을 그림판 사본 대신 원본으로 불러옵니다. 960×540 을 넘는 모양은 사본을 씁니다.</p>
-  <label class="row">
-    <span class="label">아이디 가리기</span>
-    <input id="mask" type="checkbox" checked>
-    <span class="switch"></span>
-  </label>
-  <p class="note">'아이디' 블록이 앞 두 글자만 남기고 <code>ab****</code> 처럼 돌려줍니다. 닉네임은 그대로입니다. 로그인하지 않았으면 둘 다 guest 입니다.</p>
-</main>
-<script type="module" src="popup.js"></script>
+  <main class="panel">
+    <h1>tessvm 실행기</h1>
+    <p class="sub">엔트리 작품 페이지의 실행 화면을 tessvm 으로 바꿉니다.</p>
+    <label class="row">
+      <span class="label">작품 실행기 바꾸기</span>
+      <input id="enabled" type="checkbox" checked>
+      <span class="switch"></span>
+    </label>
+    <p class="note">아이디의 첫 두 글자를 제외한 나머지 글자를 가립니다.</p>
+    <p id="note" class="note"></p>
+    <label class="row">
+      <span class="label">벡터 모양 그대로 쓰기</span>
+      <input id="svg" type="checkbox" checked>
+      <span class="switch"></span>
+    </label>
+    <p class="note">벡터로 그린 모양을 그림판 사본 대신 원본으로 불러옵니다. 960×540 을 넘는 모양은 사본을 씁니다.</p>
+    <label class="row">
+      <span class="label">아이디 가리기</span>
+      <input id="mask" type="checkbox" checked>
+      <span class="switch"></span>
+    </label>
+  </main>
+  <script type="module" src="popup.js"></script>
 </body>
+
 </html>
