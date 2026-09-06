@@ -154,10 +154,13 @@ export class PixiRenderer implements Renderer {
     }
   }
 
-  /** Sizes the canvas to the box it sits in, keeping the stage ratio and full sharpness. */
-  layout(width: number, height: number): void {
+  /**
+   * Sizes the canvas to the box it sits in, keeping the stage ratio and full
+   * sharpness. Answers with the size the canvas actually took, in css pixels.
+   */
+  layout(width: number, height: number): { width: number; height: number } | null {
     if (!this.ready) {
-      return;
+      return null;
     }
     const fit = Math.min(width / stage.worldWidth, height / stage.worldHeight);
     const cssWidth = Math.max(1, Math.floor(stage.worldWidth * fit));
@@ -174,6 +177,7 @@ export class PixiRenderer implements Renderer {
     const canvas = this.app.canvas;
     canvas.style.width = `${cssWidth}px`;
     canvas.style.height = `${cssHeight}px`;
+    return { width: cssWidth, height: cssHeight };
   }
 
   setQuality(quality: number): void {

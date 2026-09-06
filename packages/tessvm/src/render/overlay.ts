@@ -11,7 +11,10 @@ const DIALOG_PADDING = 10;
 const DIALOG_FONT = 15;
 const DIALOG_BORDER = '#4f80ff';
 const DIALOG_BG = '#ffffff';
-const MONITOR_BLUE = '#4f80ff';
+/** `_adjustSingleViewBox` — entry gives each kind of monitor its own value box. */
+const MONITOR_VARIABLE = '#4f80ff';
+const MONITOR_ANSWER = '#F57DF1';
+const MONITOR_TIMER = '#f4af18';
 const MONITOR_FONT = 10;
 const MONITOR_HEIGHT = 20;
 
@@ -230,7 +233,14 @@ export class Overlay {
     return { root, frame, label, value, items: null };
   }
 
-  private drawValueMonitor(view: MonitorView, name: string, text: string, x: number, y: number): void {
+  private drawValueMonitor(
+    view: MonitorView,
+    name: string,
+    text: string,
+    x: number,
+    y: number,
+    color: string,
+  ): void {
     view.label.text = name;
     view.value.text = text;
     const labelWidth = view.label.width;
@@ -242,7 +252,7 @@ export class Overlay {
       .fill({ color: '#ffffff' })
       .stroke({ width: 1, color: '#a0a0a0' })
       .roundRect(labelWidth + 8, 3, valueWidth, MONITOR_HEIGHT - 6, 4)
-      .fill({ color: MONITOR_BLUE });
+      .fill({ color });
     view.value.position.set(labelWidth + 8 + (valueWidth - view.value.width) / 2, 4);
     view.root.position.set(x, y);
   }
@@ -258,7 +268,7 @@ export class Overlay {
       .fill({ color: '#ffffff' })
       .stroke({ width: 1, color: '#a0a0a0' })
       .rect(0, 0, width, 18)
-      .fill({ color: MONITOR_BLUE });
+      .fill({ color: MONITOR_VARIABLE });
     view.label.style.fill = '#ffffff';
     view.label.position.set(4, 3);
     if (!view.items) {
@@ -322,6 +332,7 @@ export class Overlay {
           Overlay.formatValue(variable.value),
           variable.x,
           variable.y,
+          MONITOR_VARIABLE,
         );
       }
     }
@@ -340,6 +351,7 @@ export class Overlay {
         String(this.answerValue()),
         -stage.halfWidth + 10,
         -stage.halfHeight + 50,
+        MONITOR_ANSWER,
       );
     } else if (this.answerMonitor) {
       this.answerMonitor.root.visible = false;
@@ -355,6 +367,7 @@ export class Overlay {
         this.timerValue().toFixed(1),
         -stage.halfWidth + 10,
         -stage.halfHeight + 30,
+        MONITOR_TIMER,
       );
     } else if (this.timerMonitor) {
       this.timerMonitor.root.visible = false;

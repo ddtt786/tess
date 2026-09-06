@@ -21,7 +21,7 @@ pnpm build:extension        # packages/extension/dist 를 만든다
 | `src/page/main.ts`          | 페이지 세계 진입점 — 자리를 찾아 실행기를 붙인다        |
 | `src/page/entry-project.ts` | graphql 로 작품을 읽고 에셋 주소를 채운다               |
 | `src/page/player.ts`        | 실행기 화면 — 무대·조작줄·시작 화면·오류 줄             |
-| `src/player.css`            | 실행기 스타일                                           |
+| `src/player.css`            | 실행기 스타일 (무대·조작줄·시작 화면·오류 줄)           |
 | `src/popup/*`               | 툴바 스위치                                             |
 
 ## 1. 왜 페이지의 세계에서 도는가
@@ -134,6 +134,8 @@ csrf-token: <meta[name=csrf-token]>.content
 - **키 입력은 실행기 안에서만** 받습니다(`BootOptions.keyTarget`). 실행 페이지와 달리
   작품 페이지에는 댓글 입력칸이 있어서, `window` 에서 키를 읽으면 댓글을 쓰는 동안 작품이
   같이 움직입니다.
+- **물어보기 입력창**은 tessvm 이 만드는 것이라 그 스타일(`src/web/ask-style.ts`)도 tessvm
+  에서 가져와 `<style>` 하나로 넣습니다. 확장이 따로 베껴 쓰면 실행 페이지와 어긋납니다.
 
 ## 5. tessvm 에 더한 것
 

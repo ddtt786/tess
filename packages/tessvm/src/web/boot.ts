@@ -258,7 +258,10 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     }
     lastWidth = width;
     lastHeight = height;
-    renderer.layout(width, height);
+    const fitted = renderer.layout(width, height);
+    if (fitted) {
+      frame.style.setProperty('--tessvm-stage-width', `${fitted.width}px`);
+    }
   };
   const resize = () => layout(true);
   let queued = 0;
@@ -460,7 +463,12 @@ function makeQuestionField(view: HTMLElement, submit: (value: string) => void) {
   input.autocomplete = 'off';
   const button = document.createElement('button');
   button.type = 'submit';
-  button.textContent = '확인';
+  button.title = '확인';
+  button.setAttribute('aria-label', '확인');
+  // `images/stage/submit.svg` — the check entry draws on its submit button.
+  button.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.237 8.354a1 1 0 0 1 1.526 ' +
+    '1.292l-5.5 6.5a1 1 0 0 1-1.47.061l-3.5-3.5a1 1 0 0 1 1.414-1.414l2.732 2.731 4.798-5.67z"/></svg>';
   wrap.append(input, button);
   wrap.addEventListener('submit', (event) => {
     event.preventDefault();

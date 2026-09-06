@@ -8,6 +8,7 @@
  * along the bottom.
  */
 import { boot, type TessVmHandle } from '../../../tessvm/src/web/boot.ts';
+import { ASK_FIELD_STYLE } from '../../../tessvm/src/web/ask-style.ts';
 import { fetchWork } from './entry-project.ts';
 
 const ICONS = {
@@ -24,8 +25,21 @@ const ICONS = {
     'M6 13.2V10H2.8M10 13.2V10h3.2"/></svg>',
 };
 
+const ASK_STYLE_ID = 'tessvm-ask-style';
+
 export interface MountedPlayer {
   dispose(): void;
+}
+
+/** The answer field is tessvm's own, so its look comes with it. */
+function ensureAskStyle(): void {
+  if (document.getElementById(ASK_STYLE_ID)) {
+    return;
+  }
+  const style = document.createElement('style');
+  style.id = ASK_STYLE_ID;
+  style.textContent = ASK_FIELD_STYLE;
+  (document.head ?? document.documentElement).appendChild(style);
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -57,6 +71,7 @@ export function mountPlayer(
   projectId: string,
   groupId: string | null = null,
 ): MountedPlayer {
+  ensureAskStyle();
   // Idle from the start so the cover shows while the work is still on its way.
   const root = el('div', 'tessvm-player is-idle', host);
   // Keys belong to the work only while the player has focus; the page around it

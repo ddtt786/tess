@@ -62,38 +62,6 @@
   display: block;
 }
 
-.tessvm-player .tessvm-ask {
-  position: absolute;
-  left: 50%;
-  bottom: 6%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 6px;
-  width: min(70%, 520px);
-  line-height: normal;
-}
-
-.tessvm-player .tessvm-ask input {
-  flex: 1;
-  min-width: 0;
-  font: inherit;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 2px solid #16d799;
-  background: #fff;
-  color: #16191d;
-}
-
-.tessvm-player .tessvm-ask button {
-  font: inherit;
-  padding: 6px 14px;
-  border: 0;
-  border-radius: 6px;
-  background: #16d799;
-  color: #fff;
-  cursor: pointer;
-}
-
 /* ------------------------------------------------------- the start screen */
 /* Sits over the canvas: the stage is written into this box after the cover is,
    so without a layer of its own the first frame would paint on top. */

@@ -6,6 +6,7 @@
  * 것과 같은 CSS 를 걸어야 글상자가 같은 모양으로 그려집니다.
  */
 import { DEBUG_PANEL_STYLE, DEBUG_UI_PATH, ENTRY_FONT_STYLES } from '@tess/player';
+import { ASK_FIELD_STYLE } from '../web/ask-style.ts';
 
 export interface PageOptions {
   name: string;
@@ -60,14 +61,7 @@ main {
 #stage { min-width: 0; min-height: 0; }
 .tessvm-stage { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
 .tessvm-stage canvas { display: block; box-shadow: 0 8px 30px #0008; }
-.tessvm-ask {
-  position: absolute; left: 50%; bottom: 6%; transform: translateX(-50%);
-  display: flex; gap: 6px; width: min(70%, 520px);
-}
-.tessvm-ask input {
-  flex: 1; font: inherit; padding: 6px 10px; border-radius: 6px;
-  border: 2px solid #4f80ff; background: #fff; color: #111;
-}
+${ASK_FIELD_STYLE}
 .tessvm-stats {
   position: absolute; right: 0; bottom: -22px; padding: 0 4px; border-radius: 4px;
   color: #8b93a1; font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none;

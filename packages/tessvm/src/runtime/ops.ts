@@ -1425,7 +1425,17 @@ function dialogText(message: unknown): string {
   } else {
     text = `${text}`;
   }
-  return String(roundedDecimals(text, 3));
+  return wrapDialog(String(roundedDecimals(text, 3)));
+}
+
+/**
+ * `new Entry.Dialog` — `message.match(/.{1,15}/g).join('\n')`. Every bubble is
+ * broken every 15 characters, so a long line never widens the balloon past the
+ * stage. The same regex drops the line breaks already in the text, because `.`
+ * does not match them.
+ */
+function wrapDialog(text: string): string {
+  return text.match(/.{1,15}/g)?.join('\n') ?? text;
 }
 
 /** `Entry.getMaxFloatPoint`. */
