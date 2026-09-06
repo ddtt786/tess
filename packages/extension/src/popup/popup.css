@@ -22,7 +22,12 @@ body {
   width: 264px;
   background: var(--paper);
   color: var(--ink);
-  font: 13px/1.5 'Noto Sans KR', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font:
+    13px/1.5 "Noto Sans KR",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
 }
 
 .panel {
@@ -50,6 +55,10 @@ h1 {
   cursor: pointer;
 }
 
+.note:not(:last-child) {
+  padding-bottom: 10px;
+}
+
 .label {
   flex: 1;
   font-weight: 600;
@@ -75,7 +84,7 @@ h1 {
 }
 
 .switch::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 2px;
   left: 2px;
