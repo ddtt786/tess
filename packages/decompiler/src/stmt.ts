@@ -2,7 +2,7 @@
  * 엔트리 문장 블록을 Tess 소스 코드로 변환합니다.
  * 블록 배열을 입력받아 들여쓰기가 없는 텍스트 줄 배열을 반환합니다.
  */
-import { exprOf } from "./expr.ts";
+import { exprOf, targetName } from "./expr.ts";
 import {
   tessString,
   tessNumber,
@@ -196,7 +196,7 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       return [
         target === "self"
           ? "clone"
-          : `clone ${tessString(ctx.objectsById.get(target)?.identifier ?? target)}`,
+          : `clone ${tessString(targetName(ctx, target))}`,
       ];
     }
     case "delete_clone":
@@ -234,13 +234,13 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       return [
         target === "self"
           ? "# go self (엔트리 원본이 자기 자신으로 이동)"
-          : `go ${tessString(ctx.objectsById.get(target)?.identifier ?? target)}`,
+          : `go ${tessString(targetName(ctx, target))}`,
       ];
     }
     case "locate_object_time": {
       const target = at(1);
       return [
-        `go ${tessString(ctx.objectsById.get(target)?.identifier ?? target)} in ${e(0)}`,
+        `go ${tessString(targetName(ctx, target))} in ${e(0)}`,
       ];
     }
     case "locate_x":
@@ -265,7 +265,7 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       return [`way = ${e(0)}`];
     case "see_angle_object":
       return [
-        `look ${tessString(ctx.objectsById.get(at(0))?.identifier ?? at(0))}`,
+        `look ${tessString(targetName(ctx, at(0)))}`,
       ];
 
     // --- 모양 · 대화 ---------------------------------------------------------

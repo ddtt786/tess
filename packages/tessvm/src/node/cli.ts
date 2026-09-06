@@ -14,6 +14,9 @@ import { SilentAudioEngine } from '../audio/silent.ts';
 import { loadProject } from './load.ts';
 import { serveVm, DEFAULT_PORT } from './server.ts';
 
+/** Diagnostics shown per grade before the rest are summed up. */
+const MAX_DIAGNOSTICS = 8;
+
 const USAGE = `사용법
   tessvm run    <파일.tess|파일.ent>   컴파일해서 브라우저로 실행
   tessvm bench  <파일.tess|파일.ent>   화면 없이 돌려 속도를 잰다
@@ -110,8 +113,20 @@ async function main(): Promise<number> {
   if (loaded.decompiledTo) {
     console.log(`${path.basename(file)} → ${path.join(loaded.decompiledTo, 'main.tess')} (되돌린 Tess 소스)`);
   }
-  for (const error of loaded.errors) {
-    console.error(`  에러 ${error.line}:${error.column} ${error.message}`);
+  // Warnings and notices carry the blocks that survived a decompile with a
+  // dangling name, which is what a run of a restored work needs to see.
+  const grades = [
+    ['에러', loaded.errors, console.error],
+    ['경고', loaded.warnings, console.warn],
+    ['주의', loaded.notices, console.log],
+  ] as const;
+  for (const [grade, items, write] of grades) {
+    for (const item of items.slice(0, MAX_DIAGNOSTICS)) {
+      write(`  ${grade} ${item.line}:${item.column} ${item.message}`);
+    }
+    if (items.length > MAX_DIAGNOSTICS) {
+      write(`  … ${grade} 외 ${items.length - MAX_DIAGNOSTICS}개`);
+    }
   }
 
   switch (command) {

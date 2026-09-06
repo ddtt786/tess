@@ -76,18 +76,21 @@ export function colorLiteral(raw: string): string {
   return tessString(raw);
 }
 
-function targetName(ctx: DecompileContext, raw: unknown): string {
+/**
+ * 오브젝트 슬롯의 값을 Tess 이름으로 바꿉니다. 원본에서 지워진 오브젝트를 가리키는
+ * 블록이면 `_missing_object_<아이디>` 로 적습니다 — 엔트리도 그 슬롯을 그대로 두고
+ * 실행할 때 찾다가 마는 자리이고, 컴파일러가 이 이름을 보고 아이디를 되돌려 놓습니다.
+ * 변수·리스트의 `_missing_var_*` 와 같은 규칙입니다.
+ */
+export function targetName(ctx: DecompileContext, raw: unknown): string {
   if (raw === 'self' || raw === 'mouse') return raw;
   if (typeof raw === 'string' && raw.startsWith('wall')) return raw;
   const object = ctx.objectsById.get(raw as string);
   if (object) return object.identifier;
-  // 원본에서 지워진 오브젝트를 가리키는 블록이다(엔트리는 그런 블록을 그냥 두고
-  // 실행할 때 거짓으로 친다). 이름을 만들 수 없으니 아이디를 그대로 남기고, 되돌린
-  // 소스가 왜 그 자리에서 컴파일 에러를 내는지 알 수 있게 알린다.
   ctx.warnings.add(
     `'${String(raw)}' 을(를) 가리키는 블록이 있지만 그 오브젝트가 작품에 없습니다 — 아이디를 그대로 남겼습니다.`,
   );
-  return String(raw);
+  return `_missing_object_${String(raw)}`;
 }
 
 /**

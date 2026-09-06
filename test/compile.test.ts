@@ -697,6 +697,21 @@ test('엔트리에 없는 오브젝트 · 장면은 에러로 알려 준다', ()
   }
 });
 
+test('되돌린 작품의 지워진 오브젝트 참조는 아이디를 그대로 들고 간다', () => {
+  /**
+   * 엔트리는 오브젝트가 지워져도 그 아이디를 가리키던 블록을 그대로 두고, 실행할 때
+   * 찾다가 맙니다. 되돌린 소스는 그런 자리를 `_missing_object_<아이디>` 로 적고,
+   * 컴파일러는 아이디만 되돌려 놓은 뒤 주의로 알립니다.
+   */
+  const result = compileProject(inObject('go "_missing_object_7o00"'), { path: 'x.tess' });
+  assert.equal(result.ok, true);
+  assert.equal(result.errors.length, 0);
+  assert.match(result.notices[0]!.message, /'7o00' 오브젝트가 작품에 없습니다/);
+  const thread = JSON.parse(result.project!.objects[0]!.script)[0];
+  const locate = thread.find((block: { type: string }) => block.type === 'locate');
+  assert.equal(locate.params[0], '7o00', '엔트리가 들고 있던 아이디 그대로여야 합니다');
+});
+
 test('없는 모양 · 소리 이름은 주의로 알려 준다', () => {
   /**
    * 존재하지 않는 모양이나 소리 이름은 엔트리가 실행할 때 이름으로 찾으므로

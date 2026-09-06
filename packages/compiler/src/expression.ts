@@ -939,6 +939,9 @@ function literalKeyCode(node: Expr, ctx: Context, at: Node): string | null {
     + didYouMean(node.value, Object.keys(KEY_CODES)));
 }
 
+/** The name a decompile writes for an object slot the work no longer has. */
+const MISSING_OBJECT = /^_missing_object_(.+)$/;
+
 /**
  * 오브젝트를 가리키는 인자를 엔트리 id 로 바꾼다.
  * "mouse"/"wall" 같은 특수 대상은 옵션으로 허용한다.
@@ -959,5 +962,15 @@ export function resolveTarget(
   if (options.all && name === 'all') return 'all';
 
   const id = ctx.objectId(name);
-  return id ?? ctx.error(node, `'${name}' 이라는 오브젝트가 없습니다.${didYouMean(name, ctx.objectByName.keys())}`);
+  if (id) return id;
+  // `_missing_object_<id>` is what a decompile leaves where a block points at
+  // an object the work no longer has. Entry keeps that slot and finds nothing
+  // when the block runs, so the id goes back in the way it came out — unlike a
+  // name nothing carries, which is a mistake worth stopping for.
+  const dangling = MISSING_OBJECT.exec(name);
+  if (dangling) {
+    ctx.notice(node, `'${dangling[1]}' 오브젝트가 작품에 없습니다. 엔트리처럼 아이디만 남깁니다.`);
+    return dangling[1]!;
+  }
+  return ctx.error(node, `'${name}' 이라는 오브젝트가 없습니다.${didYouMean(name, ctx.objectByName.keys())}`);
 }
