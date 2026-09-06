@@ -154,6 +154,23 @@ export class PixiRenderer implements Renderer {
     }
   }
 
+  /** Tears the renderer down and gives its GPU resources back. */
+  destroy(): void {
+    if (!this.ready) {
+      return;
+    }
+    this.ready = false;
+    this.sceneLayers.clear();
+    this.sceneTargets.clear();
+    this.views.clear();
+    this.penDirty.clear();
+    this.textures.clear();
+    this.images.clear();
+    this.loading.clear();
+    this.overlay = null;
+    this.app.destroy({ removeView: true }, { children: true, texture: true });
+  }
+
   /** Sizes the canvas to the box it sits in, keeping the stage ratio and full sharpness. */
   layout(width: number, height: number): void {
     if (!this.ready) {

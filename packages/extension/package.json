@@ -1,0 +1,19 @@
+{
+  "name": "@tess/extension",
+  "version": "0.1.0",
+  "description": "엔트리 작품을 tessvm 으로 실행하는 크롬·파이어폭스 확장 프로그램",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "node build.ts"
+  },
+  "dependencies": {
+    "@tess/compiler": "workspace:*",
+    "@tess/core": "workspace:*",
+    "@tess/decompiler": "workspace:*",
+    "@tess/parser": "workspace:*",
+    "@tess/vm": "workspace:*",
+    "pixi.js": "^8.20.1"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "es2023",
+      "dom",
+      "dom.iterable"
+    ],
+    "types": [
+      "node"
+    ],
+    "moduleResolution": "bundler",
+    "module": "esnext"
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "build.ts",
+    "bundle.ts",
+    "manifest.ts",
+    "icon.ts"
+  ]
+}

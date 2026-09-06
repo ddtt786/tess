@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>tessvm</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>tessvm 실행기</h1>
+    <p id="state">불러오는 중…</p>
+  </header>
+
+  <label class="row switch">
+    <input type="checkbox" id="enabled">
+    <span>
+      <strong>엔트리 작품을 tessvm 으로 실행</strong>
+      <small>끄면 엔트리 실행기를 그대로 씁니다.</small>
+    </span>
+  </label>
+
+  <label class="row">
+    <span>
+      <strong>실행 경로</strong>
+      <small>tessvm 은 Tess 를 실행합니다.</small>
+    </span>
+    <select id="pipeline">
+      <option value="tess">Tess 로 컴파일해서 실행</option>
+      <option value="direct">작품을 그대로 실행</option>
+    </select>
+  </label>
+
+  <label class="row">
+    <span>
+      <strong>화질</strong>
+      <small>무대 크기는 그대로 두고 그리는 배율만 올립니다.</small>
+    </span>
+    <select id="quality">
+      <option value="1">1배</option>
+      <option value="2">2배</option>
+      <option value="4">4배</option>
+    </select>
+  </label>
+
+  <label class="row switch">
+    <input type="checkbox" id="showStats">
+    <span>
+      <strong>프레임 표시</strong>
+      <small>무대 구석에 초당 프레임을 띄웁니다.</small>
+    </span>
+  </label>
+
+  <label class="row switch">
+    <input type="checkbox" id="relaxCsp">
+    <span>
+      <strong>CSP 완화</strong>
+      <small>페이지가 코드 생성을 막을 때만 켜세요. playentry.org 의 보안 정책 헤더를 지웁니다.</small>
+    </span>
+  </label>
+
+  <footer>
+    <button type="button" id="reload">페이지 새로 고침</button>
+    <span id="note"></span>
+  </footer>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>

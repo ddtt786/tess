@@ -6,7 +6,8 @@
   "type": "module",
   "main": "index.ts",
   "exports": {
-    ".": "./index.ts"
+    ".": "./index.ts",
+    "./src/*": "./src/*"
   },
   "bin": {
     "tessvm": "./src/node/cli.ts"

@@ -1,4 +1,5 @@
 node_modules
 build
 temp
+packages/extension/dist
 examples/ent

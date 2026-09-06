@@ -43,6 +43,12 @@ export interface TessVmHandle {
   relayout(): void;
   /** Resizes the stage itself, in entry units. */
   setStageSize(width: number, height: number): void;
+  /**
+   * Stops everything this runner started and takes its canvas back off the page.
+   * A host that boots a work more than once (a new work, an edited one) calls
+   * this first, so listeners and GPU resources do not pile up.
+   */
+  dispose(): void;
 }
 
 /** Legacy key codes entry stores in `when_some_key_pressed`. */
@@ -91,7 +97,7 @@ onmessage = (e) => {
  * reads the clock itself, so a driver that fires late or unevenly only means
  * the engine catches up on its own.
  */
-function startFrameDriver(step: (now: number) => void): void {
+function startFrameDriver(step: (now: number) => void): () => void {
   const INTERVAL = 1000 / 60;
   let raf = 0;
   let timer = 0;
@@ -155,6 +161,15 @@ function startFrameDriver(step: (now: number) => void): void {
 
   document.addEventListener('visibilitychange', follow);
   follow();
+
+  return () => {
+    document.removeEventListener('visibilitychange', follow);
+    if (raf) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    }
+    stopBackground();
+  };
 }
 
 export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
@@ -224,7 +239,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     question.hide();
   };
 
-  bindInput(vm, renderer, view);
+  const unbindInput = bindInput(vm, renderer, view);
 
   // The canvas is fitted into the box the host gives us, and that box holds the
   // canvas: writing a new canvas size from inside a ResizeObserver callback
@@ -256,9 +271,8 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   };
   resize();
   window.addEventListener('resize', resize);
-  if (typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(layoutSoon).observe(view);
-  }
+  const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(layoutSoon) : null;
+  observer?.observe(view);
 
   const stats = options.showStats ? makeStats(frame) : null;
   let last = performance.now();
@@ -280,7 +294,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
       }
     }
   };
-  startFrameDriver(step);
+  const stopFrameDriver = startFrameDriver(step);
 
   const handle: TessVmHandle = {
     vm,
@@ -309,6 +323,24 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
       resize();
       renderer.flush();
     },
+    dispose() {
+      stopFrameDriver();
+      unbindInput();
+      window.removeEventListener('resize', resize);
+      observer?.disconnect();
+      if (queued) {
+        cancelAnimationFrame(queued);
+        queued = 0;
+      }
+      vm.stop();
+      audio.stopAll();
+      renderer.destroy();
+      view.remove();
+      const host = window as unknown as { tessvm?: TessVmHandle };
+      if (host.tessvm === handle) {
+        delete host.tessvm;
+      }
+    },
   };
 
   if (options.autoStart !== false) {
@@ -318,7 +350,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   return handle;
 }
 
-function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
+function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): () => void {
   const toStage = (clientX: number, clientY: number) => {
     const rect = renderer.canvasRect();
     return {
@@ -327,7 +359,7 @@ function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
     };
   };
 
-  window.addEventListener('keydown', (event) => {
+  const keyDown = (event: KeyboardEvent) => {
     const code = keyCodeOf(event);
     if (!vm.pressedKeys.has(code)) {
       vm.pressedKeys.add(code);
@@ -336,11 +368,14 @@ function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
     if (code >= 37 && code <= 40 && document.activeElement?.tagName !== 'INPUT') {
       event.preventDefault();
     }
-  });
-  window.addEventListener('keyup', (event) => {
+  };
+  const keyUp = (event: KeyboardEvent) => {
     vm.pressedKeys.delete(keyCodeOf(event));
-  });
-  window.addEventListener('blur', () => vm.pressedKeys.clear());
+  };
+  const blur = () => vm.pressedKeys.clear();
+  window.addEventListener('keydown', keyDown);
+  window.addEventListener('keyup', keyUp);
+  window.addEventListener('blur', blur);
 
   const move = (clientX: number, clientY: number) => {
     const point = toStage(clientX, clientY);
@@ -348,8 +383,8 @@ function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
     vm.mouseY = point.y;
   };
 
-  view.addEventListener('pointermove', (event) => move(event.clientX, event.clientY));
-  view.addEventListener('pointerdown', (event) => {
+  const pointerMove = (event: PointerEvent) => move(event.clientX, event.clientY);
+  const pointerDown = (event: PointerEvent) => {
     move(event.clientX, event.clientY);
     vm.mouseDown = true;
     vm.fireEvent('mouse_clicked');
@@ -358,7 +393,9 @@ function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
       vm.clickedEntityId = hit.id;
       vm.fireEventOn('when_object_click', hit);
     }
-  });
+  };
+  view.addEventListener('pointermove', pointerMove);
+  view.addEventListener('pointerdown', pointerDown);
   const up = () => {
     // A release outside the stage still clears the press. A release that never
     // began on the stage (a click on the debug panel, say) is not the work's.
@@ -380,6 +417,16 @@ function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
   };
   window.addEventListener('pointerup', up);
   window.addEventListener('pointercancel', up);
+
+  return () => {
+    window.removeEventListener('keydown', keyDown);
+    window.removeEventListener('keyup', keyUp);
+    window.removeEventListener('blur', blur);
+    view.removeEventListener('pointermove', pointerMove);
+    view.removeEventListener('pointerdown', pointerDown);
+    window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', up);
+  };
 }
 
 /** Front-most entity under the pointer, tested against its own pixels. */

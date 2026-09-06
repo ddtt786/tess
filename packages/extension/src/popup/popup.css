@@ -1,0 +1,30 @@
+:root { color-scheme: light dark; }
+body {
+  margin: 0;
+  width: 320px;
+  font: 13px/1.5 system-ui, -apple-system, "Malgun Gothic", sans-serif;
+  background: #ffffff;
+  color: #16181d;
+}
+@media (prefers-color-scheme: dark) {
+  body { background: #16181d; color: #e8eaee; }
+}
+main { padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 12px; }
+header h1 { margin: 0; font-size: 15px; }
+header p { margin: 2px 0 0; font-size: 12px; opacity: .7; }
+.row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding-top: 10px; border-top: 1px solid #8884;
+}
+.row span { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.row strong { font-weight: 600; }
+.row small { opacity: .65; }
+.row select { font: inherit; padding: 3px 6px; border-radius: 6px; align-self: center; }
+.switch input { margin: 3px 0 0; flex: none; }
+footer { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid #8884; }
+footer button {
+  font: inherit; padding: 4px 10px; border-radius: 6px; border: 1px solid #8886;
+  background: transparent; color: inherit; cursor: pointer;
+}
+footer button:hover { border-color: #888c; }
+#note { font-size: 12px; opacity: .7; }

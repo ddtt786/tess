@@ -6,11 +6,12 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/player/tsconfig.browser.json && tsc --noEmit -p packages/tessvm/tsconfig.browser.json",
+    "test": "node --test test/*.test.ts packages/extension/test/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/player/tsconfig.browser.json && tsc --noEmit -p packages/tessvm/tsconfig.browser.json && tsc --noEmit -p packages/extension/tsconfig.json",
     "tess": "node packages/cli/index.ts",
     "build:grammar": "node editors/vscode/build-grammar.ts",
-    "tessvm": "node packages/tessvm/src/node/cli.ts"
+    "tessvm": "node packages/tessvm/src/node/cli.ts",
+    "build:extension": "node packages/extension/build.ts"
   },
   "devEngines": {
     "packageManager": {
@@ -30,6 +31,7 @@
     "@types/babel__code-frame": "^7.27.0",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^26.4.0",
+    "esbuild": "^0.28.2",
     "jsdom": "^30.0.1",
     "tess": "workspace:*",
     "typescript": "^7.0.2",
