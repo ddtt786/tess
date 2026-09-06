@@ -11,6 +11,7 @@
   "include": [
     "packages/*/index.ts",
     "packages/*/src/**/*.ts",
+    "packages/extension/*.ts",
     "test/**/*.ts",
     "editors/vscode/**/*.ts"
   ],
@@ -19,6 +20,7 @@
     "packages/player/src/debug-ui.ts",
     "packages/tessvm/src/web/**/*.ts",
     "packages/tessvm/src/render/**/*.ts",
-    "packages/tessvm/src/audio/**/*.ts"
+    "packages/tessvm/src/audio/**/*.ts",
+    "packages/extension/src/**/*.ts"
   ]
 }

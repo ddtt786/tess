@@ -1,0 +1,309 @@
+/*
+ * The runner's own styles. Everything is scoped under `.tessvm-player` so the
+ * work page's stylesheet and this one keep out of each other's way, and the
+ * measurements follow entry's player: a 47px white bar under a 16:9 stage.
+ */
+/* Laid over the emptied entry frame, so the page's own sizing rules still decide
+   how big the player is. */
+.tessvm-host {
+  position: absolute;
+  inset: 0;
+}
+
+.tessvm-player {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  box-sizing: border-box;
+  background: #fff;
+  color: #16191d;
+  font: 13px/1.4 'Noto Sans KR', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  outline: none;
+}
+
+.tessvm-player *,
+.tessvm-player *::before,
+.tessvm-player *::after {
+  box-sizing: border-box;
+}
+
+.tessvm-player [hidden] {
+  display: none !important;
+}
+
+/* ------------------------------------------------------------------ stage */
+.tessvm-view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: #fff;
+  overflow: hidden;
+}
+
+/* Written by tessvm's own boot code, styled here. */
+.tessvm-player .tessvm-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.tessvm-player .tessvm-frame {
+  position: relative;
+  line-height: 0;
+}
+
+.tessvm-player .tessvm-stage canvas {
+  display: block;
+}
+
+.tessvm-player .tessvm-ask {
+  position: absolute;
+  left: 50%;
+  bottom: 6%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  width: min(70%, 520px);
+  line-height: normal;
+}
+
+.tessvm-player .tessvm-ask input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 2px solid #16d799;
+  background: #fff;
+  color: #16191d;
+}
+
+.tessvm-player .tessvm-ask button {
+  font: inherit;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: #16d799;
+  color: #fff;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------- the start screen */
+/* Sits over the canvas: the stage is written into this box after the cover is,
+   so without a layer of its own the first frame would paint on top. */
+.tessvm-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #eef0f3 center / cover no-repeat;
+}
+
+.tessvm-player:not(.is-idle) .tessvm-cover {
+  display: none;
+}
+
+.tessvm-start {
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  color: #16d799;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.12s ease-out;
+}
+
+.tessvm-start:hover {
+  transform: scale(1.06);
+}
+
+.tessvm-start svg {
+  width: 34px;
+  height: 34px;
+  margin-left: 4px;
+  fill: currentColor;
+}
+
+.tessvm-status {
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 12px;
+}
+
+.tessvm-status:empty {
+  display: none;
+}
+
+/* --------------------------------------------------------- the control bar */
+.tessvm-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 47px;
+  padding: 0 14px;
+  background: #fff;
+  border-top: 1px solid #f2f2f2;
+}
+
+.tessvm-bar-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.tessvm-bar-right {
+  gap: 10px;
+}
+
+.tessvm-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #62666a;
+  cursor: pointer;
+}
+
+.tessvm-btn:hover {
+  background: #f2f4f6;
+  color: #16191d;
+}
+
+.tessvm-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.tessvm-btn svg.stroke {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Entry hides stop and pause until the work is running; so does this. */
+.tessvm-player.is-idle .tessvm-stop,
+.tessvm-player.is-idle .tessvm-pause {
+  visibility: hidden;
+}
+
+.tessvm-coords {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  color: #8a8f95;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tessvm-boost {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tessvm-boost-text {
+  color: #62666a;
+  font-size: 12px;
+}
+
+.tessvm-boost input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tessvm-switch {
+  position: relative;
+  display: block;
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: #d3d7db;
+  transition: background 0.15s ease-out;
+}
+
+.tessvm-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease-out;
+}
+
+.tessvm-boost input:checked + .tessvm-switch {
+  background: #16d799;
+}
+
+.tessvm-boost input:checked + .tessvm-switch::after {
+  transform: translateX(16px);
+}
+
+.tessvm-boost input:focus-visible + .tessvm-switch {
+  outline: 2px solid #16d799;
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ errors */
+.tessvm-error {
+  flex: none;
+  padding: 4px 14px;
+  border-top: 1px solid #f2f2f2;
+  background: #fff6f6;
+  color: #c0392b;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 4.5em;
+  overflow: auto;
+}
+
+/* -------------------------------------------------------------- fullscreen */
+.tessvm-player:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+}
+
+.tessvm-player:fullscreen .tessvm-view {
+  background: #000;
+}

@@ -24,6 +24,11 @@ export interface BootOptions {
   /** Stage size in entry units. Entry's own stage is 480×270. */
   stageWidth?: number;
   stageHeight?: number;
+  /**
+   * Where key events are read from. `window` by default; a focusable element
+   * keeps the keys to the player when the page around it has its own inputs.
+   */
+  keyTarget?: HTMLElement;
 }
 
 export interface TessVmHandle {
@@ -43,6 +48,8 @@ export interface TessVmHandle {
   relayout(): void;
   /** Resizes the stage itself, in entry units. */
   setStageSize(width: number, height: number): void;
+  /** Ends the frame loop and releases the canvas, the audio and the listeners. */
+  dispose(): void;
 }
 
 /** Legacy key codes entry stores in `when_some_key_pressed`. */
@@ -91,7 +98,7 @@ onmessage = (e) => {
  * reads the clock itself, so a driver that fires late or unevenly only means
  * the engine catches up on its own.
  */
-function startFrameDriver(step: (now: number) => void): void {
+function startFrameDriver(step: (now: number) => void): () => void {
   const INTERVAL = 1000 / 60;
   let raf = 0;
   let timer = 0;
@@ -155,6 +162,15 @@ function startFrameDriver(step: (now: number) => void): void {
 
   document.addEventListener('visibilitychange', follow);
   follow();
+
+  return () => {
+    document.removeEventListener('visibilitychange', follow);
+    if (raf) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    }
+    stopBackground();
+  };
 }
 
 export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
@@ -224,7 +240,8 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     question.hide();
   };
 
-  bindInput(vm, renderer, view);
+  const cleanups: Array<() => void> = [];
+  bindInput(vm, renderer, view, options.keyTarget ?? window, cleanups);
 
   // The canvas is fitted into the box the host gives us, and that box holds the
   // canvas: writing a new canvas size from inside a ResizeObserver callback
@@ -256,8 +273,11 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   };
   resize();
   window.addEventListener('resize', resize);
+  cleanups.push(() => window.removeEventListener('resize', resize));
   if (typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(layoutSoon).observe(view);
+    const observer = new ResizeObserver(layoutSoon);
+    observer.observe(view);
+    cleanups.push(() => observer.disconnect());
   }
 
   const stats = options.showStats ? makeStats(frame) : null;
@@ -280,7 +300,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
       }
     }
   };
-  startFrameDriver(step);
+  const stopFrames = startFrameDriver(step);
 
   const handle: TessVmHandle = {
     vm,
@@ -309,6 +329,20 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
       resize();
       renderer.flush();
     },
+    dispose() {
+      stopFrames();
+      if (queued) {
+        cancelAnimationFrame(queued);
+        queued = 0;
+      }
+      for (const undo of cleanups.splice(0)) {
+        undo();
+      }
+      vm.stop();
+      audio.close();
+      renderer.destroy();
+      view.remove();
+    },
   };
 
   if (options.autoStart !== false) {
@@ -318,7 +352,17 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   return handle;
 }
 
-function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
+function bindInput(
+  vm: Vm,
+  renderer: PixiRenderer,
+  view: HTMLElement,
+  keyTarget: HTMLElement | Window,
+  cleanups: Array<() => void>,
+): void {
+  const on = <T extends EventTarget>(target: T, type: string, handler: EventListener) => {
+    target.addEventListener(type, handler);
+    cleanups.push(() => target.removeEventListener(type, handler));
+  };
   const toStage = (clientX: number, clientY: number) => {
     const rect = renderer.canvasRect();
     return {
@@ -327,7 +371,8 @@ function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
     };
   };
 
-  window.addEventListener('keydown', (event) => {
+  on(keyTarget, 'keydown', (raw) => {
+    const event = raw as KeyboardEvent;
     const code = keyCodeOf(event);
     if (!vm.pressedKeys.has(code)) {
       vm.pressedKeys.add(code);
@@ -337,10 +382,12 @@ function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
       event.preventDefault();
     }
   });
-  window.addEventListener('keyup', (event) => {
-    vm.pressedKeys.delete(keyCodeOf(event));
+  on(keyTarget, 'keyup', (raw) => {
+    vm.pressedKeys.delete(keyCodeOf(raw as KeyboardEvent));
   });
-  window.addEventListener('blur', () => vm.pressedKeys.clear());
+  // A window that loses focus never sees the key come back up, whatever the keys
+  // are read from.
+  on(window, 'blur', () => vm.pressedKeys.clear());
 
   const move = (clientX: number, clientY: number) => {
     const point = toStage(clientX, clientY);
@@ -348,8 +395,12 @@ function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
     vm.mouseY = point.y;
   };
 
-  view.addEventListener('pointermove', (event) => move(event.clientX, event.clientY));
-  view.addEventListener('pointerdown', (event) => {
+  on(view, 'pointermove', (raw) => {
+    const event = raw as PointerEvent;
+    move(event.clientX, event.clientY);
+  });
+  on(view, 'pointerdown', (raw) => {
+    const event = raw as PointerEvent;
     move(event.clientX, event.clientY);
     vm.mouseDown = true;
     vm.fireEvent('mouse_clicked');
@@ -378,8 +429,8 @@ function bindInput(vm: Vm, renderer: PixiRenderer, view: HTMLElement): void {
       }
     }
   };
-  window.addEventListener('pointerup', up);
-  window.addEventListener('pointercancel', up);
+  on(window, 'pointerup', up);
+  on(window, 'pointercancel', up);
 }
 
 /** Front-most entity under the pointer, tested against its own pixels. */

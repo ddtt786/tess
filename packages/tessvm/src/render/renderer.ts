@@ -287,6 +287,19 @@ export class PixiRenderer implements Renderer {
     this.overlay?.clear();
   }
 
+  /** Tears the renderer down: the WebGL context and the canvas both go. */
+  destroy(): void {
+    if (!this.ready) {
+      return;
+    }
+    this.ready = false;
+    this.reset();
+    this.textures.clear();
+    this.images.clear();
+    this.loading.clear();
+    this.app.destroy({ removeView: true }, { children: true });
+  }
+
   setScene(sceneId: string): void {
     this.sortScene(sceneId);
     for (const [id, layer] of this.sceneLayers) {

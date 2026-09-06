@@ -160,6 +160,16 @@ export class WebAudioEngine implements AudioEngine {
     }
   }
 
+  /** Releases the audio context; browsers only allow a handful per page. */
+  close(): void {
+    this.stopAll();
+    this.buffers.clear();
+    this.loading.clear();
+    void this.context?.close().catch(() => undefined);
+    this.context = null;
+    this.master = null;
+  }
+
   stopEntity(entityId: string): void {
     for (const entry of [...this.playing]) {
       if (entry.entityId === entityId) {

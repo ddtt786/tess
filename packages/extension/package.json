@@ -1,0 +1,15 @@
+{
+  "name": "@tess/extension",
+  "version": "0.1.0",
+  "description": "playentry.org 작품 실행 화면을 tessvm 실행기로 바꾸는 크롬·파이어폭스 확장",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.ts"
+  },
+  "dependencies": {
+    "@tess/vm": "workspace:*",
+    "pixi.js": "^8.20.1"
+  }
+}
