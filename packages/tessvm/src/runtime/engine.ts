@@ -94,6 +94,25 @@ export interface AudioEngine {
   getSpeed(): number;
 }
 
+/** Who the work is running for; `null` where nobody is signed in. */
+export interface EntryUser {
+  /** `아이디` — entry's `window.user.username`, unmasked. */
+  id: string;
+  /** `닉네임` — entry's `window.user.nickname`. */
+  nickname: string;
+}
+
+/** What `아이디` and `닉네임` answer when nobody is signed in. */
+export const GUEST = 'guest';
+
+/** Characters of an id left in the clear. */
+const KEPT = 2;
+
+/** `abcdef` → `ab****`, the way playentry shows someone else's id. */
+export function maskedUserId(id: string): string {
+  return id.slice(0, KEPT) + '*'.repeat(Math.max(0, id.length - KEPT));
+}
+
 export interface VmOptions {
   renderer?: Renderer | null;
   audio?: AudioEngine | null;
@@ -112,6 +131,14 @@ export interface VmOptions {
   boost?: boolean;
   deviceType?: 'desktop' | 'tablet' | 'mobile';
   touch?: boolean;
+  /**
+   * Who `아이디`(`get_user_name`) and `닉네임`(`get_nickname`) answer with.
+   * Entry reads `window.user`, which only the site itself fills in, so a runner
+   * outside it leaves this unset and both blocks answer `guest`.
+   */
+  user?: EntryUser | null;
+  /** Hides all but the first two letters of the id. On unless turned off. */
+  maskUserId?: boolean;
   /** Ticks per frame ceiling when catching up on lost time. */
   maxCatchUp?: number;
 }
@@ -141,6 +168,8 @@ export class Vm implements Project {
   boost: boolean;
   deviceType: 'desktop' | 'tablet' | 'mobile';
   touch: boolean;
+  user: EntryUser | null;
+  maskUserId: boolean;
 
   state: 'stop' | 'run' | 'pause' = 'stop';
   currentSceneId = '';
@@ -191,6 +220,8 @@ export class Vm implements Project {
     this.boost = options.boost ?? true;
     this.deviceType = options.deviceType ?? 'desktop';
     this.touch = options.touch ?? false;
+    this.user = options.user ?? null;
+    this.maskUserId = options.maskUserId ?? true;
     this.maxCatchUp = options.maxCatchUp ?? 4;
     this.masks = new MaskStore(
       (key, width, height) => this.renderer?.maskFor?.(key, width, height) ?? null,

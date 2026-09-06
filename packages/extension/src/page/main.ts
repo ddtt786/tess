@@ -23,7 +23,13 @@ function scan(): void {
     }
     players.set(
       host,
-      mountPlayer(host, id, host.dataset.tessvmGroup ?? null, host.dataset.tessvmSvg !== '0'),
+      mountPlayer(
+        host,
+        id,
+        host.dataset.tessvmGroup ?? null,
+        host.dataset.tessvmSvg !== '0',
+        host.dataset.tessvmMask !== '0',
+      ),
     );
   }
 }
@@ -39,7 +45,7 @@ window.addEventListener('message', (event) => {
   if (event.source !== window) {
     return;
   }
-  const data = event.data as { __tessvm?: string } | null;
+  const data = event.data as { __tessvm?: string; mask?: boolean } | null;
   if (!data || typeof data !== 'object') {
     return;
   }
@@ -47,6 +53,12 @@ window.addEventListener('message', (event) => {
     scan();
   } else if (data.__tessvm === 'unmount') {
     unmountAll();
+  } else if (data.__tessvm === 'mask') {
+    // Read each time the block runs, so a work already going follows the switch.
+    for (const [host, player] of players) {
+      host.dataset.tessvmMask = data.mask ? '1' : '0';
+      player.setMaskUserId(Boolean(data.mask));
+    }
   }
 });
 

@@ -771,13 +771,20 @@ const rt = () => window.tessRuntime ?? entryRuntime;
 | 신호 보내기           | `vm.fireEvent('when_message_cast', id)`                        |
 | 오브젝트 정보 · 고치기 | `vm.targetOf(id)` — `Entity` 가 이미 엔트리와 같은 이름을 씁니다 |
 | 장면 바로가기         | 실행을 켠 뒤 `selectScene` → `fireEvent('when_scene_start')`   |
-| 실행 환경 흉내내기    | `vm.boost`·`vm.touch`·`vm.deviceType` 에 곧바로 넣는다          |
+| 실행 환경 흉내내기    | `vm.boost`·`vm.touch`·`vm.deviceType`·`vm.user`·`vm.maskUserId` 에 곧바로 넣는다 |
 | 무대에서 오브젝트 고르기 | 지금 장면의 오브젝트를 앞에서부터 (`vm.currentTargets()`), 모양의 픽셀로 판정 (`hitTest` → `collision.touchingMouse`) |
 
 **환경 흉내내기가 실행기마다 다릅니다.** 엔트리는 판단 블록의 `func` 을 감싸야 하지만
 (브라우저에 직접 묻기 때문입니다), tessvm 은 그 답을 VM 이 필드로 들고 있어서 값을 그냥
 넣습니다. 그래서 패널은 값을 고를 때마다 `patchEnvironment(state.env)` 를 다시 부릅니다 —
 감싸는 쪽에서는 두 번째부터 아무 일도 하지 않습니다.
+
+**아이디·닉네임도 이 자리에서 바꿉니다.** 엔트리는 `window.user` 를 읽으므로 패널이
+`get_user_name`·`get_nickname` 의 `func` 을 감싸고, tessvm 은 `vm.user` 를 들고 있어서
+그대로 넣습니다. 아이디 칸과 닉네임 칸이 둘 다 비어 있으면 실행기가 시작할 때 받은 값을
+쓰고, 그것도 없으면 두 블록이 `guest` 를 돌려줍니다. '아이디 가리기' 는 아이디의 앞 두
+글자만 남깁니다(`ddtt786` → `dd*****`) — 닉네임에는 걸리지 않습니다. 확장은 이 값을
+playentry 의 `__NEXT_DATA__` 에서 읽어 넘깁니다(AI_EXTENSION.md).
 
 **오류는 VM 에서 곧장 옵니다.** `vm.onError` 로 받은 오류를 소스맵(`/sourcemap.json`)으로
 `.tess` 줄·열까지 찾아 오류 탭에 쌓고, 그 블록을 블록 트리에서 강조합니다. 같은 블록에서

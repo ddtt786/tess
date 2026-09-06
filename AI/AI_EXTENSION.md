@@ -168,6 +168,31 @@ csrf-token: <meta[name=csrf-token]>.content
 넘겨 `boot({ svg })` 까지 갑니다. 이 값은 실행기를 만들 때 읽으므로, 스위치를 바꾸면
 내용 스크립트가 마운트 지점을 지우고 다시 만듭니다.
 
+### 아이디·닉네임 — `__NEXT_DATA__`
+
+`아이디`·`닉네임` 블록은 엔트리에서 `window.user.username`·`.nickname` 을 읽습니다.
+확장의 실행기는 같은 페이지에 있지만 같은 스크립트가 아니라 그 변수를 볼 수 없으므로,
+페이지가 렌더될 때 심어 둔 next.js 꾸러미에서 같은 기록을 꺼냅니다.
+
+```
+JSON.parse(document.getElementById('__NEXT_DATA__').textContent)
+  .props.pageProps.initialState.common.user
+```
+
+`signed-in.ts` 가 이 길을 한 칸씩 확인하며 내려갑니다 — 사이트가 언제든 바꿀 수 있는
+모양이고 next.js 가 렌더하지 않은 페이지에는 아예 없으므로, 중간에 하나만 어긋나도
+**로그인하지 않은 것**으로 봅니다. 그때 두 블록은 `guest` 를 돌려줍니다(엔트리는 빈
+칸을 돌려주지만, 사이트 밖에서도 도는 실행기라 자기가 누구인지 밝히는 쪽을 택했습니다).
+
+**아이디는 앞 두 글자만 남깁니다** — `ddtt786` → `dd*****`. 팝업의 '아이디 가리기'
+스위치로 끌 수 있고, `chrome.storage` 에 남아 `data-tessvm-mask` 로 넘어가
+`boot({ maskUserId })` 까지 갑니다. 벡터 모양 스위치와 달리 **실행기를 다시 만들지
+않습니다** — VM 이 블록을 돌릴 때마다 이 값을 읽으므로, 내용 스크립트가 보낸
+`{ __tessvm: 'mask' }` 를 받아 돌고 있는 작품에 그대로 넣습니다. 닉네임은 가리지
+않습니다.
+
+디버그 패널의 '실행 환경 흉내내기' 에도 같은 세 칸이 있습니다(AI_TESSVM.md).
+
 ## 5. tessvm 에 더한 것
 
 확장이 필요로 해서 넣었고, 실행 페이지의 동작은 그대로입니다.
@@ -178,6 +203,8 @@ csrf-token: <meta[name=csrf-token]>.content
 | `TessVmHandle.dispose()`    | 프레임 루프·리스너·캔버스·오디오를 놓는다                    |
 | `PixiRenderer.destroy()`    | WebGL 컨텍스트와 캔버스를 놓는다                             |
 | `WebAudioEngine.close()`    | 오디오 컨텍스트를 닫는다 (브라우저가 몇 개까지만 허용)       |
+| `BootOptions.user`          | `아이디`·`닉네임` 이 답할 사람. 없으면 둘 다 `guest`         |
+| `BootOptions.maskUserId`    | 아이디의 앞 두 글자만 남긴다. 끄지 않으면 켜짐               |
 
 playentry 는 SPA 라 작품 사이를 오갈 때 문서가 그대로입니다. `dispose()` 가 없으면
 `requestAnimationFrame` 루프와 오디오 컨텍스트가 작품마다 쌓입니다. 실행기는 마운트

@@ -5,7 +5,7 @@
  * 캔버스에 그릴 이유가 없는 것(대답 입력칸, 실행 단추, 상태 표시)은 HTML 로 둡니다 —
  * 해상도를 올려도 흐려지지 않고, 모바일 키보드도 그대로 동작합니다.
  */
-import { Vm, type EntryProjectLike } from '../runtime/engine.ts';
+import { Vm, type EntryProjectLike, type EntryUser } from '../runtime/engine.ts';
 import { PixiRenderer } from '../render/renderer.ts';
 import { SpeechSynthesisEngine, WebAudioEngine } from '../audio/sound.ts';
 import { setStageSize, stage, type Entity } from '../runtime/model.ts';
@@ -32,6 +32,10 @@ export interface BootOptions {
   keyTarget?: HTMLElement;
   /** Take the vector costume where the work has one. On unless turned off. */
   svg?: boolean;
+  /** Who `아이디` and `닉네임` answer with. Left unset, both answer `guest`. */
+  user?: EntryUser | null;
+  /** Hides all but the first two letters of the id. On unless turned off. */
+  maskUserId?: boolean;
   /** Called while the work's files come in, before it is allowed to run. */
   onProgress?(loaded: number, total: number): void;
 }
@@ -46,6 +50,8 @@ export interface TessVmHandle {
   defaultBoost: boolean;
   defaultTouch: boolean;
   defaultDeviceType: 'desktop' | 'tablet' | 'mobile';
+  defaultUser: EntryUser | null;
+  defaultMaskUserId: boolean;
   start(): void;
   stop(): void;
   pause(): void;
@@ -216,6 +222,8 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     boost,
     touch,
     deviceType,
+    user: options.user,
+    maskUserId: options.maskUserId,
   });
 
   vm.load(project);
@@ -336,6 +344,8 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     defaultBoost: boost,
     defaultTouch: touch,
     defaultDeviceType: deviceType,
+    defaultUser: vm.user,
+    defaultMaskUserId: vm.maskUserId,
     start: () => {
       // Keys are read from the player, so it has to hold focus before the work
       // can be played at all.

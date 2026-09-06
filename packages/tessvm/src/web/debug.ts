@@ -13,6 +13,10 @@ export interface EnvChoices {
   boost: string;
   device: string;
   touch: string;
+  /** `아이디`·`닉네임`. Both empty means the signed-out `guest` pair. */
+  userId: string;
+  nickname: string;
+  mask: string;
 }
 
 /** The object shape the panel expects — entry's object, as far as the panel reads it. */
@@ -166,6 +170,14 @@ export function makeVmRuntime(handle: TessVmHandle) {
       vm.deviceType = (env.device === ''
         ? handle.defaultDeviceType
         : env.device) as typeof vm.deviceType;
+      // Either field filled stands for a signed-in reader; both empty is the
+      // signed-out pair the runner started with.
+      const id = env.userId.trim();
+      const nickname = env.nickname.trim();
+      vm.user = id || nickname
+        ? { id: id || handle.defaultUser?.id || '', nickname: nickname || handle.defaultUser?.nickname || '' }
+        : handle.defaultUser;
+      vm.maskUserId = env.mask === '' ? handle.defaultMaskUserId : env.mask === 'true';
     },
 
     stageSize: () => ({ width: stage.width, height: stage.height }),

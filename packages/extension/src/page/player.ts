@@ -10,6 +10,7 @@
 import { boot, type TessVmHandle } from '../../../tessvm/src/web/boot.ts';
 import { ASK_FIELD_STYLE } from '../../../tessvm/src/web/ask-style.ts';
 import { fetchWork } from './entry-project.ts';
+import { signedInUser } from './signed-in.ts';
 
 const ICONS = {
   stop: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg>',
@@ -29,6 +30,8 @@ const ASK_STYLE_ID = 'tessvm-ask-style';
 
 export interface MountedPlayer {
   dispose(): void;
+  /** The vm reads this each time the block runs, so a live work follows it. */
+  setMaskUserId(mask: boolean): void;
 }
 
 /** The answer field is tessvm's own, so its look comes with it. */
@@ -71,6 +74,7 @@ export function mountPlayer(
   projectId: string,
   groupId: string | null = null,
   svg = true,
+  maskUserId = true,
 ): MountedPlayer {
   ensureAskStyle();
   // Idle from the start so the cover shows while the work is still on its way.
@@ -192,6 +196,8 @@ export function mountPlayer(
         keyTarget: root,
         boost: true,
         svg,
+        user: signedInUser(),
+        maskUserId,
         // Nothing may be pressed until the work's files are all in.
         onProgress: (done, all) => {
           status.textContent = all
@@ -280,5 +286,13 @@ export function mountPlayer(
     showState();
   }
 
-  return { dispose };
+  return {
+    dispose,
+    setMaskUserId(mask: boolean) {
+      maskUserId = mask;
+      if (handle) {
+        handle.vm.maskUserId = mask;
+      }
+    },
+  };
 }

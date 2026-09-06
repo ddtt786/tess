@@ -129,6 +129,9 @@ export const DEBUG_PANEL_STYLE = `
   .debug-field select { font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 5px;
                         border: 1px solid #0003; background: none; color: inherit; }
   .debug-field select option { color: initial; }
+  .debug-field-input { font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 5px;
+                       border: 1px solid #0003; background: none; color: inherit; width: 132px; }
+  .debug-field-input::placeholder { color: inherit; opacity: .4; }
   .debug-note { font-size: 12px; opacity: .55; margin: 8px 0 0; line-height: 1.6; }
   /* 고르기 도구가 켜져 있다는 표시 */
   .debug-pick-hint {

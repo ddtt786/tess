@@ -734,3 +734,49 @@ end`;
   assert.equal(target.getNextPicture('3')?.name, '첫번째');
   assert.equal(target.getPrevPicture('1')?.name, '세번째');
 });
+
+test('아이디·닉네임은 로그인한 사람을 따르고, 아이디는 앞 두 글자만 남긴다', () => {
+  /**
+   * 엔트리는 `window.user` 를 읽고, 로그인하지 않았으면 빈 값을 돌려줍니다. 여기서는
+   * 사이트 밖에서도 도는 실행기이므로 로그인하지 않은 자리를 `guest` 로 두고,
+   * 아이디는 `maskUserId` 가 꺼져 있을 때만 그대로 보여 줍니다.
+   */
+  const source = `
+var 아이디_값 as "아이디 값" = 0
+var 닉_값 as "닉 값" = 0
+
+scene "s":
+  object "o":
+    when start do
+      아이디_값 = user_id
+      닉_값 = nickname
+    end
+  end
+end`;
+  const result = compileProject(source, { path: 'test.tess' });
+  assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+
+  const read = (options: Record<string, unknown>) => {
+    const vm = new Vm({ renderer: null, audio: null, ...options });
+    vm.load(result.project as unknown as never);
+    vm.start();
+    vm.tick();
+    const value = (name: string) =>
+      String(vm.variables.find((item) => item.name === name)?.getValue());
+    return { id: value('아이디 값'), nickname: value('닉 값') };
+  };
+
+  assert.deepEqual(read({}), { id: 'guest', nickname: 'guest' }, '로그인하지 않은 자리');
+  assert.deepEqual(
+    read({ user: { id: 'ddtt786', nickname: '치로' } }),
+    { id: 'dd*****', nickname: '치로' },
+    '아이디만 가려집니다',
+  );
+  assert.deepEqual(
+    read({ user: { id: 'ddtt786', nickname: '치로' }, maskUserId: false }),
+    { id: 'ddtt786', nickname: '치로' },
+    '가리기를 끄면 그대로입니다',
+  );
+  // 두 글자 이하는 가릴 것이 없습니다.
+  assert.deepEqual(read({ user: { id: 'ab', nickname: 'ab' } }).id, 'ab');
+});

@@ -5,10 +5,11 @@
  * 실행기입니다. 여기서는 노드에서 쓰는 것(작품 읽기·서버·헤드리스 실행)을 내보냅니다.
  * 브라우저 쪽 모듈은 `src/web/boot.ts` 가 진입점입니다.
  */
-export { Vm, DEFAULT_FPS, MAX_CLONES } from './src/runtime/engine.ts';
+export { Vm, DEFAULT_FPS, MAX_CLONES, GUEST, maskedUserId } from './src/runtime/engine.ts';
 export type {
   AudioEngine,
   EntryProjectLike,
+  EntryUser,
   Renderer,
   VmError,
   VmOptions,

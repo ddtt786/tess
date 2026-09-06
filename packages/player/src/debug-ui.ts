@@ -96,12 +96,17 @@ function observable(target: any) {
   return proxy;
 }
 
+/** `abcdef` → `ab****`. tessvm 의 `maskedUserId` 와 같은 규칙이다. */
+function maskUserId(id: string): string {
+  return id.slice(0, 2) + "*".repeat(Math.max(0, id.length - 2));
+}
+
 const state = observable({
   open: false,
   tab: "run",
   errors: [],
   runState: "",
-  env: { boost: "", device: "", touch: "" },
+  env: { boost: "", device: "", touch: "", userId: "", nickname: "", mask: "" },
   // 실행기가 실제로 도는 렌더러 (run --boost). 흉내내기 값과 달리 못 바꾼다.
   realBoost: null as boolean | null, // 실행기가 부스트로 렌더러를 가르지 않으면 null
   scenes: [],
@@ -279,7 +284,14 @@ const entryRuntime = {
   },
   // 브라우저에 직접 묻는 판단 블록들이라, func 을 감싸 패널에서 고른 값을 돌려준다.
   // `env` 는 패널이 들고 있는 그 객체라, 감싼 함수는 늘 지금 고른 값을 읽는다.
-  patchEnvironment(env: { boost: string; device: string; touch: string }) {
+  patchEnvironment(env: {
+    boost: string;
+    device: string;
+    touch: string;
+    userId: string;
+    nickname: string;
+    mask: string;
+  }) {
     const blocks = window.Entry && Entry.block;
     if (!blocks) return;
     const wrap = (type: string, forced: (args: any[]) => any) => {
@@ -302,6 +314,12 @@ const entryRuntime = {
         return null;
       }
     });
+    // 엔트리는 `window.user` 를 그대로 읽으므로, 패널에서 적어 둔 값이 있을 때만 가로챈다.
+    wrap("get_user_name", () => {
+      if (env.userId === "") return null;
+      return env.mask === "false" ? env.userId : maskUserId(env.userId);
+    });
+    wrap("get_nickname", () => (env.nickname === "" ? null : env.nickname));
   },
   /** 엔트리 무대의 논리 크기. 화면에 어떻게 늘어나 있든 좌표는 늘 이 칸으로 센다. */
   stageSize() {
@@ -960,6 +978,23 @@ function RunTab() {
       ),
     ]);
 
+  /** 고를 것이 아니라 적어 넣는 칸 — 아이디·닉네임처럼 값이 자유로운 자리에 쓴다. */
+  const textField = (id: string, label: string, value: string, placeholder: string) =>
+    h("div", { class: "debug-field" }, [
+      h("label", { for: id }, label),
+      h("input", {
+        id,
+        type: "text",
+        class: "debug-field-input",
+        value,
+        placeholder,
+        onInput: (event: any) => {
+          state.env[id.replace("env-", "")] = event.target.value;
+          window.tessPatchEnvironmentBlocks();
+        },
+      }),
+    ]);
+
   return sections([
     {
       id: "run-control",
@@ -1054,6 +1089,20 @@ function RunTab() {
           ["true", "지원함 (참)"],
           ["false", "지원 안 함 (거짓)"],
         ]),
+        textField("env-userId", "아이디", state.env.userId, "실제 값 그대로"),
+        textField("env-nickname", "닉네임", state.env.nickname, "실제 값 그대로"),
+        field("env-mask", "아이디 가리기", state.env.mask, [
+          ["", "실제 값 그대로"],
+          ["true", "가림 (ab****)"],
+          ["false", "그대로 보임"],
+        ]),
+        h(
+          "p",
+          { class: "debug-note" },
+          "'아이디'·'닉네임' 블록이 돌려주는 값입니다. 비워 두면 실행기가 들고 있는 값을" +
+            " 그대로 쓰고, 로그인하지 않았으면 둘 다 guest 입니다. 가리기는 아이디의 앞" +
+            " 두 글자만 남깁니다 — 닉네임은 가리지 않습니다.",
+        ),
       ],
     },
   ]);

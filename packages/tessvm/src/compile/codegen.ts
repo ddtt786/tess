@@ -695,8 +695,9 @@ export class Codegen {
       case 'get_date':
         return { code: `O.dateValue(${this.field(p[1])})`, kind: 'num' };
       case 'get_user_name':
+        return { code: 'O.userId()', kind: 'str' };
       case 'get_nickname':
-        return { code: "' '", kind: 'str', constant: ' ' };
+        return { code: 'O.nickname()', kind: 'str' };
 
       case 'length_of_string':
         return { code: `${this.str(p[1])}.length`, kind: 'num' };

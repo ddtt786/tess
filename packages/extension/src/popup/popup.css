@@ -106,3 +106,8 @@ h1 {
   color: var(--muted);
   font-size: 11px;
 }
+
+.note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}

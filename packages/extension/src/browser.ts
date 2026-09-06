@@ -33,18 +33,26 @@ export const api = (globals.browser ?? globals.chrome) as ExtensionApi;
 export const ENABLED_KEY = 'enabled';
 /** Whether a costume drawn as a vector is loaded as one. */
 export const SVG_KEY = 'svg';
+/** Whether the `아이디` block hides all but the first two letters. */
+export const MASK_KEY = 'mask';
 
 export interface Settings {
   enabled: boolean;
   svg: boolean;
+  mask: boolean;
 }
 
-/** Both are on unless they have been turned off. */
+/** All three are on unless they have been turned off. */
 export async function readSettings(): Promise<Settings> {
-  const stored = await api.storage.local.get({ [ENABLED_KEY]: true, [SVG_KEY]: true });
+  const stored = await api.storage.local.get({
+    [ENABLED_KEY]: true,
+    [SVG_KEY]: true,
+    [MASK_KEY]: true,
+  });
   return {
     enabled: stored[ENABLED_KEY] !== false,
     svg: stored[SVG_KEY] !== false,
+    mask: stored[MASK_KEY] !== false,
   };
 }
 
