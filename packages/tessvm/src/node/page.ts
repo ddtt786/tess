@@ -75,8 +75,6 @@ main {
 #tessvm-start:hover { transform: scale(1.06); }
 #tessvm-start:disabled { opacity: .5; cursor: default; transform: none; }
 #tessvm-start svg { width: 40px; height: 40px; margin-left: 5px; fill: currentColor; }
-#tessvm-cover .note { color: #e8eaed; font-size: 13px; }
-#tessvm-cover .note:empty { display: none; }
 .tessvm-stage { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
 .tessvm-stage canvas { display: block; box-shadow: 0 8px 30px #0008; }
 ${ASK_FIELD_STYLE}
@@ -154,7 +152,6 @@ ${fonts}
       <button id="tessvm-start" type="button" title="시작하기" aria-label="시작하기" disabled>
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.6 3.1 12.9 8l-8.3 4.9Z"/></svg>
       </button>
-      <div class="note" id="tessvm-cover-note">불러오는 중…</div>
     </div>
   </div>
 </main>
@@ -247,14 +244,8 @@ try {
   const runButtonEarly = document.getElementById('run');
   const cover = document.getElementById('tessvm-cover');
   const coverStart = document.getElementById('tessvm-start');
-  const coverNote = document.getElementById('tessvm-cover-note');
   runButtonEarly.disabled = true;
   const handle = await boot({
-    onProgress: (done, all) => {
-      coverNote.textContent = all
-        ? '불러오는 중… ' + Math.floor((done / all) * 100) + '%'
-        : '불러오는 중…';
-    },
     project,
     container: document.getElementById('stage'),
     quality: config.quality,
@@ -265,6 +256,10 @@ try {
     svg: config.svg,
     stageWidth: config.stageWidth,
     stageHeight: config.stageHeight,
+    // The run page serves the work off this machine, so there is nothing worth
+    // holding it for: the start button is up as soon as the runner is built and
+    // the files land while it waits to be pressed.
+    waitForAssets: false,
   });
   // From here the debug panel sees tessvm through this adapter.
   window.tessRuntime = makeVmRuntime(handle);
@@ -275,9 +270,9 @@ try {
   // one, and resumes a held one.
   const runButton = runButtonEarly;
   runButton.disabled = false;
-  // Nothing runs until this is pressed; the files are all in by now.
+  // Nothing runs until this is pressed, and nothing is waited for first — the
+  // files come in behind the button (waitForAssets is off on this page).
   coverStart.disabled = false;
-  coverNote.textContent = '';
   coverStart.onclick = () => {
     handle.start();
     showRunState();

@@ -38,6 +38,12 @@ export interface BootOptions {
   maskUserId?: boolean;
   /** Called while the work's files come in, before it is allowed to run. */
   onProgress?(loaded: number, total: number): void;
+  /**
+   * Hold the work until every costume and sound is in. On by default. Turned
+   * off, the runner is ready as soon as it is built and the files stream in
+   * behind it — a fast start in exchange for the first moments not being exact.
+   */
+  waitForAssets?: boolean;
 }
 
 export interface TessVmHandle {
@@ -240,18 +246,29 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   // work has started arrives at the wrong moment — a sound asked for while it
   // was still coming would begin after the stop or the scene change that was
   // meant to silence it, and a costume would pop in a frame late.
+  //
+  // `waitForAssets: false` gives that up for a start with nothing in front of
+  // it. The files are asked for all the same and they arrive while the work is
+  // already up; a sprite whose costume is not in yet draws nothing, and so is
+  // not there to touch either, until it lands.
   const sounds = vm.targets.flatMap((target) => target.sounds);
-  const total = PixiRenderer.costumeCount(vm.targets) + sounds.length;
+  const waitForAssets = options.waitForAssets ?? true;
+  const total = waitForAssets ? PixiRenderer.costumeCount(vm.targets) + sounds.length : 0;
   let loaded = 0;
   const arrived = () => {
     loaded += 1;
     options.onProgress?.(loaded, total);
   };
   options.onProgress?.(0, total);
-  await Promise.all([
-    renderer.preload(vm.targets, vm.currentSceneId, arrived),
-    audio.preload(sounds, 6, arrived),
-  ]);
+  // Both are started either way — only the waiting is optional. Each keeps its
+  // own per-file failures, so these settle whatever the network does.
+  const costumes = renderer
+    .preload(vm.targets, vm.currentSceneId, waitForAssets ? arrived : undefined)
+    .catch(() => undefined);
+  const files = audio.preload(sounds, 6, waitForAssets ? arrived : undefined).catch(() => undefined);
+  if (waitForAssets) {
+    await Promise.all([costumes, files]);
+  }
   // Paint the opening frame even when the project is not started yet, then
   // measure the text boxes again once the entry web fonts have arrived.
   renderer.flush();
