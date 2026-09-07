@@ -1974,6 +1974,83 @@ test('되돌린 continue · skip 은 원래 블록 모양 그대로 다시 컴�
   ]);
 });
 
+/** `calc_operation` 하나만 든 작품. `op` 가 연산자 이름이다. */
+function calcOperationProject(op: string): RawEntity {
+  return {
+    name: '계산',
+    speed: 60,
+    scenes: [{ id: 'sc1', name: '장면 1' }],
+    variables: [],
+    messages: [],
+    functions: [],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: 'obj1',
+      name: '주인공',
+      objectType: 'sprite',
+      scene: 'sc1',
+      rotateMethod: 'free',
+      selectedPictureId: null,
+      entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true },
+      sprite: { pictures: [], sounds: [] },
+      script: JSON.stringify([[
+        { type: 'when_run_button_click', params: [null], statements: [] },
+        {
+          type: 'dialog_time',
+          params: [
+            {
+              type: 'calc_operation',
+              params: [null, { type: 'number', params: ['5'] }, null, op],
+            },
+            { type: 'number', params: ['1'] },
+            'hide',
+            null,
+          ],
+          statements: [],
+        },
+      ]]),
+    }],
+  } as RawEntity;
+}
+
+test('calc_operation 은 어떤 연산자로도 옮길 수 있다 — 모르는 블록이 아니다', () => {
+  const known = [
+    'square', 'root', 'sin', 'cos', 'tan', 'asin_radian', 'acos_radian', 'atan_radian',
+    'log', 'ln', 'unnatural', 'floor', 'ceil', 'round', 'factorial', 'abs',
+  ];
+  for (const op of known) {
+    const result = decompileProject(calcOperationProject(op), []);
+    assert.deepEqual(result.warnings, [], op);
+    assert.doesNotMatch(result.source, /calc_operation/, op);
+  }
+});
+
+test('엔트리가 모르는 연산자는 엔트리와 같이 round 로 읽는다', () => {
+  // `block_calc.js` 는 목록에 없는 연산자를 round 로 바꾸고 그대로 계산한다.
+  const result = decompileProject(calcOperationProject('없는연산'), []);
+  const fragment = utf8(result.assets.find((a) => a.path === 'objects/주인공.tess')!.data);
+  assert.match(fragment, /round\(5\)/);
+  assert.deepEqual(result.warnings, []);
+});
+
+test('factorial 은 컴파일해서 되돌려도 그대로다', () => {
+  const source = `scene "s":
+  object "o":
+    when start do
+      say factorial(5) for 1
+    end
+  end
+end`;
+  const compiled = compileProject(source, { path: 'f.tess' });
+  assert.deepEqual(compiled.errors, []);
+  const blocks = JSON.stringify(JSON.parse(compiled.project!.objects[0]!.script as string));
+  assert.match(blocks, /"type":"calc_operation","params":\[null,.*"factorial"/);
+  const back = decompileProject(compiled.project as never, []);
+  const fragment = utf8(back.assets.find((a) => a.path === 'objects/o.tess')!.data);
+  assert.match(fragment, /say factorial\(5\) for 1/);
+  assert.deepEqual(back.warnings, []);
+});
+
 /**
  * 하드웨어 블록의 값 자리에 `continue_repeat` 을 끼워 프레임을 넘기는 치트를 담은
  * 작품입니다. 반복문 안에서는 skip 과 똑같이 동작하고, 반복문 밖에서는 블록에

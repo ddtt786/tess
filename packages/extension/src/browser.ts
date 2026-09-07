@@ -35,24 +35,29 @@ export const ENABLED_KEY = 'enabled';
 export const SVG_KEY = 'svg';
 /** Whether the `아이디` block hides all but the first two letters. */
 export const MASK_KEY = 'mask';
+/** Whether the runner says which blocks it does not have yet. Off by default. */
+export const NOTICE_KEY = 'notice';
 
 export interface Settings {
   enabled: boolean;
   svg: boolean;
   mask: boolean;
+  notice: boolean;
 }
 
-/** All three are on unless they have been turned off. */
+/** The first three are on unless turned off; the notice is off unless asked for. */
 export async function readSettings(): Promise<Settings> {
   const stored = await api.storage.local.get({
     [ENABLED_KEY]: true,
     [SVG_KEY]: true,
     [MASK_KEY]: true,
+    [NOTICE_KEY]: false,
   });
   return {
     enabled: stored[ENABLED_KEY] !== false,
     svg: stored[SVG_KEY] !== false,
     mask: stored[MASK_KEY] !== false,
+    notice: stored[NOTICE_KEY] === true,
   };
 }
 

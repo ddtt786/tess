@@ -590,6 +590,7 @@ say answer
 | `sin(x)` `cos(x)` `tan(x)` `asin(x)` `acos(x)` `atan(x)` | 삼각함수 (도 단위)             |
 | `log2(x)` `ln(x)` `log10(x)`                             | 로그                           |
 | `floor(x)` `ceil(x)` `round(x)` `abs(x)`                 | 반올림류                       |
+| `factorial(n)`                                           | n! (엔트리의 `계승` 연산)      |
 | `random(a, b)`                                           | a ~ b 사이 무작위 정수         |
 | `root(값, n)`                                            | n제곱근 (`값 ** (1/n)`과 같음) |
 

@@ -29,6 +29,7 @@ function scan(): void {
         host.dataset.tessvmGroup ?? null,
         host.dataset.tessvmSvg !== '0',
         host.dataset.tessvmMask !== '0',
+        host.dataset.tessvmNotice === '1',
       ),
     );
   }
@@ -45,7 +46,7 @@ window.addEventListener('message', (event) => {
   if (event.source !== window) {
     return;
   }
-  const data = event.data as { __tessvm?: string; mask?: boolean } | null;
+  const data = event.data as { __tessvm?: string; mask?: boolean; notice?: boolean } | null;
   if (!data || typeof data !== 'object') {
     return;
   }
@@ -58,6 +59,11 @@ window.addEventListener('message', (event) => {
     for (const [host, player] of players) {
       host.dataset.tessvmMask = data.mask ? '1' : '0';
       player.setMaskUserId(Boolean(data.mask));
+    }
+  } else if (data.__tessvm === 'notice') {
+    for (const [host, player] of players) {
+      host.dataset.tessvmNotice = data.notice ? '1' : '0';
+      player.setShowNotice(Boolean(data.notice));
     }
   }
 });

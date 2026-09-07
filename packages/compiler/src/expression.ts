@@ -67,6 +67,7 @@ const MATH_OPERATIONS: Record<string, string> = {
   asin: 'asin_radian', acos: 'acos_radian', atan: 'atan_radian',
   ln: 'ln', log10: 'log',
   floor: 'floor', ceil: 'ceil', round: 'round', abs: 'abs',
+  factorial: 'factorial',
 };
 
 /**

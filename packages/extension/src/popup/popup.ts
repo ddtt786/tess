@@ -3,11 +3,12 @@
  *
  * Open work pages watch the same keys, so a change lands without a reload.
  */
-import { readSettings, write, ENABLED_KEY, SVG_KEY, MASK_KEY } from '../browser.ts';
+import { readSettings, write, ENABLED_KEY, SVG_KEY, MASK_KEY, NOTICE_KEY } from '../browser.ts';
 
 const enabled = document.getElementById('enabled') as HTMLInputElement;
 const svg = document.getElementById('svg') as HTMLInputElement;
 const mask = document.getElementById('mask') as HTMLInputElement;
+const notice = document.getElementById('notice') as HTMLInputElement;
 const note = document.getElementById('note') as HTMLElement;
 
 const NOTE = {
@@ -28,9 +29,14 @@ mask.addEventListener('change', () => {
   void write(MASK_KEY, mask.checked);
 });
 
+notice.addEventListener('change', () => {
+  void write(NOTICE_KEY, notice.checked);
+});
+
 void readSettings().then((settings) => {
   enabled.checked = settings.enabled;
   svg.checked = settings.svg;
   mask.checked = settings.mask;
+  notice.checked = settings.notice;
   note.textContent = settings.enabled ? NOTE.on : NOTE.off;
 });

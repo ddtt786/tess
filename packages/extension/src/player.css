@@ -272,12 +272,41 @@
 }
 
 /* -------------------------------------------------------------- fullscreen */
-.tessvm-player:fullscreen {
+/* Full screen is the work and nothing else, the way entry's is: the bar goes
+   away and the stage takes the whole screen. Escape is what comes back. */
+.tessvm-player:fullscreen,
+.tessvm-player.is-full {
   width: 100vw;
   height: 100vh;
   background: #000;
 }
 
-.tessvm-player:fullscreen .tessvm-view {
+.tessvm-player:fullscreen .tessvm-view,
+.tessvm-player.is-full .tessvm-view {
   background: #000;
+}
+
+.tessvm-player:fullscreen .tessvm-bar,
+.tessvm-player.is-full .tessvm-bar {
+  display: none;
+}
+
+/* A message still has to reach the viewer, but it may not take a strip of the
+   screen away from the work — over the stage, not under it. */
+.tessvm-player:fullscreen .tessvm-error,
+.tessvm-player.is-full .tessvm-error {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  border-top: 0;
+  background: rgba(38, 8, 5, 0.82);
+  color: #ff9f92;
+}
+
+.tessvm-player:fullscreen .tessvm-error.is-notice,
+.tessvm-player.is-full .tessvm-error.is-notice {
+  background: rgba(40, 30, 4, 0.82);
+  color: #ffd479;
 }

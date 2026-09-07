@@ -182,6 +182,18 @@ content = [[ function_create{ statements: [[ _if, _if, … ]] } ]]    ← .ent �
 리터럴로 펴 놓지만, 블록 트리를 직접 넘겨받는 길(`Codegen` 을 따로 부르는 경우)에서는
 그대로 나타납니다.
 
+### `calc_operation` 은 어떤 연산자로도 옮긴다
+
+엔트리의 단항 수학 블록입니다. 연산자는 `square`·`root`·`sin`·`cos`·`tan`·
+`asin_radian`·`acos_radian`·`atan_radian`·`log`·`ln`·`unnatural`·`floor`·`ceil`·
+`round`·`factorial`·`abs` 열여섯 가지이고, 엔트리는 **목록에 없는 연산자를 `round` 로
+바꿔서** 계산합니다(`block_calc.js`) — 오류가 아닙니다.
+
+`factorial` 만 Tess 에 이름이 없어서 되돌릴 때 자리표시자가 되었고, 그 한 가지 때문에
+`calc_operation` 이 통째로 "모르는 블록" 으로 보고되었습니다. `factorial()` 을 내장
+함수로 두어 그 구멍을 메웠고, 목록에 없는 연산자는 엔트리와 같이 `round` 로 읽습니다.
+이제 이 블록은 어떤 연산자로 와도 알림이 나지 않습니다.
+
 ### 하드웨어 블록으로 만든 반복 건너뛰기 치트
 
 `continue_repeat`(이번 반복 건너뛰기)를 **값 칸**에 끼운 블록이 널리 쓰입니다. 엔트리는

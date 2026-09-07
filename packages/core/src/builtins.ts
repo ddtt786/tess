@@ -53,6 +53,7 @@ export const BUILTIN_FUNCTIONS = new Set([
   "ceil",
   "round",
   "abs",
+  "factorial",
   "random",
   "root",
   "x",

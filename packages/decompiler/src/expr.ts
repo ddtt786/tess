@@ -18,6 +18,7 @@ const TABLE_CALCULATION_NAMES: Record<string, string> = {
 const REVERSE_MATH: Record<string, string> = {
   sin: 'sin', cos: 'cos', tan: 'tan', asin_radian: 'asin', acos_radian: 'acos', atan_radian: 'atan',
   ln: 'ln', log: 'log10', floor: 'floor', ceil: 'ceil', round: 'round', abs: 'abs',
+  factorial: 'factorial',
   // Entry offers `asin` next to `asin_radian`, but its calc_operation strips
   // everything after the first `_` before switching, so both run the same
   // `toDegrees(Math.asin(x))`. They therefore map to the same Tess function
@@ -211,8 +212,11 @@ export function exprOf(block: any, ctx: DecompileContext): string {
         const value = `abs(${exprOf(at(1), ctx)})`;
         return `(${value} - floor(${value}))`;
       }
-      const fn = REVERSE_MATH[op];
-      return fn ? `${fn}(${exprOf(at(1), ctx)})` : placeholder(ctx, block);
+      // Entry checks the operator against its own list and takes anything else
+      // as `round` (`block_calc.js`), so an operator this does not know is not
+      // a block it cannot carry over — it is a rounding.
+      const fn = REVERSE_MATH[op as string] ?? 'round';
+      return `${fn}(${exprOf(at(1), ctx)})`;
     }
 
     case 'boolean_basic_operator': {

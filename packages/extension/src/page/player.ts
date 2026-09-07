@@ -29,13 +29,32 @@ const ICONS = {
 
 const ASK_STYLE_ID = "tessvm-ask-style";
 
-/** Lets the browser paint before the next thing takes the thread. */
-const nextFrame = () => new Promise<void>((done) => requestAnimationFrame(() => done()));
+/**
+ * Lets the browser paint before the next thing takes the thread.
+ *
+ * A frame is what the paint really waits for, but a page in a background tab is
+ * given none — waiting only on that would leave the work sitting on its loading
+ * line until someone looked at the tab. The timer is the way out of that.
+ */
+const nextFrame = () =>
+  new Promise<void>((done) => {
+    let settled = false;
+    const finish = () => {
+      if (!settled) {
+        settled = true;
+        done();
+      }
+    };
+    requestAnimationFrame(finish);
+    setTimeout(finish, 50);
+  });
 
 export interface MountedPlayer {
   dispose(): void;
   /** The vm reads this each time the block runs, so a live work follows it. */
   setMaskUserId(mask: boolean): void;
+  /** Whether the row about blocks this runner does not have yet is shown. */
+  setShowNotice(show: boolean): void;
 }
 
 /** The answer field is tessvm's own, so its look comes with it. */
@@ -84,6 +103,7 @@ export function mountPlayer(
   groupId: string | null = null,
   svg = true,
   maskUserId = true,
+  showNotice = false,
 ): MountedPlayer {
   ensureAskStyle();
   // Idle from the start so the cover shows while the work is still on its way.
@@ -138,21 +158,29 @@ export function mountPlayer(
     errorBox.textContent = text;
     errorBox.hidden = false;
   };
-  /** A standing note, not a failure: kept until an error takes the row over. */
+  /**
+   * A standing note, not a failure: kept until an error takes the row over.
+   * It is held whether or not it is shown, so the switch can put it up later
+   * without the work being loaded again.
+   */
   let notice = "";
-  const showNotice = (text: string) => {
-    notice = text;
-    errorBox.classList.add("is-notice");
-    errorBox.textContent = text;
-    errorBox.hidden = false;
-  };
-  const clearError = () => {
-    if (notice) {
-      showNotice(notice);
+  const drawNotice = () => {
+    if (!notice || !showNotice) {
+      errorBox.hidden = true;
+      errorBox.textContent = "";
       return;
     }
-    errorBox.hidden = true;
-    errorBox.textContent = "";
+    errorBox.classList.add("is-notice");
+    errorBox.textContent = notice;
+    errorBox.hidden = false;
+  };
+  const setNotice = (text: string) => {
+    notice = text;
+    drawNotice();
+  };
+  const clearError = () => {
+    errorBox.classList.remove("is-notice");
+    drawNotice();
   };
 
   const dispose = () => {
@@ -174,6 +202,11 @@ export function mountPlayer(
     fullButton.title = full ? "전체화면 끄기" : "전체화면";
     fullButton.setAttribute("aria-label", fullButton.title);
     root.classList.toggle("is-full", full);
+    // The bar goes away in full screen, and the button the press landed on goes
+    // with it — the keys would then be nobody's. The work takes them back.
+    if (full) {
+      root.focus({ preventScroll: true });
+    }
     handle?.relayout();
   }
   document.addEventListener("fullscreenchange", onFullscreen);
@@ -290,7 +323,7 @@ export function mountPlayer(
       return;
     }
     const shown = blocks.slice(0, 6).join(", ");
-    showNotice(
+    setNotice(
       `이 실행기가 아직 모르는 블록이 ${blocks.length}종 있습니다: ` +
         `${shown}${blocks.length > 6 ? ` 외 ${blocks.length - 6}종` : ""}`,
     );
@@ -371,6 +404,14 @@ export function mountPlayer(
       if (handle) {
         handle.vm.maskUserId = mask;
       }
+    },
+    setShowNotice(show: boolean) {
+      showNotice = show;
+      // Only while the row is not carrying a failure — that one is always shown.
+      if (!errorBox.classList.contains("is-notice") && !errorBox.hidden) {
+        return;
+      }
+      drawNotice();
     },
   };
 }
