@@ -187,13 +187,15 @@ mismatches: 0
 
 ---
 
-## 7. 에러 출력 (`@babel/code-frame`)
+## 7. 에러 출력 (`src/parser/frame.ts`)
 
 문법 에러는 `{line, column, offset, message, detail}` 모양을 그대로 유지한다.
 
 - `message` — chevrotain `errorMessageProvider`가 만드는 한국어 한 줄.
   토큰마다 `label`을 줘서 `kw_end` 대신 `'end'`, `Identifier` 대신 `이름`으로 읽힌다.
-- `detail` — `codeFrameColumns()`가 만드는 코드 프레임.
+- `detail` — `codeFrame()`이 만드는 코드 프레임. 앞뒤 두 줄, 번호, 캐럿.
+  `@babel/code-frame`이 찍던 것과 같은 모양이고, 파서가 브라우저에서도 돌아야 해서
+  의존성 대신 직접 그린다.
 
 ```
   2 |   when start do

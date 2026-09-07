@@ -105,6 +105,24 @@ function isSkipPattern(param: unknown): boolean {
   return isBlock(param.params?.[1]) && (param.params[1] as RawBlock).type === 'continue_repeat';
 }
 
+/**
+ * The other way a work skips a frame: `continue_repeat` dropped into the value
+ * slots of a block that is never meant to run — usually a hardware one. Entry
+ * reads the slots before the block itself, so the loop restarts there and the
+ * block is never reached. It runs as `skip`, and the block it rode in on is
+ * neither run nor reported.
+ */
+function isSkipCarrier(block: RawBlock): boolean {
+  if ((block.statements?.length ?? 0) > 0) return false;
+  let carried = false;
+  for (const param of block.params ?? []) {
+    if (!isBlock(param)) continue;
+    if (param.type !== 'continue_repeat') return false;
+    carried = true;
+  }
+  return carried;
+}
+
 export class Codegen {
   private readonly input: CompileInput;
   private readonly varIndex = new Map<string, number>();
@@ -530,6 +548,9 @@ export class Codegen {
       default:
         if (block.type.startsWith('func_')) {
           return this.callFunction(block, ind, false).code;
+        }
+        if (isSkipCarrier(block)) {
+          return this.loopDepth > 0 ? line('continue;') : line('yield 0;');
         }
         this.note(block.type);
         return line(comment(block.type));

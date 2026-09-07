@@ -5,10 +5,11 @@
  * 캔버스에 그릴 이유가 없는 것(대답 입력칸, 실행 단추, 상태 표시)은 HTML 로 둡니다 —
  * 해상도를 올려도 흐려지지 않고, 모바일 키보드도 그대로 동작합니다.
  */
-import { Vm, type EntryProjectLike, type EntryUser } from '../runtime/engine.ts';
+import { Vm, type EntryProjectLike, type EntryUser, type VariableStore } from '../runtime/engine.ts';
 import { PixiRenderer } from '../render/renderer.ts';
 import { SpeechSynthesisEngine, WebAudioEngine } from '../audio/sound.ts';
 import { setStageSize, stage, type Entity } from '../runtime/model.ts';
+import { localVariableStore } from './store.ts';
 
 export interface BootOptions {
   projectUrl?: string;
@@ -38,6 +39,11 @@ export interface BootOptions {
   maskUserId?: boolean;
   /** Called while the work's files come in, before it is allowed to run. */
   onProgress?(loaded: number, total: number): void;
+  /**
+   * Where shared and real-time variables are kept. Left unset, the browser's own
+   * storage holds them; `null` keeps them for the life of the runner only.
+   */
+  store?: VariableStore | null;
   /**
    * Hold the work until every costume and sound is in. On by default. Turned
    * off, the runner is ready as soon as it is built and the files stream in
@@ -190,6 +196,15 @@ function startFrameDriver(step: (now: number) => void): () => void {
   };
 }
 
+/**
+ * What names this work in storage. A work loaded from playentry carries its own
+ * id; one built from a file is named by what it calls itself.
+ */
+function storeKey(project: EntryProjectLike): string {
+  const raw = (project as { id?: unknown; name?: unknown }).id ?? (project as { name?: unknown }).name;
+  return String(raw ?? 'project').slice(0, 120);
+}
+
 export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   const container = options.container ?? document.body;
   const project =
@@ -230,6 +245,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     deviceType,
     user: options.user,
     maskUserId: options.maskUserId,
+    store: options.store === null ? null : (options.store ?? localVariableStore(storeKey(project))),
   });
 
   vm.load(project);

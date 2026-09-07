@@ -5,6 +5,7 @@
  * 여기서 만들어진 노드의 형태는 컴파일러, 검증기(validator), 역컴파일러(decompiler) 등 전체 시스템에서 공통으로 사용되는 계약(contract)입니다.
  */
 import type { CstNode, IToken } from 'chevrotain';
+import { normalizeColor } from '@tess/core';
 import { parser } from './parser.ts';
 import type {
   AskNode, AssignNode, BooleanNode, CallNode, CenterNode, ClearNode, CloneNode,
@@ -867,9 +868,11 @@ export class TessAstVisitor extends BaseVisitor {
     if (ctx.string) return stringNode(ctx.string[0]);
     if (ctx.boolean) return this.visit(ctx.boolean);
     if (ctx.color) {
+      // The token may be a short hex, an rgba one or a colour name; the AST
+      // always carries the `#rrggbb` entry stores.
       return {
         type: 'Color',
-        value: ctx.color[0].image.toLowerCase(),
+        value: normalizeColor(ctx.color[0].image) ?? ctx.color[0].image.toLowerCase(),
         loc: tokenLoc(ctx.color[0]),
       };
     }

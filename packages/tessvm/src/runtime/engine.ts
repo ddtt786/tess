@@ -105,6 +105,9 @@ export interface EntryUser {
 /** What `아이디` and `닉네임` answer when nobody is signed in. */
 export const GUEST = 'guest';
 
+/** How often a running work writes its shared and real-time variables out. */
+const STORE_FLUSH_MS = 1000;
+
 /** Characters of an id left in the clear. */
 const KEPT = 2;
 
@@ -141,6 +144,22 @@ export interface VmOptions {
   maskUserId?: boolean;
   /** Ticks per frame ceiling when catching up on lost time. */
   maxCatchUp?: number;
+  /** Where shared and real-time variables are kept between runs. */
+  store?: VariableStore | null;
+}
+
+/**
+ * Standing storage for the work's shared (`isCloud`) and real-time variables.
+ *
+ * Entry keeps these on its server, so they hold what the last run left and
+ * every player of the work sees the same value. A runner outside the site puts
+ * them wherever it can — the browser's own storage — and one with nowhere to
+ * put them leaves this unset, which still keeps them across a stop and start.
+ */
+export interface VariableStore {
+  /** Value of one variable, or undefined when nothing is stored for it. */
+  read(key: string): string | number | Array<{ data: string | number }> | undefined;
+  write(key: string, value: string | number | Array<{ data: string | number }>): void;
 }
 
 export interface VmError {
@@ -206,6 +225,12 @@ export class Vm implements Project {
   private accumulator = 0;
   private readonly maxCatchUp: number;
   private readonly requestedFps: number | undefined;
+  private store: VariableStore | null;
+  /** Shared and real-time variables, the only ones the store holds. */
+  private storedVars: Variable[] = [];
+  /** Last text written for each stored variable, so an unmoved one is skipped. */
+  private readonly written = new Map<string, string>();
+  private lastStoreFlush = 0;
   unknownBlocks = new Map<string, number>();
 
   constructor(options: VmOptions = {}) {
@@ -223,6 +248,7 @@ export class Vm implements Project {
     this.user = options.user ?? null;
     this.maskUserId = options.maskUserId ?? true;
     this.maxCatchUp = options.maxCatchUp ?? 4;
+    this.store = options.store ?? null;
     this.masks = new MaskStore(
       (key, width, height) => this.renderer?.maskFor?.(key, width, height) ?? null,
     );
@@ -274,6 +300,8 @@ export class Vm implements Project {
       } else if (type === 'timer') {
         this.timerVisible = Boolean(raw.visible);
       }
+      variable.isCloud = Boolean(raw.isCloud);
+      variable.isRealTime = Boolean(raw.isRealTime);
       variable.value = (raw.value as string | number) ?? 0;
       variable.array = ((raw.array as Array<{ data: string | number }>) ?? []).map((item) => ({
         data: item.data,
@@ -288,6 +316,8 @@ export class Vm implements Project {
       return variable;
     });
     this.variableById = new Map(this.variables.map((variable, index) => [variable.id, index]));
+    this.storedVars = this.variables.filter((variable) => variable.isStored);
+    this.readStore();
 
     this.targets = [];
     this.targetById.clear();
@@ -474,6 +504,51 @@ export class Vm implements Project {
   }
 
   // -------------------------------------------------------------------------
+  //  Shared and real-time variables
+  // -------------------------------------------------------------------------
+  /** Puts back what the store holds, over the values the work was saved with. */
+  private readStore(): void {
+    this.written.clear();
+    if (!this.store) {
+      return;
+    }
+    for (const variable of this.storedVars) {
+      const saved = this.store.read(variable.id);
+      if (saved === undefined) {
+        continue;
+      }
+      if (variable.isList && Array.isArray(saved)) {
+        variable.array = saved.map((item) => ({ data: item.data }));
+      } else if (!variable.isList && !Array.isArray(saved)) {
+        variable.value = saved;
+      }
+      this.written.set(variable.id, JSON.stringify(saved));
+    }
+  }
+
+  /**
+   * Hands the store every shared or real-time variable that moved since the
+   * last write. Called on a beat while the work runs and once more when it
+   * stops, so the value that outlives the run is the one the work left.
+   */
+  flushStore(): void {
+    if (!this.store) {
+      return;
+    }
+    for (const variable of this.storedVars) {
+      const value = variable.isList
+        ? variable.array.map((item) => ({ data: item.data }))
+        : variable.value;
+      const text = JSON.stringify(value);
+      if (this.written.get(variable.id) === text) {
+        continue;
+      }
+      this.written.set(variable.id, text);
+      this.store.write(variable.id, value);
+    }
+  }
+
+  // -------------------------------------------------------------------------
   //  Running
   // -------------------------------------------------------------------------
   private snapshot(): void {
@@ -500,6 +575,7 @@ export class Vm implements Project {
     this.reset();
     this.state = 'run';
     this.clock = 0;
+    this.lastStoreFlush = 0;
     this.frame = 0;
     this.lastTime = 0;
     this.accumulator = 0;
@@ -509,6 +585,7 @@ export class Vm implements Project {
 
   stop(): void {
     this.state = 'stop';
+    this.flushStore();
     for (const target of this.targets) {
       for (const thread of target.threads) {
         thread.stop();
@@ -614,6 +691,10 @@ export class Vm implements Project {
   tick(deltaMs = 1000 / this.frameRate): void {
     this.clock += deltaMs;
     this.frame += 1;
+    if (this.clock - this.lastStoreFlush >= STORE_FLUSH_MS) {
+      this.lastStoreFlush = this.clock;
+      this.flushStore();
+    }
     this.collision.beginFrame();
     const scene = this.currentSceneId;
     const targets = this.targets;
@@ -924,6 +1005,8 @@ function loadEntitySnapshot(entity: Entity): void {
 
 function cloneVariable(source: Variable): Variable {
   const copy = new Variable(source.id, source.name, source.objectId, source.kind);
+  copy.isCloud = source.isCloud;
+  copy.isRealTime = source.isRealTime;
   copy.value = source.value;
   copy.array = source.array.map((item) => ({ data: item.data }));
   copy.visible = source.visible;

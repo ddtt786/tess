@@ -31,10 +31,16 @@ pnpm 워크스페이스 모노레포입니다. 패키지는 아래로만 의존�
 `tessvm` 은 그 위에 얹히는 별개의 실행기로, `decompiler` 와 `compiler` 를 쓰지만
 아무도 `tessvm` 을 쓰지 않습니다.
 
+`parser`·`compiler`·`decompiler` 는 **브라우저에서도 돕니다.** 확장이 작품을 돌리기 전에
+Tess 를 지나가기 때문입니다(AI_EXTENSION.md 3장). 노드에 매인 것은 파일을 읽는 통로
+(`compiler/src/node-host.ts`)와 `.ent` 읽기(`decompiler/src/node.ts`) 두 군데로 모아 두었고,
+패키지 진입점(`index.ts`)이 노드 구현을 끼워 줍니다 — `@tess/compiler` 를 쓰던 코드는
+그대로입니다. 브라우저는 `src/` 안의 모듈을 직접 가져다 씁니다.
+
 | 패키지              | 이름               | 외부 의존성                  | 역할                                                    |
 | ------------------- | ------------------ | ---------------------------- | ------------------------------------------------------- |
 | `packages/core`     | `@tess/core`       | 없음                         | 모든 패키지가 함께 쓰는 표: 내장 함수·상태 값·속성 이름, 키 코드, 확장 블록, 이름 추천 |
-| `packages/parser`   | `@tess/parser`     | chevrotain, @babel/code-frame | 소스 → 토큰 → CST → AST, 그리고 의미 검증               |
+| `packages/parser`   | `@tess/parser`     | chevrotain                   | 소스 → 토큰 → CST → AST, 그리고 의미 검증               |
 | `packages/compiler` | `@tess/compiler`   | sharp, tar                   | AST → 엔트리 작품(project.json · `.ent`)                |
 | `packages/player`   | `@tess/player`     | preact                       | `run` 이 띄우는 미리보기 서버와 실행 페이지             |
 | `packages/decompiler` | `@tess/decompiler` | tar                        | `.ent` → Tess 소스                                      |
@@ -69,6 +75,11 @@ pnpm 워크스페이스 모노레포입니다. 패키지는 아래로만 의존�
 | `packages/compiler/src/comments.js`             | Tess 주석 → 엔트리 블록 주석                             |
 | `packages/compiler/src/runtime.js`              | 엔트리에 없는 동작을 대신할 함수 만들어 넣기             |
 | `packages/compiler/src/assets.js`               | 모양·소리 파일 → 엔트리 리소스 경로, 그림 원본 크기 재기 |
+| `packages/compiler/src/host.ts`                 | 파일을 읽는 통로(`CompilerHost`)와 경로 함수 — 노드 없이 도는 기본 구현 |
+| `packages/compiler/src/node-host.ts`            | 그 통로의 노드 구현 (패키지 진입점이 끼워 준다)          |
+| `packages/compiler/src/bytes.ts`                | 파일 바이트에서 숫자·태그 읽기 (`Buffer` 없이)           |
+| `packages/parser/src/parser/frame.ts`           | 에러를 짚어 주는 코드 프레임                             |
+| `packages/core/src/color.ts`                    | 색 리터럴 판정과 `#rrggbb` 정규화, 색 이름표             |
 | `packages/compiler/src/audio.js`                | 소리 파일 헤더에서 재생 길이 재기 (mp3 · wav · ogg · m4a) |
 | `packages/compiler/src/bundle.js`               | `.ent` (tar) 묶기 — 의존성 없이 직접                     |
 | `packages/compiler/src/verify.js`               | 만든 프로젝트가 엔트리 구조에 맞는지 검사                |
@@ -80,7 +91,8 @@ pnpm 워크스페이스 모노레포입니다. 패키지는 아래로만 의존�
 | `packages/player/src/debug-ui.js`               | 디버그 패널 UI (preact 로 만든 브라우저 모듈)            |
 | `packages/player/src/debug-style.ts`            | 디버그 패널 CSS — 두 실행 페이지가 함께 붙인다           |
 | `packages/tessvm/src/web/debug.ts`              | 디버그 패널이 tessvm 을 보는 어댑터                      |
-| `packages/decompiler/src/index.js`              | `.ent` → Tess 소스(오브젝트마다 `objects/이름.tess` 조각 파일 + `useobject`/`usetext`) |
+| `packages/decompiler/src/index.js`              | 엔트리 작품 → Tess 소스(오브젝트마다 `objects/이름.tess` 조각 파일 + `useobject`/`usetext`) |
+| `packages/decompiler/src/node.ts`               | `.ent` 파일 읽기와 엔트리 기본 모양 찾기 (노드 전용)     |
 
 **문법과 동작을 완전히 분리**했습니다. `parser/` 에는 "엔트리" 라는 말이 한 줄도 없고,
 "그래서 이게 무슨 뜻인가" 는 `validate.js` 가, "엔트리로 어떻게 옮기나" 는
@@ -150,12 +162,17 @@ Tess 는 `#` 로 주석을 시작하는데 색상 리터럴도 `#ff0000` 입니�
 space += comment
 comment = "#" ~colorBody (~lineTerminator any)*
 colorLiteral = "#" colorBody
-colorBody = hexDigit hexDigit hexDigit hexDigit hexDigit hexDigit ~identifierPart
+colorBody = identifierPart+ ~identifierPart   -- 전부 16진수이거나 색 이름일 때만
 ```
 
-`#` 뒤에 16진수 6자리가 오면 색상, 아니면 주석입니다.
-(따라서 `#abcdef 입니다` 처럼 16진수 6자리로 시작하는 주석은 색상으로 읽힙니다 — spec 설계상
-불가피한 모호함입니다. 주석은 `#` 처럼 공백을 두고 쓰면 항상 안전합니다.)
+`#` 바로 뒤의 낱말 **전체**가 16진수이거나 알려진 색 이름(`@tess/core` 의 `NAMED_COLORS`,
+한글·CSS)이면 색상, 아니면 주석입니다. 자리 수는 6 이 아니어도 됩니다 — `#abc`·`#abcd` 는
+CSS 줄임꼴, `#ff0000cc` 는 알파를 버린 것, 그 밖의 길이는 여섯 자리에 맞춰 자르거나 `0` 으로
+채웁니다. AST 에 실리는 값은 언제나 `#rrggbb` 입니다.
+
+낱말 전체를 보므로 `#effect 처리` 는 `t` 에서 걸려 주석으로 남고, `#검정색으로` 도 이름표에
+없어 주석입니다. (`#abcdef 입니다` 처럼 낱말 전체가 16진수인 주석은 여전히 색상으로 읽힙니다.
+주석은 `#` 처럼 공백을 두고 쓰면 항상 안전합니다.)
 
 ### 3. 연산자 우선순위
 
@@ -810,6 +827,11 @@ dd.ent -> temp/dd_tess/main.tess
 거대한 `main.tess` 하나가 아니라, 손으로 짠 것처럼 오브젝트별로 파일이 나뉘어 있어야
 나중에 사람이 찾아 고치기 쉽기 때문입니다.
 
+`inline` 옵션을 켜면 조각 파일 없이 오브젝트를 `main.tess` 안에 씁니다. 파일을 둘 곳이
+없는 곳(브라우저 확장)에서 쓰는 길입니다 — `useobject` 가 가리킬 파일이 없기 때문입니다.
+에셋을 담을 곳도 없으면 되돌린 소스에는 원래 `fileurl` 이 그대로 남고, 크기를 잴 파일이
+없으니 `sizes` 와 짝지어 씁니다.
+
 ```
 temp/dd_tess/
   main.tess                        # scene 마다 useobject/usetext 만 나열
@@ -1354,7 +1376,7 @@ typo.tess:8:11  알 수 없는 함수 'lenght' 입니다. 혹시 'length' 인가
 | 하는 일          | 무엇을 쓰나                | 어디                        |
 | ---------------- | -------------------------- | --------------------------- |
 | 파싱             | `chevrotain`               | `src/parser/`               |
-| 문법 에러 출력   | `@babel/code-frame`        | `src/parser/index.js`       |
+| 문법 에러 출력   | 직접 (`frame.ts`)          | `src/parser/parser/frame.ts` |
 | CLI 출력         | `@clack/prompts`           | `src/cli/output.js`         |
 | 디버그 패널 UI   | `preact`                   | `src/player/debug-ui.js`    |
 | 모양 미리보기    | `sharp`                    | `src/compiler/thumbnail.js` |

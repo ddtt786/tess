@@ -29,22 +29,22 @@ export type RawEntity = Record<string, any>;
  * 아카이브(.ent) 파일에서 추출한 단일 파일 정보를 나타냅니다.
  * 
  * @example
- * const entry: TarEntry = { name: "image.png", data: Buffer.from([0, 1]) };
+ * const entry: TarEntry = { name: "image.png", data: new Uint8Array([0, 1]) };
  */
 export interface TarEntry {
   name: string;
-  data: Buffer;
+  data: Uint8Array;
 }
 
 /**
  * 디컴파일러가 소스 코드와 함께 출력하는 에셋 파일을 나타냅니다.
  * 
  * @example
- * const asset: CollectedAsset = { path: "./assets/image.png", data: Buffer.from([0, 1]) };
+ * const asset: CollectedAsset = { path: "./assets/image.png", data: new Uint8Array([0, 1]) };
  */
 export interface CollectedAsset {
   path: string;
-  data: Buffer;
+  data: Uint8Array;
 }
 
 /**
@@ -173,6 +173,17 @@ export interface DecompileOptions {
    * options.keepSvg = true;
    */
   keepSvg?: boolean;
+  /**
+   * Writes every object into the one source instead of a fragment file each.
+   * A caller with nowhere to put files — the browser extension — asks for this;
+   * `useobject` would otherwise name files that are not there.
+   */
+  inline?: boolean;
+  /**
+   * Bytes of one of entry's own bundled costumes, which a work only points at.
+   * Left unset, those costumes keep the url they came with.
+   */
+  builtinAssets?(fileurl: string): Uint8Array | null;
   /** Reports notices as warnings. Off by default. */
   strict?: boolean;
 }
@@ -207,6 +218,10 @@ export interface DecompileContext {
   functionsByOwner: Map<string, OwnedFunction[]>;
   inFunction: boolean;
   functionOwnerId: string | null;
+  /** How many loops the block being written sits inside. */
+  loopDepth: number;
+  /** Objects go into the one source rather than a fragment file each. */
+  inline: boolean;
   funcLocalsById: Map<string, string>;
   funcParamsByBlockType: Map<string, string>;
   varName(id: string): string;

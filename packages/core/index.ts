@@ -8,3 +8,4 @@ export * from "./src/function-params.ts";
 export * from "./src/suggest.ts";
 export * from "./src/expansion.ts";
 export * from "./src/keycodes.ts";
+export * from "./src/color.ts";

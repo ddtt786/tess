@@ -7,7 +7,7 @@
  */
 import { EOF } from 'chevrotain';
 import type { CstNode, ILexingError, IRecognitionException, IToken } from 'chevrotain';
-import { codeFrameColumns } from '@babel/code-frame';
+import { codeFrame } from './frame.ts';
 import { tokenize } from './tokens.ts';
 import { parser } from './parser.ts';
 import { toAst } from './visitor.ts';
@@ -79,7 +79,7 @@ function frame(source: string, offset: number, message: string): string {
   const upto = source.slice(0, offset);
   const line = upto.split('\n').length;
   const column = offset - (upto.lastIndexOf('\n') + 1) + 1;
-  return codeFrameColumns(source, { start: { line, column } }, { message });
+  return codeFrame(source, line, column, message);
 }
 
 const failure = (source: string, offset: number, message: string): ParseFailure => ({

@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BUILTIN_FUNCTIONS, OPTION_KEYWORDS, STATE_VALUES, OBJECT_PROPERTIES, TEXT_ONLY_PROPERTIES } from '@tess/core/builtins';
+import { NAMED_COLORS } from '@tess/core';
 import { KEYWORDS } from '@tess/parser';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -32,6 +33,11 @@ const CONSTANTS = ['true', 'false', 'transparent', 'next', 'prev', 'back', 'fron
 
 const PROPERTIES = [...new Set([...OBJECT_PROPERTIES, ...TEXT_ONLY_PROPERTIES])];
 
+// What may follow `#` and still be a colour, matching `colorLiteralLength`:
+// a run of hex digits or one of the names, and nothing more of the word.
+const COLOR_NAMES = Object.keys(NAMED_COLORS).sort((a, b) => b.length - a.length).join('|');
+const COLOR_BODY = `(?:[0-9a-fA-F]+|(?i:${COLOR_NAMES}))(?![\\p{L}0-9_])`;
+
 // 위 갈래에 넣지 않은 나머지 키워드는 전부 "명령"으로 본다
 // Keywords that double as property names (`x`, `size`, `costume`) go to PROPERTIES.
 const claimed = new Set([...DECLARATION, ...STORAGE, ...MODIFIER, ...CONTROL, ...EVENT,
@@ -50,7 +56,7 @@ const grammar = {
     // `#` 은 주석이지만 `#ff0000` 은 색이다 (문법의 comment 규칙과 같은 판단)
     comment: {
       name: 'comment.line.number-sign.tess',
-      match: '#(?![0-9a-fA-F]{6}(?![0-9a-zA-Z_])).*$',
+      match: `#(?!${COLOR_BODY}).*$`,
     },
     string: {
       name: 'string.quoted.double.tess',
@@ -60,7 +66,7 @@ const grammar = {
     },
     color: {
       name: 'constant.other.color.tess',
-      match: '#[0-9a-fA-F]{6}(?![0-9a-zA-Z_])',
+      match: `#${COLOR_BODY}`,
     },
     number: {
       name: 'constant.numeric.tess',

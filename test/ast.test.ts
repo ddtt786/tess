@@ -7,6 +7,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { parse } from '@tess/parser';
 import { expr, stmt } from './helpers.ts';
 import type { ProgramNode } from '@tess/parser';
 
@@ -79,6 +80,25 @@ test('문자열 이스케이프를 해석한다', () => {
 
 test('색상 리터럴은 소문자로 정규화한다', () => {
   assert.deepEqual(expr('#AbCdEf'), { type: 'Color', value: '#abcdef' });
+});
+
+test('여섯 자리가 아닌 색과 색 이름도 #rrggbb 로 정규화한다', () => {
+  // CSS 줄임꼴과 알파: 세 자리는 늘리고, 알파는 버린다
+  assert.equal(expr('#abc').value, '#aabbcc');
+  assert.equal(expr('#abcd').value, '#aabbcc');
+  assert.equal(expr('#ff0000cc').value, '#ff0000');
+  // 자리 수가 어중간하면 여섯 자리에 맞춰 자르거나 채운다
+  assert.equal(expr('#efeff').value, '#efeff0');
+  assert.equal(expr('#ffffff100').value, '#ffffff');
+  // 이름도 색이다
+  assert.equal(expr('#검정').value, '#000000');
+  assert.equal(expr('#하늘색').value, '#00bfff');
+  assert.equal(expr('#RED').value, '#ff0000');
+});
+
+test('색 이름이 아닌 # 낱말은 주석이다', () => {
+  const source = 'scene "s":\n  object "o":\n    when start do\n      forward 10 #앞으로\n    end\n  end\nend';
+  assert.equal(parse(source).ok, true);
 });
 
 /**

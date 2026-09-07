@@ -606,6 +606,13 @@ export class Variable {
   readonly kind: VariableKind;
   readonly isList: boolean;
   readonly isSlide: boolean;
+  /**
+   * `isCloud`/`isRealTime` on the work's own variable — entry keeps these on
+   * its server, so their value outlives a run instead of going back to what the
+   * work was saved with.
+   */
+  isCloud = false;
+  isRealTime = false;
   value: string | number = 0;
   array: Array<{ data: string | number }> = [];
   visible = false;
@@ -651,6 +658,11 @@ export class Variable {
     return this.array;
   }
 
+  /** Whether the value is stored outside the run rather than reset with it. */
+  get isStored(): boolean {
+    return this.isCloud || this.isRealTime;
+  }
+
   takeSnapshot(): void {
     this.snapshotValue = this.value;
     this.snapshotArray = this.array.map((item) => ({ data: item.data }));
@@ -658,8 +670,11 @@ export class Variable {
   }
 
   loadSnapshot(): void {
-    this.value = this.snapshotValue;
-    this.array = this.snapshotArray.map((item) => ({ data: item.data }));
+    // A stored variable keeps what it holds; only where it sits goes back.
+    if (!this.isStored) {
+      this.value = this.snapshotValue;
+      this.array = this.snapshotArray.map((item) => ({ data: item.data }));
+    }
     this.visible = this.snapshotVisible;
   }
 }

@@ -86,6 +86,16 @@ function branch(block: RawBlock, index: number, ctx: DecompileContext): string[]
   return indent(blocksToLines(block.statements?.[index] ?? [], ctx));
 }
 
+/** Same as `branch`, for the body of a loop: `break`/`continue`/`skip` fit here. */
+function loopBranch(block: RawBlock, index: number, ctx: DecompileContext): string[] {
+  ctx.loopDepth += 1;
+  try {
+    return branch(block, index, ctx);
+  } finally {
+    ctx.loopDepth -= 1;
+  }
+}
+
 function unsupported(ctx: DecompileContext, block: RawBlock | undefined): string[] {
   const type = block?.type ?? "(알 수 없음)";
   ctx.warnings.add(`문장 블록 '${type}' 은(는) 아직 옮길 수 없습니다.`);
@@ -130,6 +140,24 @@ function isSkipPattern(param: unknown): boolean {
   return inner?.type === "continue_repeat";
 }
 
+/**
+ * Recognises the other way a work skips a frame: `continue_repeat` dropped into
+ * the value slots of a block that is never meant to run — usually a hardware
+ * one. Entry reads the slots before the block itself, so the loop restarts
+ * there and the block is never reached. It is `skip` with a different carrier,
+ * and it decompiles to `skip`.
+ */
+export function isSkipCarrier(block: RawBlock | undefined): boolean {
+  if (!block || (block.statements?.length ?? 0) > 0) return false;
+  let carried = false;
+  for (const param of block.params ?? []) {
+    if (param === null || param === undefined || typeof param !== "object") continue;
+    if ((param as RawBlock).type !== "continue_repeat") return false;
+    carried = true;
+  }
+  return carried;
+}
+
 function statementLines(block: any, ctx: DecompileContext): string[] {
   if (!block || typeof block !== "object" || !block.type) return [];
   const p = block.params ?? [];
@@ -159,12 +187,12 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
         "end",
       ];
     case "repeat_basic":
-      return [`repeat ${e(0)}:`, ...branch(block, 0, ctx), "end"];
+      return [`repeat ${e(0)}:`, ...loopBranch(block, 0, ctx), "end"];
     case "repeat_inf":
-      return ["forever:", ...branch(block, 0, ctx), "end"];
+      return ["forever:", ...loopBranch(block, 0, ctx), "end"];
     case "repeat_while_true": {
       const kind = at(1) === "until" ? "until" : "while";
-      return [`${kind} ${e(0)}:`, ...branch(block, 0, ctx), "end"];
+      return [`${kind} ${e(0)}:`, ...loopBranch(block, 0, ctx), "end"];
     }
     case "wait_second":
       return [`wait ${e(0)}`];
@@ -488,6 +516,10 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
     default: {
       if (block.type.startsWith("func_"))
         return functionCallStatement(block, ctx);
+      // A block carrying `continue_repeat` in its slots is a skip, whatever it
+      // says on the outside. Written as one inside a loop; outside one it never
+      // reaches the block either, so nothing is written. Both are quiet.
+      if (isSkipCarrier(block)) return ctx.loopDepth > 0 ? ["skip"] : [];
       return unsupported(ctx, block);
     }
   }

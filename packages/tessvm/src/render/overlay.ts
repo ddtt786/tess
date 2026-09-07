@@ -24,14 +24,18 @@ const MONITOR_VALUE_FONT = 12;
 /** `BORDER` and `RECT_RADIUS` on `Entry.Variable`. */
 const MONITOR_INSET = 6;
 const MONITOR_RADIUS = 7;
-/** `GL_VAR_POS` · `GL_LIST_POS` — in the webgl path these are the text's top. */
-const LABEL_Y = -9.5;
-const VALUE_Y = -8.5;
-const LIST_INDEX_Y = 5;
-const LIST_VALUE_Y = 6;
+/**
+ * Text in a monitor is anchored on its middle, so these are the centre lines of
+ * the boxes it sits in, not the top edges entry writes in `GL_VAR_POS`.
+ */
+const LABEL_Y = -2;
+const VALUE_Y = -2;
 const LIST_ROW_HEIGHT = 20;
 /** The strip the title sits on; below it the rows begin. */
 const LIST_TITLE_HEIGHT = 23;
+/** The coloured strip inside one list row. */
+const STRIP_TOP = 4;
+const STRIP_HEIGHT = 17;
 /** Where the scroll bar starts and how tall it is (`scrollButton_`). */
 const LIST_BAR_TOP = LIST_TITLE_HEIGHT + 4;
 const LIST_BAR_HEIGHT = 20;
@@ -48,6 +52,17 @@ interface DialogView {
   mode: string;
 }
 
+/** One numbered row of a list box. Kept and rewritten, never rebuilt. */
+interface RowView {
+  root: Container;
+  index: Text;
+  strip: Graphics;
+  value: Text;
+  /** What the row is showing now, so an unmoved one is left alone. */
+  shown: string;
+  stripWidth: number;
+}
+
 interface MonitorView {
   root: Container;
   frame: Graphics;
@@ -55,6 +70,9 @@ interface MonitorView {
   value: Text;
   /** List rows live here; a value monitor leaves it empty. */
   items: Container | null;
+  rows: RowView[];
+  /** What the box is showing now — a monitor that did not move is not redrawn. */
+  shown: string;
 }
 
 /** Entity bounds converted back to entry stage units, as `Entry.Dialog` expects. */
@@ -240,11 +258,15 @@ export class Overlay {
   //  Monitors
   // -------------------------------------------------------------------------
   private static text(size: number, fill: string): Text {
-    return new Text({
+    const text = new Text({
       text: '',
       style: { fontFamily: MONITOR_FAMILY, fontSize: size, fill },
       resolution: 2,
     });
+    // Centred on the line it is given: the font's own ascent and descent then
+    // cannot leave the letters sitting low in their box.
+    text.anchor.set(0, 0.5);
+    return text;
   }
 
   private makeMonitor(): MonitorView {
@@ -254,7 +276,7 @@ export class Overlay {
     const value = Overlay.text(MONITOR_VALUE_FONT, '#ffffff');
     root.addChild(frame, label, value);
     this.monitorLayer.addChild(root);
-    return { root, frame, label, value, items: null };
+    return { root, frame, label, value, items: null, rows: [], shown: '' };
   }
 
   /**
@@ -270,6 +292,14 @@ export class Overlay {
     y: number,
     color: string,
   ): void {
+    view.root.position.set(x, y);
+    // Every monitor is drawn on every frame, and rebuilding a box that has not
+    // changed costs a text measurement and a fresh geometry each time.
+    const shown = `${name}\u0000${text}\u0000${color}`;
+    if (view.shown === shown) {
+      return;
+    }
+    view.shown = shown;
     view.label.text = name;
     view.value.text = text;
     const nameWidth = view.label.width;
@@ -284,7 +314,6 @@ export class Overlay {
       .stroke({ width: 1, color });
     view.label.position.set(4, LABEL_Y);
     view.value.position.set(nameWidth + 21, VALUE_Y);
-    view.root.position.set(x, y);
   }
 
   /**
@@ -300,51 +329,94 @@ export class Overlay {
     const width = variable.width || 100;
     const height = variable.height || 120;
     const rows = variable.array;
-    view.value.text = '';
-    view.frame
-      .clear()
-      .roundRect(0, 0, width + 7, height + 22, MONITOR_RADIUS)
-      .fill({ color: MONITOR_BG })
-      .stroke({ width: 1, color: MONITOR_BORDER });
-
-    view.label.style.fill = '#000000';
-    view.label.text = variable.name;
-    view.label.position.set((width - view.label.width) / 2 + 3, MONITOR_INSET - 1);
-
-    if (!view.items) {
-      view.items = new Container();
-      view.root.addChild(view.items);
-    }
-    const items = view.items;
-    items.removeChildren().forEach((child) => child.destroy({ children: true }));
+    view.root.position.set(at.x, at.y);
 
     const visible = Math.floor((height - 15) / LIST_ROW_HEIGHT);
     const overflow = visible < rows.length;
     const first = Math.max(0, Math.min(this.scrollOf(variable), rows.length - visible));
     const stripWidth = width - 2 * MONITOR_INSET - (overflow ? 30 : 20) - 6 + 14;
-    for (let seat = 0; seat < visible && first + seat < rows.length; seat += 1) {
-      const at = first + seat;
-      const row = new Container();
-      row.position.set(MONITOR_INSET, seat * LIST_ROW_HEIGHT + LIST_TITLE_HEIGHT);
-      const index = Overlay.text(MONITOR_FONT, '#000000');
-      index.text = String(at + 1);
-      index.position.set(0, LIST_INDEX_Y);
-      const strip = new Graphics()
-        .roundRect(18, 4, stripWidth, 17, 2)
-        .fill({ color: MONITOR_VARIABLE });
-      const value = Overlay.text(MONITOR_VALUE_FONT, '#ffffff');
-      value.text = Overlay.fitText(value, String(rows[at]!.data ?? ''), stripWidth - 12);
-      value.position.set(24, LIST_VALUE_Y);
-      row.addChild(index, strip, value);
-      items.addChild(row);
-    }
     const run = this.barRun(variable);
-    if (run) {
+
+    // The frame is geometry, so it is rebuilt only when its shape moved.
+    const shown = `${variable.name}\u0000${width}\u0000${height}\u0000${first}\u0000${run ? run.room : -1}`;
+    if (view.shown !== shown) {
+      view.shown = shown;
+      view.value.text = '';
       view.frame
-        .roundRect(width - 9, run.top + (run.span * first) / run.room, 6, LIST_BAR_HEIGHT, 3)
-        .fill({ color: MONITOR_BORDER });
+        .clear()
+        .roundRect(0, 0, width + 7, height + 22, MONITOR_RADIUS)
+        .fill({ color: MONITOR_BG })
+        .stroke({ width: 1, color: MONITOR_BORDER });
+      if (run) {
+        view.frame
+          .roundRect(width - 9, run.top + (run.span * first) / run.room, 6, LIST_BAR_HEIGHT, 3)
+          .fill({ color: MONITOR_BORDER });
+      }
+      view.label.style.fill = '#000000';
+      view.label.text = variable.name;
+      view.label.position.set((width - view.label.width) / 2 + 3, LIST_TITLE_HEIGHT / 2);
     }
-    view.root.position.set(at.x, at.y);
+
+    if (!view.items) {
+      view.items = new Container();
+      view.root.addChild(view.items);
+    }
+    const seats = Math.max(0, Math.min(visible, rows.length - first));
+    for (let seat = 0; seat < seats; seat += 1) {
+      this.drawRow(view, seat, first + seat, String(rows[first + seat]!.data ?? ''), stripWidth);
+    }
+    // Rows the list outgrew stay built and go out of sight; a list that grows
+    // again wants them back.
+    for (let seat = seats; seat < view.rows.length; seat += 1) {
+      view.rows[seat]!.root.visible = false;
+    }
+  }
+
+  /**
+   * One row of a list box, built the first time that seat is used and rewritten
+   * after that. Building a `Text` measures the string and bakes a texture, and
+   * every monitor is drawn on every frame — a list that rebuilt its rows each
+   * time would do that work sixty times a second for nothing.
+   */
+  private drawRow(
+    view: MonitorView,
+    seat: number,
+    at: number,
+    text: string,
+    stripWidth: number,
+  ): void {
+    let row = view.rows[seat];
+    if (!row) {
+      // Both texts sit on the middle of the coloured strip the row is drawn on.
+      const middle = STRIP_TOP + STRIP_HEIGHT / 2;
+      const root = new Container();
+      const index = Overlay.text(MONITOR_FONT, '#000000');
+      index.position.set(0, middle);
+      const strip = new Graphics();
+      const value = Overlay.text(MONITOR_VALUE_FONT, '#ffffff');
+      value.position.set(24, middle);
+      root.addChild(index, strip, value);
+      view.items!.addChild(root);
+      row = { root, index, strip, value, shown: '\u0000', stripWidth: -1 };
+      view.rows[seat] = row;
+    }
+    row.root.visible = true;
+    row.root.position.set(MONITOR_INSET, seat * LIST_ROW_HEIGHT + LIST_TITLE_HEIGHT);
+    if (row.stripWidth !== stripWidth) {
+      row.stripWidth = stripWidth;
+      row.strip
+        .clear()
+        .roundRect(18, STRIP_TOP, stripWidth, STRIP_HEIGHT, 2)
+        .fill({ color: MONITOR_VARIABLE });
+      row.shown = '\u0000';
+    }
+    const shown = `${at}\u0000${text}`;
+    if (row.shown === shown) {
+      return;
+    }
+    row.shown = shown;
+    row.index.text = String(at + 1);
+    row.value.text = Overlay.fitText(row.value, text, stripWidth - 12);
   }
 
   /** First row shown; `Entry.ListVariable` calls this its scroll position. */
@@ -404,7 +476,8 @@ export class Overlay {
     }
     // The bar runs beside the rows, not beside the box: at the first row it lines
     // up with the first strip, at the last row with the last one.
-    const lastStripBottom = (visible - 1) * LIST_ROW_HEIGHT + LIST_TITLE_HEIGHT + 21;
+    const lastStripBottom =
+      (visible - 1) * LIST_ROW_HEIGHT + LIST_TITLE_HEIGHT + STRIP_TOP + STRIP_HEIGHT;
     const bottom = lastStripBottom - LIST_BAR_HEIGHT;
     return { top: LIST_BAR_TOP, span: Math.max(1, bottom - LIST_BAR_TOP), room };
   }

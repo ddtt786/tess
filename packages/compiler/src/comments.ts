@@ -5,6 +5,7 @@
  * "바로 아래 문장" 또는 "같은 줄 문장" 에 해당하는 AST 노드와 연결합니다.
  */
 
+import { colorLiteralLength } from '@tess/core';
 import type { Node } from '@tess/parser';
 import type { EntryComment } from './types.ts';
 
@@ -105,8 +106,6 @@ export function makeComment(value: string): EntryComment {
  */
 export function scanComments(source: string): ScannedComment[] {
   const comments: ScannedComment[] = [];
-  const isHex = (ch: string | undefined) => ch !== undefined && /[0-9a-fA-F]/.test(ch);
-  const isWord = (ch: string | undefined) => ch !== undefined && /[0-9a-zA-Z_]/.test(ch);
 
   for (let i = 0; i < source.length; i += 1) {
     const ch = source[i];
@@ -122,10 +121,10 @@ export function scanComments(source: string): ScannedComment[] {
 
     if (ch !== '#') continue;
 
-    // #rrggbb 는 색상 리터럴이지 주석이 아니다
-    const body = source.slice(i + 1, i + 7);
-    if (body.length === 6 && [...body].every(isHex) && !isWord(source[i + 7])) {
-      i += 6;
+    // 색상 리터럴은 주석이 아니다 — 렉서와 같은 규칙으로 가른다
+    const color = colorLiteralLength(source, i);
+    if (color) {
+      i += color - 1;
       continue;
     }
 
@@ -188,13 +187,12 @@ function attachInFile(source: string, file: string, nodes: AnyNode[], map: Map<s
   const sorted = [...nodes].sort((a, b) => a.loc!.start - b.loc!.start);
   const remaining: ScannedComment[] = [];
 
-  // 1) 같은 줄 뒤쪽에 붙은 주석: 그 줄의 문장에 붙인다
+  // 1) 같은 줄 뒤쪽에 붙은 주석: 그 줄의 문장에 붙인다.
+  //    시작 위치로 정렬해 두었으니 줄 번호도 함께 오르고, 주석 바로 앞의 문장이
+  //    곧 "그 줄의 마지막 문장" 이다.
   for (const comment of comments) {
-    const line = lineOf(comment.start);
-    const owner = lastWhere(
-      sorted,
-      (node) => node.loc!.start < comment.start && lineOf(node.loc!.start) === line,
-    );
+    const before = sorted[firstAfter(sorted, comment.start - 1) - 1];
+    const owner = before && lineOf(before.loc!.start) === lineOf(comment.start) ? before : null;
     if (owner) append(map, commentKey(owner), comment.text);
     else remaining.push(comment);
   }
@@ -210,7 +208,7 @@ function attachInFile(source: string, file: string, nodes: AnyNode[], map: Map<s
       i += 1;
     }
     const last = group[group.length - 1]!;
-    const owner = sorted.find((node) => node.loc!.start > last.end);
+    const owner = sorted[firstAfter(sorted, last.end)];
     if (owner && onlySpaceBetween(source, last.end, owner.loc!.start)) {
       append(map, commentKey(owner), group.map((comment) => comment.text).join('\n'));
     }
@@ -221,9 +219,19 @@ function append(map: Map<string, string>, key: string, text: string) {
   map.set(key, map.has(key) ? `${map.get(key)}\n${text}` : text);
 }
 
-function lastWhere<T>(list: T[], predicate: (item: T) => boolean): T | null {
-  for (let i = list.length - 1; i >= 0; i -= 1) if (predicate(list[i]!)) return list[i]!;
-  return null;
+/**
+ * Index of the first node starting after `offset`, in a list sorted by start.
+ * `list.length` when there is none.
+ */
+function firstAfter(list: AnyNode[], offset: number): number {
+  let low = 0;
+  let high = list.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (list[mid]!.loc!.start > offset) high = mid;
+    else low = mid + 1;
+  }
+  return low;
 }
 
 function onlySpaceBetween(source: string, from: number, to: number) {

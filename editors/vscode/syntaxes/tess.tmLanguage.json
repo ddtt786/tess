@@ -37,7 +37,7 @@
   "repository": {
     "comment": {
       "name": "comment.line.number-sign.tess",
-      "match": "#(?![0-9a-fA-F]{6}(?![0-9a-zA-Z_])).*$"
+      "match": "#(?!(?:[0-9a-fA-F]+|(?i:turquoise|chocolate|lavender|magenta|fuchsia|crimson|skyblue|yellow|silver|maroon|purple|orange|indigo|violet|salmon|tomato|orchid|black|white|green|olive|brown|beige|ivory|khaki|coral|wheat|lime|blue|cyan|aqua|gray|grey|teal|navy|pink|gold|plum|snow|mint|검정색|검은색|하얀색|빨간색|주황색|노란색|연두색|초록색|청록색|하늘색|파란색|보라색|자주색|분홍색|자홍색|red|tan|검정|흑색|하양|흰색|백색|빨강|적색|주황|노랑|황색|연두|초록|녹색|청록|하늘|파랑|청색|남색|보라|분홍|자홍|갈색|밤색|회색|은색|금색))(?![\\p{L}0-9_])).*$"
     },
     "string": {
       "name": "string.quoted.double.tess",
@@ -52,7 +52,7 @@
     },
     "color": {
       "name": "constant.other.color.tess",
-      "match": "#[0-9a-fA-F]{6}(?![0-9a-zA-Z_])"
+      "match": "#(?:[0-9a-fA-F]+|(?i:turquoise|chocolate|lavender|magenta|fuchsia|crimson|skyblue|yellow|silver|maroon|purple|orange|indigo|violet|salmon|tomato|orchid|black|white|green|olive|brown|beige|ivory|khaki|coral|wheat|lime|blue|cyan|aqua|gray|grey|teal|navy|pink|gold|plum|snow|mint|검정색|검은색|하얀색|빨간색|주황색|노란색|연두색|초록색|청록색|하늘색|파란색|보라색|자주색|분홍색|자홍색|red|tan|검정|흑색|하양|흰색|백색|빨강|적색|주황|노랑|황색|연두|초록|녹색|청록|하늘|파랑|청색|남색|보라|분홍|자홍|갈색|밤색|회색|은색|금색))(?![\\p{L}0-9_])"
     },
     "number": {
       "name": "constant.numeric.tess",

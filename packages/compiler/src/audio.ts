@@ -2,6 +2,8 @@
  * 소리 파일에서 재생 길이(초)를 읽어옵니다.
  * 디코딩 없이 헤더 정보만 읽어 길이를 계산합니다.
  */
+import { latin1, u16le, u32be, u32le, u64be, u64le } from './bytes.ts';
+
 
 /**
  * 소리 길이를 소수점 첫째 자리까지 반올림합니다.
@@ -23,7 +25,7 @@ const round = (seconds: number) => Math.round(seconds * 10) / 10;
  * @example
  * const duration = audioDuration(buffer, '.mp3');
  */
-export function audioDuration(bytes: Buffer, ext: string): number | null {
+export function audioDuration(bytes: Uint8Array, ext: string): number | null {
   try {
     const seconds = measure(bytes, ext);
     return seconds !== null && Number.isFinite(seconds) && seconds > 0 ? round(seconds) : null;
@@ -32,30 +34,30 @@ export function audioDuration(bytes: Buffer, ext: string): number | null {
   }
 }
 
-function measure(bytes: Buffer, ext: string): number | null {
+function measure(bytes: Uint8Array, ext: string): number | null {
   if (ext === '.wav') return wavDuration(bytes);
   if (ext === '.ogg') return oggDuration(bytes);
   if (ext === '.m4a' || ext === '.mp4') return mp4Duration(bytes);
   if (ext === '.mp3') return mp3Duration(bytes);
   // 확장자를 믿을 수 없으면 파일 내용으로 형식을 알아본다
-  if (bytes.length > 12 && bytes.toString('latin1', 0, 4) === 'RIFF') return wavDuration(bytes);
-  if (bytes.length > 4 && bytes.toString('latin1', 0, 4) === 'OggS') return oggDuration(bytes);
+  if (bytes.length > 12 && latin1(bytes, 0, 4) === 'RIFF') return wavDuration(bytes);
+  if (bytes.length > 4 && latin1(bytes, 0, 4) === 'OggS') return oggDuration(bytes);
   return mp3Duration(bytes);
 }
 
 // ---------------------------------------------------------------------------
 //  WAV — fmt 청크의 초당 바이트 수로 data 청크를 나눈다
 // ---------------------------------------------------------------------------
-function wavDuration(bytes: Buffer): number | null {
-  if (bytes.length < 12 || bytes.toString('latin1', 8, 12) !== 'WAVE') return null;
+function wavDuration(bytes: Uint8Array): number | null {
+  if (bytes.length < 12 || latin1(bytes, 8, 12) !== 'WAVE') return null;
 
   let byteRate = 0;
   let offset = 12;
   while (offset + 8 <= bytes.length) {
-    const id = bytes.toString('latin1', offset, offset + 4);
-    const size = bytes.readUInt32LE(offset + 4);
+    const id = latin1(bytes, offset, offset + 4);
+    const size = u32le(bytes, offset + 4);
     const body = offset + 8;
-    if (id === 'fmt ' && body + 16 <= bytes.length) byteRate = bytes.readUInt32LE(body + 8);
+    if (id === 'fmt ' && body + 16 <= bytes.length) byteRate = u32le(bytes, body + 8);
     if (id === 'data') {
       if (!byteRate) return null;
       // 크기 칸이 0 이거나 잘못된 파일(스트리밍으로 기록한 것)은 남은 바이트를 모두 센다
@@ -70,28 +72,28 @@ function wavDuration(bytes: Buffer): number | null {
 // ---------------------------------------------------------------------------
 //  Ogg (Vorbis · Opus) — 마지막 페이지의 granule position 이 총 샘플 수다
 // ---------------------------------------------------------------------------
-function oggDuration(bytes: Buffer): number | null {
-  if (bytes.toString('latin1', 0, 4) !== 'OggS') return null;
+function oggDuration(bytes: Uint8Array): number | null {
+  if (latin1(bytes, 0, 4) !== 'OggS') return null;
 
   // 첫 페이지의 식별 헤더에서 표본율을 읽는다. Opus 는 언제나 48kHz 를 기준으로 센다.
-  const head = bytes.toString('latin1', 0, Math.min(bytes.length, 4096));
+  const head = latin1(bytes, 0, Math.min(bytes.length, 4096));
   let rate = null;
   let preSkip = 0;
   const opus = head.indexOf('OpusHead');
   if (opus >= 0) {
     rate = 48000;
-    preSkip = bytes.readUInt16LE(opus + 10);
+    preSkip = u16le(bytes, opus + 10);
   } else {
     const vorbis = head.indexOf('\x01vorbis');
     if (vorbis < 0) return null;
-    rate = bytes.readUInt32LE(vorbis + 12);
+    rate = u32le(bytes, vorbis + 12);
   }
   if (!rate) return null;
 
   // 파일 끝에서부터 거슬러 올라가 마지막 페이지를 찾는다
   for (let offset = bytes.length - 14; offset >= 0; offset -= 1) {
-    if (bytes.toString('latin1', offset, offset + 4) !== 'OggS') continue;
-    const granule = Number(bytes.readBigUInt64LE(offset + 6));
+    if (latin1(bytes, offset, offset + 4) !== 'OggS') continue;
+    const granule = (u64le(bytes, offset + 6));
     if (granule <= 0) continue;
     return Math.max(0, granule - preSkip) / rate;
   }
@@ -101,15 +103,15 @@ function oggDuration(bytes: Buffer): number | null {
 // ---------------------------------------------------------------------------
 //  MP4 · M4A — moov > mvhd 의 duration / timescale
 // ---------------------------------------------------------------------------
-function mp4Duration(bytes: Buffer, start = 0, end = bytes.length): number | null {
+function mp4Duration(bytes: Uint8Array, start = 0, end = bytes.length): number | null {
   let offset = start;
   while (offset + 8 <= end) {
-    let size = bytes.readUInt32BE(offset);
-    const type = bytes.toString('latin1', offset + 4, offset + 8);
+    let size = u32be(bytes, offset);
+    const type = latin1(bytes, offset + 4, offset + 8);
     let body = offset + 8;
     if (size === 1) { // 크기가 1 이면 뒤에 64비트 크기가 따로 온다
       if (body + 8 > end) return null;
-      size = Number(bytes.readBigUInt64BE(body));
+      size = (u64be(bytes, body));
       body += 8;
     }
     if (size === 0) size = end - offset; // 크기가 0 이면 파일 끝까지가 이 아톰이다
@@ -118,8 +120,8 @@ function mp4Duration(bytes: Buffer, start = 0, end = bytes.length): number | nul
     if (type === 'mvhd') {
       const version = bytes[body];
       const at = version === 1 ? body + 20 : body + 12;
-      const timescale = bytes.readUInt32BE(at);
-      const duration = version === 1 ? Number(bytes.readBigUInt64BE(at + 4)) : bytes.readUInt32BE(at + 4);
+      const timescale = u32be(bytes, at);
+      const duration = version === 1 ? (u64be(bytes, at + 4)) : u32be(bytes, at + 4);
       return timescale ? duration / timescale : null;
     }
     if (size < 8) return null;
@@ -159,15 +161,15 @@ const MP3_BITRATES: Record<number, Record<number, number[]>> = {
 const MP3_RATES: Record<number, number[]> = { 1: [44100, 48000, 32000], 2: [22050, 24000, 16000], 2.5: [11025, 12000, 8000] };
 
 /** 파일 앞에 붙은 ID3v2 태그를 건너뛴 위치 */
-function skipId3(bytes: Buffer): number {
-  if (bytes.length < 10 || bytes.toString('latin1', 0, 3) !== 'ID3') return 0;
+function skipId3(bytes: Uint8Array): number {
+  if (bytes.length < 10 || latin1(bytes, 0, 3) !== 'ID3') return 0;
   // 태그 크기는 바이트마다 7비트만 쓰는 synchsafe 정수로 적혀 있다
   const size = ((bytes[6]! & 0x7f) << 21) | ((bytes[7]! & 0x7f) << 14)
     | ((bytes[8]! & 0x7f) << 7) | (bytes[9]! & 0x7f);
   return 10 + size + (bytes[5]! & 0x10 ? 10 : 0); // 꼬리말(footer)이 있으면 10 바이트를 더 건너뛴다
 }
 
-function mp3FrameHeader(bytes: Buffer, offset: number): Mp3Frame | null {
+function mp3FrameHeader(bytes: Uint8Array, offset: number): Mp3Frame | null {
   if (offset + 4 > bytes.length) return null;
   if (bytes[offset]! !== 0xff || (bytes[offset + 1]! & 0xe0) !== 0xe0) return null;
 
@@ -193,7 +195,7 @@ function mp3FrameHeader(bytes: Buffer, offset: number): Mp3Frame | null {
   return { version, layer, bitrate, sampleRate, samples, size, mono };
 }
 
-function mp3Duration(bytes: Buffer): number | null {
+function mp3Duration(bytes: Uint8Array): number | null {
   const start = skipId3(bytes);
 
   // 첫 프레임을 찾는다. 태그 뒤에 알 수 없는 바이트가 조금 붙어 있는 파일도 있다.
@@ -211,25 +213,25 @@ function mp3Duration(bytes: Buffer): number | null {
 
   // 없으면 고정 비트레이트로 계산한다. 파일 뒤에 붙은 ID3v1 태그(128바이트)는 빼고 센다.
   const hasId3v1 = bytes.length >= 128
-    && bytes.toString('latin1', bytes.length - 128, bytes.length - 125) === 'TAG';
+    && latin1(bytes, bytes.length - 128, bytes.length - 125) === 'TAG';
   const audioBytes = (bytes.length - (hasId3v1 ? 128 : 0)) - offset;
   return (audioBytes * 8) / (frame.bitrate * 1000);
 }
 
-function xingFrames(bytes: Buffer, frameStart: number, frame: Mp3Frame): number | null {
+function xingFrames(bytes: Uint8Array, frameStart: number, frame: Mp3Frame): number | null {
   // Xing/Info 표는 프레임 헤더 뒤의 side info 다음에 온다. 그 자리는 버전과 채널 수에 따라 다르다.
   const skip = frame.version === 1 ? (frame.mono ? 21 : 36) : (frame.mono ? 13 : 21);
   const at = frameStart + skip;
   if (at + 12 > bytes.length) return null;
-  const tag = bytes.toString('latin1', at, at + 4);
+  const tag = latin1(bytes, at, at + 4);
   if (tag !== 'Xing' && tag !== 'Info') return null;
-  const flags = bytes.readUInt32BE(at + 4);
-  return flags & 0x01 ? bytes.readUInt32BE(at + 8) : null;
+  const flags = u32be(bytes, at + 4);
+  return flags & 0x01 ? u32be(bytes, at + 8) : null;
 }
 
-function vbriFrames(bytes: Buffer, frameStart: number): number | null {
+function vbriFrames(bytes: Uint8Array, frameStart: number): number | null {
   const at = frameStart + 36;
   if (at + 18 > bytes.length) return null;
-  if (bytes.toString('latin1', at, at + 4) !== 'VBRI') return null;
-  return bytes.readUInt32BE(at + 14);
+  if (latin1(bytes, at, at + 4) !== 'VBRI') return null;
+  return u32be(bytes, at + 14);
 }

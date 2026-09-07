@@ -73,3 +73,76 @@ test('아이디나 닉네임 한쪽만 있어도 로그인한 것으로 본다',
   // 문자열이 아닌 값은 없는 것으로 칩니다.
   assert.equal(readerFor(wrap({ username: 7, nickname: null }))(), null);
 });
+
+// ---------------------------------------------------------------------------
+//  확장이 작품을 실행하기 전에 지나는 길
+// ---------------------------------------------------------------------------
+/**
+ * 확장은 엔트리 작품을 그대로 돌리지 않고 `tessvm run` 이 `.ent` 를 다룰 때와 같이
+ * Tess 로 되돌린 뒤 다시 컴파일해서 돌립니다. 그대로 넘어가는 것은 파일 주소뿐입니다.
+ */
+test('확장이 쓰는 길: 엔트리 작품 -> Tess -> 다시 엔트리 작품', async () => {
+  const { decompileProject } = await import('../packages/decompiler/src/index.ts');
+  const { compileProject } = await import('../packages/compiler/src/index.ts');
+  const work = {
+    name: '주소만 남기기',
+    speed: 60,
+    scenes: [{ id: 'sc1', name: '장면 1' }],
+    variables: [],
+    messages: [],
+    functions: [],
+    objects: [{
+      id: 'obj1',
+      name: '주인공',
+      objectType: 'sprite',
+      scene: 'sc1',
+      rotateMethod: 'free',
+      selectedPictureId: 'pic1',
+      entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true },
+      sprite: {
+        pictures: [{
+          id: 'pic1',
+          name: '그림',
+          imageType: 'svg',
+          fileurl: '/uploads/ab/cd/image/abcd0001.svg',
+          dimension: { width: 320, height: 180 },
+        }],
+        sounds: [{
+          id: 'snd1',
+          name: '소리',
+          ext: '.mp3',
+          duration: 2.5,
+          fileurl: '/uploads/ab/cd/abcd0002.mp3',
+        }],
+      },
+      script: JSON.stringify([[
+        { type: 'when_run_button_click', params: [null], statements: [] },
+        { type: 'move_x', params: [{ type: 'number', params: ['10'] }, null], statements: [] },
+      ]]),
+    }],
+  };
+
+  const decompiled = decompileProject(work as never, [], {
+    inline: true, sizes: true, keepSvg: true,
+  });
+  // 조각 파일이 없으니 useobject 도 없다 — 브라우저에는 파일을 둘 곳이 없다.
+  assert.equal(decompiled.assets.length, 0);
+  assert.doesNotMatch(decompiled.source, /useobject|usetext/);
+  assert.match(decompiled.source, /object "주인공":/);
+  assert.match(decompiled.source, /"\/uploads\/ab\/cd\/image\/abcd0001\.svg" size 320 180/);
+
+  const compiled = compileProject(decompiled.source, {
+    path: 'w.tess', name: work.name, assetUrls: true, comments: new Map(),
+  });
+  assert.deepEqual(compiled.errors, []);
+  const picture = compiled.project!.objects[0]!.sprite.pictures[0]!;
+  const sound = compiled.project!.objects[0]!.sprite.sounds[0]!;
+  // 주소는 그대로, 크기와 길이는 소스에 적힌 값을 그대로 쓴다.
+  assert.equal(picture.fileurl, '/uploads/ab/cd/image/abcd0001.svg');
+  assert.equal(picture.pngurl, '/uploads/ab/cd/image/abcd0001.png');
+  assert.deepEqual(picture.dimension, { width: 320, height: 180 });
+  assert.equal(sound.fileurl, '/uploads/ab/cd/abcd0002.mp3');
+  assert.equal(sound.duration, 2.5);
+  // 그리고 블록은 Tess 컴파일러가 만든 것이다.
+  assert.match(JSON.stringify(compiled.project!.objects[0]!.script), /move_x/);
+});

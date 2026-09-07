@@ -5,6 +5,7 @@
  * 컴파일 과정에서만 사용되는 데이터들은 하단의 "컴파일러 내부 타입" 섹션에 정의되어 있습니다.
  */
 import type { Expr, FunctionDeclNode, ObjectNode, ParseRoot } from '@tess/parser';
+import type { CompilerHost } from './host.ts';
 
 /** 
  * 블록의 매개변수 슬롯에 들어갈 수 있는 값의 타입입니다. 
@@ -327,6 +328,15 @@ export interface CompileOptions {
   sources?: Map<string, string> | null;
   comments?: Map<string, string>;
   onPhase?: (phase: PhaseTiming) => void;
+  /** Where `use` and costume files are read from. Empty when left unset. */
+  host?: CompilerHost;
+  /**
+   * Takes each costume and sound path as the address the work loads from,
+   * instead of packing a file under `temp/`. A caller whose assets already sit
+   * behind urls — the browser extension — asks for this; the size and length
+   * then have to be in the source, which is what the decompiler writes.
+   */
+  assetUrls?: boolean;
 }
 
 /** 파일 감시 모드(watch)에서 이미 분석된 구문 트리를 재사용하기 위한 캐시 상태입니다. */

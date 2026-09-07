@@ -12,14 +12,14 @@
  * // utils.tess 파일의 내용을 현재 위치에 포함
  * use "utils.tess"
  */
-import fs from 'node:fs';
-import path from 'node:path';
 import { parse } from '@tess/parser';
 import { lineAndColumn } from '@tess/parser';
 import type {
   Node, ObjectMember, ObjectNode, ParseRoot, ProgramNode, SceneMember, StartRule,
   TopLevelItem, UseObjectNode,
 } from '@tess/parser';
+import { EMPTY_HOST, basename, dirname, extname } from './host.ts';
+import type { CompilerHost } from './host.ts';
 import type { CompileCache, CompileDiagnostic } from './types.ts';
 
 /** 
@@ -83,13 +83,19 @@ function cacheKey(file: string, context: IncludeContext): string {
 }
 
 export function loadProgram({
-  source, path: filePath = '<input>', readFile = defaultReadFile, cache = null,
+  source, path: filePath = '<input>', readFile, cache = null, host = EMPTY_HOST,
 }: {
   source: string;
   path?: string;
   readFile?: (target: string) => string;
   cache?: CompileCache | null;
+  host?: CompilerHost;
 }): LoadedProgram {
+  const read = readFile ?? ((target: string) => {
+    const text = host.readText(target);
+    if (text === null) throw new Error(`불러올 파일이 없습니다: ${target}`);
+    return text;
+  });
   const errors: CompileDiagnostic[] = [];
   const warnings: CompileDiagnostic[] = [];
   const sources = new Map([[filePath, source]]);
@@ -145,14 +151,14 @@ export function loadProgram({
         output.push(expandNested(item, file));
         continue;
       }
-      const target = path.resolve(path.dirname(file), item.path);
+      const target = host.resolve(dirname(file), item.path);
       if (visiting.has(target)) {
         errors.push({ ...where(item, file), message: `use 가 순환합니다: ${item.path}` });
         continue;
       }
       let text;
       try {
-        text = readFile(target);
+        text = read(target);
       } catch {
         errors.push({ ...where(item, file), message: `불러올 파일이 없습니다: ${item.path}` });
         continue;
@@ -179,14 +185,14 @@ export function loadProgram({
    * @returns 생성된 오브젝트 노드 또는 실패 시 null
    */
   const expandUseObject = (item: UseObjectNode, file: string): ObjectNode | null => {
-    const target = path.resolve(path.dirname(file), item.path);
+    const target = host.resolve(dirname(file), item.path);
     if (visiting.has(target)) {
       errors.push({ ...where(item, file), message: `use 가 순환합니다: ${item.path}` });
       return null;
     }
     let text;
     try {
-      text = readFile(target);
+      text = read(target);
     } catch {
       errors.push({ ...where(item, file), message: `불러올 파일이 없습니다: ${item.path}` });
       return null;
@@ -200,7 +206,7 @@ export function loadProgram({
     return {
       type: 'Object',
       kind: item.kind,
-      name: path.basename(target, path.extname(target)),
+      name: basename(target, extname(target)),
       body: expand(members as ObjectMember[], target, 'object') as ObjectMember[],
       loc: item.loc,
     };
@@ -219,13 +225,9 @@ export function loadProgram({
   const program = load(source, filePath, 'top') as ProgramNode | null;
   if (!program) return { ast: null, errors, warnings, sources };
 
-  visiting.add(path.resolve(filePath));
+  visiting.add(host.resolve('.', filePath));
   const body = expand(program.body, filePath, 'top') as TopLevelItem[];
   return { ast: { ...program, body }, errors, warnings, sources };
-}
-
-function defaultReadFile(target: string): string {
-  return fs.readFileSync(target, 'utf-8');
 }
 
 function position(node: Node, text: string) {

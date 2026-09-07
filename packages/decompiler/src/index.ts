@@ -2,11 +2,6 @@
  * 엔트리 작품(.ent) 파일을 Tess 소스 코드로 디컴파일합니다.
  * 블록 트리를 분석하여 해당되는 텍스트 코드를 생성합니다.
  */
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { readTar } from './tar.ts';
-import { findLocalRuntime } from '@tess/player';
 import { safeIdentifier, tessString, tessNumber, tessLiteral, tessComment, displayNamePart } from './ident.ts';
 import { autoParamName } from '@tess/core';
 import { blocksToLines, commentLines, indent, functionDeclarationLines, colorExpr } from './stmt.ts';
@@ -22,11 +17,6 @@ for (const [name, code] of Object.entries(KEY_CODES)) {
   if (!(String(code) in REVERSE_KEY_NAME)) REVERSE_KEY_NAME[String(code)] = name;
 }
 
-// 엔트리 기본 오브젝트의 모양·소리는 작품 파일에 없고, 실행기가 함께 배포하는 파일을
-// 가리키기만 한다. 설치된 entryjs 에서 실제 파일을 꺼내 assets/ 에 담는다.
-// 폴더 이름은 엔트리 버전에 따라 entry-js 이거나 entryjs 다.
-const BUILTIN_ASSET = /(?:^|\/)bower_components\/[^/]+\/(images\/[^?#]+)$/;
-
 // _1x1.png 는 모양 없는 "새 오브젝트"용 1×1 투명 그림이다. 파일에서 잰 1×1 이 실제
 // 크기가 아니라 project.json 의 dimension 이 실제 크기라, 이것만 `size` 를 적어 둔다.
 const BLANK_IMAGE = /(?:^|\/)images\/_1x1\.png$/;
@@ -39,7 +29,7 @@ const BLANK_IMAGE = /(?:^|\/)images\/_1x1\.png$/;
  * save but re-centres the SVG itself, so the SVG no longer matches either the
  * saved picture or the `dimension` the work renders at.
  */
-function capturedPngFor(fileurl: string | undefined, entriesByPath: Map<string, Buffer>): string | null {
+function capturedPngFor(fileurl: string | undefined, entriesByPath: Map<string, Uint8Array>): string | null {
   if (!fileurl || !/\.svg$/i.test(fileurl)) return null;
   const png = `${fileurl.slice(0, -4)}.png`;
   return entriesByPath.has(png) ? png : null;
@@ -55,7 +45,7 @@ function capturedPngFor(fileurl: string | undefined, entriesByPath: Map<string, 
  * it, and for both of those the raster beside it is the better file.
  */
 function vectorIsBetter(
-  svg: Buffer | undefined,
+  svg: Uint8Array | undefined,
   dimension: { width?: number; height?: number } | undefined,
 ): boolean {
   const size = svgSize(svg);
@@ -63,58 +53,40 @@ function vectorIsBetter(
   if (size.width > PAINT_CANVAS.width || size.height > PAINT_CANVAS.height) return false;
   if (Math.round(size.width) !== Math.round(dimension?.width ?? -1)) return false;
   if (Math.round(size.height) !== Math.round(dimension?.height ?? -1)) return false;
-  const head = svg.subarray(0, 4096).toString('utf-8');
+  const head = headText(svg, 4096);
   return !/<image[\s>]/i.test(head) && !/<text[\s>]/i.test(head);
 }
 
 const PAINT_CANVAS = { width: 960, height: 540 };
 
+const decoder = new TextDecoder('utf-8');
+const encoder = new TextEncoder();
+
+/** The first `limit` bytes of a file as text, for the tag sniffing below. */
+function headText(bytes: Uint8Array, limit: number): string {
+  return decoder.decode(bytes.subarray(0, limit));
+}
+
+function encodeText(text: string): Uint8Array {
+  return encoder.encode(text);
+}
+
+/** `path.extname` for the url-shaped paths a work carries, without node. */
+function extnameOf(file: string): string {
+  const name = file.split(/[\\/]/).pop() ?? '';
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(dot) : '';
+}
+
 /** The drawing's own size — `width`/`height` when it has them, else the viewBox. */
-function svgSize(svg: Buffer | undefined): { width: number; height: number } | null {
+function svgSize(svg: Uint8Array | undefined): { width: number; height: number } | null {
   if (!svg) return null;
-  const head = svg.subarray(0, 2048).toString('utf-8');
+  const head = headText(svg, 2048);
   const width = /\swidth\s*=\s*["']([\d.]+)/.exec(head);
   const height = /\sheight\s*=\s*["']([\d.]+)/.exec(head);
   if (width && height) return { width: Number(width[1]), height: Number(height[1]) };
   const box = /\sviewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(head);
   return box ? { width: Number(box[1]), height: Number(box[2]) } : null;
-}
-
-/** 엔트리 번들에 들어 있는 기본 리소스의 실제 바이트열. 못 찾으면 null */
-function builtinAssetBytes(fileurl: string | undefined, runtimeDir: string | null): Buffer | null {
-  const match = BUILTIN_ASSET.exec(fileurl ?? '');
-  if (!match || !runtimeDir) return null;
-  // 남의 작품에서 온 경로라 패키지 바깥을 가리키면 읽지 않는다
-  if (match[1]!.split('/').includes('..')) return null;
-  const file = path.join(runtimeDir, match[1]!);
-  return fs.existsSync(file) && fs.statSync(file).isFile() ? fs.readFileSync(file) : null;
-}
-
-/** entryjs 를 작업 폴더에서 먼저 찾고, 없으면 tess 가 설치된 곳에서 찾는다 */
-function findRuntimeDir(): string | null {
-  return findLocalRuntime() ?? findLocalRuntime(path.dirname(fileURLToPath(import.meta.url)));
-}
-
-/**
- * 주어진 엔트리 파일(.ent) 바이트 배열을 파싱하여 Tess 소스 코드로 디컴파일합니다.
- *
- * @param bytes 엔트리 작품 파일의 바이트 데이터
- * @param options 디컴파일 옵션
- * @returns 디컴파일 결과 객체를 포함하는 Promise
- * @example
- * const result = await decompileEnt(buffer, { sizes: true });
- */
-export async function decompileEnt(
-  bytes: Buffer,
-  options: DecompileOptions = {},
-): Promise<DecompileResult> {
-  const entries = await readTar(bytes);
-  const projectEntry = entries.find((e) => e.name.endsWith('project.json'));
-  if (!projectEntry) {
-    throw new Error('project.json 을 찾지 못했습니다 — .ent(엔트리 작품) 파일이 맞는지 확인하세요.');
-  }
-  const project = JSON.parse(projectEntry.data.toString('utf-8'));
-  return decompileProject(project, entries, options);
 }
 
 export function decompileProject(
@@ -383,6 +355,9 @@ function buildContext(
     inFunction: false,
     // The object that owns the function being written, when it has one.
     functionOwnerId: null,
+    // Raised by the loop cases in stmt.ts while their bodies are written.
+    loopDepth: 0,
+    inline: options.inline === true,
     varName(id: string) {
       const info = ctx.varsById.get(id);
       if (info) return info.identifier;
@@ -566,7 +541,6 @@ function buildContext(
   // 그래도 겹치면 뒤에 번호를 붙인다.
   const assetTargets = new Map<string, string | null>(); // fileurl -> 저장한 상대 경로
   const usedAssetPaths = new Set<string>();
-  const runtimeDir = findRuntimeDir();
 
   /**
    * A file extension out of the work. `imageType` and `ext` are the work's own
@@ -594,7 +568,7 @@ function buildContext(
     if (!fileurl) return null;
     // 같은 파일을 여러 모양이 함께 쓰면 한 번만 저장하고 같은 경로를 돌려준다.
     if (assetTargets.has(fileurl)) return assetTargets.get(fileurl)!;
-    const data = entriesByPath.get(fileurl) ?? builtinAssetBytes(fileurl, runtimeDir);
+    const data = entriesByPath.get(fileurl) ?? options.builtinAssets?.(fileurl) ?? null;
     if (!data) return null;
 
     const scene = ctx.scenesById.get(info.owner?.scene);
@@ -621,7 +595,7 @@ function buildContext(
     const useRaster = png !== null && !vector;
     const ext = useRaster
       ? '.png'
-      : safeExt(pic.imageType || path.extname(pic.fileurl || '').slice(1), '.png');
+      : safeExt(pic.imageType || extnameOf(pic.fileurl || '').slice(1), '.png');
     info.relativePath = registerAsset(info, 'image', ext, useRaster ? png : pic.fileurl);
     // `--keep-svg` asks for the vector and nothing else; otherwise the raster goes
     // out beside it so the runner still has both.
@@ -637,7 +611,7 @@ function buildContext(
   }
   for (const [, info] of ctx.soundsById) {
     const snd = info.source;
-    const ext = safeExt(snd.ext || path.extname(snd.fileurl || '').slice(1), '.mp3');
+    const ext = safeExt(snd.ext || extnameOf(snd.fileurl || '').slice(1), '.mp3');
     info.relativePath = registerAsset(info, 'sound', ext);
   }
 
@@ -699,10 +673,19 @@ function sceneLines(scene: RawEntity, project: RawEntity, ctx: DecompileContext)
 function useObjectLine(object: RawEntity, ctx: DecompileContext, sceneIdentifier: string): string[] {
   const info = ctx.objectsById.get(object.id)!;
   const isText = object.objectType === 'textBox';
+  const fragment = objectFragmentLines(object, ctx, isText);
+  // `inline` has nowhere to put a fragment file, so the object is written into
+  // the scene where the `useobject` line would have gone.
+  if (ctx.inline) {
+    const head = `  ${isText ? 'text' : 'object'} ${tessString(info.identifier)}:`;
+    return [head, ...indent(indent(fragment)), '  end'];
+  }
   const dir = ctx.multiScene ? `objects/${sceneIdentifier}` : 'objects';
   const relativePath = `${dir}/${info.identifier}.tess`;
-  const fragment = objectFragmentLines(object, ctx, isText).join('\n').trimEnd();
-  ctx.collectedAssets.push({ path: relativePath, data: Buffer.from(`${fragment}\n`, 'utf-8') });
+  ctx.collectedAssets.push({
+    path: relativePath,
+    data: encodeText(`${fragment.join('\n').trimEnd()}\n`),
+  });
   return [`  ${isText ? 'usetext' : 'useobject'} ${tessString(relativePath)}`];
 }
 

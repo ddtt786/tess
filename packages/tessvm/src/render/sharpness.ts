@@ -34,6 +34,13 @@ export const MAX_SVG_SHARPNESS = 4;
 export const MAX_TEXTURE_SIDE = 4096;
 /** And no vector costume past this many pixels — 16MB of texture. */
 export const MAX_SVG_PIXELS = 2048 * 2048;
+/**
+ * Ceiling on the texture pixels every vector costume of one work takes together
+ * — 256MB, four bytes to a pixel. A work carrying hundreds of full-stage
+ * drawings would otherwise ask for gigabytes, and a card that cannot hold them
+ * spends every frame moving textures instead of drawing.
+ */
+export const SVG_PIXEL_BUDGET = 64 * 1024 * 1024;
 
 /** Stepping in halves keeps a texture from being baked again for every pixel. */
 const stepped = (value: number) => Math.ceil(value * 2) / 2;
@@ -49,14 +56,39 @@ export function textSharpness(displayScale: number, scale: number, longest: numb
   return Math.min(Math.max(MIN_TEXT_SHARPNESS, wanted), bySide);
 }
 
-/** Sharpness a vector costume of this nominal size is rasterised with. */
-export function svgSharpness(displayScale: number, width: number, height: number): number {
+/**
+ * Sharpness a vector costume of this nominal size is rasterised with.
+ *
+ * `budget` scales the wanted sharpness down where the work has more vectors
+ * than the card should hold at once — see `svgBudgetScale`.
+ */
+export function svgSharpness(
+  displayScale: number,
+  width: number,
+  height: number,
+  budget = 1,
+): number {
   const w = Math.max(width, 1);
   const h = Math.max(height, 1);
-  const wanted = Math.min(MAX_SVG_SHARPNESS, Math.max(MIN_SVG_SHARPNESS, stepped(displayScale)));
+  const asked = Math.min(MAX_SVG_SHARPNESS, Math.max(MIN_SVG_SHARPNESS, stepped(displayScale)));
+  const wanted = stepped(asked * Math.min(1, budget));
   const bySide = MAX_TEXTURE_SIDE / Math.max(w, h);
   const byArea = Math.sqrt(MAX_SVG_PIXELS / (w * h));
   // The caps come last: a drawing already past the texture limit is rasterised
   // smaller than its own size rather than not at all.
   return Math.min(Math.max(1, wanted), bySide, byArea);
+}
+
+/**
+ * How far every vector costume has to come down for the work's textures to fit
+ * the budget together. 1 while they already do.
+ *
+ * Sharpness squares into pixels, so the room left over is shared by taking the
+ * root — twice the drawings means each is rasterised at 1/√2 the sharpness.
+ */
+export function svgBudgetScale(wantedPixels: number, budget = SVG_PIXEL_BUDGET): number {
+  if (wantedPixels <= budget) {
+    return 1;
+  }
+  return Math.sqrt(budget / wantedPixels);
 }

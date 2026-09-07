@@ -8,8 +8,8 @@
  * 4. 스크립트 컴파일
  * 5. 엔트리 프로젝트 객체 조립
  */
-import path from 'node:path';
 import { Context } from './context.ts';
+import { EMPTY_HOST, dirname } from './host.ts';
 import { loadProgram, createCompileCache } from './include.ts';
 import { buildCommentMap } from './comments.ts';
 import { makeAsset } from './assets.ts';
@@ -58,8 +58,9 @@ const BRUSH_DEFAULT_PROPERTIES = ['draw_color', 'fill_color', 'draw_width', 'dra
 export function compileProject(source: string, options: CompileOptions = {}): CompileResult {
   const filePath = options.path ?? '<input>';
   const timer = createTimer(options.onPhase);
+  const host = options.host ?? EMPTY_HOST;
   const loaded = loadProgram({
-    source, path: filePath, readFile: options.readFile, cache: options.cache,
+    source, path: filePath, readFile: options.readFile, cache: options.cache, host,
   });
   timer.mark('불러오기 · 파싱');
   if (!loaded.ast) {
@@ -76,13 +77,16 @@ export function compileProject(source: string, options: CompileOptions = {}): Co
 
   const semantic = validate(loaded.ast, source, loaded.sources);
   timer.mark('의미 검증');
-  const comments = buildCommentMap(loaded.ast, loaded.sources);
+  // A caller that has no use for them (the extension, which runs a work rather
+  // than opening it in the editor) hands in an empty map and skips the walk.
+  const comments = options.comments ?? buildCommentMap(loaded.ast, loaded.sources);
   timer.mark('주석 모으기');
   const ctx = new Context(source, {
     ...options,
     sources: loaded.sources,
     comments,
-    assetDirs: options.assetDirs ?? [path.dirname(path.resolve(filePath))],
+    host,
+    assetDirs: options.assetDirs ?? [dirname(host.resolve('.', filePath))],
   });
   // Include errors (a fragment that will not parse, a `use` path that is not
   // there) only reach the caller through here — the top-level file still parsed,

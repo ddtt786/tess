@@ -10,6 +10,7 @@
 import { boot, type TessVmHandle } from "../../../tessvm/src/web/boot.ts";
 import { ASK_FIELD_STYLE } from "../../../tessvm/src/web/ask-style.ts";
 import { fetchWork } from "./entry-project.ts";
+import { toTessProject } from "./tess-project.ts";
 import { signedInUser } from "./signed-in.ts";
 
 const ICONS = {
@@ -27,6 +28,9 @@ const ICONS = {
 };
 
 const ASK_STYLE_ID = "tessvm-ask-style";
+
+/** Lets the browser paint before the next thing takes the thread. */
+const nextFrame = () => new Promise<void>((done) => requestAnimationFrame(() => done()));
 
 export interface MountedPlayer {
   dispose(): void;
@@ -211,11 +215,28 @@ export function mountPlayer(
     if (work.thumb) {
       cover.style.backgroundImage = `url("${location.origin}${work.thumb}")`;
     }
+
+    // Building the work is one long stretch of work on this thread, so the
+    // line above it is given a frame to appear in first.
+    status.textContent = "작품을 Tess 로 옮기는 중…";
+    await nextFrame();
+    let built;
+    try {
+      built = toTessProject(work);
+    } catch (error) {
+      status.textContent = "";
+      showError(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    if (disposed) {
+      return;
+    }
+    reportDropped(built.dropped);
     status.textContent = "실행기를 준비하는 중…";
 
     try {
       handle = await boot({
-        project: work,
+        project: built.project,
         container: view,
         autoStart: false,
         keyTarget: root,
@@ -256,6 +277,11 @@ export function mountPlayer(
     const blocks = [...live.vm.unknownBlocks.keys()].filter(
       (type) => !type.startsWith("variable:"),
     );
+    reportDropped(blocks);
+  }
+
+  /** The same notice for blocks that fell out on the way in. */
+  function reportDropped(blocks: string[]): void {
     if (!blocks.length) {
       return;
     }

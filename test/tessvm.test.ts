@@ -12,7 +12,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compileProject } from '@tess/compiler';
 import type { EntryProject } from '@tess/compiler';
-import { svgSharpness, textSharpness } from '../packages/tessvm/src/render/sharpness.ts';
+import {
+  SVG_PIXEL_BUDGET,
+  svgBudgetScale,
+  svgSharpness,
+  textSharpness,
+} from '../packages/tessvm/src/render/sharpness.ts';
 import {
   CollisionSystem,
   MaskStore,
@@ -488,6 +493,133 @@ test('글상자·벡터 모양의 텍스처는 webgl 상한(4096px)을 넘지 �
   const big = svgSharpness(full, 1600, 1200);
   assert.ok(big * 1600 <= 4096, `벡터 텍스처가 ${big * 1600}px 입니다`);
   assert.ok(big * 1600 * (big * 1200) <= 2048 * 2048 + 1, '벡터 텍스처의 넓이 상한');
+});
+
+// ---------------------------------------------------------------------------
+//  공유 · 실시간 변수
+// ---------------------------------------------------------------------------
+const SHARED_SOURCE = `shared list 명예 = []
+realtime list 실시간 = []
+list 보통 = []
+shared var 최고 = 0
+realtime var 접속 = 0
+
+scene "s":
+  object "o":
+    when start do
+      in 명예 add 1
+      in 실시간 add 2
+      in 보통 add 3
+      최고 = 7
+      접속 = 8
+    end
+  end
+end`;
+
+/** 저장소를 흉내 낸다 — 실제 실행기는 브라우저의 localStorage 를 쓴다. */
+function fakeStore() {
+  const box = new Map<string, unknown>();
+  return {
+    box,
+    read: (key: string) => box.get(key) as never,
+    write: (key: string, value: unknown) => box.set(key, JSON.parse(JSON.stringify(value))),
+  };
+}
+
+function loadShared(store: ReturnType<typeof fakeStore>): Vm {
+  const result = compileProject(SHARED_SOURCE, { path: 'shared.tess' });
+  assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+  const vm = new Vm({ renderer: null, audio: null, store });
+  vm.load(result.project as unknown as never);
+  return vm;
+}
+
+const listOf = (vm: Vm, name: string) =>
+  vm.variables.find((item) => item.name === name)!.array.map((item) => item.data);
+
+test('공유 · 실시간 리스트와 변수는 다시 시작해도 값을 잃지 않는다', () => {
+  const store = fakeStore();
+  const vm = loadShared(store);
+  vm.start();
+  for (let i = 0; i < 10; i += 1) vm.tick(16);
+  vm.stop();
+
+  assert.deepEqual(listOf(vm, '명예'), ['1']);
+  assert.deepEqual(listOf(vm, '보통'), ['3']);
+
+  // 두 번째 실행: 공유·실시간은 그대로 이어지고, 보통 리스트만 선언값으로 돌아간다.
+  vm.start();
+  for (let i = 0; i < 10; i += 1) vm.tick(16);
+  vm.stop();
+  assert.deepEqual(listOf(vm, '명예'), ['1', '1']);
+  assert.deepEqual(listOf(vm, '실시간'), ['2', '2']);
+  assert.deepEqual(listOf(vm, '보통'), ['3']);
+  assert.equal(valueOf(vm, '최고'), 7);
+});
+
+test('공유 · 실시간 변수만 저장소에 남고, 다시 불러오면 그 값으로 시작한다', () => {
+  const store = fakeStore();
+  const first = loadShared(store);
+  first.start();
+  for (let i = 0; i < 10; i += 1) first.tick(16);
+  first.stop();
+
+  const stored = new Set(store.box.keys());
+  const idOf = (name: string) => first.variables.find((item) => item.name === name)!.id;
+  assert.ok(stored.has(idOf('명예')), '공유 리스트는 저장된다');
+  assert.ok(stored.has(idOf('실시간')), '실시간 리스트는 저장된다');
+  assert.ok(stored.has(idOf('최고')), '공유 변수는 저장된다');
+  assert.ok(!stored.has(idOf('보통')), '보통 리스트는 저장하지 않는다');
+
+  // 새 실행기가 같은 저장소를 읽으면 지난 실행이 남긴 값에서 이어진다.
+  const second = loadShared(store);
+  assert.deepEqual(listOf(second, '명예'), ['1']);
+  assert.deepEqual(listOf(second, '보통'), []);
+  assert.equal(valueOf(second, '최고'), 7);
+});
+
+test('저장소가 없어도 공유 · 실시간 값은 실행기가 살아 있는 동안 이어진다', () => {
+  const result = compileProject(SHARED_SOURCE, { path: 'shared.tess' });
+  const vm = new Vm({ renderer: null, audio: null });
+  vm.load(result.project as unknown as never);
+  vm.start();
+  for (let i = 0; i < 10; i += 1) vm.tick(16);
+  vm.stop();
+  vm.start();
+  for (let i = 0; i < 10; i += 1) vm.tick(16);
+  assert.deepEqual(listOf(vm, '명예'), ['1', '1']);
+  assert.deepEqual(listOf(vm, '보통'), ['3']);
+});
+
+test('벡터가 많은 작품은 텍스처 예산에 맞춰 함께 낮춰 굽는다', () => {
+  // 한두 장은 예산에 닿지 않으니 화면이 요구하는 그대로 굽는다.
+  const one = svgSharpness(3, 960, 540);
+  assert.equal(svgBudgetScale(960 * 540 * one * one), 1);
+  assert.equal(svgSharpness(3, 960, 540, 1), one);
+
+  // 무대 전체 크기의 벡터 백 장은 예산을 훌쩍 넘으므로 배율을 함께 내린다.
+  const many = 100 * 960 * 540 * one * one;
+  const budget = svgBudgetScale(many);
+  assert.ok(budget < 1, `예산 배율이 ${budget} 입니다`);
+  assert.ok(svgSharpness(3, 960, 540, budget) < one);
+
+  // 예산을 몇 번 조여도 1배 아래로는 내려가지 않는다 — 그 아래는 옆의 래스터와 같다.
+  assert.equal(svgSharpness(3, 960, 540, 0.001), 1);
+
+  // 예산 안에서 실제로 차지하는 크기가 예산 언저리로 내려온다.
+  let scale = 1;
+  for (let pass = 0; pass < 8; pass += 1) {
+    const sharp = svgSharpness(3, 960, 540, scale);
+    const pixels = 100 * 960 * 540 * sharp * sharp;
+    const tighter = svgBudgetScale(pixels);
+    if (tighter === 1) break;
+    scale *= tighter;
+  }
+  const settled = svgSharpness(3, 960, 540, scale);
+  assert.ok(
+    100 * 960 * 540 * settled * settled <= SVG_PIXEL_BUDGET * 1.2,
+    '예산을 크게 넘지 않는다',
+  );
 });
 
 test('화질은 화면이 요구하는 만큼 따라 올라가고, 하한 아래로는 내려가지 않는다', () => {

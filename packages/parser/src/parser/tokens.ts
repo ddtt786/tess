@@ -4,6 +4,7 @@
  * 키워드와 식별자(Identifier)를 정의하며, 어휘 분석 시 예약어와 일반 이름을 구분합니다.
  */
 import { createToken, Lexer } from 'chevrotain';
+import { colorLiteralLength } from '@tess/core';
 import type { ILexingError, IToken, TokenType } from 'chevrotain';
 
 /** 
@@ -115,12 +116,16 @@ for (const word of KEYWORDS) {
 const KEYWORD_TOKENS = new Map<string, TokenType>(KEYWORDS.map((word) => [word, kw[word]!]));
 
 /**
- * 6자리의 16진수로 구성된 색상 리터럴을 나타내는 토큰입니다.
- * @example '#FF0000'
+ * 색상 리터럴을 나타내는 토큰입니다. `#` 뒤의 글자 묶음이 16진수이거나 알려진 색
+ * 이름일 때만 색상이고, 그 밖에는 주석으로 넘어갑니다.
+ * @example '#FF0000' · '#efeff' · '#ffffff100' · '#검정'
  */
 export const ColorLiteral = createToken({
   name: 'ColorLiteral',
-  pattern: unicodePattern(`#[0-9a-fA-F]{6}(?!${IDENT_PART})`),
+  pattern: (text, offset) => {
+    const length = colorLiteralLength(text, offset);
+    return length ? ([text.slice(offset, offset + length)] as RegExpExecArray) : null;
+  },
   line_breaks: false,
   label: '색상',
   start_chars_hint: ['#'],

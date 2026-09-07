@@ -11,6 +11,7 @@ export type {
   EntryProjectLike,
   EntryUser,
   Renderer,
+  VariableStore,
   VmError,
   VmOptions,
 } from './src/runtime/engine.ts';

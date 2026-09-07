@@ -26,6 +26,7 @@ pnpm build:extension        # dist 폴더와 tessvm-extension.zip 을 만든다
 | `src/content.ts`            | 격리 세계 — 엔트리 iframe 을 비우고 자리를 만든다       |
 | `src/page/main.ts`          | 페이지 세계 진입점 — 자리를 찾아 실행기를 붙인다        |
 | `src/page/entry-project.ts` | graphql 로 작품을 읽고 에셋 주소를 채운다               |
+| `src/page/tess-project.ts`  | 작품을 Tess 로 되돌렸다가 다시 컴파일한다               |
 | `src/page/player.ts`        | 실행기 화면 — 무대·조작줄·시작 화면·오류 줄             |
 | `src/player.css`            | 실행기 스타일 (무대·조작줄·시작 화면·오류 줄)           |
 | `src/popup/*`               | 툴바 스위치                                             |
@@ -115,10 +116,40 @@ csrf-token: <meta[name=csrf-token]>.content
 채로** 옵니다(AI_TESSVM.md 2장 '함수 본문은 두 가지 모양으로 온다'). 이 차이 때문에
 `.ent` 로는 잘 돌던 작품이 확장에서만 함수가 전부 비어 돌던 일이 있었습니다.
 
-응답은 그대로 `Vm.load()` 에 넣습니다. `objects[].script`
-는 JSON 문자열인데 `Codegen` 이 문자열도 받으므로 손댈 것이 없습니다. Tess 로
-디컴파일했다가 다시 컴파일할 이유도 없습니다 — 그 왕복은 `.ent` 파일을 열 때
-`@tess/decompiler` 가 하는 일이고(AI_TESSVM.md 1장), 여기서는 이미 엔트리 작품 형식입니다.
+### 돌리기 전에 Tess 를 지나간다
+
+받은 작품은 **그대로 돌리지 않습니다.** `tessvm run` 이 `.ent` 를 열 때와 같은 길을
+지나갑니다(AI_TESSVM.md 1장).
+
+```
+graphql 응답 ──@tess/decompiler──▶ Tess 소스 ──@tess/compiler──▶ 엔트리 작품 ──▶ boot()
+```
+
+작품 데이터를 그대로 `Vm.load()` 에 넣어도 돌기는 합니다 — `Codegen` 이 블록 트리를
+직접 읽으니까요. 그렇게 하면 확장만 **다른 길**이 되어, 컴파일러가 하는 정리
+(엔트리에 없는 블록 만들어 내기, 값 블록 펴기, 치트로 쓰인 껍데기 블록 걷어내기)를
+받지 못한 채 돕니다. 같은 작품이 `tessvm run` 에서는 되고 확장에서는 안 되는 차이가
+거기서 생깁니다. 길을 하나로 두면 고칠 곳도 한 군데입니다.
+
+**그대로 넘어가는 것은 파일 주소뿐입니다.** 되돌릴 때 `inline`·`sizes` 를 켜서
+
+- 오브젝트를 조각 파일이 아니라 소스 안에 씁니다 — 브라우저에는 파일을 둘 곳이 없어
+  `useobject` 가 가리킬 데가 없습니다,
+- 모든 모양에 `size 가로 세로` 를, 소리에 `for 초` 를 적습니다 — 그림 파일을 열어
+  재는 대신 소스에 적힌 값을 씁니다,
+- 벡터는 `keepSvg` 로 원본 주소를 그대로 둡니다. 벡터와 래스터 중 무엇을 쓸지는 늘 그랬듯
+  렌더러가 정합니다.
+
+컴파일은 `assetUrls` 로 부릅니다. 모양·소리의 경로를 `temp/…` 로 새로 만들지 않고 적힌
+주소를 그대로 `fileurl` 로 쓰고, `.svg` 옆에는 확장자만 바꾼 `pngurl` 을 답니다. 블록
+주석은 편집기용이라 `comments: new Map()` 으로 건너뜁니다.
+
+작품 하나를 옮기는 데 큰 것은 2~4초쯤 걸리고(deltarune 기준) 그동안 페이지의 스레드를
+잡으므로, 안내 문구를 먼저 띄우고 한 프레임 쉰 뒤에 시작합니다. 옮기지 못한 블록은
+`vm.unknownBlocks` 와 같은 줄에 같은 문구로 알립니다.
+
+컴파일러가 만든 작품에는 `id` 가 없으므로 원래 작품 id 를 붙여 줍니다 — 공유·실시간
+변수가 저장소에서 그 작품을 찾는 이름입니다(AI_TESSVM.md 12장).
 
 ### 에셋 주소 — 하나 빠져 있다
 
@@ -228,10 +259,25 @@ playentry 는 SPA 라 작품 사이를 오갈 때 문서가 그대로입니다. 
 
 ```
 packages/tessvm/src/web/boot.ts   →  dist/vendor/tessvm/web/boot.js
+packages/{core,parser,compiler,decompiler}/…
+                                  →  dist/vendor/tess/<패키지>/…
 packages/extension/src/page/…     →  dist/page/…
 packages/extension/src/content.ts →  dist/content.js  (의존성까지 이어 붙인 클래식 스크립트)
-pixi.js                           →  dist/vendor/pixi.mjs   (pixi.min.mjs, 소스맵 주석 제거)
+pixi.js                           →  dist/vendor/pixi.mjs        (pixi.min.mjs)
+chevrotain                        →  dist/vendor/chevrotain.mjs  (chevrotain.min.mjs)
 ```
+
+`@tess/<패키지>` 같은 맨 이름은 그 패키지의 `index.ts` 로, `chevrotain`·`pixi.js` 는
+vendor 의 esm 묶음으로 고쳐 씁니다. 확장이 파서·컴파일러·디컴파일러를 싣게 되면서
+그 세 패키지에서 노드에 매인 부분을 갈라 냈습니다(AI_README.md).
+
+- `@tess/compiler` 는 파일을 `CompilerHost`(`resolve`·`isFile`·`readFile`·`readText`)
+  로만 읽습니다. 패키지 진입점이 노드 구현을 끼워 주고, 브라우저는 아무것도 없는
+  기본 구현을 씁니다 — `use` 도 파일에서 재는 크기도 쓰지 않으니 그것으로 충분합니다.
+- `@tess/decompiler` 의 `.ent` 읽기와 엔트리 기본 모양 찾기는 `src/node.ts` 로 나갔고,
+  나머지는 `Uint8Array` 와 `TextDecoder` 만 씁니다.
+- `@tess/parser` 의 코드 프레임은 `@babel/code-frame` 대신 `src/parser/frame.ts` 로
+  직접 그립니다.
 
 빌드가 끝나기 전에 세 가지를 확인합니다. 셋 다 **설치할 때가 아니라 쓸 때** 조용히
 터지는 것들이라 빌드에서 잡습니다.

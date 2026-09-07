@@ -72,8 +72,13 @@ test('주석과 색상 리터럴을 구분한다', () => {
   assert.match(scopeOf('forward 10  # 앞으로', '# 앞으로'), /^comment\.line/);
   assert.match(scopeOf('draw_color = #ff0000', '#ff0000'), /^constant\.other\.color/);
   assert.match(scopeOf('font_color = #FFEE00', '#FFEE00'), /^constant\.other\.color/);
-  /** 길이가 6자리가 아닌 경우 주석으로 처리됩니다. */
-  assert.match(scopeOf('say "x"  #ff00', '#ff00'), /^comment\.line/);
+  /** 자리 수가 6이 아니어도, 이름이어도 색이다. */
+  assert.match(scopeOf('say "x"  #ff00', '#ff00'), /^constant\.other\.color/);
+  assert.match(scopeOf('draw_color = #efeff', '#efeff'), /^constant\.other\.color/);
+  assert.match(scopeOf('draw_color = #ffffff100', '#ffffff100'), /^constant\.other\.color/);
+  assert.match(scopeOf('draw_color = #검정', '#검정'), /^constant\.other\.color/);
+  /** 색 이름이 아닌 낱말은 그대로 주석이다. */
+  assert.match(scopeOf('forward 10  #앞으로', '#앞으로'), /^comment\.line/);
 });
 
 test('문자열 안의 # 은 주석이 아니다', () => {

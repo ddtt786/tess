@@ -26,6 +26,23 @@ const DIST = path.join(ROOT, 'dist');
 const VENDOR = path.join(DIST, 'vendor');
 const VM_OUT = path.join(VENDOR, 'tessvm');
 const PIXI_OUT = path.join(VENDOR, 'pixi.mjs');
+const CHEVROTAIN_OUT = path.join(VENDOR, 'chevrotain.mjs');
+
+/**
+ * The toolchain the extension carries: a work is decompiled to Tess and
+ * compiled back before it runs, exactly as `tessvm run` does with a `.ent`.
+ * Each package keeps its own folder under `vendor/tess`.
+ */
+const TESS_PACKAGES = ['core', 'parser', 'compiler', 'decompiler'];
+const TESS_ROOTS = TESS_PACKAGES.map((name) => ({
+  name,
+  src: path.resolve(ROOT, `../${name}`),
+  out: path.join(VENDOR, 'tess', name),
+}));
+/** `@tess/<name>` resolves to that package's entry file. */
+const WORKSPACE_ENTRY = new Map(
+  TESS_ROOTS.map((root) => [`@tess/${root.name}`, path.join(root.src, 'index.ts')]),
+);
 const ZIP = path.join(ROOT, 'tessvm-extension.zip');
 const CHROME_ZIP = path.join(ROOT, 'tessvm-extension-chrome.zip');
 const CRX = path.join(ROOT, 'tessvm-extension.crx');
@@ -38,9 +55,11 @@ const MODULE_ENTRIES = ['page/main.ts', 'popup/popup.ts'];
 const CLASSIC_ENTRIES = ['content.ts'];
 const ICON_SIZES = [16, 32, 48, 128];
 
-/** Relative `.ts` specifiers and the one bare specifier tessvm uses. */
+/** Relative `.ts` specifiers and the bare ones the sources use. */
 const RELATIVE_IMPORT = /(['"])(\.\.?\/[^'"]*\.ts)\1/g;
 const PIXI_IMPORT = /(['"])pixi\.js\1/g;
+const CHEVROTAIN_IMPORT = /(['"])chevrotain\1/g;
+const WORKSPACE_IMPORT = /(['"])(@tess\/[a-z]+)\1/g;
 /** `import … from '…';`, and the side-effect form. */
 const IMPORT_STATEMENT = /^import\s[\s\S]*?from\s*['"][^'"]*['"];?[^\S\n]*$/gm;
 const BARE_IMPORT = /^import\s*['"][^'"]*['"];?[^\S\n]*$/gm;
@@ -49,16 +68,29 @@ const LEFTOVER_MODULE = /^\s*(?:import|export)\b/m;
 
 const read = (file: string) => stripTypeScriptTypes(fs.readFileSync(file, 'utf-8'), { mode: 'strip' });
 
+/** Where one source file lands in the build, by the tree it came from. */
 function outputFor(file: string): string {
-  const inSrc = path.relative(SRC, file);
-  if (!inSrc.startsWith('..') && !path.isAbsolute(inSrc)) {
-    return path.join(DIST, inSrc).replace(/\.ts$/, '.js');
-  }
-  const inVm = path.relative(VM_SRC, file);
-  if (!inVm.startsWith('..') && !path.isAbsolute(inVm)) {
-    return path.join(VM_OUT, inVm).replace(/\.ts$/, '.js');
+  const roots = [
+    { src: SRC, out: DIST },
+    { src: VM_SRC, out: VM_OUT },
+    ...TESS_ROOTS,
+  ];
+  for (const root of roots) {
+    const inside = path.relative(root.src, file);
+    if (!inside.startsWith('..') && !path.isAbsolute(inside)) {
+      return path.join(root.out, inside).replace(/\.ts$/, '.js');
+    }
   }
   throw new Error(`확장에 포함할 수 없는 모듈입니다: ${file}`);
+}
+
+/** The file a bare `@tess/…` specifier points at. */
+function workspaceFile(specifier: string): string {
+  const entry = WORKSPACE_ENTRY.get(specifier);
+  if (!entry) {
+    throw new Error(`확장이 모르는 패키지입니다: ${specifier}`);
+  }
+  return entry;
 }
 
 function link(from: string, to: string): string {
@@ -68,9 +100,13 @@ function link(from: string, to: string): string {
 
 /** What this file imports, as absolute paths. */
 function importsOf(file: string): string[] {
+  const text = read(file);
   const found: string[] = [];
-  for (const [, , specifier] of read(file).matchAll(RELATIVE_IMPORT)) {
+  for (const [, , specifier] of text.matchAll(RELATIVE_IMPORT)) {
     found.push(path.resolve(path.dirname(file), specifier!));
+  }
+  for (const [, , specifier] of text.matchAll(WORKSPACE_IMPORT)) {
+    found.push(workspaceFile(specifier!));
   }
   return found;
 }
@@ -85,7 +121,16 @@ function emitModule(file: string): string[] {
       found.push(target);
       return `${quote}${link(out, outputFor(target))}${quote}`;
     })
-    .replace(PIXI_IMPORT, (_match, quote: string) => `${quote}${link(out, PIXI_OUT)}${quote}`);
+    .replace(WORKSPACE_IMPORT, (_match, quote: string, specifier: string) => {
+      const target = workspaceFile(specifier);
+      found.push(target);
+      return `${quote}${link(out, outputFor(target))}${quote}`;
+    })
+    .replace(PIXI_IMPORT, (_match, quote: string) => `${quote}${link(out, PIXI_OUT)}${quote}`)
+    .replace(
+      CHEVROTAIN_IMPORT,
+      (_match, quote: string) => `${quote}${link(out, CHEVROTAIN_OUT)}${quote}`,
+    );
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, code);
   return found;
@@ -205,21 +250,26 @@ function checkManifest(): void {
   }
 }
 
-/** The dist build of pixi, with its source map comment dropped. */
-function copyPixi(): void {
-  const require = createRequire(path.join(ROOT, '../tessvm/package.json'));
-  let dir = path.dirname(require.resolve('pixi.js'));
+/** The folder an installed package sits in, wherever the store put it. */
+function packageDir(from: string, name: string): string {
+  const require = createRequire(from);
+  let dir = path.dirname(require.resolve(name));
   while (!fs.existsSync(path.join(dir, 'package.json'))) {
     const up = path.dirname(dir);
     if (up === dir) {
-      throw new Error('pixi.js 를 찾지 못했습니다');
+      throw new Error(`${name} 을(를) 찾지 못했습니다`);
     }
     dir = up;
   }
-  const source = path.join(dir, 'dist', 'pixi.min.mjs');
+  return dir;
+}
+
+/** One dependency's own esm build, with its source map comment dropped. */
+function copyVendor(from: string, name: string, inside: string, out: string): void {
+  const source = path.join(packageDir(from, name), inside);
   const code = fs.readFileSync(source, 'utf-8').replace(/\n?\/\/# sourceMappingURL=.*$/, '\n');
-  fs.mkdirSync(VENDOR, { recursive: true });
-  fs.writeFileSync(PIXI_OUT, code);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, code);
 }
 
 const rel = (file: string) => path.relative(process.cwd(), file);
@@ -256,7 +306,13 @@ let flattened = 0;
 for (const entry of CLASSIC_ENTRIES) {
   flattened += emitClassic(path.join(SRC, entry));
 }
-copyPixi();
+copyVendor(path.join(ROOT, '../tessvm/package.json'), 'pixi.js', 'dist/pixi.min.mjs', PIXI_OUT);
+copyVendor(
+  path.join(ROOT, '../parser/package.json'),
+  'chevrotain',
+  'lib/chevrotain.min.mjs',
+  CHEVROTAIN_OUT,
+);
 copy(path.join(SRC, 'player.css'), path.join(DIST, 'player.css'));
 copy(path.join(SRC, 'popup', 'popup.html'), path.join(DIST, 'popup', 'popup.html'));
 copy(path.join(SRC, 'popup', 'popup.css'), path.join(DIST, 'popup', 'popup.css'));

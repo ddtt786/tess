@@ -27,6 +27,7 @@ import type { AlphaMask } from '../collision/mask.ts';
 import { Overlay } from './overlay.ts';
 import {
   MAX_SHARPNESS,
+  svgBudgetScale,
   svgSharpness,
   textSharpness,
 } from './sharpness.ts';
@@ -121,6 +122,8 @@ export const PAINT_CANVAS = { width: 960, height: 540 };
 
 /** A vector is only rasterised again once the canvas asks for this much more. */
 const SVG_REBAKE_RATIO = 1.25;
+/** How many times the vector budget is walked down before it is taken as it is. */
+const BUDGET_PASSES = 8;
 /** Only the head of the file is read to decide what is in it. */
 const SVG_PEEK = 4096;
 
@@ -143,6 +146,10 @@ export class PixiRenderer implements Renderer {
   private quality: number;
   private ready = false;
   private lastResolution = 0;
+  /** How far vector sharpness is scaled so the work's textures fit together. */
+  private svgBudget = 1;
+  /** Nominal size of every vector costume the work carries, for that budget. */
+  private svgSizes: Array<{ width: number; height: number }> = [];
   private fontsWait: Promise<void> | null = null;
   private readonly svgPicks = new Map<string, boolean>();
   private readonly measureStyle = new TextStyle();
@@ -195,7 +202,57 @@ export class PixiRenderer implements Renderer {
 
   /** Sharpness for a vector costume: follows the canvas, inside the pixel caps. */
   private svgResolution(picture: Picture): number {
-    return svgSharpness(this.displayScale(), picture.dimension.width, picture.dimension.height);
+    return svgSharpness(
+      this.displayScale(),
+      picture.dimension.width,
+      picture.dimension.height,
+      this.svgBudget,
+    );
+  }
+
+  /**
+   * Works out how far the work's vector costumes have to come down together.
+   *
+   * What each one asks for on its own is fine; hundreds of them at once are
+   * not, and a card that cannot hold the lot spends its frames swapping
+   * textures. `imageType` is what the work says it stored, which is known
+   * before anything is fetched.
+   */
+  private setSvgBudget(targets: Target[]): void {
+    const counted = new Set<string>();
+    this.svgSizes = [];
+    for (const target of targets) {
+      for (const picture of target.pictures) {
+        if (picture.imageType === 'svg' && !counted.has(picture.id)) {
+          counted.add(picture.id);
+          this.svgSizes.push(picture.dimension);
+        }
+      }
+    }
+    this.fitSvgBudget();
+  }
+
+  /**
+   * Walks the scale down until what the vector costumes really take fits the
+   * budget. What each one settles on is not the scale it was given — the caps
+   * and the rounding to halves both move it — so it takes more than one pass.
+   */
+  private fitSvgBudget(): void {
+    const display = this.displayScale();
+    let budget = 1;
+    for (let pass = 0; pass < BUDGET_PASSES; pass += 1) {
+      let pixels = 0;
+      for (const { width, height } of this.svgSizes) {
+        const one = svgSharpness(display, width, height, budget);
+        pixels += width * height * one * one;
+      }
+      const tighter = svgBudgetScale(pixels);
+      if (tighter === 1) {
+        break;
+      }
+      budget *= tighter;
+    }
+    this.svgBudget = budget;
   }
 
   /** Moves the world container onto the stage as it is sized right now. */
@@ -229,8 +286,10 @@ export class PixiRenderer implements Renderer {
       this.app.renderer.resolution = resolution;
       this.app.renderer.resize(stage.worldWidth, stage.worldHeight);
       // Text and vector costumes are baked at the size they are drawn at, so a
-      // canvas that just grew needs them again.
+      // canvas that just grew needs them again — and how much of the budget
+      // each one may take moved with it.
       this.markTextDirty();
+      this.fitSvgBudget();
       void this.rebakeVectors();
     }
     const canvas = this.app.canvas;
@@ -258,7 +317,7 @@ export class PixiRenderer implements Renderer {
    * until the new one is in place and nothing renders an emptied texture.
    */
   private async rebakeVectors(): Promise<void> {
-    const jobs: Array<Promise<void>> = [];
+    const jobs: Array<{ id: string; url: string; resolution: number }> = [];
     for (const [id, baked] of this.svgBaked) {
       const picture = this.pictures.get(id);
       if (!picture) {
@@ -266,13 +325,17 @@ export class PixiRenderer implements Renderer {
       }
       const wanted = this.svgResolution(picture);
       if (wanted > baked.resolution * SVG_REBAKE_RATIO) {
-        jobs.push(this.bakeVector(id, baked.url, wanted));
+        jobs.push({ id, url: baked.url, resolution: wanted });
       }
     }
-    await Promise.all(jobs);
+    // A few at a time, the way the first load goes: a work with hundreds of
+    // vectors would otherwise rasterise all of them in one breath and drop
+    // every frame until it was done.
+    await pool(jobs, LOAD_CONCURRENCY, (job) => this.bakeVector(job.id, job.url, job.resolution));
   }
 
   private async bakeVector(id: string, url: string, resolution: number): Promise<void> {
+    const previous = this.svgBaked.get(id);
     this.svgBaked.set(id, { url, resolution });
     try {
       const texture = (await Assets.load({
@@ -288,9 +351,22 @@ export class PixiRenderer implements Renderer {
           entity.dirty = true;
         }
       }
+      // Nothing draws the old one any more, and it is the size of the new one
+      // again — left alone, every resize would add another to the card.
+      this.dropBaked(previous, url);
     } catch {
       // Keep the texture that is already on screen.
+      this.svgBaked.set(id, previous ?? { url, resolution });
     }
+  }
+
+  /** Releases a rasterisation nothing points at any more. */
+  private dropBaked(baked: { url: string; resolution: number } | undefined, url: string): void {
+    if (!baked || baked.url !== url) {
+      return;
+    }
+    const src = `${url}?sharpness=${baked.resolution.toFixed(2)}`;
+    void Assets.unload(src).catch(() => undefined);
   }
 
   /** Stage rectangle in page coordinates, for turning pointer events into stage x/y. */
@@ -538,6 +614,7 @@ export class PixiRenderer implements Renderer {
       const bucket = !sceneId || target.sceneId === sceneId ? inScene : rest;
       bucket.push(...target.pictures);
     }
+    this.setSvgBudget(targets);
     const one = async (picture: Picture) => {
       await this.loadPicture(picture);
       onLoaded?.();

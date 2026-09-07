@@ -21,6 +21,10 @@ import { decompileEnt } from '@tess/decompiler';
 import { parse } from '@tess/parser';
 import { tessComment, tessCommentLines, tessString } from '../packages/decompiler/src/ident.ts';
 
+/** 되돌린 조각 파일의 내용 — 에셋은 바이트로 담긴다. */
+const utf8 = (data: Uint8Array) => new TextDecoder('utf-8').decode(data);
+
+
 /** A one-object work whose script is `blocks`. */
 function work(blocks: unknown[], object: Record<string, unknown> = {}) {
   return {
@@ -129,7 +133,7 @@ test('작품의 글자가 되돌린 소스의 문법을 바꾸지 못한다', as
   const out = await decompileEnt(bytes, {});
   const fragment = out.assets.find((asset) => asset.path.endsWith('.tess'));
   assert.ok(fragment, '오브젝트 조각이 나와야 합니다');
-  const text = fragment.data.toString('utf-8');
+  const text = utf8(fragment.data);
 
   // 주석과 문자열 안을 지운 뒤에도 남는 `INJECTED` 가 있으면 문장이 된 것입니다.
   const bare = text.replace(/^\s*#.*$/gm, '').replace(/"(?:\\.|[^"\\])*"/g, '""');

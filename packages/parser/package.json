@@ -14,7 +14,6 @@
   ],
   "dependencies": {
     "@tess/core": "workspace:*",
-    "@babel/code-frame": "^8.0.0",
     "chevrotain": "^13.2.0"
   }
 }

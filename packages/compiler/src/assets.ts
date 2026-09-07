@@ -4,8 +4,8 @@
  * 엔트리 프로젝트는 리소스를 `temp/<앞2자>/<다음2자>/image|sound/<파일명>.<확장자>` 경로에 저장하며,
  * `project.json`의 `fileurl` 속성이 이 경로를 가리킵니다.
  */
-import fs from 'node:fs';
-import path from 'node:path';
+import { includesText, u16be, u16le, u32be } from './bytes.ts';
+import { EMPTY_HOST, basename, extname } from './host.ts';
 import { seedFrom } from './ids.ts';
 import { audioDuration } from './audio.ts';
 import type { Node } from '@tess/parser';
@@ -91,31 +91,31 @@ export function fileUrlFor(kind: string, filename: string, ext: string): string 
  * @returns 이미지의 크기 객체, 파싱할 수 없는 경우 `null`
  * @example
  * ```typescript
- * const buffer = fs.readFileSync('image.png');
+ * const buffer = new Uint8Array(await file.arrayBuffer());
  * const size = imageSize(buffer);
  * if (size) console.log(size.width, size.height);
  * ```
  */
-export function imageSize(buffer: Buffer): Size | null {
-  if (buffer.length >= 24 && buffer.readUInt32BE(0) === 0x89504e47) {
-    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+export function imageSize(buffer: Uint8Array): Size | null {
+  if (buffer.length >= 24 && u32be(buffer, 0) === 0x89504e47) {
+    return { width: u32be(buffer, 16), height: u32be(buffer, 20) };
   }
   if (buffer.length >= 10 && buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
-    return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
+    return { width: u16le(buffer, 6), height: u16le(buffer, 8) };
   }
   if (buffer.length >= 4 && buffer[0] === 0xff && buffer[1] === 0xd8) {
     let offset = 2;
     while (offset + 9 < buffer.length) {
       if (buffer[offset] !== 0xff) { offset += 1; continue; }
       const marker = buffer[offset + 1];
-      const length = buffer.readUInt16BE(offset + 2);
+      const length = u16be(buffer, offset + 2);
       if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
-        return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
+        return { height: u16be(buffer, offset + 5), width: u16be(buffer, offset + 7) };
       }
       offset += 2 + length;
     }
   }
-  if (buffer.includes('<svg')) return svgSize(buffer);
+  if (includesText(buffer, '<svg')) return svgSize(buffer);
   return null;
 }
 
@@ -127,12 +127,12 @@ export function imageSize(buffer: Buffer): Size | null {
  * @returns SVG 이미지의 크기 객체, 파싱할 수 없는 경우 `null`
  * @example
  * ```typescript
- * const buffer = Buffer.from('<svg width="100" height="200"></svg>');
+ * const buffer = new TextEncoder().encode('<svg width="100" height="200"></svg>');
  * const size = svgSize(buffer); // { width: 100, height: 200 }
  * ```
  */
-function svgSize(buffer: Buffer): Size | null {
-  const text = buffer.toString('utf-8');
+function svgSize(buffer: Uint8Array): Size | null {
+  const text = new TextDecoder('utf-8').decode(buffer);
   const tag = text.match(/<svg\b[^>]*>/i)?.[0];
   if (!tag) return null;
 
@@ -179,11 +179,15 @@ export function makeAsset(
   ctx: Context,
   node: Node,
 ): EntryAsset {
-  const ext = path.extname(file).toLowerCase();
+  const ext = extname(file).toLowerCase();
   const isImage = kind === 'image';
 
   if (isImage && !IMAGE_TYPES[ext]) ctx.warn(node, `'${file}' 은(는) 엔트리가 아는 이미지 형식이 아닙니다.`);
   if (!isImage && !SOUND_TYPES.has(ext)) ctx.warn(node, `'${file}' 은(는) 엔트리가 아는 소리 형식이 아닙니다.`);
+
+  // `assetUrls` means the path already is the address the work loads from, so
+  // nothing is looked up and nothing is packed.
+  if (ctx.options.assetUrls) return urlAsset(kind, { id, file, name, width, height, duration }, ext);
 
   const resolved = findAsset(file, ctx);
   const declared = isImage ? Boolean(width && height) : duration !== null && duration !== undefined;
@@ -192,9 +196,11 @@ export function makeAsset(
   let bytes = null;
 
   if (resolved) {
-    bytes = fs.readFileSync(resolved);
-    if (isImage && !size) size = imageSize(bytes);
-    if (!isImage && seconds === null) seconds = audioDuration(bytes, ext);
+    bytes = host(ctx).readFile(resolved);
+    if (bytes) {
+      if (isImage && !size) size = imageSize(bytes);
+      if (!isImage && seconds === null) seconds = audioDuration(bytes, ext);
+    }
   } else if (!declared) {
     const hint = isImage ? `size ${'가로'} ${'세로'}` : 'for 초';
     ctx.warn(node, `리소스 파일 '${file}' 을(를) 찾지 못했습니다. 경로만 기록합니다. (${hint} 를 적어 두면 이 알림이 사라집니다)`);
@@ -204,7 +210,7 @@ export function makeAsset(
   const filename = assetFilename(`${kind}:${file}:${bytes ? bytes.length : 0}`);
   const asset: EntryAsset = {
     id,
-    name: name ?? path.basename(file),
+    name: name ?? basename(file),
     filename,
     fileurl: fileUrlFor(kind, filename, ext),
     ext,
@@ -224,7 +230,7 @@ export function makeAsset(
   // 엔트리는 벡터로 그린 모양을 두 벌로 보관하고 실행기는 사본 쪽을 쓴다.
   if (isImage && resolved && ext === '.svg') {
     const twin = resolved.replace(/\.svg$/i, '.png');
-    if (fs.existsSync(twin)) {
+    if (host(ctx).isFile(twin)) {
       const target = fileUrlFor(kind, filename, '.png');
       asset.pngurl = target;
       ctx.assetFiles.push({ source: twin, target });
@@ -245,9 +251,44 @@ export function makeAsset(
  * ```
  */
 function findAsset(file: string, ctx: Context): string | null {
+  const files = host(ctx);
   for (const dir of ctx.options.assetDirs ?? []) {
-    const candidate = path.resolve(dir, file);
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+    const candidate = files.resolve(dir, file);
+    if (files.isFile(candidate)) return candidate;
   }
   return null;
+}
+
+/** Where the compiler reads files from; nowhere unless the caller says. */
+function host(ctx: Context) {
+  return ctx.options.host ?? EMPTY_HOST;
+}
+
+/**
+ * The asset for a costume or sound that already has an address. Its size and
+ * length come from the source, since there is no file here to measure.
+ */
+function urlAsset(
+  kind: 'image' | 'sound',
+  { id, file, name, width, height, duration }: AssetDecl,
+  ext: string,
+): EntryAsset {
+  const asset: EntryAsset = {
+    id,
+    name: name ?? basename(file),
+    filename: assetFilename(`${kind}:${file}:0`),
+    fileurl: file,
+    ext,
+  };
+  if (kind === 'image') {
+    asset.imageType = IMAGE_TYPES[ext] ?? 'png';
+    asset.dimension = { width: width || 100, height: height || 100 };
+    delete asset.ext;
+    // Entry keeps a vector costume twice and names the raster the same way, so
+    // the runner has both and picks the one worth drawing.
+    if (ext === '.svg') asset.pngurl = `${file.slice(0, -4)}.png`;
+  } else {
+    asset.duration = duration ?? 1;
+  }
+  return asset;
 }
