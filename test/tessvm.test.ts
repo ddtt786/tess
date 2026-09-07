@@ -502,6 +502,60 @@ test('화질은 화면이 요구하는 만큼 따라 올라가고, 하한 아래
   assert.equal(textSharpness(6, 1, 100), 6);
 });
 
+/**
+ * `함수 정의하기` is a hat block: playentry's own project data (and entry's
+ * runner) keep the body as the rest of the define block's stack, while saving a
+ * work to `.ent` nests that same body in the block's statement slot. Both have
+ * to run, or every function on a work loaded from playentry is an empty shell.
+ */
+function functionProject(content: unknown[][]) {
+  return {
+    objects: [
+      {
+        id: 'obj1', name: 'o', objectType: 'sprite', scene: 'sc1', rotateMethod: 'free',
+        sprite: { pictures: [], sounds: [] },
+        entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, width: 10, height: 10, visible: true },
+        script: JSON.stringify([[
+          { id: 'h', type: 'when_run_button_click', params: [null], statements: [] },
+          { id: 'c', type: 'func_fn1', params: [null], statements: [] },
+        ]]),
+      },
+    ],
+    scenes: [{ id: 'sc1', name: 's' }],
+    variables: [{ id: 'v1', name: '지은것', variableType: 'variable', value: 0, array: [] }],
+    messages: [],
+    functions: [{ id: 'fn1', content: JSON.stringify(content) }],
+  };
+}
+
+const defineHat = {
+  id: 'd', type: 'function_create',
+  params: [{ id: 'l', type: 'function_field_label', params: ['짓기', null] }, null],
+};
+const bodyBlock = {
+  id: 'b', type: 'set_variable',
+  params: ['v1', { id: 'n', type: 'text', params: ['42'] }, null],
+};
+
+test('함수 본문은 정의 블록 다음에 이어 붙은 것도 읽는다 (playentry 작품 형태)', () => {
+  // The shape playentry hands over: the body is the rest of the define's stack.
+  const vm = new Vm({ renderer: null, audio: null });
+  vm.load(functionProject([[defineHat, bodyBlock]]) as unknown as never);
+  vm.start();
+  vm.tick();
+  assert.equal(vm.unknownBlocks.size, 0);
+  assert.equal(String(vm.variables.find((v) => v.name === '지은것')!.value), '42');
+});
+
+test('함수 본문은 정의 블록 안에 든 것도 읽는다 (.ent 로 저장한 형태)', () => {
+  const nested = { ...defineHat, statements: [[bodyBlock]] };
+  const vm = new Vm({ renderer: null, audio: null });
+  vm.load(functionProject([[nested]]) as unknown as never);
+  vm.start();
+  vm.tick();
+  assert.equal(String(vm.variables.find((v) => v.name === '지은것')!.value), '42');
+});
+
 // ---------------------------------------------------------------------------
 //  충돌 판정
 // ---------------------------------------------------------------------------

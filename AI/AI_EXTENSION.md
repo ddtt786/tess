@@ -110,7 +110,12 @@ csrf-token: <meta[name=csrf-token]>.content
 문서에서 보내야 맞습니다. 받는 필드는 tessvm 이 읽는 것만입니다 —
 `speed·objects·variables·messages·functions·tables·scenes` 에 이름과 썸네일.
 
-응답은 `project.json` 과 사실상 같아서 `Vm.load()` 에 그대로 넣습니다. `objects[].script`
+응답은 `project.json` 과 **사실상** 같습니다 — 다만 `.ent` 로 저장한 것과 모양이 다른
+자리가 있습니다. 빈 `statements` 는 아예 빠지고, **함수 본문은 정의 블록 뒤에 이어 붙은
+채로** 옵니다(AI_TESSVM.md 2장 '함수 본문은 두 가지 모양으로 온다'). 이 차이 때문에
+`.ent` 로는 잘 돌던 작품이 확장에서만 함수가 전부 비어 돌던 일이 있었습니다.
+
+응답은 그대로 `Vm.load()` 에 넣습니다. `objects[].script`
 는 JSON 문자열인데 `Codegen` 이 문자열도 받으므로 손댈 것이 없습니다. Tess 로
 디컴파일했다가 다시 컴파일할 이유도 없습니다 — 그 왕복은 `.ent` 파일을 열 때
 `@tess/decompiler` 가 하는 일이고(AI_TESSVM.md 1장), 여기서는 이미 엔트리 작품 형식입니다.

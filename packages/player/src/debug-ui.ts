@@ -1722,12 +1722,16 @@ window.tessRenderProjectDebug = function renderProjectDebug(loaded) {
   functionContentById.clear();
   for (const fn of project.functions || []) {
     try {
-      const create = JSON.parse(fn.content || "[]")[0][0];
+      // 정의 블록은 모자다 — 본문은 그 스택의 나머지로 오고(playentry 작품 데이터),
+      // .ent 로 저장하면 같은 본문이 정의 블록의 칸 안에 들어간다. 둘 다 읽는다.
+      const stack = JSON.parse(fn.content || "[]")[0] || [];
+      const create = stack[0];
+      const nested = create && create.statements && create.statements[0];
       functionContentById.set(
         fn.id,
-        (create && create.statements && create.statements[0]) || [],
+        (nested && nested.length ? nested : stack.slice(1)) || [],
       );
-      indexBlocks(create, { id: "func:" + fn.id, name: fn.id });
+      indexBlocks(stack, { id: "func:" + fn.id, name: fn.id });
     } catch (error) {
       /* 못 읽으면 펼쳤을 때 안내만 보여 준다 */
     }

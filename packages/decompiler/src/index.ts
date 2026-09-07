@@ -298,11 +298,20 @@ function soleResourceOwner(content: unknown, ctx: DecompileContext): string | nu
  * A function's workspace holds one thread per stack, and the definition is not
  * always the first: a comment block or a stack the author left detached comes
  * before it whenever it sits higher up in the workspace.
+ *
+ * `함수 정의하기` is a hat, so a work carries its body as the rest of that stack
+ * — that is what playentry stores and what entry's own runner executes. Saving
+ * to `.ent` writes the same body nested in the block's one statement slot. The
+ * block comes back here with the body in that slot either way, so the rest of
+ * the decompiler reads one shape.
  */
 function functionCreateBlock(content: unknown): RawBlock | null {
   for (const thread of (content ?? []) as unknown[]) {
-    const block: RawBlock | null = Array.isArray(thread) ? thread[0] : null;
-    if (block?.type === 'function_create' || block?.type === 'function_create_value') return block;
+    if (!Array.isArray(thread)) continue;
+    const block: RawBlock | null = thread[0] ?? null;
+    if (block?.type !== 'function_create' && block?.type !== 'function_create_value') continue;
+    if (block.statements?.[0]?.length) return block;
+    return thread.length > 1 ? { ...block, statements: [thread.slice(1)] } : block;
   }
   return null;
 }

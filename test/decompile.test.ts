@@ -2167,3 +2167,24 @@ test('팔레트에서 내려간 boolean_and · boolean_or 는 and · or 로 되�
   assert.doesNotMatch(fragment, /\[decompile/);
   assert.deepEqual([...result.warnings], []);
 });
+
+test('함수 정의 다음에 이어 붙은 본문도 되돌린다 (playentry 작품 형태)', () => {
+  const define = {
+    id: 'd', type: 'function_create',
+    params: [{ id: 'l', type: 'function_field_label', params: ['짓기', null] }, null],
+  };
+  const body = { id: 'b', type: 'move_direction', params: [{ type: 'number', params: ['10'] }, null] };
+
+  // The shape playentry hands over: the body follows the define in its stack.
+  const flat = unattachedProject();
+  (flat as any).functions = [{ id: 'fn1', content: JSON.stringify([[define, body]]) }];
+  assert.match(decompileProject(flat, []).source, /^function 짓기\(\):\n {2}forward 10\nend$/m);
+
+  // And the shape a `.ent` save writes: the body nested in the statement slot.
+  const nested = unattachedProject();
+  (nested as any).functions = [{
+    id: 'fn1',
+    content: JSON.stringify([[{ ...define, statements: [[body]] }]]),
+  }];
+  assert.match(decompileProject(nested, []).source, /^function 짓기\(\):\n {2}forward 10\nend$/m);
+});

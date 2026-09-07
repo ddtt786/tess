@@ -7,10 +7,10 @@
  * that an error brought down goes back to that screen with the message written
  * along the bottom.
  */
-import { boot, type TessVmHandle } from '../../../tessvm/src/web/boot.ts';
-import { ASK_FIELD_STYLE } from '../../../tessvm/src/web/ask-style.ts';
-import { fetchWork } from './entry-project.ts';
-import { signedInUser } from './signed-in.ts';
+import { boot, type TessVmHandle } from "../../../tessvm/src/web/boot.ts";
+import { ASK_FIELD_STYLE } from "../../../tessvm/src/web/ask-style.ts";
+import { fetchWork } from "./entry-project.ts";
+import { signedInUser } from "./signed-in.ts";
 
 const ICONS = {
   stop: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg>',
@@ -26,7 +26,7 @@ const ICONS = {
     'M6 13.2V10H2.8M10 13.2V10h3.2"/></svg>',
 };
 
-const ASK_STYLE_ID = 'tessvm-ask-style';
+const ASK_STYLE_ID = "tessvm-ask-style";
 
 export interface MountedPlayer {
   dispose(): void;
@@ -39,7 +39,7 @@ function ensureAskStyle(): void {
   if (document.getElementById(ASK_STYLE_ID)) {
     return;
   }
-  const style = document.createElement('style');
+  const style = document.createElement("style");
   style.id = ASK_STYLE_ID;
   style.textContent = ASK_FIELD_STYLE;
   (document.head ?? document.documentElement).appendChild(style);
@@ -56,11 +56,16 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-function iconButton(parent: HTMLElement, className: string, label: string, icon: string) {
-  const button = el('button', `tessvm-btn ${className}`, parent);
-  button.type = 'button';
+function iconButton(
+  parent: HTMLElement,
+  className: string,
+  label: string,
+  icon: string,
+) {
+  const button = el("button", `tessvm-btn ${className}`, parent);
+  button.type = "button";
   button.title = label;
-  button.setAttribute('aria-label', label);
+  button.setAttribute("aria-label", label);
   button.innerHTML = icon;
   return button;
 }
@@ -78,41 +83,46 @@ export function mountPlayer(
 ): MountedPlayer {
   ensureAskStyle();
   // Idle from the start so the cover shows while the work is still on its way.
-  const root = el('div', 'tessvm-player is-idle', host);
+  const root = el("div", "tessvm-player is-idle", host);
   // Keys belong to the work only while the player has focus; the page around it
   // has its own text fields.
   root.tabIndex = 0;
 
-  const view = el('div', 'tessvm-view', root);
-  const cover = el('div', 'tessvm-cover', view);
-  const startButton = el('button', 'tessvm-start', cover);
-  startButton.type = 'button';
+  const view = el("div", "tessvm-view", root);
+  const cover = el("div", "tessvm-cover", view);
+  const startButton = el("button", "tessvm-start", cover);
+  startButton.type = "button";
   // Only once the work is loaded does this do anything, so it stays out of the
   // way until then.
   startButton.hidden = true;
-  startButton.title = '시작하기';
-  startButton.setAttribute('aria-label', '시작하기');
+  startButton.title = "시작하기";
+  startButton.setAttribute("aria-label", "시작하기");
   startButton.innerHTML = ICONS.play;
-  const status = el('div', 'tessvm-status', cover);
-  status.textContent = '작품을 불러오는 중…';
+  const status = el("div", "tessvm-status", cover);
+  status.textContent = "작품을 불러오는 중…";
 
-  const bar = el('div', 'tessvm-bar', root);
-  const left = el('div', 'tessvm-bar-side', bar);
-  const stopButton = iconButton(left, 'tessvm-stop', '정지', ICONS.stop);
-  const pauseButton = iconButton(left, 'tessvm-pause', '일시정지', ICONS.pause);
-  const coords = el('div', 'tessvm-coords', bar);
-  const right = el('div', 'tessvm-bar-side tessvm-bar-right', bar);
-  const boostLabel = el('label', 'tessvm-boost', right);
-  const boostText = el('span', 'tessvm-boost-text', boostLabel);
-  boostText.textContent = '부스트모드';
-  const boostInput = document.createElement('input');
-  boostInput.type = 'checkbox';
+  const bar = el("div", "tessvm-bar", root);
+  const left = el("div", "tessvm-bar-side", bar);
+  const stopButton = iconButton(left, "tessvm-stop", "정지", ICONS.stop);
+  const pauseButton = iconButton(left, "tessvm-pause", "일시정지", ICONS.pause);
+  const coords = el("div", "tessvm-coords", bar);
+  const right = el("div", "tessvm-bar-side tessvm-bar-right", bar);
+  const boostLabel = el("label", "tessvm-boost", right);
+  const boostText = el("span", "tessvm-boost-text", boostLabel);
+  boostText.textContent = "부스트모드";
+  const boostInput = document.createElement("input");
+  boostInput.type = "checkbox";
   boostInput.checked = true;
   boostLabel.appendChild(boostInput);
-  el('span', 'tessvm-switch', boostLabel);
-  const fullButton = iconButton(right, 'tessvm-full', '전체화면', ICONS.enterFull);
+  el("span", "tessvm-switch", boostLabel);
+  const fullButton = iconButton(
+    right,
+    "tessvm-full",
+    "전체화면",
+    ICONS.enterFull,
+  );
 
-  const errorBox = el('div', 'tessvm-error', root);
+  const errorBox = el("div", "tessvm-error", root);
   errorBox.hidden = true;
 
   let handle: TessVmHandle | null = null;
@@ -120,15 +130,15 @@ export function mountPlayer(
   let onTick: (() => void) | null = null;
 
   const showError = (text: string) => {
-    errorBox.classList.remove('is-notice');
+    errorBox.classList.remove("is-notice");
     errorBox.textContent = text;
     errorBox.hidden = false;
   };
   /** A standing note, not a failure: kept until an error takes the row over. */
-  let notice = '';
+  let notice = "";
   const showNotice = (text: string) => {
     notice = text;
-    errorBox.classList.add('is-notice');
+    errorBox.classList.add("is-notice");
     errorBox.textContent = text;
     errorBox.hidden = false;
   };
@@ -138,7 +148,7 @@ export function mountPlayer(
       return;
     }
     errorBox.hidden = true;
-    errorBox.textContent = '';
+    errorBox.textContent = "";
   };
 
   const dispose = () => {
@@ -148,7 +158,7 @@ export function mountPlayer(
     disposed = true;
     clearInterval(timer);
     onTick = null;
-    document.removeEventListener('fullscreenchange', onFullscreen);
+    document.removeEventListener("fullscreenchange", onFullscreen);
     handle?.dispose();
     handle = null;
     root.remove();
@@ -157,12 +167,12 @@ export function mountPlayer(
   function onFullscreen(): void {
     const full = document.fullscreenElement === root;
     fullButton.innerHTML = full ? ICONS.exitFull : ICONS.enterFull;
-    fullButton.title = full ? '전체화면 끄기' : '전체화면';
-    fullButton.setAttribute('aria-label', fullButton.title);
-    root.classList.toggle('is-full', full);
+    fullButton.title = full ? "전체화면 끄기" : "전체화면";
+    fullButton.setAttribute("aria-label", fullButton.title);
+    root.classList.toggle("is-full", full);
     handle?.relayout();
   }
-  document.addEventListener('fullscreenchange', onFullscreen);
+  document.addEventListener("fullscreenchange", onFullscreen);
 
   // One beat drives both the readout and the check that the page still holds us:
   // playentry replaces this part of the page on its own when the route changes.
@@ -178,7 +188,9 @@ export function mountPlayer(
     if (document.fullscreenElement === root) {
       void document.exitFullscreen();
     } else {
-      void root.requestFullscreen().catch(() => showError('전체화면으로 바꾸지 못했습니다'));
+      void root
+        .requestFullscreen()
+        .catch(() => showError("전체화면으로 바꾸지 못했습니다"));
     }
   };
 
@@ -189,7 +201,7 @@ export function mountPlayer(
     try {
       work = await fetchWork(projectId, groupId);
     } catch (error) {
-      status.textContent = '';
+      status.textContent = "";
       showError(error instanceof Error ? error.message : String(error));
       return;
     }
@@ -199,7 +211,7 @@ export function mountPlayer(
     if (work.thumb) {
       cover.style.backgroundImage = `url("${location.origin}${work.thumb}")`;
     }
-    status.textContent = '실행기를 준비하는 중…';
+    status.textContent = "실행기를 준비하는 중…";
 
     try {
       handle = await boot({
@@ -215,11 +227,11 @@ export function mountPlayer(
         onProgress: (done, all) => {
           status.textContent = all
             ? `불러오는 중… ${Math.floor((done / all) * 100)}%`
-            : '불러오는 중…';
+            : "불러오는 중…";
         },
       });
     } catch (error) {
-      status.textContent = '';
+      status.textContent = "";
       showError(error instanceof Error ? error.message : String(error));
       return;
     }
@@ -228,7 +240,7 @@ export function mountPlayer(
       handle = null;
       return;
     }
-    status.textContent = '';
+    status.textContent = "";
     startButton.hidden = false;
     reportUnsupported(handle);
     ready(handle);
@@ -241,20 +253,22 @@ export function mountPlayer(
    * like the work itself is broken.
    */
   function reportUnsupported(live: TessVmHandle): void {
-    const blocks = [...live.vm.unknownBlocks.keys()].filter((type) => !type.startsWith('variable:'));
+    const blocks = [...live.vm.unknownBlocks.keys()].filter(
+      (type) => !type.startsWith("variable:"),
+    );
     if (!blocks.length) {
       return;
     }
-    const shown = blocks.slice(0, 6).join(', ');
+    const shown = blocks.slice(0, 6).join(", ");
     showNotice(
-      `이 실행기가 아직 모르는 블록이 ${blocks.length}종 있습니다 — 그 블록은 아무 일도 하지 않습니다: ` +
-        `${shown}${blocks.length > 6 ? ` 외 ${blocks.length - 6}종` : ''}`,
+      `이 실행기가 아직 모르는 블록이 ${blocks.length}종 있습니다: ` +
+        `${shown}${blocks.length > 6 ? ` 외 ${blocks.length - 6}종` : ""}`,
     );
   }
 
   function ready(live: TessVmHandle): void {
     const seen = new Set<string>();
-    let shown = '';
+    let shown = "";
 
     const showState = () => {
       const state = live.vm.state;
@@ -263,11 +277,11 @@ export function mountPlayer(
       // and the browser then never makes that a click.
       if (state !== shown) {
         shown = state;
-        root.classList.toggle('is-idle', state === 'stop');
-        root.classList.toggle('is-paused', state === 'pause');
-        pauseButton.innerHTML = state === 'pause' ? ICONS.play : ICONS.pause;
-        pauseButton.title = state === 'pause' ? '이어서 하기' : '일시정지';
-        pauseButton.setAttribute('aria-label', pauseButton.title);
+        root.classList.toggle("is-idle", state === "stop");
+        root.classList.toggle("is-paused", state === "pause");
+        pauseButton.innerHTML = state === "pause" ? ICONS.play : ICONS.pause;
+        pauseButton.title = state === "pause" ? "이어서 하기" : "일시정지";
+        pauseButton.setAttribute("aria-label", pauseButton.title);
       }
       coords.textContent = `X: ${Math.round(live.vm.mouseX)}  Y: ${Math.round(live.vm.mouseY)}`;
     };
@@ -291,9 +305,11 @@ export function mountPlayer(
       if (!seen.has(key)) {
         seen.add(key);
         const target = error.targetId ? live.vm.targetOf(error.targetId) : null;
-        showError(`오류로 멈췄습니다 — ${target ? `${target.name}: ` : ''}${error.message}`);
+        showError(
+          `오류로 멈췄습니다 — ${target ? `${target.name}: ` : ""}${error.message}`,
+        );
       }
-      if (live.vm.state !== 'stop') {
+      if (live.vm.state !== "stop") {
         stop();
       }
     };
@@ -301,9 +317,9 @@ export function mountPlayer(
     startButton.onclick = start;
     stopButton.onclick = stop;
     pauseButton.onclick = () => {
-      if (live.vm.state === 'run') {
+      if (live.vm.state === "run") {
         live.pause();
-      } else if (live.vm.state === 'pause') {
+      } else if (live.vm.state === "pause") {
         live.start();
       }
       showState();

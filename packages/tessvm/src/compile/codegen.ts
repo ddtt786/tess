@@ -191,7 +191,8 @@ export class Codegen {
 
   private compileFunction(fn: FunctionEntry): string {
     const content = parseScript(fn.content);
-    const define = findFunctionDefine(content);
+    const stack = findFunctionDefine(content);
+    const define = stack?.[0];
     if (!define) {
       return 'function* () {}';
     }
@@ -206,7 +207,7 @@ export class Codegen {
       .join(', ');
     const previousLabel = this.funcLabel;
     this.funcLabel = 'fn';
-    const body = this.compileStack(define.statements?.[0] ?? [], '    ');
+    const body = this.compileStack(functionBody(stack!), '    ');
     this.funcLabel = previousLabel;
 
     let source = `function* (e, th, P) {\n  const L = {${locals}};\n  fn: {\n${body}  }\n`;
@@ -930,14 +931,32 @@ function parseScript(script: string | RawBlock[][] | undefined): RawBlock[][] {
 }
 
 /** The stack that actually defines a function; comment blocks can precede it. */
-function findFunctionDefine(content: RawBlock[][]): RawBlock | null {
+function findFunctionDefine(content: RawBlock[][]): RawBlock[] | null {
   for (const stack of content) {
     const first = stack[0];
     if (first && (first.type === 'function_create' || first.type === 'function_create_value')) {
-      return first;
+      return stack;
     }
   }
   return null;
+}
+
+/**
+ * A function's body, in either shape entry hands it over in.
+ *
+ * `함수 정의하기` is a hat: the body is the rest of its stack, which is what
+ * playentry's project data holds and what entry's own runner executes. Saving a
+ * work to `.ent` writes the same body nested in the define block's one statement
+ * slot instead. Reading only the nested one leaves every function empty on a
+ * work loaded from playentry — the blocks are all there, so nothing is reported
+ * as missing; the calls simply do nothing.
+ */
+function functionBody(stack: RawBlock[]): RawBlock[] {
+  const nested = stack[0]?.statements?.[0];
+  if (nested?.length) {
+    return nested;
+  }
+  return stack.slice(1);
 }
 
 /** Walks the label/param chain of a function head, in call order. */
