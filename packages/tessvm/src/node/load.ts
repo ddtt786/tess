@@ -81,8 +81,14 @@ async function loadEnt(file: string, options: LoadOptions): Promise<LoadedProjec
   fs.mkdirSync(outDir, { recursive: true });
   const mainFile = path.join(outDir, 'main.tess');
   fs.writeFileSync(mainFile, decompiled.source);
+  const root = path.resolve(outDir);
   for (const asset of decompiled.assets) {
-    const target = path.join(outDir, asset.path);
+    const target = path.resolve(root, asset.path);
+    // The work's own text names these files. A name that climbs out of the
+    // folder is refused rather than written.
+    if (target !== root && !target.startsWith(root + path.sep)) {
+      throw new Error(`작품이 폴더 밖의 파일을 가리킵니다: ${asset.path}`);
+    }
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, asset.data);
   }

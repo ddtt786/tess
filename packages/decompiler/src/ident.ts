@@ -46,15 +46,41 @@ export function safeIdentifier(raw: unknown, usedNames: Set<string>, fallback = 
   return candidate;
 }
 
+/**
+ * The characters that end a line for the lexer. A string literal may hold none
+ * of them and a `#` comment stops at the first one, so both escape all four —
+ * `\u2028`/`\u2029` included, which entry names are free to carry.
+ */
+const LINE_BREAK = /[\n\r\u2028\u2029]/g;
+
+const STRING_ESCAPE: Record<string, string> = {
+  '\n': '\\n',
+  '\r': '\\r',
+  '\u2028': '\\u2028',
+  '\u2029': '\\u2029',
+};
+
 /** Tess 문자열 리터럴로 안전하게 넣는다 (따옴표 · 역슬래시 · 줄바꿈 이스케이프) */
 export function tessString(value: unknown): string {
   const escaped = String(value)
     .replaceAll('\\', '\\\\')
     .replaceAll('"', '\\"')
-    .replaceAll('\n', '\\n')
-    .replaceAll('\r', '\\r')
-    .replaceAll('\t', '\\t');
+    .replaceAll('\t', '\\t')
+    .replace(LINE_BREAK, (char) => STRING_ESCAPE[char]!);
   return `"${escaped}"`;
+}
+
+/**
+ * One `# …` line. The text is the work's own, so a line break inside it would
+ * end the comment and leave the rest standing as Tess code.
+ */
+export function tessComment(text: unknown): string {
+  return `# ${String(text).replace(LINE_BREAK, ' ')}`.trimEnd();
+}
+
+/** The same, for text that is meant to keep its own lines. */
+export function tessCommentLines(text: unknown): string[] {
+  return String(text).split(LINE_BREAK).map((line) => tessComment(line));
 }
 
 /**

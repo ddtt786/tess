@@ -17,7 +17,7 @@ import { createRequire } from 'node:module';
 import { stripTypeScriptTypes } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { icon } from './icons.ts';
-import { zipDirectory } from './pack.ts';
+import { crxIdText, packCrx, publicKeyOf, signingKey, zipDirectory } from './pack.ts';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const SRC = path.join(ROOT, 'src');
@@ -27,6 +27,10 @@ const VENDOR = path.join(DIST, 'vendor');
 const VM_OUT = path.join(VENDOR, 'tessvm');
 const PIXI_OUT = path.join(VENDOR, 'pixi.mjs');
 const ZIP = path.join(ROOT, 'tessvm-extension.zip');
+const CHROME_ZIP = path.join(ROOT, 'tessvm-extension-chrome.zip');
+const CRX = path.join(ROOT, 'tessvm-extension.crx');
+/** Signing key for the crx. The extension id is derived from it, so it stays put. */
+const CRX_KEY = path.join(ROOT, 'crx-key.pem');
 
 /** Loaded as modules, by a document that asks for them. */
 const MODULE_ENTRIES = ['page/main.ts', 'popup/popup.ts'];
@@ -218,6 +222,21 @@ function copyPixi(): void {
   fs.writeFileSync(PIXI_OUT, code);
 }
 
+const rel = (file: string) => path.relative(process.cwd(), file);
+
+/**
+ * The manifest each browser gets. `browser_specific_settings` is firefox's own
+ * key; chrome has no use for it and its store checks the manifest for keys it
+ * does not know.
+ */
+function writeManifest(target: 'chrome' | 'firefox'): void {
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf-8'));
+  if (target === 'chrome') {
+    delete manifest.browser_specific_settings;
+  }
+  fs.writeFileSync(path.join(DIST, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
 function copy(from: string, to: string): void {
   fs.mkdirSync(path.dirname(to), { recursive: true });
   fs.cpSync(from, to, { recursive: true });
@@ -238,17 +257,36 @@ for (const entry of CLASSIC_ENTRIES) {
   flattened += emitClassic(path.join(SRC, entry));
 }
 copyPixi();
-copy(path.join(ROOT, 'manifest.json'), path.join(DIST, 'manifest.json'));
 copy(path.join(SRC, 'player.css'), path.join(DIST, 'player.css'));
 copy(path.join(SRC, 'popup', 'popup.html'), path.join(DIST, 'popup', 'popup.html'));
 copy(path.join(SRC, 'popup', 'popup.css'), path.join(DIST, 'popup', 'popup.css'));
 writeIcons();
 checkLinks();
+
+// The two browsers get the same files under a manifest of their own, so the
+// build writes one, packs it, then writes the other over it.
+writeManifest('firefox');
 checkManifest();
 zipDirectory(DIST, ZIP);
+// `dist` is left as the chrome build — that is the one loaded unpacked.
+writeManifest('chrome');
+checkManifest();
+zipDirectory(DIST, CHROME_ZIP);
 
-console.log(
-  `확장을 만들었습니다: ${path.relative(process.cwd(), DIST)}` +
-    ` (모듈 ${modules.size}개 · 내용 스크립트 ${flattened}개)\n` +
-    `파이어폭스용 묶음: ${path.relative(process.cwd(), ZIP)}`,
-);
+const lines = [
+  `확장을 만들었습니다: ${rel(DIST)} (모듈 ${modules.size}개 · 내용 스크립트 ${flattened}개)`,
+  `파이어폭스용 묶음: ${rel(ZIP)}`,
+  `크롬용 묶음: ${rel(CHROME_ZIP)} (웹스토어에 올리는 것은 이 zip 입니다)`,
+];
+if (process.argv.includes('--crx')) {
+  const fresh = !fs.existsSync(CRX_KEY);
+  const key = signingKey(CRX_KEY);
+  fs.writeFileSync(CRX, packCrx(fs.readFileSync(CHROME_ZIP), key));
+  lines.push(`크롬 crx: ${rel(CRX)} · 확장 id ${crxIdText(publicKeyOf(key))}`);
+  lines.push(
+    fresh
+      ? `서명 키를 새로 만들었습니다: ${rel(CRX_KEY)} — 확장 id 가 이 키에서 나오므로 잃어버리면 안 됩니다.`
+      : `서명 키: ${rel(CRX_KEY)}`,
+  );
+}
+console.log(lines.join('\n'));

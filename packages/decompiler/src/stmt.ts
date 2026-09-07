@@ -6,6 +6,8 @@ import { exprOf, targetName } from "./expr.ts";
 import {
   tessString,
   tessNumber,
+  tessComment,
+  tessCommentLines,
   ownsResource,
   isExactNumber,
   tessLiteral,
@@ -77,7 +79,7 @@ export function blocksToLines(blocks: RawBlock[] | undefined, ctx: DecompileCont
 export function commentLines(block: RawBlock | undefined): string[] {
   const value = String(block?.comment?.value ?? '').trimEnd();
   if (!value.trim()) return [];
-  return value.split(/\r?\n/).map((line) => `# ${line}`.trimEnd());
+  return tessCommentLines(value);
 }
 
 function branch(block: RawBlock, index: number, ctx: DecompileContext): string[] {
@@ -91,7 +93,7 @@ function unsupported(ctx: DecompileContext, block: RawBlock | undefined): string
     0,
     200,
   );
-  return [`# [decompile] 지원하지 않는 블록: ${type} params=${paramsText}`];
+  return [tessComment(`[decompile] 지원하지 않는 블록: ${type} params=${paramsText}`)];
 }
 
 function summarizeParams(params: any[] | undefined) {
@@ -209,7 +211,9 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       // never run. Keeping it would only fail the build, so note it instead.
       if (!scene) {
         ctx.warnings.add(`장면 id '${at(0)}' 이(가) 작품에 없어 그 자리로 가는 'jump' 를 주석으로 남겼습니다.`);
-        return [`# [decompile] jump ${tessString(String(at(0)))} — 작품에 없는 장면입니다`];
+        return [
+          tessComment(`[decompile] jump ${tessString(String(at(0)))} — 작품에 없는 장면입니다`),
+        ];
       }
       return [`jump ${tessString(scene.identifier)}`];
     }

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readTar } from './tar.ts';
 import { findLocalRuntime } from '@tess/player';
-import { safeIdentifier, tessString, tessNumber, tessLiteral, displayNamePart } from './ident.ts';
+import { safeIdentifier, tessString, tessNumber, tessLiteral, tessComment, displayNamePart } from './ident.ts';
 import { autoParamName } from '@tess/core';
 import { blocksToLines, commentLines, indent, functionDeclarationLines, colorExpr } from './stmt.ts';
 import { KEY_CODES } from '@tess/core';
@@ -559,6 +559,16 @@ function buildContext(
   const usedAssetPaths = new Set<string>();
   const runtimeDir = findRuntimeDir();
 
+  /**
+   * A file extension out of the work. `imageType` and `ext` are the work's own
+   * text and they name a file on disk, so everything but letters and digits
+   * goes — a `png/../../..` would otherwise write outside the output folder.
+   */
+  const safeExt = (value: unknown, fallback: string): string => {
+    const cleaned = String(value ?? '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8).toLowerCase();
+    return cleaned ? `.${cleaned}` : fallback;
+  };
+
   const uniqueAssetPath = (dir: string, name: string, ext: string) => {
     let candidate = `${dir}/${name}${ext}`;
     for (let n = 2; usedAssetPaths.has(candidate); n += 1) candidate = `${dir}/${name}_${n}${ext}`;
@@ -602,7 +612,7 @@ function buildContext(
     const useRaster = png !== null && !vector;
     const ext = useRaster
       ? '.png'
-      : (pic.imageType ? `.${pic.imageType}` : path.extname(pic.fileurl || '') || '.png');
+      : safeExt(pic.imageType || path.extname(pic.fileurl || '').slice(1), '.png');
     info.relativePath = registerAsset(info, 'image', ext, useRaster ? png : pic.fileurl);
     // `--keep-svg` asks for the vector and nothing else; otherwise the raster goes
     // out beside it so the runner still has both.
@@ -618,7 +628,7 @@ function buildContext(
   }
   for (const [, info] of ctx.soundsById) {
     const snd = info.source;
-    const ext = snd.ext || path.extname(snd.fileurl || '') || '.mp3';
+    const ext = safeExt(snd.ext || path.extname(snd.fileurl || '').slice(1), '.mp3');
     info.relativePath = registerAsset(info, 'sound', ext);
   }
 
@@ -900,7 +910,7 @@ function eventLines(thread: RawBlock[] | undefined, ctx: DecompileContext, inden
   const raw = blocksToLines(thread, ctx); // 맨 앞도 그냥 평범한 블록으로 취급해서 통째로 옮긴다
   keepOnly(ctx.warnings, hadWarnings);
   keepOnly(ctx.notices, hadNotices);
-  const commented = raw.map((line: string) => (line.trim() ? `${pad}# ${line}` : ''));
+  const commented = raw.map((line: string) => (line.trim() ? `${pad}${tessComment(line)}` : ''));
   return [
     `${pad}# [decompile] 아래는 엔트리 원본에서 어디에도 연결돼 있지 않던 블록입니다 (실행되지 않음):`,
     ...commented,

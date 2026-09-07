@@ -100,7 +100,7 @@ ${DEBUG_PANEL_STYLE}
 `;
 
 export function playerPage(options: PageOptions): string {
-  const config = JSON.stringify({
+  const config = jsValue({
     quality: options.quality,
     fps: options.fps ?? null,
     showStats: options.stats,
@@ -339,6 +339,20 @@ ${options.reload ? RELOAD_SCRIPT : ''}
 const RELOAD_SCRIPT = `
 new EventSource('/__reload').onmessage = () => location.reload();
 `;
+
+/**
+ * A value put inside a `<script>`. Html escaping does not apply in there, and a
+ * `</script` in a string would end the block, so those characters leave as
+ * escapes instead.
+ */
+function jsValue(value: unknown): string {
+  return JSON.stringify(value ?? null)
+    .replaceAll('<', '\\u003c')
+    .replaceAll('>', '\\u003e')
+    .replaceAll('&', '\\u0026')
+    .replaceAll('\u2028', '\\u2028')
+    .replaceAll('\u2029', '\\u2029');
+}
 
 function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => {

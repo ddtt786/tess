@@ -84,6 +84,17 @@ function literal(value: unknown): string {
   return JSON.stringify(value === undefined ? null : value);
 }
 
+/**
+ * A block type written into a generated comment. The type is the work's own
+ * text, and the whole program goes through `new Function`, so anything that
+ * could close the comment or open a line of its own is dropped — otherwise a
+ * crafted work writes its own javascript here. Entry's own types are word
+ * characters throughout, so nothing real is lost.
+ */
+function comment(type: string): string {
+  return `/* ${String(type).replace(/[^\w.-]+/g, ' ').slice(0, 60)} */`;
+}
+
 function isBlock(value: unknown): value is RawBlock {
   return Boolean(value) && typeof value === 'object' && typeof (value as RawBlock).type === 'string';
 }
@@ -495,7 +506,7 @@ export class Codegen {
       case 'open_table_chart':
       case 'close_table_chart':
         // Chart and save dialogs are editor UI; the running project sees nothing.
-        return line(`/* ${block.type} */`);
+        return line(comment(block.type));
       case 'open_table_wait':
         return line(`yield* O.waitSecond(${this.num(p[1])});`);
 
@@ -520,7 +531,7 @@ export class Codegen {
           return this.callFunction(block, ind, false).code;
         }
         this.note(block.type);
-        return line(`/* ${block.type} */`);
+        return line(comment(block.type));
     }
   }
 
@@ -876,7 +887,7 @@ export class Codegen {
     const index = this.funcIndex.get(id);
     if (index === undefined) {
       this.note(block.type);
-      return { code: asValue ? 'undefined' : `${ind}/* missing ${block.type} */\n` };
+      return { code: asValue ? 'undefined' : `${ind}${comment(`missing ${block.type}`)}\n` };
     }
     // Entry hands the function every slot of the call block in order and the
     // body reads them by declaration index (`register.params[paramMap[type]]`).

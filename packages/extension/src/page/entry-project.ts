@@ -50,19 +50,49 @@ function uploadsBase(): string {
   return `${location.origin}/uploads`;
 }
 
+/**
+ * Entry's stored names are plain alphanumerics and they build a path, so a name
+ * carrying anything else is dropped rather than pasted into a url.
+ */
+function safeName(value: unknown): string {
+  const name = String(value ?? '');
+  return /^[A-Za-z0-9]+$/.test(name) ? name : '';
+}
+
+/**
+ * Whether a url the work carries points back at playentry. `fileurl` is part of
+ * the work's own data, so any author can aim it anywhere; a foreign one would
+ * have the reader's browser call out to that host, and a same-origin one is
+ * sent with the reader's cookies. Only entry's own asset paths are kept.
+ */
+function sameOrigin(url: unknown): boolean {
+  if (typeof url !== 'string' || !url) {
+    return false;
+  }
+  try {
+    return new URL(url, location.origin).origin === location.origin;
+  } catch {
+    return false;
+  }
+}
+
+/** The url to load from: the work's own only while it stays on playentry. */
+function assetUrl(carried: unknown, built: string): string {
+  return sameOrigin(carried) ? String(carried) : built;
+}
+
 /** `Entry.EntryObject.getImagePath` — two-level hash folders, then `image/`. */
 function imageUrl(picture: RawAsset, type: string): string {
-  const name = String(picture.filename ?? '');
+  const name = safeName(picture.filename);
   return `${uploadsBase()}/${name.slice(0, 2)}/${name.slice(2, 4)}/image/${name}.${type}`;
 }
 
 /** `Entry.getSoundPath` — same folders, but no `sound/` step and the stored extension. */
 function soundUrl(sound: RawAsset): string {
-  if (sound.fileurl) {
-    return sound.fileurl;
-  }
-  const name = String(sound.filename ?? '');
-  return `${uploadsBase()}/${name.slice(0, 2)}/${name.slice(2, 4)}/${name}${sound.ext || '.mp3'}`;
+  const name = safeName(sound.filename);
+  const ext = /^\.?[A-Za-z0-9]{1,8}$/.test(String(sound.ext ?? '')) ? String(sound.ext) : '.mp3';
+  const built = `${uploadsBase()}/${name.slice(0, 2)}/${name.slice(2, 4)}/${name}${ext.startsWith('.') ? ext : `.${ext}`}`;
+  return assetUrl(sound.fileurl, built);
 }
 
 /**
@@ -77,10 +107,10 @@ function withAssetUrls(work: EntryWork): EntryWork {
     const sprite = (object as { sprite?: { pictures?: RawAsset[]; sounds?: RawAsset[] } }).sprite;
     for (const picture of sprite?.pictures ?? []) {
       if (picture.imageType === 'svg') {
-        picture.fileurl = picture.fileurl ?? imageUrl(picture, 'svg');
+        picture.fileurl = assetUrl(picture.fileurl, imageUrl(picture, 'svg'));
         picture.pngurl = imageUrl(picture, 'png');
       } else {
-        picture.fileurl = picture.fileurl ?? imageUrl(picture, 'png');
+        picture.fileurl = assetUrl(picture.fileurl, imageUrl(picture, 'png'));
       }
     }
     for (const sound of sprite?.sounds ?? []) {
