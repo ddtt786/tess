@@ -74,25 +74,6 @@ function factorial(n: number): number {
   return result;
 }
 
-function hex2rgb(hexstr: string): { r: number; g: number; b: number } {
-  let hex = hexstr[0] === '#' ? hexstr : `#${hexstr}`;
-  if (hex.length === 4) {
-    hex = `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`;
-  }
-  if (!/^#[0-9a-f]{6}$/i.test(hex)) {
-    hex = '#000000';
-  }
-  return {
-    r: parseInt(hex.slice(1, 3), 16),
-    g: parseInt(hex.slice(3, 5), 16),
-    b: parseInt(hex.slice(5, 7), 16),
-  };
-}
-
-function rgb2hex(r: number, g: number, b: number): string {
-  return `#${(((1 << 24) + (r << 16) + (g << 8) + b) >>> 0).toString(16).slice(1)}`;
-}
-
 /** `Entry.convertToRoundedDecimals` — dialogs round long decimals before showing. */
 function roundedDecimals(value: unknown, decimals: number): unknown {
   if (!cast.isNumber(value) || !/\d+\.\d+$/.test(String(value))) {
@@ -935,12 +916,13 @@ export function createOps(vm: Vm) {
     setPenColor(entity: Entity, colour: string): void {
       const brush = ensureBrush(entity, 'brush');
       startStroke(entity, 'brush');
-      brush.color = colour.startsWith('#') ? colour : `#${colour}`;
+      // `set_color` keeps `Entry.hex2rgb(colour)`, not the text it was given.
+      brush.color = cast.hexColor(colour);
     },
 
     setRandomPenColor(entity: Entity): void {
       const random = () =>
-        rgb2hex(
+        cast.rgbToHex(
           Math.floor(Math.random() * 256),
           Math.floor(Math.random() * 256),
           Math.floor(Math.random() * 256),
@@ -952,7 +934,7 @@ export function createOps(vm: Vm) {
     setFillColor(entity: Entity, colour: string): void {
       const paint = ensureBrush(entity, 'paint');
       startStroke(entity, 'paint');
-      paint.color = colour.startsWith('#') ? colour : `#${colour}`;
+      paint.color = cast.hexColor(colour);
     },
 
     changeThickness(entity: Entity, value: number): void {
@@ -1345,11 +1327,11 @@ export function createOps(vm: Vm) {
     },
 
     rgbToHex(r: number, g: number, b: number): string {
-      return rgb2hex(r, g, b);
+      return cast.rgbToHex(r, g, b);
     },
 
     hexToRgb(hex: unknown, channel: string): number {
-      const rgb = hex2rgb(String(hex));
+      const rgb = cast.hexToRgb(hex);
       return rgb[channel as 'r' | 'g' | 'b'] ?? 0;
     },
 

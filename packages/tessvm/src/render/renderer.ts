@@ -12,6 +12,7 @@ import {
   Application,
   Assets,
   CanvasTextMetrics,
+  Color,
   TextStyle,
   ColorMatrixFilter,
   Container,
@@ -31,6 +32,32 @@ import {
   svgSharpness,
   textSharpness,
 } from './sharpness.ts';
+
+/**
+ * Colours a work supplies, remembered by the text they were written as.
+ *
+ * Entry hands a colour straight to the canvas, which quietly ignores one it
+ * cannot read and keeps the colour it had. Pixi throws instead, and a throw in
+ * the middle of a frame takes the whole work down — so anything unreadable is
+ * turned away here. Works really do carry `#검정` and hexes that lost a digit.
+ */
+const colorCache = new Map<string, number | null>();
+
+function usableColor(value: unknown): number | null {
+  const text = String(value ?? '');
+  const known = colorCache.get(text);
+  if (known !== undefined) {
+    return known;
+  }
+  let parsed: number | null = null;
+  try {
+    parsed = new Color(text).toNumber();
+  } catch {
+    parsed = null;
+  }
+  colorCache.set(text, parsed);
+  return parsed;
+}
 
 /** How many costume files to fetch at the same time. */
 const LOAD_CONCURRENCY = 12;
@@ -150,6 +177,8 @@ export class PixiRenderer implements Renderer {
   private svgBudget = 1;
   /** Nominal size of every vector costume the work carries, for that budget. */
   private svgSizes: Array<{ width: number; height: number }> = [];
+  /** Objects whose draw already failed once; the console is told only then. */
+  private readonly syncFailed = new WeakSet<Entity>();
   private fontsWait: Promise<void> | null = null;
   private readonly svgPicks = new Map<string, boolean>();
   private readonly measureStyle = new TextStyle();
@@ -554,7 +583,7 @@ export class PixiRenderer implements Renderer {
         style: {
           fontFamily: entity.fontFamily,
           fontSize: entity.fontSize,
-          fill: entity.colour,
+          fill: usableColor(entity.colour) ?? 0x000000,
           align: 'center',
         },
         resolution: this.textResolution(entity),
@@ -754,7 +783,14 @@ export class PixiRenderer implements Renderer {
     }
     for (const [entity, view] of this.views) {
       if (entity.dirty) {
-        this.sync(entity, view);
+        // One object the renderer chokes on is not a reason to end the work.
+        // Entry draws on a canvas, which ignores what it cannot use; here the
+        // object keeps the last frame it managed and the rest carries on.
+        try {
+          this.sync(entity, view);
+        } catch (error) {
+          this.reportSyncFailure(entity, error);
+        }
         entity.dirty = false;
       }
     }
@@ -766,6 +802,15 @@ export class PixiRenderer implements Renderer {
     }
     this.overlay?.flush();
     this.app.renderer.render(this.app.stage);
+  }
+
+  /** Says so once per object, so a failing frame does not fill the console. */
+  private reportSyncFailure(entity: Entity, error: unknown): void {
+    if (this.syncFailed.has(entity)) {
+      return;
+    }
+    this.syncFailed.add(entity);
+    console.warn(`[tessvm] '${entity.target.name}' 을(를) 그리지 못했습니다`, error);
   }
 
   private sync(entity: Entity, view: EntityView): void {
@@ -835,7 +880,12 @@ export class PixiRenderer implements Renderer {
     // measured line height, and text box sizes are read by other blocks.
     style.fontFamily = entity.fontFamily;
     style.fontSize = entity.fontSize;
-    style.fill = entity.colour;
+    // An unreadable colour leaves the letters as they were, the way the canvas
+    // does for entry.
+    const fill = usableColor(entity.colour);
+    if (fill !== null) {
+      style.fill = fill;
+    }
     style.fontWeight = entity.fontBold ? 'bold' : 'normal';
     style.fontStyle = entity.fontItalic ? 'italic' : 'normal';
     style.align = align;
@@ -871,7 +921,8 @@ export class PixiRenderer implements Renderer {
     }
 
     background.clear();
-    if (entity.bgColor && entity.bgColor.startsWith('#')) {
+    const bg = entity.bgColor?.startsWith('#') ? usableColor(entity.bgColor) : null;
+    if (bg !== null) {
       const offset = entity.lineBreak
         ? 0
         : align === 'left'
@@ -881,11 +932,12 @@ export class PixiRenderer implements Renderer {
             : 0;
       background
         .rect(offset - entity.width / 2, -entity.height / 2, entity.width, entity.height)
-        .fill({ color: entity.bgColor });
+        .fill({ color: bg });
     }
 
     decoration.clear();
-    if (entity.underLine || entity.strike) {
+    const ink = usableColor(entity.colour);
+    if ((entity.underLine || entity.strike) && ink !== null) {
       const width = text.width;
       const left = text.x - width * text.anchor.x;
       const top = text.y - text.height * text.anchor.y;
@@ -893,12 +945,12 @@ export class PixiRenderer implements Renderer {
       if (entity.underLine) {
         decoration
           .rect(left, top + text.height - thickness, width, thickness)
-          .fill({ color: entity.colour });
+          .fill({ color: ink });
       }
       if (entity.strike) {
         decoration
           .rect(left, top + text.height / 2 - thickness / 2, width, thickness)
-          .fill({ color: entity.colour });
+          .fill({ color: ink });
       }
     }
   }
@@ -921,7 +973,9 @@ export class PixiRenderer implements Renderer {
   private styleFor(entity: Entity, style: TextStyle): TextStyle {
     style.fontFamily = entity.fontFamily;
     style.fontSize = entity.fontSize;
-    style.fill = entity.colour;
+    // Only the metrics are read from this style, but an unreadable colour would
+    // still throw on the way in.
+    style.fill = usableColor(entity.colour) ?? 0x000000;
     style.fontWeight = entity.fontBold ? 'bold' : 'normal';
     style.fontStyle = entity.fontItalic ? 'italic' : 'normal';
     style.align = entity.textAlign === 1 ? 'left' : entity.textAlign === 2 ? 'right' : 'center';
@@ -1104,14 +1158,15 @@ export class PixiRenderer implements Renderer {
         graphics.lineTo(points[at]!, -points[at + 1]!);
       }
     }
+    const ink = usableColor(style.color) ?? 0x000000;
     if (style.fill) {
-      graphics.fill({ color: style.color });
+      graphics.fill({ color: ink });
     } else {
       // `setStrokeStyle(thickness)` — entry leaves createjs at its defaults,
       // which are butt caps and miter joins, so pen ends and corners are square.
       graphics.stroke({
         width: style.thickness,
-        color: style.color,
+        color: ink,
         cap: 'butt',
         join: 'miter',
       });

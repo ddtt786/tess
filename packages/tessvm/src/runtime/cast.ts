@@ -214,3 +214,38 @@ export function parseNumber(value: unknown): number | string | false {
 export function fixed(value: number, places: number): number {
   return Number(value.toFixed(places));
 }
+
+/**
+ * `Entry.hex2rgb` — the colour a work's value really means.
+ *
+ * Entry puts a `#` on the front, expands `#abc`, and takes **anything else it
+ * cannot read as black**. A colour is never a reason to stop: works carry
+ * strings like `#검정` or a hex that lost a digit, and entry draws those black
+ * and carries on.
+ */
+export function hexToRgb(value: unknown): { r: number; g: number; b: number } {
+  const text = String(value ?? '');
+  let hex = text[0] === '#' ? text : `#${text}`;
+  if (hex.length === 4) {
+    hex = `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`;
+  }
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) {
+    hex = '#000000';
+  }
+  return {
+    r: parseInt(hex.slice(1, 3), 16),
+    g: parseInt(hex.slice(3, 5), 16),
+    b: parseInt(hex.slice(5, 7), 16),
+  };
+}
+
+/** `Entry.rgb2hex`. */
+export function rgbToHex(r: number, g: number, b: number): string {
+  return `#${(((1 << 24) + (r << 16) + (g << 8) + b) >>> 0).toString(16).slice(1)}`;
+}
+
+/** The same value as `#rrggbb`, which is the only shape entry ever stores. */
+export function hexColor(value: unknown): string {
+  const { r, g, b } = hexToRgb(value);
+  return rgbToHex(r, g, b);
+}

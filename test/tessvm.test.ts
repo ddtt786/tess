@@ -496,6 +496,52 @@ test('글상자·벡터 모양의 텍스처는 webgl 상한(4096px)을 넘지 �
 });
 
 // ---------------------------------------------------------------------------
+//  색
+// ---------------------------------------------------------------------------
+test('읽을 수 없는 색은 엔트리와 같이 검정으로 떨어진다 (오류가 아니다)', () => {
+  // `Entry.hex2rgb` — # 을 붙이고, 세 자리는 늘리고, 그 밖은 전부 #000000.
+  assert.equal(cast.hexColor('#ff8000'), '#ff8000');
+  assert.equal(cast.hexColor('ff8000'), '#ff8000');
+  assert.equal(cast.hexColor('#f80'), '#ff8800');
+  assert.equal(cast.hexColor('#검정'), '#000000');
+  assert.equal(cast.hexColor('#dfdfe'), '#000000');
+  assert.equal(cast.hexColor('#ffffff100'), '#000000');
+  assert.equal(cast.hexColor(''), '#000000');
+  assert.equal(cast.hexColor(undefined), '#000000');
+  assert.deepEqual(cast.hexToRgb('#ff8000'), { r: 255, g: 128, b: 0 });
+  assert.deepEqual(cast.hexToRgb('#검정'), { r: 0, g: 0, b: 0 });
+});
+
+test('읽을 수 없는 색을 붓·글상자에 넣어도 작품이 멈추지 않는다', () => {
+  const vm = runVm(`scene "s":
+  text "판":
+    text_content = "x"
+    when start do
+      font_color = join("#", "검정")
+      bg_color = join("#", "dfdfe")
+    end
+  end
+  object "붓":
+    when start do
+      draw_color = join("#", "검정")
+      fill_color = join("#", "dfdfe")
+    end
+  end
+end`);
+  for (let i = 0; i < 5; i += 1) vm.tick();
+  assert.deepEqual(vm.errors, []);
+  assert.equal(vm.state, 'run');
+
+  const brush = vm.targets.find((target) => target.name === '붓')!.entity;
+  // 붓은 엔트리와 같이 hex2rgb 를 거친 값을 들고 있다.
+  assert.equal(brush.brush?.color, '#000000');
+  assert.equal(brush.paint?.color, '#000000');
+  // 글상자는 엔트리와 같이 적힌 그대로 들고 있고, 거르는 것은 그리는 쪽이다.
+  const board = vm.targets.find((target) => target.name === '판')!.entity;
+  assert.equal(board.colour, '#검정');
+});
+
+// ---------------------------------------------------------------------------
 //  공유 · 실시간 변수
 // ---------------------------------------------------------------------------
 const SHARED_SOURCE = `shared list 명예 = []

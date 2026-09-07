@@ -237,6 +237,10 @@ export function mountPlayer(
     try {
       handle = await boot({
         project: built.project,
+        // On playentry a shared variable is the site's, not this browser's:
+        // entry keeps it with the work and a viewer's changes are not saved.
+        // Keeping a copy here would show a value nobody else has.
+        store: null,
         container: view,
         autoStart: false,
         keyTarget: root,
