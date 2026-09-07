@@ -320,7 +320,14 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   let accumulated = 0;
 
   const step = (now: number) => {
-    vm.advance(now);
+    // `advance` reports what it can itself; this is the last net, so a throw
+    // from anywhere in a frame ends the run with a reason instead of leaving a
+    // frozen canvas and a driver that keeps calling back into the same throw.
+    try {
+      vm.advance(now);
+    } catch (error) {
+      vm.fail(error);
+    }
     if (stats) {
       frames += 1;
       accumulated += now - last;

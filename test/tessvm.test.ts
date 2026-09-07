@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compileProject } from '@tess/compiler';
 import type { EntryProject } from '@tess/compiler';
+import { svgSharpness, textSharpness } from '../packages/tessvm/src/render/sharpness.ts';
 import {
   CollisionSystem,
   MaskStore,
@@ -456,6 +457,49 @@ test('색 고르개 블록은 고른 색을 값으로 돌려준다', () => {
   assert.equal(vm.unknownBlocks.size, 0);
   assert.match(source, /O\.textColor\(e, "#ffaa00"\)/);
   assert.match(source, /O\.setPenColor\(e, "#dede00"\)/);
+});
+
+test('프레임 안에서 난 예외는 실행을 멈추고 알린다 — 화면만 멈추지 않는다', () => {
+  const result = compileProject(wrap('forward 10'), { path: 'test.tess' });
+  assert.ok(result.project);
+  const reported: string[] = [];
+  const renderer = {
+    attach() {}, addEntity() {}, removeEntity() {}, setScene() {}, syncDialog() {}, eraseAll() {},
+    flush() { throw new Error('webgl 컨텍스트를 잃었습니다'); },
+  };
+  const vm = new Vm({ renderer: renderer as never, audio: null });
+  vm.load(result.project as unknown as never);
+  vm.onError = (error) => reported.push(error.message);
+  vm.start();
+  vm.advance(16);
+  vm.advance(32);
+  assert.equal(vm.state, 'stop');
+  // Reported once: the run ends rather than throwing again every frame.
+  assert.deepEqual(reported, ['webgl 컨텍스트를 잃었습니다']);
+  assert.equal(vm.errors.length, 1);
+});
+
+test('글상자·벡터 모양의 텍스처는 webgl 상한(4096px)을 넘지 않는다', () => {
+  // Full screen on a retina display asks for far more than a texture can hold.
+  const full = 8;
+  const wide = textSharpness(full, 4, 900);
+  assert.ok(wide * 900 <= 4096, `글상자 텍스처가 ${wide * 900}px 입니다`);
+
+  const big = svgSharpness(full, 1600, 1200);
+  assert.ok(big * 1600 <= 4096, `벡터 텍스처가 ${big * 1600}px 입니다`);
+  assert.ok(big * 1600 * (big * 1200) <= 2048 * 2048 + 1, '벡터 텍스처의 넓이 상한');
+});
+
+test('화질은 화면이 요구하는 만큼 따라 올라가고, 하한 아래로는 내려가지 않는다', () => {
+  // 4/3 (stage) × 1 (resolution): a plain window at the default size.
+  assert.equal(textSharpness(4 / 3, 1, 100), 2, '작게 그려도 하한 2배');
+  assert.equal(svgSharpness(4 / 3, 100, 100), 2);
+  // A retina window, then the same text box scaled to twice its size.
+  assert.equal(textSharpness(3, 1, 100), 3);
+  assert.equal(textSharpness(3, 2, 100), 6);
+  // The vector cap is lower: a work holds far more costumes than text boxes.
+  assert.equal(svgSharpness(6, 100, 100), 4);
+  assert.equal(textSharpness(6, 1, 100), 6);
 });
 
 // ---------------------------------------------------------------------------

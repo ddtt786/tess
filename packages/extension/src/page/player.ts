@@ -120,10 +120,23 @@ export function mountPlayer(
   let onTick: (() => void) | null = null;
 
   const showError = (text: string) => {
+    errorBox.classList.remove('is-notice');
+    errorBox.textContent = text;
+    errorBox.hidden = false;
+  };
+  /** A standing note, not a failure: kept until an error takes the row over. */
+  let notice = '';
+  const showNotice = (text: string) => {
+    notice = text;
+    errorBox.classList.add('is-notice');
     errorBox.textContent = text;
     errorBox.hidden = false;
   };
   const clearError = () => {
+    if (notice) {
+      showNotice(notice);
+      return;
+    }
     errorBox.hidden = true;
     errorBox.textContent = '';
   };
@@ -217,7 +230,26 @@ export function mountPlayer(
     }
     status.textContent = '';
     startButton.hidden = false;
+    reportUnsupported(handle);
     ready(handle);
+  }
+
+  /**
+   * Blocks this runner does not have yet are compiled away to nothing, so a work
+   * that leans on one runs with a piece of it quietly missing — a scene that
+   * never builds, a script that never starts. Say so rather than let it look
+   * like the work itself is broken.
+   */
+  function reportUnsupported(live: TessVmHandle): void {
+    const blocks = [...live.vm.unknownBlocks.keys()].filter((type) => !type.startsWith('variable:'));
+    if (!blocks.length) {
+      return;
+    }
+    const shown = blocks.slice(0, 6).join(', ');
+    showNotice(
+      `이 실행기가 아직 모르는 블록이 ${blocks.length}종 있습니다 — 그 블록은 아무 일도 하지 않습니다: ` +
+        `${shown}${blocks.length > 6 ? ` 외 ${blocks.length - 6}종` : ''}`,
+    );
   }
 
   function ready(live: TessVmHandle): void {

@@ -25,16 +25,12 @@ import type { Renderer } from '../runtime/engine.ts';
 import { buildMask } from '../collision/mask-image.ts';
 import type { AlphaMask } from '../collision/mask.ts';
 import { Overlay } from './overlay.ts';
+import {
+  MAX_SHARPNESS,
+  svgSharpness,
+  textSharpness,
+} from './sharpness.ts';
 
-/**
- * Ceiling on how many texture pixels go on one stage pixel. Anything baked into
- * a texture follows the canvas: at the default size on a plain screen the stage
- * already asks for about 1.3, a retina window for around 3, and full screen on
- * a large display reaches this.
- */
-const MAX_SHARPNESS = 8;
-/** Least sharpness a text box is drawn with, whatever the canvas is doing. */
-const MIN_TEXT_SHARPNESS = 2;
 /** How many costume files to fetch at the same time. */
 const LOAD_CONCURRENCY = 12;
 /** `TEXT_BOX_REPOSITION_OFFSET - TEXT_BOX_WEBGL_OFFSET` in entryjs. */
@@ -123,22 +119,6 @@ export interface RendererOptions {
  */
 export const PAINT_CANVAS = { width: 960, height: 540 };
 
-/**
- * Least sharpness a vector costume is rasterised with. That extra detail is the
- * only reason to keep the vector at all; at 1× it carries the same as the raster
- * beside it and the canvas round trip only loses. Above this it follows the
- * canvas, and the pixel cap keeps a big drawing from eating the texture budget.
- */
-const MIN_SVG_SHARPNESS = 2;
-/**
- * And no sharper than this. A work carries far more costumes than text boxes,
- * and every one of them is a texture the card holds; this covers a stage drawn
- * up to about 1920 css pixels wide on a retina screen.
- */
-const MAX_SVG_SHARPNESS = 4;
-const SVG_MAX_SIDE = 4096;
-/** And no more than this many pixels in one — 16MB of texture. */
-const SVG_MAX_PIXELS = 2048 * 2048;
 /** A vector is only rasterised again once the canvas asks for this much more. */
 const SVG_REBAKE_RATIO = 1.25;
 /** Only the head of the file is read to decide what is in it. */
@@ -215,14 +195,7 @@ export class PixiRenderer implements Renderer {
 
   /** Sharpness for a vector costume: follows the canvas, inside the pixel caps. */
   private svgResolution(picture: Picture): number {
-    const width = Math.max(picture.dimension.width, 1);
-    const height = Math.max(picture.dimension.height, 1);
-    // Stepping in halves keeps the same drawing from being baked under a new
-    // sharpness for every pixel the window moves.
-    const wanted = Math.max(MIN_SVG_SHARPNESS, Math.ceil(this.displayScale() * 2) / 2);
-    const byArea = Math.sqrt(SVG_MAX_PIXELS / (width * height));
-    const bySide = SVG_MAX_SIDE / Math.max(width, height);
-    return Math.max(1, Math.min(wanted, MAX_SVG_SHARPNESS, bySide, byArea));
+    return svgSharpness(this.displayScale(), picture.dimension.width, picture.dimension.height);
   }
 
   /** Moves the world container onto the stage as it is sized right now. */
@@ -800,7 +773,7 @@ export class PixiRenderer implements Renderer {
     if (text.text !== entity.text) {
       text.text = entity.text;
     }
-    const resolution = this.textResolution(entity);
+    const resolution = this.textResolution(entity, text);
     if (text.resolution !== resolution) {
       text.resolution = resolution;
     }
@@ -861,11 +834,10 @@ export class PixiRenderer implements Renderer {
    * Stepping in halves keeps a text box that is animating its size from baking
    * a new texture every frame.
    */
-  private textResolution(entity: Entity): number {
-    const scale = Math.max(Math.abs(entity.scaleX), Math.abs(entity.scaleY), 0);
-    const wanted = this.displayScale() * scale;
-    const stepped = Math.ceil(wanted * 2) / 2;
-    return Math.max(MIN_TEXT_SHARPNESS, Math.min(MAX_SHARPNESS, stepped));
+  private textResolution(entity: Entity, drawn?: Text): number {
+    const scale = Math.max(Math.abs(entity.scaleX), Math.abs(entity.scaleY));
+    const longest = Math.max(drawn?.width ?? entity.width, drawn?.height ?? entity.height);
+    return textSharpness(this.displayScale(), scale, longest);
   }
 
   /** The style a text box is drawn with — also what it is measured with. */

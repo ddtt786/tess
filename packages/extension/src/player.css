@@ -265,6 +265,12 @@
   overflow: auto;
 }
 
+/* A block this runner does not have yet: the work runs, that block does not. */
+.tessvm-error.is-notice {
+  background: #fffaf0;
+  color: #8a6116;
+}
+
 /* -------------------------------------------------------------- fullscreen */
 .tessvm-player:fullscreen {
   width: 100vw;

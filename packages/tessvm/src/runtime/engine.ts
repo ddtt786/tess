@@ -572,15 +572,42 @@ export class Vm implements Project {
     this.accumulator += Math.min(timestamp - this.lastTime, step * this.maxCatchUp);
     this.lastTime = timestamp;
     let ticks = 0;
-    while (this.accumulator >= step && ticks < this.maxCatchUp) {
-      this.accumulator -= step;
-      this.tick(step);
-      ticks += 1;
-      if (this.state !== 'run') {
-        break;
+    // A throw from outside a script — the renderer, the collision store, a lost
+    // webgl context — used to leave the frame driver. The driver queues the next
+    // frame before this one runs, so nothing stopped: the work froze on its last
+    // painted frame and threw again every frame, with nothing said about it.
+    try {
+      while (this.accumulator >= step && ticks < this.maxCatchUp) {
+        this.accumulator -= step;
+        this.tick(step);
+        ticks += 1;
+        if (this.state !== 'run') {
+          break;
+        }
       }
+      this.renderer?.flush();
+    } catch (error) {
+      this.fail(error);
     }
-    this.renderer?.flush();
+  }
+
+  /**
+   * Ends the run on a failure that is not one script's — the frame itself could
+   * not be finished, so there is nothing to carry on with. Reported the same way
+   * a script error is, which is what puts it on screen.
+   */
+  fail(error: unknown, blockId: string | null = null, targetId: string | null = null): void {
+    const record: VmError = {
+      message: error instanceof Error ? error.message : String(error),
+      blockId,
+      targetId,
+    };
+    this.errors.push(record);
+    this.stop();
+    // The message alone rarely says where a frame-level throw came from, and the
+    // host only gets the message; the console keeps the stack.
+    console.error('[tessvm] 프레임을 끝내지 못했습니다', error);
+    this.onError?.(record);
   }
 
   /** One engine frame. */
