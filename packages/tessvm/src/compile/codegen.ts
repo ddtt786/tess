@@ -683,6 +683,11 @@ export class Codegen {
       case 'get_pictures':
       case 'get_sounds':
         return { code: literal(String(p[0] ?? '')), kind: 'str', constant: String(p[0] ?? '') };
+      // The colour picker block: `color` fills a brush slot, `text_color` a text
+      // slot, and both hold the picked colour in their first param.
+      case 'color':
+      case 'text_color':
+        return { code: literal(String(p[0] ?? '')), kind: 'str', constant: String(p[0] ?? '') };
 
       case 'calc_basic':
         return this.calcBasic(block);
@@ -768,6 +773,11 @@ export class Codegen {
               : `C.orOf(${this.raw(p[0])}, ${this.raw(p[2])})`,
           kind: 'bool',
         };
+      // Entry's older and/or pair. Same two-sided read as `boolean_and_or`.
+      case 'boolean_and':
+        return { code: `C.andOf(${this.raw(p[0])}, ${this.raw(p[2])})`, kind: 'bool' };
+      case 'boolean_or':
+        return { code: `C.orOf(${this.raw(p[0])}, ${this.raw(p[2])})`, kind: 'bool' };
       case 'boolean_not':
         return { code: `(!${this.bool(p[1])})`, kind: 'bool' };
       case 'is_boost_mode':

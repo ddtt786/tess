@@ -392,6 +392,72 @@ test('모르는 블록은 실행을 멈추지 않고 보고만 한다', () => {
   assert.ok(vm.unknownBlocks.has('get_cur_weather'));
 });
 
+/** A one-object project made straight from entry blocks, with no Tess in between. */
+function rawProject(blocks: unknown[], variables: unknown[] = []) {
+  return {
+    objects: [
+      {
+        id: 'obj1',
+        name: 'o',
+        objectType: 'sprite',
+        scene: 'sc1',
+        rotateMethod: 'free',
+        sprite: { pictures: [], sounds: [] },
+        entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, width: 10, height: 10, visible: true },
+        script: JSON.stringify([
+          [{ id: 'h', type: 'when_run_button_click', params: [null], statements: [] }, ...blocks],
+        ]),
+      },
+    ],
+    scenes: [{ id: 'sc1', name: 's' }],
+    variables,
+    messages: [],
+    functions: [],
+  };
+}
+
+const setVar = (id: string, value: unknown) => ({
+  id: 's' + id,
+  type: 'set_variable',
+  params: [id, value, null],
+  statements: [],
+});
+const bool = (value: boolean) => ({ type: value ? 'True' : 'False', params: [], statements: [] });
+
+test('팔레트에서 내려간 boolean_and · boolean_or 도 엔트리처럼 읽는다', () => {
+  const variables = [
+    { id: 'v1', name: 'and', variableType: 'variable', value: 0, array: [] },
+    { id: 'v2', name: 'or', variableType: 'variable', value: 0, array: [] },
+  ];
+  const project = rawProject(
+    [
+      setVar('v1', { type: 'boolean_and', params: [bool(true), null, bool(false)], statements: [] }),
+      setVar('v2', { type: 'boolean_or', params: [bool(true), null, bool(false)], statements: [] }),
+    ],
+    variables,
+  );
+  const vm = new Vm({ renderer: null, audio: null });
+  vm.load(project as unknown as never);
+  vm.start();
+  vm.tick();
+  assert.equal(vm.unknownBlocks.size, 0);
+  assert.equal(String(vm.variables.find((v) => v.name === 'and')!.value), 'false');
+  assert.equal(String(vm.variables.find((v) => v.name === 'or')!.value), 'true');
+});
+
+test('색 고르개 블록은 고른 색을 값으로 돌려준다', () => {
+  const project = rawProject([
+    { id: 'c', type: 'text_change_font_color', params: [{ type: 'text_color', params: ['#ffaa00'], statements: [] }, null], statements: [] },
+    { id: 'p', type: 'set_color', params: [{ type: 'color', params: ['#dede00'], statements: [] }, null], statements: [] },
+  ]);
+  const vm = new Vm({ renderer: null, audio: null });
+  vm.load(project as unknown as never);
+  const source = vm.compiledSource(project as unknown as never);
+  assert.equal(vm.unknownBlocks.size, 0);
+  assert.match(source, /O\.textColor\(e, "#ffaa00"\)/);
+  assert.match(source, /O\.setPenColor\(e, "#dede00"\)/);
+});
+
 // ---------------------------------------------------------------------------
 //  충돌 판정
 // ---------------------------------------------------------------------------

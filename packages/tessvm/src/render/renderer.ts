@@ -26,7 +26,15 @@ import { buildMask } from '../collision/mask-image.ts';
 import type { AlphaMask } from '../collision/mask.ts';
 import { Overlay } from './overlay.ts';
 
-const TEXT_RESOLUTION = 2;
+/**
+ * Ceiling on how many texture pixels go on one stage pixel. Anything baked into
+ * a texture follows the canvas: at the default size on a plain screen the stage
+ * already asks for about 1.3, a retina window for around 3, and full screen on
+ * a large display reaches this.
+ */
+const MAX_SHARPNESS = 8;
+/** Least sharpness a text box is drawn with, whatever the canvas is doing. */
+const MIN_TEXT_SHARPNESS = 2;
 /** How many costume files to fetch at the same time. */
 const LOAD_CONCURRENCY = 12;
 /** `TEXT_BOX_REPOSITION_OFFSET - TEXT_BOX_WEBGL_OFFSET` in entryjs. */
@@ -68,12 +76,6 @@ interface PenGroup {
   graphics: Graphics;
   /** What was drawn last time, so an unchanged group is left alone. */
   drawn: string;
-}
-
-/** Sharper than nominal, but never past the pixel cap. */
-function svgResolution(picture: Picture): number {
-  const longest = Math.max(picture.dimension.width, picture.dimension.height, 1);
-  return Math.max(1, Math.min(SVG_SCALE, SVG_MAX_SIDE / longest));
 }
 
 /**
@@ -122,13 +124,23 @@ export interface RendererOptions {
 export const PAINT_CANVAS = { width: 960, height: 540 };
 
 /**
- * How much sharper than its nominal size a vector costume is rasterised. That
- * extra detail is the only reason to keep the vector at all; at 1× it carries
- * the same as the raster and the canvas round trip only loses. The pixel cap
- * keeps a big drawing from eating the texture budget.
+ * Least sharpness a vector costume is rasterised with. That extra detail is the
+ * only reason to keep the vector at all; at 1× it carries the same as the raster
+ * beside it and the canvas round trip only loses. Above this it follows the
+ * canvas, and the pixel cap keeps a big drawing from eating the texture budget.
  */
-const SVG_SCALE = 2;
-const SVG_MAX_SIDE = 2048;
+const MIN_SVG_SHARPNESS = 2;
+/**
+ * And no sharper than this. A work carries far more costumes than text boxes,
+ * and every one of them is a texture the card holds; this covers a stage drawn
+ * up to about 1920 css pixels wide on a retina screen.
+ */
+const MAX_SVG_SHARPNESS = 4;
+const SVG_MAX_SIDE = 4096;
+/** And no more than this many pixels in one — 16MB of texture. */
+const SVG_MAX_PIXELS = 2048 * 2048;
+/** A vector is only rasterised again once the canvas asks for this much more. */
+const SVG_REBAKE_RATIO = 1.25;
 /** Only the head of the file is read to decide what is in it. */
 const SVG_PEEK = 4096;
 
@@ -143,6 +155,10 @@ export class PixiRenderer implements Renderer {
   private readonly textures = new Map<string, Texture>();
   private readonly images = new Map<string, CanvasImageSource>();
   private readonly loading = new Map<string, Promise<void>>();
+  /** Vector costumes that were rasterised, and the sharpness each was given. */
+  private readonly svgBaked = new Map<string, { url: string; resolution: number }>();
+  /** Every costume a texture was asked for, so one can be baked again. */
+  private readonly pictures = new Map<string, Picture>();
   private overlay: Overlay | null = null;
   private quality: number;
   private ready = false;
@@ -183,7 +199,30 @@ export class PixiRenderer implements Renderer {
 
   private pixelRatio(): number {
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
-    return Math.max(1, Math.min(8, dpr * this.quality));
+    return Math.max(1, Math.min(MAX_SHARPNESS, dpr * this.quality));
+  }
+
+  /**
+   * Texture pixels the canvas puts on one stage pixel right now. The stage is
+   * drawn 4/3 the size of entry's coordinates and the renderer's resolution
+   * sits on top of that, so anything baked into a texture — a text box, a
+   * rasterised vector costume — needs this much to come out sharp.
+   */
+  private displayScale(): number {
+    const resolution = this.ready ? this.app.renderer.resolution : this.pixelRatio();
+    return stage.scale * resolution;
+  }
+
+  /** Sharpness for a vector costume: follows the canvas, inside the pixel caps. */
+  private svgResolution(picture: Picture): number {
+    const width = Math.max(picture.dimension.width, 1);
+    const height = Math.max(picture.dimension.height, 1);
+    // Stepping in halves keeps the same drawing from being baked under a new
+    // sharpness for every pixel the window moves.
+    const wanted = Math.max(MIN_SVG_SHARPNESS, Math.ceil(this.displayScale() * 2) / 2);
+    const byArea = Math.sqrt(SVG_MAX_PIXELS / (width * height));
+    const bySide = SVG_MAX_SIDE / Math.max(width, height);
+    return Math.max(1, Math.min(wanted, MAX_SVG_SHARPNESS, bySide, byArea));
   }
 
   /** Moves the world container onto the stage as it is sized right now. */
@@ -210,12 +249,16 @@ export class PixiRenderer implements Renderer {
     const cssHeight = Math.max(1, Math.floor(stage.worldHeight * fit));
     const resolution = Math.max(
       1,
-      Math.min(8, (cssWidth / stage.worldWidth) * this.pixelRatio()),
+      Math.min(MAX_SHARPNESS, (cssWidth / stage.worldWidth) * this.pixelRatio()),
     );
     if (this.lastResolution !== resolution) {
       this.lastResolution = resolution;
       this.app.renderer.resolution = resolution;
       this.app.renderer.resize(stage.worldWidth, stage.worldHeight);
+      // Text and vector costumes are baked at the size they are drawn at, so a
+      // canvas that just grew needs them again.
+      this.markTextDirty();
+      void this.rebakeVectors();
     }
     const canvas = this.app.canvas;
     canvas.style.width = `${cssWidth}px`;
@@ -225,6 +268,56 @@ export class PixiRenderer implements Renderer {
 
   setQuality(quality: number): void {
     this.quality = quality;
+  }
+
+  /** Text boxes carry their sharpness in their own texture; `sync` rewrites it. */
+  private markTextDirty(): void {
+    for (const [entity, view] of this.views) {
+      if (view.text) {
+        entity.dirty = true;
+      }
+    }
+  }
+
+  /**
+   * Rasterises again every vector costume the canvas outgrew. The picture is
+   * loaded under its own url plus the sharpness, so the old texture stays valid
+   * until the new one is in place and nothing renders an emptied texture.
+   */
+  private async rebakeVectors(): Promise<void> {
+    const jobs: Array<Promise<void>> = [];
+    for (const [id, baked] of this.svgBaked) {
+      const picture = this.pictures.get(id);
+      if (!picture) {
+        continue;
+      }
+      const wanted = this.svgResolution(picture);
+      if (wanted > baked.resolution * SVG_REBAKE_RATIO) {
+        jobs.push(this.bakeVector(id, baked.url, wanted));
+      }
+    }
+    await Promise.all(jobs);
+  }
+
+  private async bakeVector(id: string, url: string, resolution: number): Promise<void> {
+    this.svgBaked.set(id, { url, resolution });
+    try {
+      const texture = (await Assets.load({
+        src: `${url}?sharpness=${resolution.toFixed(2)}`,
+        data: { resolution },
+      })) as Texture;
+      this.textures.set(id, texture);
+      // The alpha mask keeps the image it was first built from: collisions must
+      // not shift because the window changed size.
+      for (const [entity, view] of this.views) {
+        if (view.sprite && view.pictureId === id) {
+          view.pictureId = null;
+          entity.dirty = true;
+        }
+      }
+    } catch {
+      // Keep the texture that is already on screen.
+    }
   }
 
   /** Stage rectangle in page coordinates, for turning pointer events into stage x/y. */
@@ -344,6 +437,8 @@ export class PixiRenderer implements Renderer {
     this.textures.clear();
     this.images.clear();
     this.loading.clear();
+    this.svgBaked.clear();
+    this.pictures.clear();
     this.app.destroy({ removeView: true }, { children: true });
   }
 
@@ -413,7 +508,7 @@ export class PixiRenderer implements Renderer {
           fill: entity.colour,
           align: 'center',
         },
-        resolution: TEXT_RESOLUTION,
+        resolution: this.textResolution(entity),
       });
       text.anchor.set(0.5, 0.5);
       const decoration = new Graphics();
@@ -567,14 +662,18 @@ export class PixiRenderer implements Renderer {
       await inFlight;
       return;
     }
+    this.pictures.set(picture.id, picture);
     const job = (async () => {
       try {
         const url = await this.pickUrl(picture);
+        const resolution = this.svgResolution(picture);
+        const vector = url.endsWith('.svg');
         const texture = (await Assets.load(
-          url.endsWith('.svg')
-            ? { src: url, data: { resolution: svgResolution(picture) } }
-            : url,
+          vector ? { src: url, data: { resolution } } : url,
         )) as Texture;
+        if (vector) {
+          this.svgBaked.set(picture.id, { url, resolution });
+        }
         this.textures.set(picture.id, texture);
         const resource = texture.source?.resource as CanvasImageSource | undefined;
         if (resource) {
@@ -701,6 +800,10 @@ export class PixiRenderer implements Renderer {
     if (text.text !== entity.text) {
       text.text = entity.text;
     }
+    const resolution = this.textResolution(entity);
+    if (text.resolution !== resolution) {
+      text.resolution = resolution;
+    }
 
     // `setTextAlign` moves the anchor, not the text: left-aligned text grows
     // to the right of the object's own x, centred text grows both ways.
@@ -748,6 +851,21 @@ export class PixiRenderer implements Renderer {
           .fill({ color: entity.colour });
       }
     }
+  }
+
+  /**
+   * Sharpness a text box's own texture is drawn with. Entry hands its text to
+   * the canvas at the size it appears, so the letters are as sharp as the
+   * screen; here the text is a texture, and it is only that sharp when it is
+   * baked at the size the canvas draws it — the object's own scale included.
+   * Stepping in halves keeps a text box that is animating its size from baking
+   * a new texture every frame.
+   */
+  private textResolution(entity: Entity): number {
+    const scale = Math.max(Math.abs(entity.scaleX), Math.abs(entity.scaleY), 0);
+    const wanted = this.displayScale() * scale;
+    const stepped = Math.ceil(wanted * 2) / 2;
+    return Math.max(MIN_TEXT_SHARPNESS, Math.min(MAX_SHARPNESS, stepped));
   }
 
   /** The style a text box is drawn with — also what it is measured with. */

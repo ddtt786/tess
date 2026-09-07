@@ -2138,3 +2138,32 @@ test('함수 정의에 붙은 메모도 되돌아온다', () => {
   const result = decompileProject(project, []);
   assert.match(result.source, /^# 쓰는 법: 인사\(\)\nfunction 인사\(\):$/m);
 });
+
+test('팔레트에서 내려간 boolean_and · boolean_or 는 and · or 로 되돌아온다', () => {
+  const bool = (value: boolean) => ({ type: value ? 'True' : 'False', params: [], statements: [] });
+  const project = unattachedProject();
+  project.objects![0]!.script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    {
+      type: '_if',
+      params: [{ type: 'boolean_and', params: [bool(true), null, bool(false)], statements: [] }, null],
+      statements: [[{ type: 'move_direction', params: [{ type: 'number', params: ['10'] }, null], statements: [] }]],
+    },
+    {
+      type: '_if',
+      params: [{ type: 'boolean_or', params: [bool(true), null, bool(false)], statements: [] }, null],
+      statements: [[{ type: 'move_direction', params: [{ type: 'number', params: ['20'] }, null], statements: [] }]],
+    },
+  ]]);
+
+  const result = decompileProject(project, []);
+  const fragment = result.assets
+    .find((asset) => asset.path === 'objects/주인공.tess')!
+    .data.toString('utf-8');
+  assert.match(fragment, /if \(true and false\):/);
+  assert.match(fragment, /if \(true or false\):/);
+  // A block that cannot be moved across becomes a truthy placeholder string, so
+  // the condition would have been taken every time.
+  assert.doesNotMatch(fragment, /\[decompile/);
+  assert.deepEqual([...result.warnings], []);
+});

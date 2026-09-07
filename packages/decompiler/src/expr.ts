@@ -221,6 +221,9 @@ export function exprOf(block: any, ctx: DecompileContext): string {
       return `(${exprOf(at(0), ctx)} ${op} ${exprOf(at(2), ctx)})`;
     }
     case 'boolean_and_or': return `(${exprOf(at(0), ctx)} ${at(1) === 'AND' ? 'and' : 'or'} ${exprOf(at(2), ctx)})`;
+    /** Entry's older and/or pair, kept for works saved before `boolean_and_or`. */
+    case 'boolean_and': return `(${exprOf(at(0), ctx)} and ${exprOf(at(2), ctx)})`;
+    case 'boolean_or': return `(${exprOf(at(0), ctx)} or ${exprOf(at(2), ctx)})`;
     case 'boolean_not': return `not (${exprOf(at(1), ctx)})`;
     case 'True': return 'true';
     case 'False': return 'false';
