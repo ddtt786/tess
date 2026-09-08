@@ -8,6 +8,12 @@
 
 /** `Entry.Scope.getNumberValue` — parseFloat, then 0 for anything unparseable. */
 export function num(value: unknown): number {
+  // `parseFloat` takes a string, so a number goes out to text and back for
+  // nothing. Its shortest form parses to the same double, `NaN` and `-0` fall
+  // to 0 either way, and the infinities survive both routes.
+  if (typeof value === 'number') {
+    return value || 0;
+  }
   const n = parseFloat(value as string);
   return n || 0;
 }
@@ -34,18 +40,57 @@ export function field(value: unknown): number {
   return Number(value);
 }
 
-/** `Entry.Utils.isNumber` — plain decimal literals only, no exponent or leading dot. */
-const NUMERIC = /^-?\d+\.?\d*$/;
+const MINUS = 45;
+const DOT = 46;
+const ZERO = 48;
+const NINE = 57;
 
+/**
+ * `Entry.Utils.isNumber` — plain decimal literals only, no exponent or leading
+ * dot, which is `/^-?\d+\.?\d*$/` read off the characters. Every value a block
+ * reads goes through here, and a regex match costs more than the walk does.
+ */
 export function isNumber(value: unknown): boolean {
   if (typeof value === 'number') {
     return true;
   }
-  return typeof value === 'string' && NUMERIC.test(value);
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const length = value.length;
+  let at = value.charCodeAt(0) === MINUS ? 1 : 0;
+  const start = at;
+  while (at < length) {
+    const code = value.charCodeAt(at);
+    if (code < ZERO || code > NINE) {
+      break;
+    }
+    at += 1;
+  }
+  if (at === start) {
+    return false;
+  }
+  if (at === length) {
+    return true;
+  }
+  if (value.charCodeAt(at) !== DOT) {
+    return false;
+  }
+  for (at += 1; at < length; at += 1) {
+    const code = value.charCodeAt(at);
+    if (code < ZERO || code > NINE) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** Digits after the decimal point in a number's shortest representation. */
 function decimals(x: number): number {
+  // A whole number carries none, however it is written — `1e21` included.
+  if (Number.isInteger(x)) {
+    return 0;
+  }
   const s = String(x);
   const exp = s.indexOf('e');
   if (exp < 0) {
@@ -61,12 +106,31 @@ function decimals(x: number): number {
 /** Decimals beyond this cannot be recovered by rounding, so plain doubles are used. */
 const MAX_DECIMALS = 20;
 
+/** `10 ** -places`, indexed by places. */
+const TENTHS: number[] = Array.from({ length: MAX_DECIMALS + 1 }, (_, at) => 10 ** -at);
+
+/**
+ * A strict lower bound on the gap between a double and its neighbour is
+ * `|x| * Number.EPSILON / 2`; half of that again leaves room for the error the
+ * `TENTHS` literals carry, so the test below never claims a gap that is not
+ * there.
+ */
+const SPACING = Number.EPSILON / 4;
+
 /**
  * Rounds a double sum/product back onto the decimal grid its operands imply,
  * matching `new BigNumber(a).plus(b).toNumber()` without decimal arithmetic.
  */
 function snap(result: number, places: number): number {
   if (places === 0 || places > MAX_DECIMALS || !isFinite(result)) {
+    return result;
+  }
+  // Where neighbouring doubles are further apart than the grid asked for, that
+  // grid holds no value the result is not already on: rounding onto it and
+  // reading the number back lands on the same double. Trigonometry feeds most
+  // of the arithmetic in a 3D work and leaves nearly every operand here, so it
+  // is worth not formatting a string to find that out.
+  if (Math.abs(result) * SPACING >= TENTHS[places]!) {
     return result;
   }
   return Number(result.toFixed(places));

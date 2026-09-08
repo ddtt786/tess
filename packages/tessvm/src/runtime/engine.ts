@@ -216,6 +216,9 @@ export class Vm implements Project {
   private timerBase = 0;
   timerVisible = false;
 
+  /** Messages sent this frame, raised once the frame is over. */
+  private pendingMessages: string[] = [];
+
   private scripts: CompiledScript[] = [];
   private plans: ScriptPlan[] = [];
   private targetById = new Map<string, Target>();
@@ -585,6 +588,7 @@ export class Vm implements Project {
 
   stop(): void {
     this.state = 'stop';
+    this.pendingMessages = [];
     this.flushStore();
     for (const target of this.targets) {
       for (const thread of target.threads) {
@@ -628,6 +632,7 @@ export class Vm implements Project {
     }
     this.answer = '';
     this.errors = [];
+    this.pendingMessages = [];
     this.currentSceneId = this.scenes[0]?.id ?? '';
     this.audio?.setVolume(1);
     this.audio?.setSpeed(1);
@@ -714,6 +719,7 @@ export class Vm implements Project {
         this.runThread(thread);
       }
     }
+    this.flushMessages();
   }
 
   private runThread(thread: Thread): void {
@@ -753,6 +759,29 @@ export class Vm implements Project {
       });
     }
     return started;
+  }
+
+  /**
+   * `신호 보내기` — `message_cast` hands the raise to `setTimeout`, so entry
+   * starts the receivers after the frame that sent it, not inside it. Anything
+   * the sender does next in that frame — a scene restart above all — therefore
+   * happens before a single receiver exists. `신호 보내고 기다리기` raises on
+   * the spot instead, which is why only this one is queued.
+   */
+  queueMessage(id: string): void {
+    this.pendingMessages.push(id);
+  }
+
+  /** Raises the frame's queued messages, on the scene the frame ended in. */
+  private flushMessages(): void {
+    if (!this.pendingMessages.length) {
+      return;
+    }
+    const queued = this.pendingMessages;
+    this.pendingMessages = [];
+    for (const id of queued) {
+      this.fireEvent('when_message_cast', id);
+    }
   }
 
   /** Same, but only for the one entity that the event happened to. */

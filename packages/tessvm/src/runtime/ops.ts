@@ -132,9 +132,13 @@ export function createOps(vm: Vm) {
     return vm.variableAt(index, entity);
   }
 
-  /** `Entry.getListRealIndex`. */
+  /**
+   * `Entry.getListRealIndex`. The three keywords are the only indices that are
+   * not a number and none of them parses as one, so naming them is the same
+   * test as asking whether the index is numeric first.
+   */
   function listIndex(raw: unknown, list: Variable): number {
-    if (!cast.isNumber(raw)) {
+    if (typeof raw === 'string') {
       if (raw === 'FIRST') {
         return 1;
       }
@@ -577,7 +581,7 @@ export function createOps(vm: Vm) {
     //  Events and scenes
     // -----------------------------------------------------------------------
     castMessage(id: string): void {
-      vm.fireEvent('when_message_cast', id);
+      vm.queueMessage(id);
     },
 
     *castMessageWait(id: string) {

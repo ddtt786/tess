@@ -89,6 +89,32 @@ test('사칙연산은 엔트리처럼 10진으로 계산한다', () => {
   assert.equal(cast.divNum(1, 4), 0.25);
 });
 
+/**
+ * 자리를 세어 반올림하는 자리와 그럴 필요가 없는 자리를 함께 봅니다. 배정밀도의
+ * 이웃 간격보다 촘촘한 눈금은 결과를 바꾸지 못하므로 값이 그대로 나와야 합니다.
+ */
+test('10진 반올림은 배정밀도가 담아내는 자리까지만 움직인다', () => {
+  const sin30 = Math.sin(Math.PI / 6);
+  assert.equal(cast.mulNum(sin30, 30), sin30 * 30);
+  assert.equal(cast.mulNum(0.1, 0.2), 0.02);
+  assert.equal(cast.addNum(100.1, 0.02), 100.12);
+  assert.equal(cast.subNum(1e21, 0.5), 1e21 - 0.5);
+  assert.equal(cast.mulNum(1 / 3, 1 / 3), (1 / 3) * (1 / 3));
+  assert.ok(Number.isNaN(cast.addNum(NaN, 0.1)));
+  assert.equal(cast.mulNum(Infinity, 0.1), Infinity);
+});
+
+test('숫자 판별은 지수도 앞의 점도 숫자로 보지 않는다', () => {
+  for (const yes of ['0', '-0', '12', '-12', '12.', '12.5', '-0.75']) {
+    assert.equal(cast.isNumber(yes), true, yes);
+  }
+  for (const no of ['', '-', '.', '.5', '-.5', '1e5', '+1', ' 1', '1 ', '1.2.3', 'abc', '1a']) {
+    assert.equal(cast.isNumber(no), false, no);
+  }
+  assert.equal(cast.isNumber(12), true);
+  assert.equal(cast.isNumber(null), false);
+});
+
 test('더하기는 숫자가 아닌 쪽이 있으면 이어 붙인다', () => {
   assert.equal(cast.calcPlus('가', '나'), '가나');
   assert.equal(cast.calcPlus('2', '3'), 5);
@@ -208,6 +234,79 @@ test('값 함수가 멈춰도 호출한 쪽은 이어서 실행된다', () => {
   vm.tick();
   assert.equal(valueOf(vm, 'a'), 5);
   assert.equal(valueOf(vm, 'b'), 1);
+});
+
+test('신호 보내기는 그 프레임이 끝난 뒤에 받는 쪽을 깨운다', () => {
+  // `message_cast` 는 `setTimeout` 으로 신호를 올립니다. 보낸 블록 다음 블록이
+  // 같은 프레임 안에서 도는 동안에는 받는 스크립트가 아직 없습니다.
+  const vm = runVm(`
+var a = 0
+scene "sc":
+  object "sender":
+    when start do
+      send "s"
+      a += 1
+    end
+  end
+  object "receiver":
+    when signal "s" do
+      a += 10
+    end
+  end
+end`);
+  vm.tick();
+  assert.equal(valueOf(vm, 'a'), 1);
+  vm.tick();
+  assert.equal(valueOf(vm, 'a'), 11);
+});
+
+test('신호를 보낸 뒤 같은 장면을 다시 시작해도 받는 쪽은 살아남는다', () => {
+  // 장면 시작하기는 그 장면의 스크립트를 모두 멈추지만, 아직 올라가지 않은
+  // 신호까지 되돌리지는 못합니다 — 엔트리에서 3D 작품이 시작할 때 모델을
+  // 쌓아 두는 방식이 이것입니다.
+  const vm = runVm(`
+var a = 0
+scene "sc":
+  object "sender":
+    when start do
+      send "s"
+      jump "sc"
+    end
+  end
+  object "receiver":
+    when signal "s" do
+      a += 1
+      wait 0
+      a += 10
+    end
+  end
+end`);
+  for (let i = 0; i < 6; i += 1) {
+    vm.tick();
+  }
+  assert.equal(valueOf(vm, 'a'), 11);
+});
+
+test('신호 보내고 기다리기는 그 자리에서 받는 쪽을 깨운다', () => {
+  // `message_cast_wait` 는 `raiseMessage` 를 바로 부르므로, 보낸 프레임 안에서
+  // 이미 받는 스크립트가 서 있습니다.
+  const vm = runVm(`
+var a = 0
+scene "sc":
+  object "sender":
+    when start do
+      call "s"
+      a += 100
+    end
+  end
+  object "receiver":
+    when signal "s" do
+      a += 1
+    end
+  end
+end`);
+  vm.tick();
+  assert.equal(valueOf(vm, 'a'), 1);
 });
 
 test('복제본은 자기 몫의 오브젝트 지역 변수를 가진다', () => {
