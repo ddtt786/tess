@@ -607,13 +607,20 @@ export class Codegen {
   // -------------------------------------------------------------------------
   //  Values
   // -------------------------------------------------------------------------
+  /**
+   * `Entry.Scope.getNumberValue` — `parseFloat(v) || 0`. On a value that is
+   * already a number that is `v || 0`, which is not nothing: `0 / 0` hands back
+   * `NaN`, and the next slot to read it turns it into 0. Dropping the `|| 0`
+   * with the conversion would let that `NaN` run on through the rest of the
+   * expression, so a number keeps it.
+   */
   private num(param: unknown): string {
     const value = this.value(param);
     if (value.constant !== undefined) {
       const folded = parseFloat(String(value.constant)) || 0;
       return String(folded);
     }
-    return value.kind === 'num' ? value.code : `n(${value.code})`;
+    return value.kind === 'num' ? `(${value.code} || 0)` : `n(${value.code})`;
   }
 
   /** `Number(x)` rather than `parseFloat(x) || 0` — the timed blocks use this. */

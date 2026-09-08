@@ -97,6 +97,12 @@ export interface BrushState {
   thickness: number;
   opacity: number;
   stop: boolean;
+  /**
+   * When the entity first reached for this pen. Entry makes a pen's shape at
+   * that moment and slides it under the entity, so the pen started later ends
+   * up in front of the one started earlier.
+   */
+  started: number;
   /** Points laid down since the last move, in entry coordinates. */
   path: number[];
   /** Finished strokes, each `{color, thickness, opacity, points}`. */

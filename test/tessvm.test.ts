@@ -115,6 +115,20 @@ test('숫자 판별은 지수도 앞의 점도 숫자로 보지 않는다', () =
   assert.equal(cast.isNumber(null), false);
 });
 
+/**
+ * 값 칸은 `parseFloat(v) || 0` 이므로, 앞 블록이 내놓은 `NaN` 은 그 값을 읽는 다음
+ * 블록에서 0 이 됩니다. 변수에 그대로 담으면 `NaN` 이 남는 것과 다릅니다.
+ */
+test('NaN 은 값 칸을 지날 때 0 이 된다', () => {
+  const vm = runVm(
+    wrap('a = (z / z)\nb = ((z / z) * 1000)\nc = ((z / z) + 5)', 'var z = 0\nvar a = 0\nvar b = 0\nvar c = 0'),
+  );
+  vm.tick();
+  assert.equal(String(vm.variables.find((v) => v.name === 'a')!.getValue()), 'NaN');
+  assert.equal(valueOf(vm, 'b'), 0);
+  assert.equal(valueOf(vm, 'c'), 5);
+});
+
 test('더하기는 숫자가 아닌 쪽이 있으면 이어 붙인다', () => {
   assert.equal(cast.calcPlus('가', '나'), '가나');
   assert.equal(cast.calcPlus('2', '3'), 5);
@@ -433,6 +447,22 @@ end`);
   assert.equal(vm.targets[0]!.entity.fontBold, false);
 });
 
+test('붓과 채우기 층은 작품이 먼저 집어 든 순서대로 쌓인다', () => {
+  // 엔트리는 붓·채우기를 처음 쓰는 순간에 그 도형을 만들어 오브젝트 바로 아래에
+  // 끼우므로, 나중에 집어 든 쪽이 앞에 옵니다. 판을 먼저 긋고 돌을 채우는 작품은
+  // 이 순서가 뒤집히면 돌이 판 밑으로 들어가 사라집니다.
+  const first = runVm(wrap('start draw\nstart fill'));
+  first.tick();
+  const one = first.targets[0]!.entity;
+  assert.ok(one.brush && one.paint, '두 펜이 모두 생겼다');
+  assert.ok(one.brush!.started < one.paint!.started, '붓이 먼저, 채우기가 나중이다');
+
+  const second = runVm(wrap('start fill\nstart draw'));
+  second.tick();
+  const two = second.targets[0]!.entity;
+  assert.ok(two.paint!.started < two.brush!.started, '반대로 쓰면 반대로 쌓인다');
+});
+
 test('붓은 점마다가 아니라 프레임마다 한 번만 다시 그린다', () => {
   // 붓이 점 하나마다 자기 획을 통째로 다시 그리면 한 프레임이 점 개수의 제곱만큼
   // 든다 — 한 프레임에 점 수천 개를 찍는 작품이 몇 초마다 끊기던 자리다. PixiRenderer
@@ -451,6 +481,14 @@ test('붓은 점마다가 아니라 프레임마다 한 번만 다시 그린다'
     flush.slice(0, flush.indexOf('\n  }')),
     /for \(const entity of this\.penDirty\)[\s\S]*this\.redrawPen\(entity\)/,
     'flush 가 프레임마다 한 번 몰아서 그린다',
+  );
+
+  // 층을 만드는 순서가 곧 쌓이는 순서다 — 고정된 차례로 돌면 안 된다.
+  const redraw = source.slice(source.indexOf('  private redrawPen(entity: Entity): void {'));
+  assert.match(
+    redraw.slice(0, redraw.indexOf('\n  }')),
+    /for \(const which of penOrderOf\(entity\)\)/,
+    'redrawPen 은 먼저 집어 든 펜부터 돈다',
   );
 });
 

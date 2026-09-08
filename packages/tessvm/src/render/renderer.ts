@@ -102,6 +102,16 @@ interface PenGroup {
   drawn: string;
 }
 
+const PAINT_FIRST = ['paint', 'brush'] as const;
+const BRUSH_FIRST = ['brush', 'paint'] as const;
+
+/** The entity's two pens, the one it started using first coming first. */
+function penOrderOf(entity: Entity): ReadonlyArray<'paint' | 'brush'> {
+  const paint = entity.paint?.started ?? Infinity;
+  const brush = entity.brush?.started ?? Infinity;
+  return paint <= brush ? PAINT_FIRST : BRUSH_FIRST;
+}
+
 /**
  * A drawing's own size — `width`/`height` when it has them, else the viewBox.
  * `@tess/decompiler` reads the same two the same way when it unpacks a work.
@@ -1085,7 +1095,12 @@ export class PixiRenderer implements Renderer {
     if (!view) {
       return;
     }
-    for (const which of ['paint', 'brush'] as const) {
+    // A pen's layer is made the first time it is drawn into, and lands right
+    // under the entity — so whichever layer is made second sits in front. Entry
+    // makes them when the work first reaches for each pen, so they are taken in
+    // that order here; a fixed order would bury one work's fills under the
+    // lines another work drew first.
+    for (const which of penOrderOf(entity)) {
       const state = entity[which];
       if (!state) {
         continue;
