@@ -371,10 +371,19 @@ function buildContext(
       return `_missing_local_${id}`;
     },
     // 함수 본문에서 매개변수를 가리키는 블록 타입(stringParam_xxxx / booleanParam_xxxx)
-    // -> 그 매개변수의 Tess 이름
+    // -> 그 매개변수를 선언한 함수와 그 매개변수의 Tess 이름
     funcParamsByBlockType: new Map(),
+    functionId: null,
+    // Entry looks a parameter block up in `register.paramMap`, which is the map
+    // of the function that is running — so a block belonging to another
+    // function finds nothing there. Scoping the lookup the same way keeps a
+    // stray parameter from being written as a name that is not in scope.
     funcParamName(blockType: string) {
-      return ctx.funcParamsByBlockType.get(blockType) ?? null;
+      const param = ctx.funcParamsByBlockType.get(blockType);
+      if (!param || param.functionId !== ctx.functionId) {
+        return null;
+      }
+      return param.name;
     },
     pictureName(id: string) {
       const info = ctx.picturesById.get(id);
@@ -490,7 +499,9 @@ function buildContext(
       // 판단 칸은 `이름?` 으로 적어야 다시 컴파일할 때도 판단 칸으로 남는다
       params.push(field.boolean ? `${name}?` : name);
       // 함수 본문에서 이 매개변수를 가리키는 블록(stringParam_xxxx)을 이름으로 되돌릴 때 쓴다
-      if (field.blockType) ctx.funcParamsByBlockType.set(field.blockType, name);
+      if (field.blockType) {
+        ctx.funcParamsByBlockType.set(field.blockType, { name, functionId: String(fn.id) });
+      }
     });
 
     // Function locals are referenced by id in the body. Their names must clash
@@ -505,7 +516,7 @@ function buildContext(
       locals.push({ name, entryName: String(local.name ?? ''), value: local.value });
     }
 
-    ctx.functionsById.set(fn.id, { name: identifier, params, locals, displayLabel: label });
+    ctx.functionsById.set(fn.id, { id: String(fn.id), name: identifier, params, locals, displayLabel: label });
   }
 
   reviveDanglingVariables(project, ctx, usedNames);
@@ -640,7 +651,11 @@ function declarationLine(info: VarInfo, indentLevel = 0): string[] {
     const items = (source.array ?? []).map((item: { data: unknown }) => tessLiteral(item.data));
     return [`${pad}${scope}list ${info.identifier}${named} = [${items.join(', ')}]`];
   }
-  return [`${pad}${scope}var ${info.identifier}${named} = ${tessLiteral(source.value)}`];
+  // A slide variable keeps the two ends its slider runs between.
+  const range = source.variableType === 'slide'
+    ? ` from ${tessNumber(Number(source.minValue) || 0)} to ${tessNumber(Number(source.maxValue) || 0)}`
+    : '';
+  return [`${pad}${scope}var ${info.identifier}${named} = ${tessLiteral(source.value)}${range}`];
 }
 
 // ---------------------------------------------------------------------------

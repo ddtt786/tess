@@ -483,16 +483,23 @@ function bindInput(
   let dragging:
     | { variable: Dragged; fromRow: number; fromY: number; rowsPerPixel: number }
     | null = null;
+  /** A slide variable's knob, held between the press and the release. */
+  let sliding: Dragged | null = null;
 
   on(view, 'pointermove', (raw) => {
     const event = raw as PointerEvent;
     move(event.clientX, event.clientY);
   });
   on(window, 'pointermove', (raw) => {
+    const event = raw as PointerEvent;
+    if (sliding) {
+      renderer.overlayView?.dragSlider(sliding, toStage(event.clientX, event.clientY).x);
+      renderer.flush();
+      return;
+    }
     if (!dragging) {
       return;
     }
-    const event = raw as PointerEvent;
     const point = toStage(event.clientX, event.clientY);
     // The overlay counts y downwards, the stage upwards.
     const rows = (-point.y - dragging.fromY) * dragging.rowsPerPixel;
@@ -502,6 +509,16 @@ function bindInput(
   on(view, 'pointerdown', (raw) => {
     const event = raw as PointerEvent;
     move(event.clientX, event.clientY);
+    // A press on a slide variable's run moves its knob, the same way entry lets
+    // one be set while the work runs. The work is not told about that press.
+    const slider = renderer.overlayView?.sliderAt(vm.mouseX, -vm.mouseY);
+    if (slider && vm.state === 'run') {
+      sliding = slider;
+      renderer.overlayView?.dragSlider(slider, vm.mouseX);
+      renderer.flush();
+      event.preventDefault();
+      return;
+    }
     // A press inside a list box takes hold of it and scrolls; the work is not
     // told about that press.
     const list = renderer.overlayView?.listAt(vm.mouseX, -vm.mouseY);
@@ -524,6 +541,10 @@ function bindInput(
     }
   });
   const up = () => {
+    if (sliding) {
+      sliding = null;
+      return;
+    }
     if (dragging) {
       dragging = null;
       return;

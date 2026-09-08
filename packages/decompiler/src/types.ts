@@ -124,6 +124,8 @@ export interface FunctionLocal {
  * const funcInfo: FunctionInfo = { name: "jump", params: ["height"], locals: [], displayLabel: "Jump {height}" };
  */
 export interface FunctionInfo {
+  /** The work's own function id, which is what scopes its parameter blocks. */
+  id: string;
   name: string;
   params: string[];
   locals: FunctionLocal[];
@@ -223,7 +225,10 @@ export interface DecompileContext {
   /** Objects go into the one source rather than a fragment file each. */
   inline: boolean;
   funcLocalsById: Map<string, string>;
-  funcParamsByBlockType: Map<string, string>;
+  /** `stringParam_xxxx` -> the function that declares it and the name it got. */
+  funcParamsByBlockType: Map<string, { name: string; functionId: string }>;
+  /** The function whose body is being written, or null outside one. */
+  functionId: string | null;
   varName(id: string): string;
   funcLocalName(id: string): string;
   funcParamName(blockType: string): string | null;

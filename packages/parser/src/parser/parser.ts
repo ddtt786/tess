@@ -481,6 +481,14 @@ export class TessParser extends CstParser {
       $.OPTION2(() => $.SUBRULE($.displayName, { LABEL: 'displayName' }));
       $.CONSUME(Assign);
       $.SUBRULE($.expr, { LABEL: 'value' });
+      // A range makes it entry's slide variable: its box carries a slider, and
+      // the value it holds is kept between the two ends.
+      $.OPTION3(() => {
+        $.CONSUME(kw.from);
+        $.SUBRULE2($.expr, { LABEL: 'min' });
+        $.CONSUME(kw.to);
+        $.SUBRULE3($.expr, { LABEL: 'max' });
+      });
     });
 
     $.RULE('listDecl', () => {

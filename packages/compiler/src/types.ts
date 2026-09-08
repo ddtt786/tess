@@ -67,8 +67,8 @@ export interface EntryMessage {
   name: string;
 }
 
-/** 엔트리에서 변수, 리스트, 타이머, 대답을 구분하기 위해 내부적으로 사용하는 식별 타입입니다. */
-export type VariableType = 'variable' | 'list' | 'timer' | 'answer';
+/** 엔트리에서 변수, 리스트, 슬라이드, 타이머, 대답을 구분하기 위해 내부적으로 사용하는 식별 타입입니다. */
+export type VariableType = 'variable' | 'list' | 'slide' | 'timer' | 'answer';
 
 export interface EntryVariable {
   id: string;
@@ -86,6 +86,9 @@ export interface EntryVariable {
   array?: Array<{ data: string | number }>;
   width?: number;
   height?: number;
+  /** Slide variables only — the ends its slider runs between. */
+  minValue?: number;
+  maxValue?: number;
 }
 
 export interface EntryTable {

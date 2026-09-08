@@ -39,6 +39,23 @@ const STRIP_HEIGHT = 17;
 /** Where the scroll bar starts and how tall it is (`scrollButton_`). */
 const LIST_BAR_TOP = LIST_TITLE_HEIGHT + 4;
 const LIST_BAR_HEIGHT = 20;
+/**
+ * `Entry.SlideVariable` — a slide variable's box is 42 tall rather than 24, and
+ * carries a grey run with a knob on it. `SLIDE_BAR` is where that run starts and
+ * how thick it is, `SLIDE_KNOB` the knob entry draws from a 9x20 image at 0.8.
+ */
+const SLIDE_HEIGHT = 42;
+const SLIDE_BAR_X = 6;
+const SLIDE_BAR_Y = 16;
+const SLIDE_BAR_HEIGHT = 5;
+const SLIDE_BAR_RADIUS = 2;
+const SLIDE_BAR_COLOR = '#d8d8d8';
+const SLIDE_KNOB_WIDTH = 9 * 0.8;
+const SLIDE_KNOB_HEIGHT = 20 * 0.8;
+const SLIDE_KNOB_COLOR = '#1bafea';
+const SLIDE_KNOB_BORDER = '#a0a1a1';
+/** The narrowest a monitor box gets — `Math.max(width, 90)` in entry. */
+const MONITOR_MIN_WIDTH = 90;
 /** Where entry puts the built-in monitors when the work does not say. */
 const ANSWER_HOME = { x: 150, y: -100 };
 const TIMER_HOME = { x: 134, y: -70 };
@@ -71,6 +88,10 @@ interface MonitorView {
   /** List rows live here; a value monitor leaves it empty. */
   items: Container | null;
   rows: RowView[];
+  /** The run and knob of a slide variable; null on every other kind. */
+  slider: { bar: Graphics; knob: Graphics } | null;
+  /** How far the knob may travel — `Entry.SlideVariable.maxWidth`. */
+  slideRun: number;
   /** What the box is showing now — a monitor that did not move is not redrawn. */
   shown: string;
 }
@@ -276,7 +297,7 @@ export class Overlay {
     const value = Overlay.text(MONITOR_VALUE_FONT, '#ffffff');
     root.addChild(frame, label, value);
     this.monitorLayer.addChild(root);
-    return { root, frame, label, value, items: null, rows: [], shown: '' };
+    return { root, frame, label, value, items: null, rows: [], slider: null, slideRun: 0, shown: '' };
   }
 
   /**
@@ -306,7 +327,7 @@ export class Overlay {
     const valueWidth = view.value.width;
     view.frame
       .clear()
-      .roundRect(0, -14, nameWidth + valueWidth + 35, 24, 4)
+      .roundRect(0, -14, Math.max(nameWidth + valueWidth + 35, MONITOR_MIN_WIDTH), 24, 4)
       .fill({ color: MONITOR_BG })
       .stroke({ width: 1, color: MONITOR_BORDER })
       .roundRect(nameWidth + 14, -10, valueWidth + 15, 16, MONITOR_RADIUS)
@@ -314,6 +335,74 @@ export class Overlay {
       .stroke({ width: 1, color });
     view.label.position.set(4, LABEL_Y);
     view.value.position.set(nameWidth + 21, VALUE_Y);
+  }
+
+  /**
+   * `Entry.SlideVariable.updateView` — the same pill on a box 42 tall, with a
+   * grey run under it and a knob sitting where the value falls between the
+   * variable's own smallest and largest.
+   */
+  private drawSlideMonitor(
+    view: MonitorView,
+    variable: Variable,
+    at: { x: number; y: number },
+  ): void {
+    view.root.position.set(at.x, at.y);
+    const text = Overlay.formatValue(variable.value);
+    const shown = `slide\u0000${variable.name}\u0000${text}\u0000${variable.minValue}\u0000${variable.maxValue}`;
+    if (!view.slider) {
+      const bar = new Graphics();
+      const knob = new Graphics();
+      view.root.addChild(bar, knob);
+      view.slider = { bar, knob };
+    }
+    // The knob moves with the value even when nothing else about the box did.
+    view.slideRun = Overlay.slideRun(view);
+    view.slider.knob.position.set(Overlay.slideKnobX(variable, view.slideRun), 9);
+    if (view.shown === shown) {
+      return;
+    }
+    view.shown = shown;
+    view.label.text = variable.name;
+    view.value.text = text;
+    const nameWidth = view.label.width;
+    const valueWidth = view.value.width;
+    view.frame
+      .clear()
+      .roundRect(0, -14, Math.max(nameWidth + valueWidth + 35, MONITOR_MIN_WIDTH), SLIDE_HEIGHT, 4)
+      .fill({ color: MONITOR_BG })
+      .stroke({ width: 1, color: MONITOR_BORDER })
+      .roundRect(nameWidth + 14, -10, valueWidth + 15, 16, MONITOR_RADIUS)
+      .fill({ color: MONITOR_VARIABLE })
+      .stroke({ width: 1, color: MONITOR_VARIABLE });
+    view.label.position.set(4, LABEL_Y);
+    view.value.position.set(nameWidth + 21, VALUE_Y);
+    const run = Overlay.slideRun(view);
+    view.slideRun = run;
+    view.slider.bar
+      .clear()
+      .roundRect(SLIDE_BAR_X, SLIDE_BAR_Y, run + 4, SLIDE_BAR_HEIGHT, SLIDE_BAR_RADIUS)
+      .fill({ color: SLIDE_BAR_COLOR });
+    // Entry draws the knob from a 9x20 image; a rounded bar of that size is the
+    // same shape without an asset to fetch.
+    view.slider.knob
+      .clear()
+      .roundRect(-SLIDE_KNOB_WIDTH / 2, 0, SLIDE_KNOB_WIDTH, SLIDE_KNOB_HEIGHT, 2)
+      .fill({ color: SLIDE_KNOB_COLOR })
+      .stroke({ width: 1, color: SLIDE_KNOB_BORDER });
+    view.slider.knob.position.set(Overlay.slideKnobX(variable, run), 9);
+  }
+
+  /** `maxWidth` — how far the knob travels, from the name and value widths. */
+  private static slideRun(view: MonitorView): number {
+    return Math.max(view.label.width + view.value.width + 26, MONITOR_MIN_WIDTH) - 16;
+  }
+
+  /** `getSlidePosition` — where the knob sits for the value the variable holds. */
+  private static slideKnobX(variable: Variable, run: number): number {
+    const span = Math.abs(variable.maxValue - variable.minValue);
+    const ratio = span === 0 ? 0 : Math.abs(Number(variable.value) - variable.minValue) / span;
+    return run * ratio + SLIDE_BAR_X;
   }
 
   /**
@@ -463,6 +552,57 @@ export class Overlay {
   }
 
   /**
+   * The slide variable under a stage point, if there is one — the overlay's own
+   * space again, y counting downwards. Entry hands the run and the knob to its
+   * drag helper; pointers come through one path here, so the hit test lives
+   * beside the drawing and the dragging is done where that path is.
+   */
+  sliderAt(x: number, y: number): Variable | null {
+    for (const [variable, view] of this.monitors) {
+      if (!variable.isSlide || !variable.visible || !view.root.visible || !view.slider) {
+        continue;
+      }
+      const width = Math.max(view.label.width + view.value.width + 35, MONITOR_MIN_WIDTH);
+      const left = view.root.x;
+      const top = view.root.y - 14;
+      if (x < left || x > left + width || y < top || y > top + SLIDE_HEIGHT) {
+        continue;
+      }
+      // The pill above the run keeps working as a box to look at, not to drag.
+      if (y - view.root.y < SLIDE_BAR_Y - 6) {
+        continue;
+      }
+      return variable;
+    }
+    return null;
+  }
+
+  /**
+   * `setSlideCommandX` then `updateSlideValueByView` — the knob is put where the
+   * pointer is along the run, and the value follows from how far along it
+   * landed. `x` is a stage x; the knob travels from 10 to `maxWidth + 10` inside
+   * the box, which is where entry reads the ratio from.
+   */
+  dragSlider(variable: Variable, x: number): void {
+    const view = this.monitors.get(variable);
+    if (!view || !view.slider) {
+      return;
+    }
+    const run = view.slideRun || Overlay.slideRun(view);
+    const command = Math.min(run + 10, Math.max(10, x - view.root.x));
+    const ratio = run === 0 ? 0 : Math.min(1, Math.max(0, (command - 10) / run));
+    const min = Number(variable.minValue);
+    const max = Number(variable.maxValue);
+    let value = parseFloat((min + Math.abs(max - min) * ratio).toFixed(2));
+    value = Math.min(Math.max(value, min), max);
+    // Entry only keeps the decimals when the ends themselves have some.
+    if (Number.isInteger(min) && Number.isInteger(max)) {
+      value = Math.round(value);
+    }
+    variable.setValue(value);
+  }
+
+  /**
    * The run the scroll bar travels, from just under the title to the bottom of
    * the box. One place, so the bar the eye sees and the bar the pointer grabs
    * cannot drift apart — at the last row it has to sit at the end of the run.
@@ -532,6 +672,8 @@ export class Overlay {
       const at = this.homeOf(variable);
       if (variable.isList) {
         this.drawListMonitor(view, variable, at);
+      } else if (variable.isSlide) {
+        this.drawSlideMonitor(view, variable, at);
       } else {
         this.drawValueMonitor(
           view,
@@ -555,12 +697,20 @@ export class Overlay {
     if (variable.x && variable.y) {
       return { x: variable.x, y: variable.y };
     }
-    const index = this.variables.indexOf(variable);
-    const count = this.variables.length;
-    return {
-      x: 10 - 240 + Math.floor((count % 66) / 11) * 80,
-      y: index * 28 + 20 - 135 - Math.floor(count / 11) * 264,
-    };
+    // `generateView` counts value boxes and list boxes apart, and stacks each
+    // kind down a column before starting the next one. The index is the box's
+    // own place among its kind — reading it off the whole list instead put a
+    // work's later boxes below the stage, where nothing could be seen.
+    const family = this.variables.filter((item) => item.isList === variable.isList);
+    const index = Math.max(0, family.indexOf(variable));
+    if (variable.isList) {
+      return {
+        x: -Math.floor((index % 24) / 6) * 110 + 120,
+        y: index * 24 + 20 - 135 - Math.floor(index / 6) * 145,
+      };
+    }
+    const column = Math.floor(index / 11);
+    return { x: 10 - 240 + column * 80, y: index * 24 + 20 - 135 - column * 264 };
   }
 
   /**

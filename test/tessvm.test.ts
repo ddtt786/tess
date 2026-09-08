@@ -447,6 +447,33 @@ end`);
   assert.equal(vm.targets[0]!.entity.fontBold, false);
 });
 
+/**
+ * `var x = 2 from 0 to 4` 는 엔트리의 슬라이드 변수입니다. 상자에 슬라이더가 붙고,
+ * 값은 두 끝 사이로 붙잡힙니다.
+ */
+test('범위를 준 변수는 슬라이드 변수가 되고 값이 그 사이에 머문다', () => {
+  const vm = runVm(wrap('a = depth', 'var depth = 2 from 0 to 4\nvar a = 0'));
+  const depth = vm.variables.find((item) => item.name === 'depth')!;
+  assert.equal(depth.kind, 'slide');
+  assert.equal(depth.minValue, 0);
+  assert.equal(depth.maxValue, 4);
+  depth.setValue(9);
+  assert.equal(depth.getValue(), 4);
+  depth.setValue(-3);
+  assert.equal(depth.getValue(), 0);
+  depth.setValue(3);
+  vm.tick();
+  assert.equal(valueOf(vm, 'a'), 3);
+});
+
+test('범위가 없는 변수는 그대로 보통 변수다', () => {
+  const vm = runVm(wrap('a = 0', 'var depth = 2\nvar a = 0'));
+  const depth = vm.variables.find((item) => item.name === 'depth')!;
+  assert.equal(depth.kind, 'variable');
+  depth.setValue(9);
+  assert.equal(depth.getValue(), 9);
+});
+
 test('붓과 채우기 층은 작품이 먼저 집어 든 순서대로 쌓인다', () => {
   // 엔트리는 붓·채우기를 처음 쓰는 순간에 그 도형을 만들어 오브젝트 바로 아래에
   // 끼우므로, 나중에 집어 든 쪽이 앞에 옵니다. 판을 먼저 긋고 돌을 채우는 작품은
@@ -490,6 +517,33 @@ test('붓은 점마다가 아니라 프레임마다 한 번만 다시 그린다'
     /for \(const which of penOrderOf\(entity\)\)/,
     'redrawPen 은 먼저 집어 든 펜부터 돈다',
   );
+});
+
+test('도장은 모양의 제 크기로 찍힌다 — 텍스처가 구워진 크기가 아니라', () => {
+  // 벡터 모양은 자기 크기보다 촘촘하게 구워지므로, 텍스처 한 픽셀이 무대에서
+  // 얼마인지를 곱해야 작품이 그리는 크기가 나온다. 오브젝트 배율로 덮어써 버리면
+  // 구운 배율만큼 어긋난다. PixiRenderer 는 화면 없이 만들 수 없으므로 소스에서 본다.
+  const source = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/renderer.ts'),
+    'utf-8',
+  );
+  const stamp = source.slice(source.indexOf('  stamp(entity: Entity): void {'));
+  const body = stamp.slice(0, stamp.indexOf('\n  }'));
+  assert.match(body, /perPixelX \* mark\.scaleX/, '도장은 두 배율을 곱한다');
+  assert.doesNotMatch(body, /scale\.set\(mark\.scaleX/, '오브젝트 배율만으로 덮어쓰지 않는다');
+});
+
+test('변수 상자는 자리를 정하지 않았어도 무대 안에 놓인다', () => {
+  // `generateView` 는 값 상자와 리스트 상자를 따로 세어 한 줄에 11개씩 쌓는다.
+  // 전체 개수로 세면 뒤쪽 상자가 무대 아래로 밀려나 보이지 않는다.
+  const source = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/overlay.ts'),
+    'utf-8',
+  );
+  const home = source.slice(source.indexOf('  private homeOf(variable: Variable)'));
+  const body = home.slice(0, home.indexOf('\n  }'));
+  assert.match(body, /family\.indexOf\(variable\)/, '자기 종류 안에서의 자리로 센다');
+  assert.match(body, /index \* 24 \+ 20 - 135/, '엔트리와 같은 간격으로 쌓는다');
 });
 
 // ---------------------------------------------------------------------------

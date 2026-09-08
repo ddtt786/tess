@@ -619,12 +619,17 @@ export function functionDeclarationLines(
   // 그 오브젝트 조각 파일 안으로 들어가므로, 그 오브젝트 리소스는 이름으로 적는다.
   const previousInFunction = ctx.inFunction;
   const previousOwner = ctx.functionOwnerId;
+  const previousFunctionId = ctx.functionId;
   ctx.inFunction = true;
   ctx.functionOwnerId = ownerId;
+  // Only this function's own parameters are in scope in its body, the way entry
+  // scopes them at run time.
+  ctx.functionId = fn.id;
   const body = indent(blocksToLines(createBlock.statements?.[0] ?? [], ctx));
   const returnExpr = isValue ? exprOf(p[3], ctx) : null;
   ctx.inFunction = previousInFunction;
   ctx.functionOwnerId = previousOwner;
+  ctx.functionId = previousFunctionId;
 
   // Entry keeps function locals in a table on the function and initialises them
   // at each call; `var` at the top of the body is the same thing in Tess.

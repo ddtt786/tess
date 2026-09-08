@@ -223,6 +223,8 @@ export interface VarDeclNode extends Base {
   displayName: string | null;
   scope: StorageScope | null;
   value: Expr;
+  /** `from A to B` — entry's slide variable, shown with a slider on its box. */
+  range: { min: Expr; max: Expr } | null;
 }
 
 export interface ListDeclNode extends Base {

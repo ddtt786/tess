@@ -1211,12 +1211,19 @@ export class PixiRenderer implements Renderer {
       return;
     }
     const sprite = new Sprite(texture);
-    sprite.width = mark.picture.dimension.width;
-    sprite.height = mark.picture.dimension.height;
-    sprite.pivot.set(mark.regX, mark.regY);
+    // A vector costume is baked into a texture of its own size, not the
+    // costume's, so the texture is what says how much of a stage unit one of
+    // its pixels is worth. `sync` lets `width` work that out; a stamp carries
+    // the entity's own scale as well, so it has to be worked out here and the
+    // two multiplied — setting the scale outright dropped the first of them and
+    // stamped every vector costume at the size it was baked at.
+    const perPixelX = mark.picture.dimension.width / (texture.width || 1);
+    const perPixelY = mark.picture.dimension.height / (texture.height || 1);
+    sprite.scale.set(perPixelX * mark.scaleX, perPixelY * mark.scaleY);
+    // The pivot is read in the sprite's own space, which is texture pixels.
+    sprite.pivot.set(mark.regX / (perPixelX || 1), mark.regY / (perPixelY || 1));
     sprite.position.set(mark.x, -mark.y);
     sprite.rotation = (mark.rotation * Math.PI) / 180;
-    sprite.scale.set(mark.scaleX, mark.scaleY);
     sprite.alpha = mark.alpha;
     const index = this.indexUnder(entity);
     layer.addChildAt(sprite, index < 0 ? layer.children.length : index);

@@ -131,6 +131,11 @@ function indexableName(text: string, ctx: DecompileContext): boolean {
   return true;
 }
 
+/** `stringParam_xxxx` · `booleanParam_xxxx` — a function's parameter in its body. */
+function isParamBlock(type: string): boolean {
+  return type.startsWith('stringParam_') || type.startsWith('booleanParam_');
+}
+
 function placeholder(ctx: DecompileContext, block: RawBlock | undefined): string {
   const type = block?.type ?? '(빈 슬롯)';
   ctx.warnings.add(`값 블록 '${type}' 은(는) 아직 옮길 수 없습니다.`);
@@ -350,6 +355,16 @@ export function exprOf(block: any, ctx: DecompileContext): string {
       /** 함수 본문에서 매개변수를 참조하는 블록을 처리합니다. */
       const paramName = ctx.funcParamName?.(block.type);
       if (paramName) return paramName;
+      // A parameter block of some other function — dragged in while the work was
+      // being written, and left there. Entry finds nothing for it in the running
+      // function's `paramMap` and hands the slot an empty value, so the slot is
+      // written the way an empty slot is rather than as a name nothing declares.
+      if (isParamBlock(block.type)) {
+        ctx.notices.add(
+          `'${block.type}' 은(는) 다른 함수의 매개변수입니다. 엔트리도 이 자리를 빈 값으로 읽으므로 그렇게 옮겼습니다.`,
+        );
+        return block.type.startsWith('booleanParam_') ? 'false' : EMPTY;
+      }
 
       if (block.type.startsWith('func_')) {
         const fn = ctx.functionsById.get(block.type.slice('func_'.length));

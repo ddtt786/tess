@@ -407,6 +407,7 @@ export class TessAstVisitor extends BaseVisitor {
       displayName: ctx.displayName ? this.visit(ctx.displayName) : null,
       scope: ctx.scope ? this.visit(ctx.scope) : null,
       value: this.visit(ctx.value),
+      range: ctx.min ? { min: this.visit(ctx.min), max: this.visit(ctx.max) } : null,
       loc: nodeLoc(node),
     };
   }

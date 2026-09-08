@@ -197,6 +197,40 @@ test('리스트 초기값이 array 로 들어간다', () => {
 /**
  * 신호(Signal) 및 장면(Scene) 처리 테스트
  */
+test('범위를 준 변수는 슬라이드 변수로 나간다', () => {
+  const result = compileProject(`
+var depth = 2 from 0 to 4
+var plain = 2
+scene "s":
+  object "o":
+    when start do
+      x = depth
+    end
+  end
+end`, { path: 'main.tess' });
+  assert.equal(result.errors.length, 0, result.errors[0]?.message);
+  const depth = result.project!.variables.find((item) => item.name === 'depth')!;
+  assert.equal(depth.variableType, 'slide');
+  assert.equal(depth.minValue, 0);
+  assert.equal(depth.maxValue, 4);
+  const plain = result.project!.variables.find((item) => item.name === 'plain')!;
+  assert.equal(plain.variableType, 'variable');
+  assert.equal(plain.minValue, undefined);
+});
+
+test('슬라이드 변수의 두 끝은 숫자여야 한다', () => {
+  const result = compileProject(`
+var depth = 2 from "가" to 4
+scene "s":
+  object "o":
+    when start do
+      x = depth
+    end
+  end
+end`, { path: 'main.tess' });
+  assert.ok(result.errors.some((error) => /슬라이더/.test(error.message)), '숫자가 아니면 알린다');
+});
+
 test('신호를 messages 로 모으고 같은 id 를 쓴다', () => {
   const source = `scene "s":
   object "a":

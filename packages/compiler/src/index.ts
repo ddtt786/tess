@@ -296,7 +296,25 @@ function makeVariable(
 
   const value = constantOf(node.value, ctx);
   if (value === null) return null;
-  return { ...base, value };
+  if (!node.range) {
+    return { ...base, value };
+  }
+  // `var x = 2 from 0 to 4` — entry's slide variable. Both ends have to be
+  // known when the work is built, the way the value does.
+  const min = constantOf(node.range.min, ctx);
+  const max = constantOf(node.range.max, ctx);
+  if (min === null || max === null) return null;
+  if (isNaN(Number(min)) || isNaN(Number(max))) {
+    ctx.error(node, '슬라이더의 최솟값과 최댓값은 숫자여야 합니다.');
+    return null;
+  }
+  return {
+    ...base,
+    value,
+    variableType: 'slide',
+    minValue: Number(min),
+    maxValue: Number(max),
+  };
 }
 
 /** 선언 초기값으로 쓸 수 있는 상수인지 확인하고 원시값으로 바꾼다 */

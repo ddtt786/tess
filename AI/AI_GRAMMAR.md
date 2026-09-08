@@ -115,7 +115,8 @@ ObjectFragment = ObjectMember*  // object/text 안에 use 로 끼워 넣을 때
 | `rotateMethod`            | `free \| vertical \| none`                                                       | 회전 방식                                                                |
 | `FunctionDecl`            | `function id "(" ListOf<FunctionParam, ","> ")" blockOpen Block end_`            | 함수 선언. 매개변수는 콤마로 나열                                        |
 | `FunctionParam`           | `identifier "?"?`                                                                | 매개변수 하나. 뒤의 `?` 는 "엔트리에서도 판단 칸" (SPEC-ADDENDUM.md 4.6) |
-| `VarDecl`                 | `storageScope? var id DisplayName? "=" ~"=" Expr`                                | 변수 선언(대입 연산자 `==`와 헷갈리지 않게 `~"="`로 막음)                |
+| `VarDecl`                 | `storageScope? var id DisplayName? "=" ~"=" Expr SlideRange?`                    | 변수 선언(대입 연산자 `==`와 헷갈리지 않게 `~"="`로 막음)                |
+| `SlideRange`              | `from Expr to Expr`                                                              | 엔트리의 슬라이드 변수(`variableType: "slide"`). 두 끝은 숫자 상수       |
 | `ListDecl`                | `storageScope? list id DisplayName? "=" ~"=" ListLiteral`                        | 리스트 선언. 초기값은 반드시 `[...]` 리터럴                              |
 | `storageScope`            | `shared \| realtime`                                                             | 공유 변수(`isCloud`) · 실시간 변수(`isRealTime`). 전역 선언에만 붙는다   |
 | `DisplayName`             | `as stringLiteral`                                                               | 식별자로 못 적는 엔트리 이름을 그대로 남긴다 (SPEC-ADDENDUM.md 1.5)      |

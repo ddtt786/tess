@@ -176,6 +176,65 @@ function trickProject() {
   };
 }
 
+/**
+ * 엔트리는 매개변수 블록을 도는 함수의 `paramMap` 에서 찾으므로, 다른 함수의
+ * 매개변수 블록은 그 자리에서 아무 값도 찾지 못합니다. 이름으로 되돌리면 그 함수에
+ * 없는 이름이 되어 그 문장이 통째로 사라집니다.
+ */
+test('슬라이드 변수는 범위째로 되돌아오고 다시 컴파일해도 슬라이드다', () => {
+  const project = minimalProject() as unknown as Record<string, unknown>;
+  project.variables = [
+    { id: 'v1', name: 'depth', variableType: 'slide', value: 2, minValue: 0, maxValue: 4, visible: false },
+    { id: 'v2', name: 'plain', variableType: 'variable', value: 7, visible: false },
+  ];
+  const result = decompileProject(project as unknown as RawEntity, [], { inline: true });
+  assert.match(result.source, /^var depth = 2 from 0 to 4$/m);
+  assert.match(result.source, /^var plain = 7$/m);
+
+  const compiled = compileProject(result.source, { path: 'main.tess' });
+  assert.equal(compiled.errors.length, 0, compiled.errors[0]?.message);
+  const depth = compiled.project!.variables.find((item) => item.name === 'depth')!;
+  assert.equal(depth.variableType, 'slide');
+  assert.equal(depth.minValue, 0);
+  assert.equal(depth.maxValue, 4);
+});
+
+test('다른 함수의 매개변수를 가리키는 블록은 이름이 아니라 빈 값으로 되돌린다', () => {
+  const project = minimalProject() as unknown as Record<string, unknown>;
+  const header = (label: string, param: string) => ({
+    type: 'function_field_label',
+    params: [label, { type: 'function_field_string', params: [{ type: param, params: [] }] }],
+  });
+  project.functions = [
+    {
+      id: 'aaaa',
+      content: JSON.stringify([[
+        { type: 'function_create_value', params: [header('mine', 'stringParam_own'), null, null,
+          // The body reaches for `stringParam_other`, which belongs to `yours`.
+          { type: 'stringParam_other', params: [] }], statements: [[]] },
+      ]]),
+    },
+    {
+      id: 'bbbb',
+      content: JSON.stringify([[
+        { type: 'function_create_value', params: [header('yours', 'stringParam_other'), null, null,
+          { type: 'stringParam_other', params: [] }], statements: [[]] },
+      ]]),
+    },
+  ];
+  const result = decompileProject(project as unknown as RawEntity, []);
+  const mine = result.source.slice(result.source.indexOf('function mine('));
+  assert.match(mine.slice(0, mine.indexOf('end')), /return 0/, '다른 함수의 매개변수는 빈 값이 된다');
+  const yours = result.source.slice(result.source.indexOf('function yours('));
+  assert.match(yours.slice(0, yours.indexOf('end')), /return a/, '자기 매개변수는 이름 그대로다');
+  const compiled = compileProject(result.source, { path: 'main.tess' });
+  assert.equal(
+    compiled.errors.filter((error) => /선언되지 않은 이름/.test(error.message)).length,
+    0,
+    '되돌린 소스에 그 함수에 없는 이름이 남지 않는다',
+  );
+});
+
 test('모양/소리 값에 진짜 엔트리 id 를 그대로 박아 넣은 트릭은 이름으로 되돌린다', () => {
   const result = decompileProject(trickProject(), []);
   const fragment = utf8(result.assets.find((a) => a.path === 'objects/주인공.tess')!.data);
