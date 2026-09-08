@@ -1,6 +1,7 @@
 node_modules
 build
 temp
+scratch
 examples/ent
 packages/extension/dist
 packages/extension/tessvm-extension.zip

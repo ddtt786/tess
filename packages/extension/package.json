@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@tess/vm": "workspace:*",
-    "pixi.js": "^8.20.1"
+    "pixi.js": "^8.20.1",
+    "socket.io-client": "^4.8.3"
   }
 }

@@ -510,7 +510,7 @@ export class Vm implements Project {
   //  Shared and real-time variables
   // -------------------------------------------------------------------------
   /** Puts back what the store holds, over the values the work was saved with. */
-  private readStore(): void {
+  readStore(): void {
     this.written.clear();
     if (!this.store) {
       return;

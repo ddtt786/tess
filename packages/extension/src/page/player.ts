@@ -10,6 +10,8 @@
 import { boot, type TessVmHandle } from "../../../tessvm/src/web/boot.ts";
 import { ASK_FIELD_STYLE } from "../../../tessvm/src/web/ask-style.ts";
 import { fetchWork } from "./entry-project.ts";
+import { CloudClient } from "./cloud.ts";
+
 import { toTessProject } from "./tess-project.ts";
 import { signedInUser } from "./signed-in.ts";
 
@@ -150,6 +152,7 @@ export function mountPlayer(
   errorBox.hidden = true;
 
   let handle: TessVmHandle | null = null;
+  let cloudStore: CloudClient | null = null;
   let disposed = false;
   let onTick: (() => void) | null = null;
 
@@ -192,6 +195,7 @@ export function mountPlayer(
     onTick = null;
     document.removeEventListener("fullscreenchange", onFullscreen);
     handle?.dispose();
+    cloudStore?.dispose();
     handle = null;
     root.remove();
   };
@@ -267,13 +271,34 @@ export function mountPlayer(
     reportDropped(built.dropped);
     status.textContent = "실행기를 준비하는 중…";
 
+    const entryVarsByName = new Map<string, any>();
+    for (const v of work.variables ?? []) {
+        entryVarsByName.set(String(v.name), v);
+    }
+    
+    const tessIdToEntryId = new Map<string, string>();
+    const entryIdToTessId = new Map<string, string>();
+    const variableMongoIds = new Map<string, string>();
+    
+    for (const v of built.project.variables) {
+      if (v.isCloud || v.isRealTime) {
+        const entryVar = entryVarsByName.get(String(v.name));
+        if (entryVar) {
+          tessIdToEntryId.set(String(v.id), String(entryVar.id));
+          entryIdToTessId.set(String(entryVar.id), String(v.id));
+          variableMongoIds.set(String(v.id), String(entryVar._id));
+        }
+      }
+    }
+    const csrfToken = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '';
+    const cloud = new CloudClient(projectId, csrfToken, work.variables ?? [], tessIdToEntryId, entryIdToTessId, variableMongoIds);
+    cloudStore = cloud;
+    await cloud.connect();
+
     try {
       handle = await boot({
         project: built.project,
-        // On playentry a shared variable is the site's, not this browser's:
-        // entry keeps it with the work and a viewer's changes are not saved.
-        // Keeping a copy here would show a value nobody else has.
-        store: null,
+        store: cloud,
         container: view,
         autoStart: false,
         keyTarget: root,
@@ -288,6 +313,10 @@ export function mountPlayer(
             : "불러오는 중…";
         },
       });
+      cloud.setChangeListener(() => {
+        handle?.vm.readStore();
+      });
+
     } catch (error) {
       status.textContent = "";
       showError(error instanceof Error ? error.message : String(error));
