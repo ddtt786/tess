@@ -343,6 +343,15 @@ vendor 의 esm 묶음으로 고쳐 씁니다. 확장이 파서·컴파일러·�
 
 `dist/` 에는 크롬 쪽이 남습니다 — 압축해제 상태로 로드하는 것이 크롬이기 때문입니다.
 
+**`data_collection_permissions` 는 AMO 가 요구합니다.** 없으면 등록이
+`The "data_collection_permissions" property is missing.` 로 막힙니다. 이 확장은 개발자나
+제3자에게 아무것도 보내지 않으므로 `required: ["none"]` 입니다 — `none` 은 다른 값과 같이
+쓸 수 없습니다. 확장이 부르는 곳은 작품을 읽는 `/graphql/SELECT_PROJECT` 와 공유·실시간
+변수의 웹소켓 두 군데뿐이고, 둘 다 playentry 가 알려 준 playentry 자신의 주소입니다.
+아이디·닉네임도 페이지에서 읽어 작품의 블록에 답하는 데만 쓰고 밖으로 나가지 않습니다.
+`browser_specific_settings` 안에 있으므로 크롬 쪽 묶음에서는 알아서 빠집니다. 파이어폭스
+140 부터 읽는 키지만 모르는 키는 그냥 넘어가므로 `strict_min_version` 은 그대로 둡니다.
+
 **웹스토어에 올리는 것은 zip 입니다. crx 는 올릴 수 없습니다** — 웹스토어가 zip 을 받아
 자기 키로 서명해 crx 를 만들어 배포합니다. crx 는 스토어를 거치지 않고 직접 나눠 줄 때만
 씁니다.
