@@ -235,6 +235,16 @@ export function mountPlayer(
     }
   };
 
+  // A control clicked with the mouse holds the focus afterwards, and the keys go
+  // with it — the page would scroll under a live work. The work takes them back.
+  // `detail` is 0 when a key worked the control, and that press belongs to
+  // someone on their way through the bar with the keyboard.
+  bar.addEventListener("click", (event) => {
+    if (event.detail > 0 && handle && handle.vm.state !== "stop") {
+      root.focus({ preventScroll: true });
+    }
+  });
+
   void load();
 
   async function load(): Promise<void> {

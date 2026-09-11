@@ -433,6 +433,33 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   return handle;
 }
 
+/** Keys that are a modifier themselves, so holding one down is not a chord. */
+const MODIFIER_KEY_CODES = new Set([16, 17, 18]);
+
+/** Controls that read keys of their own — the answer field, the player's bar. */
+const CONTROL_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A']);
+
+/**
+ * Whether the key is the work's rather than the page's.
+ *
+ * Entry cancels the browser's own action for every key a running work reads
+ * (`Entry.Utils.captureKeyEvent`), so space does not scroll the page out from
+ * under the stage. A key event targets whatever holds focus, so one that landed
+ * on a control is that control's; a ctrl/alt/cmd chord is the browser's.
+ */
+function worksKey(vm: Vm, event: KeyboardEvent, code: number): boolean {
+  // The work is only told about keys while it runs (`Vm.fireEvent`), so the page
+  // keeps them whenever it is stopped or held.
+  if (code === 0 || vm.state !== 'run') {
+    return false;
+  }
+  if ((event.ctrlKey || event.altKey || event.metaKey) && !MODIFIER_KEY_CODES.has(code)) {
+    return false;
+  }
+  const target = event.target as HTMLElement | null;
+  return !target?.isContentEditable && !CONTROL_TAGS.has(target?.tagName ?? '');
+}
+
 function bindInput(
   vm: Vm,
   renderer: PixiRenderer,
@@ -452,6 +479,14 @@ function bindInput(
     };
   };
 
+  /** Takes the key off the page: neither its default action nor its listeners. */
+  const claim = (event: KeyboardEvent, code: number) => {
+    if (worksKey(vm, event, code)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
   on(keyTarget, 'keydown', (raw) => {
     const event = raw as KeyboardEvent;
     const code = keyCodeOf(event);
@@ -459,12 +494,13 @@ function bindInput(
       vm.pressedKeys.add(code);
       vm.fireEvent('keyPress', String(code));
     }
-    if (code >= 37 && code <= 40 && document.activeElement?.tagName !== 'INPUT') {
-      event.preventDefault();
-    }
+    claim(event, code);
   });
   on(keyTarget, 'keyup', (raw) => {
-    vm.pressedKeys.delete(keyCodeOf(raw as KeyboardEvent));
+    const event = raw as KeyboardEvent;
+    const code = keyCodeOf(event);
+    vm.pressedKeys.delete(code);
+    claim(event, code);
   });
   // A window that loses focus never sees the key come back up, whatever the keys
   // are read from.

@@ -92,10 +92,28 @@ export function displayNamePart(identifier: string, entryName: unknown): string 
   return name && name !== identifier ? ` as ${tessString(name)}` : '';
 }
 
+/**
+ * Tess 가 숫자로 읽는 글자 모양 (`numberLiteral` = `digit+ ("." digit+)?`).
+ * 지수 표기(`1e-10`)와 `+`·앞자리 `0` 은 이 모양이 아니다.
+ */
+const PLAIN_DECIMAL = /^-?\d+(\.\d+)?$/;
+
+/** Rewrites exponent notation as the plain decimal Tess can lex. */
+function expandExponent(text: string): string {
+  const parts = /^(-?)(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(text);
+  if (!parts) return text;
+  const [, sign, whole, fraction = '', exponent] = parts;
+  const digits = whole! + fraction;
+  const point = whole!.length + Number(exponent);
+  if (point <= 0) return `${sign}0.${'0'.repeat(-point)}${digits}`;
+  if (point >= digits.length) return `${sign}${digits}${'0'.repeat(point - digits.length)}`;
+  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
+}
+
 /** 숫자를 Tess 소스에 그대로 적을 수 있는 형태로 */
 export function tessNumber(value: unknown): string {
   if (!Number.isFinite(value)) return '0';
-  return String(value);
+  return expandExponent(String(value));
 }
 
 /**
@@ -109,8 +127,10 @@ export function tessNumber(value: unknown): string {
 export function isExactNumber(literal: string): boolean {
   const value = Number(literal);
   // "NaN" and "Infinity" round-trip through Number as text, but Tess has no
-  // literal for either, so they have to stay strings.
-  return literal !== '' && Number.isFinite(value) && String(value) === literal;
+  // literal for either, so they have to stay strings. So does exponent notation
+  // ("1e-10"): it survives Number but Tess has no literal for it either.
+  return literal !== '' && Number.isFinite(value)
+    && String(value) === literal && PLAIN_DECIMAL.test(literal);
 }
 
 /**
@@ -134,6 +154,6 @@ export function tessLiteral(value: unknown): string {
   // 예전 작품에는 소문자로 적혀 있기도 하므로 둘 다 받아들인다.
   if (text === 'TRUE' || text === 'true') return 'true';
   if (text === 'FALSE' || text === 'false') return 'false';
-  if (/^-?\d+(\.\d+)?$/.test(text)) return text;
+  if (PLAIN_DECIMAL.test(text)) return text;
   return tessString(text);
 }

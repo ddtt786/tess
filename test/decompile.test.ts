@@ -948,6 +948,72 @@ test('숫자로 되돌린 코드는 다시 컴파일해도 값이 그대로다',
   assert.equal(assign.params[2].params[0].params[0], '2');
 });
 
+// ---------------------------------------------------------------------------
+//  지수 표기 숫자
+//
+//  Tess 의 숫자 리터럴은 `digit+ ("." digit+)?` 뿐이라 `1e-10` 을 읽지 못한다.
+//  자바스크립트 Number 로는 그대로 돌아오는 값이라, 예전엔 숫자 그대로 적어 두고
+//  되돌린 소스가 컴파일되지 않았다.
+// ---------------------------------------------------------------------------
+function exponentProject(entityX: number) {
+  const startHat = () => ({ type: 'when_run_button_click', params: [null], statements: [] });
+  const text = (value: any) => ({ type: 'text', params: [value] });
+  const calc = (left: any, op: any, right: any) => ({ type: 'calc_basic', params: [left, op, right] });
+
+  return {
+    name: '지수 표기 테스트',
+    speed: 60,
+    scenes: [{ id: 'scene1', name: '장면 1' }],
+    variables: [{ id: 'v1', name: '값', value: 0 }],
+    messages: [],
+    functions: [],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: 'obj1',
+      name: '주인공',
+      objectType: 'sprite',
+      scene: 'scene1',
+      rotateMethod: 'free',
+      selectedPictureId: 'pic1',
+      entity: { x: entityX, y: 0, scaleX: 1, scaleY: 1, visible: true },
+      sprite: {
+        pictures: [{ id: 'pic1', name: '기본', fileurl: null, dimension: { width: 10, height: 10 } }],
+        sounds: [],
+      },
+      script: JSON.stringify([[
+        startHat(),
+        { type: 'set_variable', params: ['v1', calc(text('1.6059043836821613e-10'), 'MULTI', text('2')), null], statements: [] },
+      ]]),
+    }],
+  };
+}
+
+test('지수 표기 값은 글자 그대로 두고 되돌린 소스는 다시 컴파일된다', () => {
+  const result = decompileProject(exponentProject(0) as unknown as RawEntity, []);
+  const fragment = utf8(result.assets.find((a) => a.path === 'objects/주인공.tess')!.data);
+
+  assert.match(fragment, /^ {2}값 = \("1\.6059043836821613e-10" \* 2\)$/m);
+
+  const recompiled = recompileResult(result, 'tess-decompile-exponent-');
+  assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e: any) => e.message).join('\n'));
+
+  // 엔트리는 number 블록과 text 블록 모두 적어 둔 글자를 그대로 돌려준다 — 값이 같아야 한다
+  const thread = JSON.parse(recompiled.project!.objects[0].script)[0];
+  const assign = thread.find((b: any) => b.type === 'set_variable').params[1];
+  assert.equal(assign.params[0].params[0], '1.6059043836821613e-10');
+});
+
+test('지수 표기로 적히는 수는 소수점 표기로 펴서 적는다', () => {
+  const result = decompileProject(exponentProject(1e-7) as unknown as RawEntity, []);
+  const fragment = utf8(result.assets.find((a) => a.path === 'objects/주인공.tess')!.data);
+
+  assert.match(fragment, /^x = 0\.0000001$/m);
+
+  const recompiled = recompileResult(result, 'tess-decompile-exponent-x-');
+  assert.deepEqual(recompiled.errors, [], recompiled.errors.map((e: any) => e.message).join('\n'));
+  assert.equal(recompiled.project!.objects[0].entity.x, 1e-7);
+});
+
 // 소리 길이(get_sound_duration)와 색 고르기 칸(text_color)은 예전엔 자리표시자로
 // 남아서 되돌린 소스가 컴파일되지 않았다.
 test('소리 길이와 색 고르기 칸을 되돌리고 다시 컴파일한다', () => {
