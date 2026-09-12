@@ -8,8 +8,8 @@
  * 배경음악은 소리와 따로 놉니다 — 엔트리가 `Entry.bgmInstances` 로 갈라 두어서
  * 소리 크기·재생 속도·소리 멈추기 블록이 닿지 않습니다. `AI/AI_TESSVM.md` 참고.
  */
-import type { AudioEngine } from '../runtime/engine.ts';
-import type { Sound } from '../runtime/model.ts';
+import type { AudioEngine, SpeechEngine } from '../runtime/engine.ts';
+import type { Sound, VoiceProps } from '../runtime/model.ts';
 
 interface Playing {
   source: AudioBufferSourceNode;
@@ -296,8 +296,8 @@ export class WebAudioEngine implements AudioEngine {
 }
 
 /**
- * `읽어주기` 블록을 브라우저의 음성 합성으로 대신합니다. 엔트리는 playentry.org 의
- * TTS 서버가 만든 mp3 를 받아 재생하므로 목소리는 다르고, 인터넷 없이도 됩니다.
+ * `읽어주기` 블록을 브라우저의 음성 합성으로 읽습니다. 엔트리의 목소리는 서버가 만든
+ * mp3 이므로, 이쪽은 그 서버에 닿지 못할 때 대신 서는 자리입니다(`EntryTtsEngine`).
  */
 /**
  * The voices entry's `읽어주기` offers. They are clova voices on entry's own
@@ -361,9 +361,10 @@ export class SpeechSynthesisEngine {
       utterance.voice = picked;
     }
     utterance.lang = picked?.lang ?? 'ko-KR';
-    // Entry's speed and pitch fields run -1…1 around the middle setting.
-    utterance.rate = Math.max(0.1, Math.min(10, speaker.rate * (1 + voice.speed * 0.5)));
-    utterance.pitch = Math.max(0, Math.min(2, speaker.pitch * (1 + voice.pitch * 0.5)));
+    // Entry's dropdowns run 5(느리게 · 낮게) … -5(빠르게 · 높게), so a positive
+    // value slows the reading down and takes it lower — the other way round.
+    utterance.rate = Math.max(0.1, Math.min(10, speaker.rate * (1 - voice.speed * 0.1)));
+    utterance.pitch = Math.max(0, Math.min(2, speaker.pitch * (1 - voice.pitch * 0.1)));
     utterance.volume = voice.volume;
     return new Promise((resolve) => {
       utterance.onend = () => resolve();
@@ -382,5 +383,101 @@ export class SpeechSynthesisEngine {
 
   stop(): void {
     (globalThis as { speechSynthesis?: SpeechSynthesis }).speechSynthesis?.cancel();
+  }
+}
+
+/** Entry's own reading service, and what it refuses to read. */
+const TTS_ORIGIN = 'https://playentry.org';
+const TTS_PATH = '/api/expansionBlock/tts/read.mp3';
+/** `checkText` — entry reads neither an empty sentence nor one longer than this. */
+const TTS_MAX_CHARS = 2500;
+
+/** One reading on the air, with the handle that ends the wait for it. */
+interface Reading {
+  audio: HTMLAudioElement;
+  end(): void;
+}
+
+/**
+ * `읽어주기` through entry's own service — the same mp3 its runner plays, so the
+ * work is read in the voice it was written for.
+ *
+ * The address takes the sentence and the voice as a query string
+ * (`AI_UTILIZE_BLOCK.tts.read`) and answers with the audio, which needs no cors
+ * headers to play from an `<audio>` element. A run that cannot reach the site
+ * falls back to the browser's own synthesis, which has neither those voices nor,
+ * on many machines, a korean one at all.
+ */
+export class EntryTtsEngine implements SpeechEngine {
+  private readonly fallback = new SpeechSynthesisEngine();
+  private readonly playing = new Set<Reading>();
+
+  private address(text: string, voice: VoiceProps): string {
+    const query = new URLSearchParams({
+      text,
+      speaker: voice.speaker || 'kyuri',
+      speed: String(voice.speed || 0),
+      pitch: String(voice.pitch || 0),
+      volume: String(voice.volume ?? 1),
+    });
+    // Same origin on the site itself; elsewhere the reading comes from there.
+    const here = (globalThis as { location?: Location }).location?.origin;
+    return `${here === TTS_ORIGIN ? '' : TTS_ORIGIN}${TTS_PATH}?${query.toString()}`;
+  }
+
+  async speak(text: string, voice: VoiceProps): Promise<void> {
+    const message = String(text ?? '').trim();
+    if (!message || message.length > TTS_MAX_CHARS) {
+      return;
+    }
+    const Ctor = (globalThis as { Audio?: typeof Audio }).Audio;
+    if (Ctor && (await this.play(new Ctor(this.address(message, voice)), voice))) {
+      return;
+    }
+    await this.fallback.speak(message, voice);
+  }
+
+  /** Whether the reading was heard out; false where it never started. */
+  private play(audio: HTMLAudioElement, voice: VoiceProps): Promise<boolean> {
+    audio.volume = Math.max(0, Math.min(1, voice.volume ?? 1));
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (played: boolean) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        this.playing.delete(reading);
+        resolve(played);
+      };
+      // Stopping the work ends the wait as surely as the reading finishing does.
+      const reading: Reading = { audio, end: () => finish(true) };
+      audio.addEventListener('ended', () => finish(true));
+      audio.addEventListener('error', () => finish(false));
+      this.playing.add(reading);
+      audio.play().catch(() => finish(false));
+    });
+  }
+
+  pause(): void {
+    for (const reading of this.playing) {
+      reading.audio.pause();
+    }
+    this.fallback.pause();
+  }
+
+  resume(): void {
+    for (const reading of this.playing) {
+      void reading.audio.play().catch(() => undefined);
+    }
+    this.fallback.resume();
+  }
+
+  stop(): void {
+    for (const reading of [...this.playing]) {
+      reading.audio.pause();
+      reading.end();
+    }
+    this.fallback.stop();
   }
 }

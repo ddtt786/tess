@@ -366,3 +366,149 @@ end`);
   assert.equal(machine.question, null);
   assert.equal(machine.pendingAnswer, null);
 });
+
+// ---------------------------------------------------------------------------
+//  읽어주기 — 엔트리의 TTS 서비스
+// ---------------------------------------------------------------------------
+/** 읽어주기가 낸 소리 하나. */
+interface FakeSpeech {
+  src: string;
+  volume: number;
+  paused: boolean;
+  fire(name: string): void;
+}
+
+/**
+ * `Audio` 를 흉내 냅니다. `how` 는 재생을 걸었을 때 벌어질 일입니다 — 끝까지
+ * 나거나(end), 파일을 못 받거나(error), 브라우저가 막거나(blocked), 계속 나거나(hold).
+ */
+function fakeSpeaker(how: 'end' | 'error' | 'blocked' | 'hold') {
+  const made: FakeSpeech[] = [];
+  function FakeAudio(this: unknown, src: string) {
+    const listeners = new Map<string, () => void>();
+    const element = {
+      src,
+      volume: 1,
+      paused: false,
+      fire: (name: string) => listeners.get(name)?.(),
+      addEventListener: (name: string, fn: () => void) => { listeners.set(name, fn); },
+      pause() { element.paused = true; },
+      play() {
+        if (how === 'blocked') return Promise.reject(new Error('NotAllowedError'));
+        if (how === 'error' || how === 'end') {
+          setTimeout(() => element.fire(how === 'end' ? 'ended' : 'error'), 0);
+        }
+        return Promise.resolve();
+      },
+    };
+    made.push(element as FakeSpeech);
+    return element;
+  }
+  return { FakeAudio, made };
+}
+
+/** 읽어주기를 가짜 브라우저 위에 올립니다. */
+function loadTts(how: 'end' | 'error' | 'blocked' | 'hold', origin = 'https://example.test') {
+  const source = stripTypeScriptTypes(
+    fs.readFileSync(path.join(root, 'packages/tessvm/src/audio/sound.ts'), 'utf-8'),
+    { mode: 'strip' },
+  );
+  const { FakeAudio, made } = fakeSpeaker(how);
+  const spoken: Array<{ text: string; rate: number; pitch: number }> = [];
+  const sandbox: Record<string, unknown> = {
+    Audio: FakeAudio,
+    URLSearchParams,
+    location: { origin },
+    setTimeout,
+    speechSynthesis: {
+      getVoices: () => [{ lang: 'ko-KR', name: '한국어', localService: true }],
+      speak: (utterance: { text: string; rate: number; pitch: number; onend?: () => void }) => {
+        spoken.push({ text: utterance.text, rate: utterance.rate, pitch: utterance.pitch });
+        utterance.onend?.();
+      },
+      cancel() {}, pause() {}, resume() {}, addEventListener() {},
+    },
+    SpeechSynthesisUtterance: function Utterance(this: { text: string }, text: string) { this.text = text; },
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(`${source.replace(/^export /gm, '')};\nthis.EntryTtsEngine = EntryTtsEngine;`, sandbox);
+  const Engine = sandbox.EntryTtsEngine as new () => {
+    speak(text: string, voice: unknown): Promise<void>;
+    stop(): void;
+    pause(): void;
+    resume(): void;
+  };
+  return { engine: new Engine(), made, spoken };
+}
+
+const VOICE = { speaker: 'sally', speed: 0, pitch: 5, volume: 1 };
+
+/**
+ * 엔트리의 목소리는 서버가 만든 mp3 이고, 블록이 고른 목소리·속도·높낮이가
+ * 주소에 그대로 실려 갑니다(`AI_UTILIZE_BLOCK.tts.read`).
+ */
+test('읽어주기는 엔트리의 TTS 주소를 부른다', async () => {
+  const { engine, made, spoken } = loadTts('end');
+  await engine.speak('안녕', VOICE);
+  assert.equal(made.length, 1);
+  const url = new URL(made[0]!.src);
+  assert.equal(url.origin, 'https://playentry.org');
+  assert.equal(url.pathname, '/api/expansionBlock/tts/read.mp3');
+  assert.equal(url.searchParams.get('text'), '안녕');
+  assert.equal(url.searchParams.get('speaker'), 'sally');
+  assert.equal(url.searchParams.get('speed'), '0');
+  assert.equal(url.searchParams.get('pitch'), '5');
+  assert.deepEqual(spoken, [], '서버가 답하면 브라우저 목소리는 쓰지 않습니다');
+});
+
+test('사이트 위에서는 같은 오리진으로 부른다', async () => {
+  const { engine, made } = loadTts('end', 'https://playentry.org');
+  await engine.speak('안녕', VOICE);
+  assert.ok(made[0]!.src.startsWith('/api/expansionBlock/tts/read.mp3?'), made[0]!.src);
+});
+
+test('빈 문장과 2500 자를 넘는 문장은 읽지 않는다', async () => {
+  const { engine, made, spoken } = loadTts('end');
+  await engine.speak('   ', VOICE);
+  await engine.speak('가'.repeat(2501), VOICE);
+  assert.equal(made.length, 0);
+  assert.deepEqual(spoken, []);
+});
+
+/** 서버에 닿지 못하는 실행기에서도 작품은 계속 읽혀야 합니다. */
+test('TTS 서버에 닿지 못하면 브라우저 목소리로 읽는다', async () => {
+  for (const how of ['error', 'blocked'] as const) {
+    const { engine, spoken } = loadTts(how);
+    await engine.speak('안녕', VOICE);
+    assert.equal(spoken.length, 1, how);
+    assert.equal(spoken[0]!.text, '안녕', how);
+  }
+});
+
+/**
+ * 엔트리의 속도·높낮이는 5(느리게 · 낮게) … -5(빠르게 · 높게) 입니다. 부호를
+ * 뒤집어 읽으면 가장 낮은 목소리가 가장 높은 목소리로 나옵니다.
+ */
+test('대신 읽을 때 속도와 높낮이는 엔트리와 같은 방향으로 간다', async () => {
+  const { engine, spoken } = loadTts('error');
+  await engine.speak('안녕', { speaker: 'kyuri', speed: 5, pitch: 5, volume: 1 });
+  await engine.speak('안녕', { speaker: 'kyuri', speed: -5, pitch: -5, volume: 1 });
+  const [slow, fast] = spoken;
+  assert.ok(slow!.rate < 1, `5 는 느리게 여야 합니다: ${slow!.rate}`);
+  assert.ok(fast!.rate > 1, `-5 는 빠르게 여야 합니다: ${fast!.rate}`);
+  assert.ok(slow!.pitch < fast!.pitch, '5 가 -5 보다 낮아야 합니다');
+});
+
+/** `읽어주고 기다리기` 가 멈춘 작품에서 영영 기다리면 스크립트가 살아남습니다. */
+test('작품을 멈추면 읽어주기를 기다리던 자리가 풀린다', async () => {
+  const { engine, made } = loadTts('hold');
+  let done = false;
+  const reading = engine.speak('안녕', VOICE).then(() => { done = true; });
+  await new Promise((wait) => setTimeout(wait, 0));
+  assert.equal(done, false, '아직 읽는 중입니다');
+  engine.stop();
+  await reading;
+  assert.equal(done, true);
+  assert.equal(made[0]!.paused, true);
+});

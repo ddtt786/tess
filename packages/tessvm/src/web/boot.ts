@@ -7,7 +7,7 @@
  */
 import { Vm, type EntryProjectLike, type EntryUser, type VariableStore } from '../runtime/engine.ts';
 import { PixiRenderer } from '../render/renderer.ts';
-import { SpeechSynthesisEngine, WebAudioEngine } from '../audio/sound.ts';
+import { EntryTtsEngine, WebAudioEngine } from '../audio/sound.ts';
 import { setStageSize, stage, type Entity } from '../runtime/model.ts';
 import { localVariableStore } from './store.ts';
 
@@ -238,7 +238,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   const vm = new Vm({
     renderer,
     audio,
-    speech: new SpeechSynthesisEngine(),
+    speech: new EntryTtsEngine(),
     fps: options.fps,
     boost,
     touch,
