@@ -118,9 +118,17 @@ export interface Stroke {
   fill: boolean;
 }
 
+/** What a canvas draws with when it refuses a font string outright. */
+const CANVAS_DEFAULT_FONT = { size: 10, family: 'sans-serif' };
+
 /**
  * `Entry.EntityObject.setFont` — `"bold italic 20px Nanum Gothic"`. The size can
  * be fractional, so it is read with `parseFloat`, not a digit pattern.
+ *
+ * A size that does not read as a number is kept by entry as `NaN`
+ * (`setFontSize(parseFloat(...))`, whose default only covers `undefined`), and
+ * the canvas then refuses the whole declaration and draws in its own face. Such
+ * a font resolves to that face here rather than to entry's 20px default.
  */
 export function parseFont(font: string): {
   size: number;
@@ -139,9 +147,13 @@ export function parseFont(font: string): {
     }
     parts.shift();
   }
-  const size = parseFloat(parts.shift() ?? '') || 20;
+  const token = parts.shift();
+  const size = parseFloat(token ?? '');
+  if (token !== undefined && Number.isNaN(size)) {
+    return { ...CANVAS_DEFAULT_FONT, bold: false, italic: false };
+  }
   const family = parts.join(' ').trim() || 'Nanum Gothic';
-  return { size, family, bold, italic };
+  return { size: size || 20, family, bold, italic };
 }
 
 export interface VoiceProps {

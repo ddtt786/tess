@@ -85,6 +85,43 @@ function literal(value: unknown): string {
 }
 
 /**
+ * `String(value)` for a slot the work fills. A json object with a `toString` of
+ * its own — `{"toString": "x"}` — has no primitive form and throws on the way in,
+ * which would end the compile for the whole work; it reads as empty here.
+ */
+function text(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value === null || value === undefined) {
+    return '';
+  }
+  try {
+    return String(value);
+  } catch {
+    return '';
+  }
+}
+
+/** `Number(value)`, which throws on the same values `text` covers. */
+function number(value: unknown): number {
+  try {
+    return Number(value);
+  } catch {
+    return NaN;
+  }
+}
+
+/**
+ * One entry of a table keyed by the work's own text. A plain `table[key]` also
+ * answers for `constructor` and every other name on `Object.prototype`, and
+ * what came back would be written into the generated source.
+ */
+function pick<T>(table: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
+/**
  * A block type written into a generated comment. The type is the work's own
  * text, and the whole program goes through `new Function`, so anything that
  * could close the comment or open a line of its own is dropped — otherwise a
@@ -172,14 +209,14 @@ export class Codegen {
         if (!hat) {
           continue;
         }
-        const event = HATS[hat.type];
+        const event = pick(HATS, hat.type);
         if (!event) {
           // Loose stacks and comment-only blocks never run; entry ignores them too.
           continue;
         }
-        const filterIndex = HAT_FILTER[hat.type];
+        const filterIndex = pick(HAT_FILTER, hat.type);
         const filter =
-          filterIndex === undefined ? null : String(hat.params[filterIndex] ?? '');
+          filterIndex === undefined ? null : text(hat.params[filterIndex]);
         const body = this.compileStack(stack.slice(1));
         this.plans.push({
           targetIndex,
@@ -221,7 +258,7 @@ export class Codegen {
     this.loopDepth = 0;
 
     const locals = (fn.localVariables ?? [])
-      .map((local) => `${literal(local.id)}: ${literal(local.value ?? 0)}`)
+      .map((local) => `${literal(text(local.id))}: ${literal(local.value ?? 0)}`)
       .join(', ');
     const previousLabel = this.funcLabel;
     this.funcLabel = 'fn';
@@ -380,7 +417,7 @@ export class Codegen {
       case 'continue_repeat':
         return this.loopDepth > 0 ? line('{ yield 0; continue; }') : line('yield 0;');
       case 'stop_object':
-        return this.stopObject(String(p[0] ?? ''), ind);
+        return this.stopObject(text(p[0]), ind);
       case 'restart_project':
         return line('O.restart(); O.die();');
       case 'create_clone':
@@ -570,7 +607,7 @@ export class Codegen {
   }
 
   private repeatWhile(block: RawBlock, ind: string): string {
-    const until = String(block.params[1] ?? 'until') === 'until';
+    const until = text(block.params[1] ?? 'until') === 'until';
     const condition = until ? `!(${this.bool(block.params[0])})` : this.bool(block.params[0]);
     return this.loop(`while (${condition}) {`, block.statements?.[0] ?? [], ind);
   }
@@ -617,7 +654,7 @@ export class Codegen {
   private num(param: unknown): string {
     const value = this.value(param);
     if (value.constant !== undefined) {
-      const folded = parseFloat(String(value.constant)) || 0;
+      const folded = parseFloat(text(value.constant)) || 0;
       return String(folded);
     }
     return value.kind === 'num' ? `(${value.code} || 0)` : `n(${value.code})`;
@@ -627,7 +664,7 @@ export class Codegen {
   private numOf(param: unknown): string {
     const value = this.value(param);
     if (value.constant !== undefined) {
-      return String(Number(value.constant));
+      return String(number(value.constant));
     }
     return value.kind === 'num' ? value.code : `Number(${value.code})`;
   }
@@ -635,7 +672,7 @@ export class Codegen {
   private str(param: unknown): string {
     const value = this.value(param);
     if (value.constant !== undefined) {
-      return literal(String(value.constant));
+      return literal(text(value.constant));
     }
     return value.kind === 'str' ? value.code : `s(${value.code})`;
   }
@@ -666,7 +703,7 @@ export class Codegen {
   }
 
   private varRef(param: unknown): string {
-    const id = String(param ?? '');
+    const id = text(param);
     const index = this.varIndex.get(id);
     if (index === undefined) {
       this.note(`variable:${id}`);
@@ -676,7 +713,7 @@ export class Codegen {
   }
 
   private tableRef(param: unknown): string {
-    const id = String(param ?? '');
+    const id = text(param);
     const index = this.tableIndex.get(id);
     if (index === undefined) {
       this.note(`table:${id}`);
@@ -686,7 +723,7 @@ export class Codegen {
   }
 
   private funcVarKey(param: unknown): string {
-    return literal(String(param ?? ''));
+    return literal(text(param));
   }
 
   private value(param: unknown): Value {
@@ -704,19 +741,19 @@ export class Codegen {
       case 'text':
         return { code: literal(p[0] ?? ''), kind: 'any', constant: (p[0] ?? '') as string };
       case 'angle':
-        return { code: String(Number(p[0] ?? 0) || 0), kind: 'num', constant: Number(p[0] ?? 0) || 0 };
+        return { code: String(number(p[0] ?? 0) || 0), kind: 'num', constant: number(p[0] ?? 0) || 0 };
       case 'True':
         return { code: 'true', kind: 'bool', constant: true };
       case 'False':
         return { code: 'false', kind: 'bool', constant: false };
       case 'get_pictures':
       case 'get_sounds':
-        return { code: literal(String(p[0] ?? '')), kind: 'str', constant: String(p[0] ?? '') };
+        return { code: literal(text(p[0])), kind: 'str', constant: text(p[0]) };
       // The colour picker block: `color` fills a brush slot, `text_color` a text
       // slot, and both hold the picked colour in their first param.
       case 'color':
       case 'text_color':
-        return { code: literal(String(p[0] ?? '')), kind: 'str', constant: String(p[0] ?? '') };
+        return { code: literal(text(p[0])), kind: 'str', constant: text(p[0]) };
 
       case 'calc_basic':
         return this.calcBasic(block);
@@ -797,7 +834,7 @@ export class Codegen {
         // Entry reads both sides before combining them, so neither is skipped.
         return {
           code:
-            String(p[1] ?? 'AND') === 'AND'
+            text(p[1] ?? 'AND') === 'AND'
               ? `C.andOf(${this.raw(p[0])}, ${this.raw(p[2])})`
               : `C.orOf(${this.raw(p[0])}, ${this.raw(p[2])})`,
           kind: 'bool',
@@ -888,7 +925,7 @@ export class Codegen {
   }
 
   private calcBasic(block: RawBlock): Value {
-    const operator = String(block.params[1] ?? 'PLUS');
+    const operator = text(block.params[1] ?? 'PLUS');
     const left = block.params[0];
     const right = block.params[2];
     if (operator === 'PLUS') {
@@ -917,7 +954,7 @@ export class Codegen {
       GREATER_OR_EQUAL: 'cmpGreaterEqual',
       LESS_OR_EQUAL: 'cmpLessEqual',
     };
-    const fn = table[String(block.params[1] ?? 'EQUAL')] ?? 'cmpEqual';
+    const fn = pick(table, text(block.params[1] ?? 'EQUAL')) ?? 'cmpEqual';
     return { code: `C.${fn}(${left}, ${right})`, kind: 'bool' };
   }
 

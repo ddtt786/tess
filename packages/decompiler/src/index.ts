@@ -629,13 +629,26 @@ function buildContext(
   return ctx;
 }
 
+/**
+ * The cells of one table row. A work saved on the site carries each row as
+ * `{ key, value }` — the row id and its cells — while a local one carries the
+ * cells alone.
+ */
+function rowCells(row: unknown): unknown[] {
+  if (Array.isArray(row)) return row;
+  const value = (row as { value?: unknown } | null)?.value;
+  return Array.isArray(value) ? value : [];
+}
+
 /** `table 이름: columns ... row ... end` */
 function tableLines(info: TableInfo): string[] {
   const table = info.source;
-  const cells = (row: unknown[] | undefined) => (row ?? []).map((cell) => tessLiteral(cell)).join(', ');
+  const cells = (row: unknown) => rowCells(row).map((cell) => tessLiteral(cell)).join(', ');
   const lines = [`table ${info.identifier}${displayNamePart(info.identifier, table.name)}:`];
   lines.push(`  columns ${cells(table.fields)}`);
-  for (const row of table.data ?? []) lines.push(`  row ${cells(row)}`);
+  for (const row of Array.isArray(table.data) ? table.data : []) {
+    lines.push(`  row ${cells(row)}`);
+  }
   lines.push('end');
   return lines;
 }
@@ -824,14 +837,17 @@ function objectPropertyLines(object: RawEntity, isText: boolean, indentLevel: nu
 
   if (isText) {
     if (object.text) lines.push(`${pad}text_content = ${tessString(object.text)}`);
-    if (entity.fontSize) lines.push(`${pad}font_size = ${tessNumber(entity.fontSize)}`);
+    const font = parseFont(entity.font);
+    // `fontSize` is null on a text box whose font entry could not read; the size
+    // the canvas fell back to then comes from the font string.
+    const fontSize = entity.fontSize || font.size;
+    if (fontSize) lines.push(`${pad}font_size = ${tessNumber(fontSize)}`);
     // Always keep the frame Entry measured. The compiler can only estimate it
     // from the character count, which is far off for wrapping text boxes.
     if (Number.isFinite(entity.width) && Number.isFinite(entity.height)) {
       lines.push(`${pad}size ${tessNumber(entity.width)} ${tessNumber(entity.height)}`);
     }
 
-    const font = parseFont(entity.font);
     // 컴파일러의 기본값(packages/compiler/src/index.ts buildObject)과 같을 때는 생략한다
     if (font.family && font.family !== 'Nanum Gothic') lines.push(`${pad}font = ${tessString(font.family)}`);
     if (font.bold) lines.push(`${pad}text_bold = true`);
@@ -849,16 +865,29 @@ function objectPropertyLines(object: RawEntity, isText: boolean, indentLevel: nu
   return lines;
 }
 
-/** entity.font(`"bold italic 24px D2 Coding"` 형태)를 굵기·기울임·글씨체 이름으로 되짚는다 */
+/** What a canvas draws with when it refuses a font string outright. */
+const CANVAS_DEFAULT_FONT = { size: 10, family: 'sans-serif' };
+
+/**
+ * entity.font(`"bold italic 24px D2 Coding"` 형태)를 굵기·기울임·글씨체 이름으로 되짚는다.
+ *
+ * Entry takes the size slot by position, whatever stands there, so a size it
+ * could not read ("NaNpx") leaves a declaration the canvas refuses and draws in
+ * its own face instead. That face is what goes out, so the work keeps its look.
+ */
 function parseFont(font: unknown) {
-  const tokens = String(font ?? '').trim().split(/\s+/);
+  const tokens = String(font ?? '').trim().split(/\s+/).filter(Boolean);
   let bold = false;
   let italic = false;
   while (tokens[0] === 'bold' || tokens[0] === 'italic') {
     if (tokens.shift() === 'bold') bold = true; else italic = true;
   }
-  if (/^[\d.]+px$/.test(tokens[0] ?? '')) tokens.shift();
-  return { bold, italic, family: tokens.join(' ') };
+  if (!tokens.length) return { bold, italic, family: '', size: null };
+  const size = parseFloat(tokens.shift()!);
+  if (Number.isNaN(size)) {
+    return { bold: false, italic: false, ...CANVAS_DEFAULT_FONT };
+  }
+  return { bold, italic, family: tokens.join(' '), size };
 }
 
 // ---------------------------------------------------------------------------

@@ -83,6 +83,39 @@ const MIME: Record<string, string> = {
   '.m4a': 'audio/mp4',
 };
 
+/**
+ * Whether a request really came to this machine's own name. The server listens
+ * on the loopback address only, but a page elsewhere can point a name of its own
+ * at 127.0.0.1 and then read what is served here as its own origin; the name it
+ * used is the one thing that tells the two apart.
+ */
+function isLoopbackHost(host: string | undefined): boolean {
+  if (!host) {
+    return false;
+  }
+  const name = host.replace(/:\d+$/, '').replace(/^\[|\]$/g, '').toLowerCase();
+  return name === '127.0.0.1' || name === 'localhost' || name === '::1';
+}
+
+/** Whether a request carries no origin of its own, or this server's. */
+function isOwnOrigin(request: http.IncomingMessage): boolean {
+  const origin = request.headers.origin;
+  return origin === undefined || origin === `http://${request.headers.host}`;
+}
+
+/** Every control character but tab and line feed. */
+const CONTROL_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
+
+/**
+ * Text on its way to the terminal. Control characters are dropped so a message
+ * cannot move the cursor or repaint the line it is printed on; tabs and line
+ * breaks stay, since a stack trace is read by its lines.
+ */
+function plainText(value: unknown): string {
+  const text = typeof value === 'string' ? value : (JSON.stringify(value) ?? '');
+  return text.replace(CONTROL_CHARS, ' ');
+}
+
 export async function serveVm(options: ServeOptions): Promise<RunningServer> {
   let routes = assetRoutes(options.assets, options.assetDirs);
   let served = withServedAssets(options.project, routes.rewrites);
@@ -93,6 +126,12 @@ export async function serveVm(options: ServeOptions): Promise<RunningServer> {
 
   const server = http.createServer((request, response) => {
     const url = decodeURIComponent((request.url ?? '/').split('?')[0] ?? '/');
+
+    // The work being run is served here, and so is every file under `/vm/`.
+    // A page that reached this port under a name of its own is not the run page.
+    if (!isLoopbackHost(request.headers.host)) {
+      return send(response, 403, 'text/plain', 'forbidden');
+    }
 
     if (url === '/' || url === '/index.html') {
       return send(response, 200, MIME['.html']!, playerPage({
@@ -118,6 +157,11 @@ export async function serveVm(options: ServeOptions): Promise<RunningServer> {
     }
 
     if (request.method === 'POST' && url === '/__log') {
+      // Anything that is not the run page itself has an origin of its own here,
+      // and this endpoint writes what it is sent into the terminal.
+      if (!isOwnOrigin(request)) {
+        return send(response, 403, 'text/plain', 'forbidden');
+      }
       return receiveLog(request, response);
     }
 
@@ -204,9 +248,9 @@ function receiveLog(request: http.IncomingMessage, response: http.ServerResponse
     try {
       const { kind, message, stack, time } = JSON.parse(body);
       const when = new Date(time ?? Date.now()).toLocaleTimeString('ko-KR', { hour12: false });
-      console.error(`\n[${when}] ${kind ?? '오류'}: ${message ?? '(메시지 없음)'}`);
+      console.error(`\n[${when}] ${plainText(kind) || '오류'}: ${plainText(message) || '(메시지 없음)'}`);
       if (stack) {
-        console.error(stack);
+        console.error(plainText(stack));
       }
     } catch {
       // An unreadable body is not worth stopping the server for.

@@ -9,7 +9,7 @@
  */
 import { boot, type TessVmHandle } from "../../../tessvm/src/web/boot.ts";
 import { ASK_FIELD_STYLE } from "../../../tessvm/src/web/ask-style.ts";
-import { fetchWork } from "./entry-project.ts";
+import { fetchWork, thumbUrl } from "./entry-project.ts";
 import { CloudClient } from "./cloud.ts";
 
 import { toTessProject } from "./tess-project.ts";
@@ -259,8 +259,9 @@ export function mountPlayer(
     if (disposed) {
       return;
     }
-    if (work.thumb) {
-      cover.style.backgroundImage = `url("${location.origin}${work.thumb}")`;
+    const thumb = thumbUrl(work.thumb);
+    if (thumb) {
+      cover.style.backgroundImage = `url("${thumb}")`;
     }
 
     // Building the work is one long stretch of work on this thread, so the

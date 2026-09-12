@@ -1659,6 +1659,97 @@ end`;
   );
 });
 
+/**
+ * 사이트에 저장된 작품의 표는 줄마다 `{ key, value }` — 줄 번호와 칸 — 로 담겨
+ * 온다(storymaker.ent). 칸 배열만 있다고 보고 읽으면 되돌리기가 그 자리에서 멈춘다.
+ */
+test('표의 줄이 {key, value} 로 담겨 와도 되돌린다', () => {
+  const project = minimalProject();
+  project.tables = [{
+    id: 'tb',
+    name: '점수표',
+    fields: ['이름', '점수'],
+    data: [
+      { key: 'r1', value: ['철수', 10] },
+      { key: 'r2', value: ['영희', 20] },
+    ],
+  }];
+
+  const back = decompileProject(project, [], { inline: true });
+  assert.match(
+    back.source,
+    /^table 점수표:\n {2}columns "이름", "점수"\n {2}row "철수", 10\n {2}row "영희", 20\nend$/m,
+  );
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+  assert.deepEqual(again.project!.tables[0].data, [['철수', '10'], ['영희', '20']]);
+});
+
+/**
+ * `in <리스트> add|insert <값>` 의 값 자리에 `row`·`column` 이 그대로 오면 표의
+ * 줄·칸 문법으로 읽힌다. 그 이름을 쓴 변수는 작품에 흔하다(storymaker.ent).
+ */
+test('리스트에 넣는 값이 row 라는 이름이어도 다시 읽힌다', () => {
+  const project = minimalProject();
+  project.variables = [
+    { id: 'v1', name: 'row', variableType: 'variable', value: 0, visible: true, object: null },
+    { id: 'v2', name: '줄들', variableType: 'list', array: [], visible: true, object: null },
+  ];
+  const object = (project.objects as RawEntity[])[0]!;
+  object.script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    {
+      type: 'add_value_to_list',
+      params: [{ type: 'get_variable', params: ['v1', null] }, 'v2', null],
+      statements: [],
+    },
+    {
+      type: 'insert_value_to_list',
+      params: [
+        { type: 'get_variable', params: ['v1', null] },
+        'v2',
+        { type: 'number', params: ['1'] },
+        null,
+      ],
+      statements: [],
+    },
+  ]]);
+
+  const back = decompileProject(project, [], { inline: true });
+  assert.match(back.source, /in 줄들 add \(row\)/);
+  assert.match(back.source, /in 줄들 insert \(row\) at 1/);
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+});
+
+/**
+ * 크기가 비어 저장된 글상자는 `"NaNpx …"` 를 들고 온다. 크기 자리를 그냥 두면
+ * 글꼴 이름이 `"NaNpx Nanum Gothic"` 이 되고 크기는 기본값 20 이 되어, 엔트리가
+ * 그리는 것보다 글자가 두 배로 커진다.
+ */
+test('읽을 수 없는 글꼴 크기는 캔버스가 실제로 그리는 글꼴로 되돌린다', () => {
+  const project = minimalProject();
+  project.objects = [{
+    id: 'tx',
+    name: '예측 결과',
+    objectType: 'textBox',
+    scene: 'scene1',
+    text: '예측 결과: -',
+    sprite: { pictures: [], sounds: [] },
+    script: '[]',
+    entity: {
+      x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, direction: 90, visible: true,
+      width: 49.27, height: 10, font: 'NaNpx Nanum Gothic', fontSize: null,
+    },
+  }];
+
+  const back = decompileProject(project, []);
+  const fragment = utf8(back.assets.find((a) => a.path.endsWith('.tess'))!.data);
+  assert.match(fragment, /^font_size = 10$/m);
+  assert.match(fragment, /^font = "sans-serif"$/m);
+  assert.doesNotMatch(fragment, /NaNpx/);
+});
+
 test('테이블 선언은 엔트리 project.tables 항목이 된다', () => {
   const { project, errors } = compileProject(
     'table 점수표 as "점수 표":\n  columns "이름", "점수"\n  row "철수", 10\n  row "영희", 20\nend',

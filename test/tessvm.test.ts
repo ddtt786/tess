@@ -1188,6 +1188,34 @@ test('글꼴 문자열은 굵기·기울임·소수점 크기를 모두 읽는�
   });
 });
 
+/**
+ * 글꼴 크기가 비어 저장된 글상자에는 `"NaNpx …"` 가 남는다. 엔트리는 그 크기를
+ * NaN 그대로 들고 있고, 캔버스는 그런 선언을 통째로 거절한 뒤 자기 기본 글꼴로
+ * 그린다(그래서 엔트리가 재어 둔 높이가 10 이다). 20px 로 읽으면 글자가 두 배가 된다.
+ */
+test('읽을 수 없는 글꼴 크기는 캔버스 기본 글꼴이 된다', () => {
+  assert.deepEqual(parseFont('NaNpx Nanum Gothic'), {
+    size: 10,
+    family: 'sans-serif',
+    bold: false,
+    italic: false,
+  });
+  // 굵기·기울임도 같은 선언 안에 있으므로 함께 버려진다.
+  assert.deepEqual(parseFont('bold italic NaNpx D2 Coding'), {
+    size: 10,
+    family: 'sans-serif',
+    bold: false,
+    italic: false,
+  });
+  // 글꼴이 아예 없는 것은 다른 이야기다 — 엔트리의 기본값을 그대로 쓴다.
+  assert.deepEqual(parseFont(''), {
+    size: 20,
+    family: 'Nanum Gothic',
+    bold: false,
+    italic: false,
+  });
+});
+
 // ---------------------------------------------------------------------------
 //  예제 작품
 // ---------------------------------------------------------------------------

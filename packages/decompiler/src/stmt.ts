@@ -158,6 +158,15 @@ export function isSkipCarrier(block: RawBlock | undefined): boolean {
   return carried;
 }
 
+/**
+ * `in <list> add|insert <value>` is read as the table form when the value slot
+ * opens with `row` or `column`, so a value starting with either word is
+ * parenthesised to keep it an expression.
+ */
+function listValue(text: string): string {
+  return /^(row|column)(?![\p{L}\p{N}_])/u.test(text) ? `(${text})` : text;
+}
+
 function statementLines(block: any, ctx: DecompileContext): string[] {
   if (!block || typeof block !== "object" || !block.type) return [];
   const p = block.params ?? [];
@@ -495,10 +504,10 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
     case "ask_and_wait":
       return [`ask ${e(0)}`];
     case "add_value_to_list":
-      return [`in ${ctx.varName(at(1))} add ${e(0)}`];
+      return [`in ${ctx.varName(at(1))} add ${listValue(e(0))}`];
     case "insert_value_to_list":
       return [
-        `in ${ctx.varName(at(1))} insert ${e(0)} at ${exprOf(at(2), ctx)}`,
+        `in ${ctx.varName(at(1))} insert ${listValue(e(0))} at ${exprOf(at(2), ctx)}`,
       ];
     case "remove_value_from_list":
       return [`remove ${ctx.varName(at(1))}[${exprOf(at(0), ctx)}]`];

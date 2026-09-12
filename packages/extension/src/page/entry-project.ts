@@ -81,6 +81,24 @@ function assetUrl(carried: unknown, built: string): string {
   return sameOrigin(carried) ? String(carried) : built;
 }
 
+/**
+ * The work's thumbnail as a url to draw, or null where it has none to trust.
+ * `thumb` is the work's own data like every other path in it, so one pointing
+ * off playentry is dropped; what is left is returned parsed, which leaves no
+ * quote or bracket in it to end the `url("...")` it is written into.
+ */
+export function thumbUrl(thumb: unknown): string | null {
+  if (typeof thumb !== 'string' || !thumb) {
+    return null;
+  }
+  try {
+    const url = new URL(thumb, location.origin);
+    return url.origin === location.origin ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 /** `Entry.EntryObject.getImagePath` — two-level hash folders, then `image/`. */
 function imageUrl(picture: RawAsset, type: string): string {
   const name = safeName(picture.filename);
