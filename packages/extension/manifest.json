@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "tessvm for Entry",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "엔트리 작품 실행 화면을 tessvm 실행기로 바꿉니다.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -21,7 +21,10 @@
   "content_scripts": [
     {
       "matches": ["https://playentry.org/*"],
-      "exclude_matches": ["https://playentry.org/ws*", "https://playentry.org/iframe/*"],
+      "exclude_matches": [
+        "https://playentry.org/ws*",
+        "https://playentry.org/iframe/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_start",
       "all_frames": false
