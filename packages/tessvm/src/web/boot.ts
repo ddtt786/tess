@@ -8,6 +8,7 @@
 import { Vm, type EntryProjectLike, type EntryUser, type VariableStore } from '../runtime/engine.ts';
 import { PixiRenderer } from '../render/renderer.ts';
 import { EntryTtsEngine, WebAudioEngine } from '../audio/sound.ts';
+import { EntryTranslator } from './translate.ts';
 import { setStageSize, stage, type Entity } from '../runtime/model.ts';
 import { localVariableStore } from './store.ts';
 
@@ -239,6 +240,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     renderer,
     audio,
     speech: new EntryTtsEngine(),
+    translator: new EntryTranslator(),
     fps: options.fps,
     boost,
     touch,

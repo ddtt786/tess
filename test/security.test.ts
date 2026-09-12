@@ -457,3 +457,29 @@ test('터미널에 적히는 글에서는 제어 문자가 빠진다', async () 
   assert.match(all, /줄1\n/);
   assert.ok(all.includes('줄2'), all);
 });
+
+/**
+ * 번역 블록은 엔트리의 파파고 주소를 부르는데, 실행기는 그 사이트가 아니라 브라우저가
+ * 직접 부르지 못합니다. 서버가 그 자리만 넘겨 주므로, 넘기는 자리가 좁은지 봅니다.
+ */
+test('번역 호출은 정해진 자리와 방법으로만 넘어간다', async () => {
+  await withVmServer(async ({ port }) => {
+    // 넘기지 않는 것들은 서버 안에서 끝난다 — 밖으로 나가지 않는다.
+    assert.equal(
+      (await request(port, { path: '/api/expansionBlock/papago/translate/n2mt', method: 'POST' })).status,
+      404,
+    );
+    assert.equal(
+      (await request(port, { path: '/api/expansionBlock/papago/../../../etc/passwd' })).status,
+      404,
+    );
+    assert.equal((await request(port, { path: '/api/expansionBlock/tts/read.mp3' })).status, 404);
+    assert.equal(
+      (await request(port, {
+        path: '/api/expansionBlock/papago/translate/n2mt',
+        headers: { host: 'work.example' },
+      })).status,
+      403,
+    );
+  });
+});

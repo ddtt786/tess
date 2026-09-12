@@ -56,6 +56,18 @@ export interface SpeechEngine {
   resume?(): void;
 }
 
+/**
+ * Answers the `번역` blocks. Entry asks its own papago service and takes a
+ * default answer when nothing comes back within three seconds, so an
+ * implementation carries its own deadline rather than leaving a script waiting.
+ */
+export interface Translator {
+  /** The text in `target`, or an empty string where nothing could be had. */
+  translate(text: string, source: string, target: string): Promise<string>;
+  /** The language code the text was written in, or an empty string. */
+  detect(text: string): Promise<string>;
+}
+
 /** Measures a text box exactly the way the renderer will draw it. */
 export interface TextMeasurer {
   measureTextBox(entity: Entity): { width: number; height: number } | null;
@@ -120,6 +132,8 @@ export interface VmOptions {
   renderer?: Renderer | null;
   audio?: AudioEngine | null;
   speech?: SpeechEngine | null;
+  /** Answers the `번역` blocks; without one they answer as entry does offline. */
+  translator?: Translator | null;
   /** Overrides the project's own `speed`. Leave unset to follow the project. */
   fps?: number;
   /** Stage size in entry units; entry's own stage is 480×270. */
@@ -175,6 +189,7 @@ export class Vm implements Project {
   messages: Array<{ id: string; name: string }> = [];
   tables: Table[] = [];
   speech: SpeechEngine | null;
+  translator: Translator | null;
   renderer: Renderer | null;
   audio: AudioEngine | null;
   readonly cast = cast;
@@ -240,6 +255,7 @@ export class Vm implements Project {
     this.renderer = options.renderer ?? null;
     this.audio = options.audio ?? null;
     this.speech = options.speech ?? null;
+    this.translator = options.translator ?? null;
     this.requestedFps = options.fps;
     this.frameRate = options.fps ?? DEFAULT_FPS;
     if (options.stageWidth && options.stageHeight) {

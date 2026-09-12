@@ -464,7 +464,7 @@ function compile(node: Stmt, ctx: Context): EntryBlock[] | null {
     case "Read": {
       const message = compileValue(node.value, ctx);
       if (!message) return [];
-      ctx.usesTts = true;
+      ctx.aiUtilizeBlocks.add('tts');
       return one(
         ctx.block(node.wait ? "read_text_wait_with_block" : "read_text", [
           message,
@@ -478,7 +478,7 @@ function compile(node: Stmt, ctx: Context): EntryBlock[] | null {
       const speed = ttsOption(TTS_LEVELS, node.speed, "속도", ctx);
       const pitch = ttsOption(TTS_LEVELS, node.pitch, "음높이", ctx);
       if (speaker === null || speed === null || pitch === null) return [];
-      ctx.usesTts = true;
+      ctx.aiUtilizeBlocks.add('tts');
       return one(ctx.block("set_tts_property", [speaker, speed, pitch, null]));
     }
 

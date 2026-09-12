@@ -817,6 +817,17 @@ export class Codegen {
       case 'get_block_count':
         return { code: '0', kind: 'num', constant: 0 };
 
+      // ----- 번역 -----
+      // Both answer from entry's own service, so the script waits on them the
+      // way it waits on a function call.
+      case 'get_translated_string':
+        return {
+          code: `(yield* O.translate(${this.field(p[0])}, ${this.str(p[1])}, ${this.field(p[2])}))`,
+          kind: 'str',
+        };
+      case 'check_language':
+        return { code: `(yield* O.detectLanguage(${this.str(p[0])}))`, kind: 'str' };
+
       // ----- judgement -----
       case 'is_clicked':
         return { code: 'O.isClicked()', kind: 'bool' };

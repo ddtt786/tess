@@ -66,6 +66,41 @@ function preciseTrig(degrees: number, operator: 'sin' | 'cos' | 'tan'): number {
   return Math[operator]((angle * Math.PI) / 180);
 }
 
+/**
+ * 번역 블록이 엔트리처럼 답하도록 두는 값들입니다 (`Lang.Blocks`, `checkText`).
+ */
+const TRANSLATE_MAX_CHARS = 3000;
+const NO_SENTENCE = '문장이 없습니다';
+const SENTENCE_TOO_LONG = '3000자까지만 입력할 수 있습니다.';
+const UNKNOWN_SENTENCE = '알 수 없는 문장입니다.';
+
+/**
+ * `언어 감지` 가 답하는 이름들. 엔트리가 화면에 쓰는 말 그대로이며, 베트남어가
+ * `베트남` 인 것도 엔트리의 표기입니다(`Lang.Blocks.vietnamese`).
+ */
+const LANGUAGE_NAMES: Record<string, string> = {
+  ko: '한국어', en: '영어', ja: '일본어', 'zh-CN': '중국어간체', 'zh-TW': '중국어번체',
+  es: '스페인어', fr: '프랑스어', de: '독일어', ru: '러시아어', pt: '포르투갈어',
+  th: '태국어', vi: '베트남', id: '인도네시아어', hi: '힌디어',
+};
+
+/**
+ * Holds the script across frames until `answer` settles, the way entry's async
+ * blocks hold theirs. A refused answer reads as the fallback.
+ */
+function* settle(answer: Promise<string>, fallback: string): Generator<number, string> {
+  let value: string | null = null;
+  let done = false;
+  void answer.then(
+    (result) => { value = result; done = true; },
+    () => { done = true; },
+  );
+  while (!done) {
+    yield 0;
+  }
+  return value || fallback;
+}
+
 function factorial(n: number): number {
   let result = 1;
   for (let i = 2; i <= n; i += 1) {
@@ -1174,6 +1209,43 @@ export function createOps(vm: Vm) {
 
     setVoice(entity: Entity, speaker: string, speed: unknown, pitch: unknown): void {
       entity.voice = { speaker, speed: Number(speed) || 0, pitch: Number(pitch) || 0, volume: 1 };
+    },
+
+    // -----------------------------------------------------------------------
+    //  Translation
+    // -----------------------------------------------------------------------
+    *translate(source: string, text: string, target: string): Generator<number, string> {
+      // `checkText` — entry answers with the reason rather than a translation.
+      if (!text) {
+        return NO_SENTENCE;
+      }
+      if (text.length > TRANSLATE_MAX_CHARS) {
+        return SENTENCE_TOO_LONG;
+      }
+      // Entry does not call out when both ends name the same language.
+      if (String(source) === String(target)) {
+        return text;
+      }
+      const answer = vm.translator?.translate(text, String(source), String(target));
+      if (!answer) {
+        return UNKNOWN_SENTENCE;
+      }
+      return yield* settle(answer, UNKNOWN_SENTENCE);
+    },
+
+    *detectLanguage(text: string): Generator<number, string> {
+      if (!text) {
+        return NO_SENTENCE;
+      }
+      if (text.length > TRANSLATE_MAX_CHARS) {
+        return SENTENCE_TOO_LONG;
+      }
+      const answer = vm.translator?.detect(text);
+      if (!answer) {
+        return UNKNOWN_SENTENCE;
+      }
+      const code = yield* settle(answer, '');
+      return LANGUAGE_NAMES[code] ?? UNKNOWN_SENTENCE;
     },
 
     // -----------------------------------------------------------------------

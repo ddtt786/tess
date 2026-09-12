@@ -103,6 +103,16 @@ function isOwnOrigin(request: http.IncomingMessage): boolean {
   return origin === undefined || origin === `http://${request.headers.host}`;
 }
 
+/**
+ * The papago calls the `번역` blocks make. This runner is not on entry's site, so
+ * the browser refuses to call the api from the page; the request is passed along
+ * here instead and comes back same-origin.
+ */
+const PAPAGO_PREFIX = '/api/expansionBlock/papago/';
+const ENTRY_ORIGIN = 'https://playentry.org';
+/** Entry gives the api this long before it takes the default answer (`callApi`). */
+const API_TIMEOUT_MS = 3000;
+
 /** Every control character but tab and line feed. */
 const CONTROL_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
 
@@ -154,6 +164,10 @@ export async function serveVm(options: ServeOptions): Promise<RunningServer> {
 
     if (url === '/sourcemap.json') {
       return send(response, 200, MIME['.json']!, sourceMapJson);
+    }
+
+    if (request.method === 'GET' && url.startsWith(PAPAGO_PREFIX) && !url.includes('..')) {
+      return void passToEntry(request, response);
     }
 
     if (request.method === 'POST' && url === '/__log') {
@@ -233,6 +247,25 @@ export async function serveVm(options: ServeOptions): Promise<RunningServer> {
       }
     },
   };
+}
+
+/**
+ * Hands one papago request to entry and the answer back, unchanged. Only the
+ * path the translate blocks use is passed on, and only to entry's own host.
+ */
+async function passToEntry(request: http.IncomingMessage, response: http.ServerResponse): Promise<void> {
+  try {
+    const answer = await fetch(`${ENTRY_ORIGIN}${request.url ?? ''}`, {
+      // Entry answers this api for its own pages only, and the page it is
+      // standing in for here is the work's — the referer says so.
+      headers: { accept: 'application/json', referer: `${ENTRY_ORIGIN}/` },
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
+    send(response, answer.status, MIME['.json']!, await answer.text());
+  } catch {
+    // Offline or slower than entry itself waits: the block takes its own default.
+    send(response, 502, MIME['.json']!, '{}');
+  }
 }
 
 /** Prints an error the browser hit into the terminal this server runs in. */

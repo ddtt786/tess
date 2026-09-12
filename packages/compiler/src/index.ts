@@ -778,9 +778,9 @@ function assemble(program: ProgramNode, ctx: Context, options: CompileOptions): 
     speed: numberField('fps') ?? 60,
     interface: { menuWidth: 280, canvasWidth: 480, object: objects[0]?.id ?? null },
     expansionBlocks: [...ctx.expansionBlocks],
-    // read / tts 문을 쓰면 엔트리가 '읽어주기(TTS)' 확장 블록을 실행할 수 있게 켠다
+    // 읽어주기·번역 같은 인공지능 블록을 쓰면 그 모듈 이름을 적어 둔다
     // (entryjs 는 project.aiUtilizeBlocks 에 이름이 있어야 Entry.AI_UTILIZE_BLOCK[type].init() 을 부른다)
-    aiUtilizeBlocks: ctx.usesTts ? ['tts'] : [],
+    aiUtilizeBlocks: [...ctx.aiUtilizeBlocks],
     hardwareLiteBlocks: [],
     externalModules: [],
     externalModulesLite: [],

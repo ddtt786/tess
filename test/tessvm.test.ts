@@ -1341,3 +1341,122 @@ end`;
   // 두 글자 이하는 가릴 것이 없습니다.
   assert.deepEqual(read({ user: { id: 'ab', nickname: 'ab' } }).id, 'ab');
 });
+
+// ---------------------------------------------------------------------------
+//  번역 (파파고)
+// ---------------------------------------------------------------------------
+/** 번역 서비스를 흉내 냅니다 — 무엇을 물어봤는지도 들고 있습니다. */
+function fakeTranslator(answer: string | null = null) {
+  const asked: Array<{ text: string; source: string; target: string }> = [];
+  return {
+    asked,
+    translate(text: string, source: string, target: string) {
+      asked.push({ text, source, target });
+      return Promise.resolve(answer ?? `${text}(${source}->${target})`);
+    },
+    detect(_text: string) {
+      return Promise.resolve('en');
+    },
+  };
+}
+
+/** 번역은 답을 기다리는 동안 프레임을 넘기므로, 약속이 풀릴 틈을 주고 돌립니다. */
+async function runTranslating(source: string, translator: unknown): Promise<Vm> {
+  const result = compileProject(source, { path: 'test.tess' });
+  assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+  const machine = new Vm({ renderer: null, audio: null, translator: translator as never });
+  machine.load(result.project as unknown as never);
+  machine.start();
+  for (let i = 0; i < 6; i += 1) {
+    machine.tick();
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+  return machine;
+}
+
+const translated = (machine: Vm) => String(machine.variables.find((v) => v.name === '결과')!.getValue());
+
+test('번역 블록은 엔트리 서비스가 준 글을 그대로 쓴다', async () => {
+  const translator = fakeTranslator();
+  const machine = await runTranslating(
+    wrap('결과 = get_translated_string("ko", "안녕", "en")', 'var 결과 = ""'),
+    translator,
+  );
+  assert.equal(translated(machine), '안녕(ko->en)');
+  assert.deepEqual(translator.asked, [{ text: '안녕', source: 'ko', target: 'en' }]);
+});
+
+/** 엔트리는 두 쪽이 같은 언어면 서비스를 부르지 않고 받은 글을 그대로 돌려줍니다. */
+test('출발어와 도착어가 같으면 부르지 않는다', async () => {
+  const translator = fakeTranslator();
+  const machine = await runTranslating(
+    wrap('결과 = get_translated_string("ko", "안녕", "ko")', 'var 결과 = ""'),
+    translator,
+  );
+  assert.equal(translated(machine), '안녕');
+  assert.deepEqual(translator.asked, []);
+});
+
+test('빈 문장과 3000 자를 넘는 문장은 엔트리처럼 이유를 돌려준다', async () => {
+  const empty = await runTranslating(
+    wrap('결과 = get_translated_string("ko", "", "en")', 'var 결과 = ""'),
+    fakeTranslator(),
+  );
+  assert.equal(translated(empty), '문장이 없습니다');
+
+  const tooLong = '가'.repeat(3001);
+  const long = await runTranslating(
+    wrap(`결과 = get_translated_string("ko", "${tooLong}", "en")`, 'var 결과 = ""'),
+    fakeTranslator(),
+  );
+  assert.equal(translated(long), '3000자까지만 입력할 수 있습니다.');
+});
+
+test('번역할 곳이 없으면 엔트리의 기본 답을 돌려준다', async () => {
+  const machine = await runTranslating(
+    wrap('결과 = get_translated_string("ko", "안녕", "en")', 'var 결과 = ""'),
+    null,
+  );
+  assert.equal(translated(machine), '알 수 없는 문장입니다.');
+});
+
+test('언어 감지는 엔트리가 쓰는 이름으로 답한다', async () => {
+  const machine = await runTranslating(
+    wrap('결과 = check_language("hello")', 'var 결과 = ""'),
+    fakeTranslator(),
+  );
+  assert.equal(translated(machine), '영어');
+});
+
+test('번역을 기다리는 동안에도 다른 스크립트는 돈다', async () => {
+  let release: (value: string) => void = () => {};
+  const held = new Promise<string>((resolve) => { release = resolve; });
+  const machine = await runTranslating(
+    `var 결과 = ""
+var 센횟수 = 0
+scene "s":
+  object "o":
+    when start do
+      결과 = get_translated_string("ko", "안녕", "en")
+    end
+    when start do
+      forever:
+        센횟수 = (센횟수 + 1)
+      end
+    end
+  end
+end`,
+    { translate: () => held, detect: () => Promise.resolve('en') },
+  );
+  const counted = Number(machine.variables.find((v) => v.name === '센횟수')!.getValue());
+  assert.ok(counted > 1, `다른 스크립트가 멈춰 섰습니다: ${counted}`);
+  assert.equal(translated(machine), '', '아직 답이 오지 않았습니다');
+  release('안녕하세요');
+  for (let i = 0; i < 3; i += 1) {
+    machine.tick();
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+  assert.equal(translated(machine), '안녕하세요');
+});

@@ -24,6 +24,11 @@ export interface ExpansionBlock {
    * 'field'는 텍스트(드롭다운) 값, 'value'는 표현식(식)이 들어가는 자리입니다.
    */
   slots: string[];
+  /**
+   * 엔트리가 확장이 아니라 인공지능 묶음에 두는 블록. 이런 블록은
+   * `project.aiUtilizeBlocks` 에 이름이 있어야 엔트리가 모듈을 불러옵니다.
+   */
+  ai?: boolean;
 }
 
 /**
@@ -179,6 +184,15 @@ export const EXPANSION_BLOCKS = {
   get_korea_area_code: {
     module: 'weather', kind: 'value',
     slots: ['field', 'field'], // STATE SUB_LOC
+  },
+  // 번역(파파고). 엔트리는 이 둘을 인공지능 묶음에 두므로 aiUtilizeBlocks 로 나갑니다.
+  get_translated_string: {
+    module: 'translate', kind: 'value', ai: true,
+    slots: ['field', 'value', 'field'], // SOURCE TEXT TARGET
+  },
+  check_language: {
+    module: 'translate', kind: 'value', ai: true,
+    slots: ['value'], // TEXT
   },
 };
 

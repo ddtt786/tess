@@ -654,7 +654,7 @@ function tableArgument(node: Expr, callee: string, ctx: Context) {
  */
 function compileExpansion(node: CallNode, ctx: Context): EntryBlock | null {
   const { callee, arguments: args } = node;
-  const { module, slots } = expansionBlock(callee)!;
+  const { module, slots, ai } = expansionBlock(callee)!;
   if (args.length !== slots.length) {
     return ctx.error(node, `${callee}() 는 인자가 ${slots.length}개여야 합니다. (${args.length}개를 받았습니다)`);
   }
@@ -668,7 +668,7 @@ function compileExpansion(node: CallNode, ctx: Context): EntryBlock | null {
   });
   if (params.some((param) => param === null)) return null;
 
-  ctx.expansionBlocks.add(module);
+  (ai ? ctx.aiUtilizeBlocks : ctx.expansionBlocks).add(module);
   return ctx.block(callee, params);
 }
 

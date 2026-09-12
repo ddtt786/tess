@@ -74,7 +74,7 @@ export class Context {
 
   currentNode: Node | null;
 
-  usesTts: boolean;
+  aiUtilizeBlocks: Set<string>;
 
   forcedResourceIds: Set<string>;
 
@@ -128,7 +128,8 @@ export class Context {
     // 이 표를 찾아서 "블록 -> 소스 위치" 로 되짚어 보여줄 수 있게 모아 둔다.
     this.sourceMap = {};
     this.currentNode = null; // 지금 컴파일 중인 문장의 AST 노드 (블록 위치 태깅용)
-    this.usesTts = false; // read / tts 문을 하나라도 쓰면 project.aiUtilizeBlocks 에 'tts' 를 넣는다
+    // 인공지능 블록을 쓰면 그 모듈 이름을 넣는다 — project.aiUtilizeBlocks 로 나간다
+    this.aiUtilizeBlocks = new Set();
     // costume/sound 선언의 `force id "..."` 로 고정해 둔 진짜 엔트리 id 들 (SPEC-ADDENDUM.md
     // 1.4절). resolvePicture/resolveSound 가 "이 문자열이 이 오브젝트의 이름은 아니어도,
     // 어딘가에 고정해 둔 진짜 id 인가" 를 볼 때 쓴다 — ctx.newId 가 만든 모든 id(장면·

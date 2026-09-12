@@ -1750,6 +1750,47 @@ test('읽을 수 없는 글꼴 크기는 캔버스가 실제로 그리는 글꼴
   assert.doesNotMatch(fragment, /NaNpx/);
 });
 
+/**
+ * 번역 블록은 엔트리가 인공지능 묶음에 두는 값 블록입니다. 되돌린 뒤 다시 컴파일하면
+ * 슬롯이 그대로 서야 하고, 모듈 이름은 `expansionBlocks` 가 아니라
+ * `aiUtilizeBlocks` 로 가야 엔트리가 그 블록을 불러옵니다.
+ */
+test('번역 블록은 되돌렸다가 다시 컴파일해도 그대로다', () => {
+  const source = `var 원문 = "hello"
+var 결과 = ""
+scene "s":
+  object "o":
+    when start do
+      결과 = get_translated_string("en", 원문, "ko")
+      결과 = check_language(원문)
+    end
+  end
+end`;
+  const compiled = compileProject(source, { path: 'main.tess' });
+  assert.deepEqual(compiled.errors, [], compiled.errors.map((e) => e.message).join('\n'));
+  assert.deepEqual(compiled.project!.aiUtilizeBlocks, ['translate']);
+  assert.deepEqual(compiled.project!.expansionBlocks, []);
+
+  const back = decompileProject(compiled.project!, [], { inline: true });
+  assert.deepEqual(back.warnings, []);
+  assert.match(back.source, /결과 = get_translated_string\("en", 원문, "ko"\)/);
+  assert.match(back.source, /결과 = check_language\(원문\)/);
+
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+  assert.deepEqual(again.project!.aiUtilizeBlocks, ['translate']);
+});
+
+/** 드롭다운 자리라 목록에서 고르는 값만 들어갑니다 — 다른 확장 블록과 같습니다. */
+test('번역 블록의 언어 자리는 문자열로 적어야 한다', () => {
+  const result = compileProject(
+    'var 원문 = ""\nscene "s":\n  object "o":\n    when start do\n      say get_translated_string(원문, "hi", "ko")\n    end\n  end\nend',
+    { path: 'main.tess' },
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0].message, /목록에서 고르는 자리/);
+});
+
 test('테이블 선언은 엔트리 project.tables 항목이 된다', () => {
   const { project, errors } = compileProject(
     'table 점수표 as "점수 표":\n  columns "이름", "점수"\n  row "철수", 10\n  row "영희", 20\nend',

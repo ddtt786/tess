@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "tessvm for Entry",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "엔트리 작품 실행 화면을 tessvm 실행기로 바꿉니다.",
   "icons": {
     "16": "icons/icon-16.png",
