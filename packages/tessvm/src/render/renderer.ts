@@ -413,6 +413,14 @@ export class PixiRenderer implements Renderer {
     return this.app.canvas.getBoundingClientRect();
   }
 
+  /** What the pointer looks like over the stage; an empty string gives it back. */
+  setCursor(cursor: string): void {
+    const canvas = this.app.canvas;
+    if (canvas.style.cursor !== cursor) {
+      canvas.style.cursor = cursor;
+    }
+  }
+
   // -------------------------------------------------------------------------
   //  Project wiring
   // -------------------------------------------------------------------------
@@ -485,6 +493,27 @@ export class PixiRenderer implements Renderer {
         index += 1;
       }
     }
+  }
+
+  /**
+   * `Entry.stage.getObjectIndex` — the objects of one scene, front-most first.
+   * Only an object's own display object carries `__entity`; strokes and stamps
+   * share the layer and are left out.
+   */
+  drawOrder(sceneId: string): Entity[] {
+    const layer = this.sceneLayers.get(sceneId);
+    if (!layer) {
+      return [];
+    }
+    const children = layer.children as OwnedContainer[];
+    const order: Entity[] = [];
+    for (let i = children.length - 1; i >= 0; i -= 1) {
+      const entity = children[i]?.__entity;
+      if (entity) {
+        order.push(entity);
+      }
+    }
+    return order;
   }
 
   private layerOf(entity: Entity): Container | null {
@@ -571,6 +600,9 @@ export class PixiRenderer implements Renderer {
   removeEntity(entity: Entity): void {
     const view = this.views.get(entity);
     this.penDirty.delete(entity);
+    // The bubble is the overlay's, not the view's, and it has to go even where
+    // the view is already gone.
+    this.overlay?.forget(entity);
     if (!view) {
       return;
     }

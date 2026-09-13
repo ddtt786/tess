@@ -169,6 +169,20 @@ export class Overlay {
     this.timerMonitor = null;
   }
 
+  /**
+   * Drops what the overlay holds for an entity that is gone. A clone's bubble
+   * outlives the clone otherwise: nothing owns it, so it stays on the stage
+   * through a stop and the next run.
+   */
+  forget(entity: Entity): void {
+    const view = this.dialogs.get(entity);
+    if (!view) {
+      return;
+    }
+    view.root.destroy({ children: true });
+    this.dialogs.delete(entity);
+  }
+
   // -------------------------------------------------------------------------
   //  Dialogs
   // -------------------------------------------------------------------------
@@ -189,6 +203,10 @@ export class Overlay {
         existing.text.text = state.message;
         this.drawDialog(existing);
       }
+      // `new Entry.Dialog` throws the old bubble away and loads the new one, so
+      // saying anything at all — the same words included — puts that bubble in
+      // front of every other one.
+      this.raise(existing.root);
       return;
     }
     const root = new Container();
@@ -204,6 +222,14 @@ export class Overlay {
     const view: DialogView = { root, frame, notch, text, message: state.message, mode: state.mode };
     this.dialogs.set(entity, view);
     this.drawDialog(view);
+  }
+
+  /** Moves one bubble to the front of the others. */
+  private raise(root: Container): void {
+    const last = this.dialogLayer.children.length - 1;
+    if (last > 0 && this.dialogLayer.getChildIndex(root) !== last) {
+      this.dialogLayer.setChildIndex(root, last);
+    }
   }
 
   private drawDialog(view: DialogView): void {

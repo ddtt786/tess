@@ -1,6 +1,6 @@
 {
   "name": "@tess/compiler",
-  "version": "1.0.0",
+  "version": "0.1.4",
   "description": "Tess AST 를 엔트리 작품(project.json · .ent) 으로 컴파일한다",
   "license": "ISC",
   "type": "module",

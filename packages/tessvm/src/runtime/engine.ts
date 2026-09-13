@@ -78,6 +78,12 @@ export interface Renderer extends RendererLike, Partial<TextMeasurer> {
   attach?(targets: Target[], scenes: Scene[]): void;
   /** `FRONT` · `BACK` · `FORWARD` · `BACKWARD`, as the block names them. */
   moveEntity?(entity: Entity, location: string): void;
+  /**
+   * The scene's entities in the order they are drawn, front-most first.
+   * `오브젝트 순서 바꾸기` moves an object within that order, so a click has to
+   * be looked for in it rather than in the order the work declared its objects.
+   */
+  drawOrder?(sceneId: string): Entity[];
   syncDialog?(entity: Entity): void;
   stamp?(entity: Entity): void;
   eraseAll?(entity: Entity): void;
@@ -500,6 +506,48 @@ export class Vm implements Project {
 
   entityOf(id: string): Entity | null {
     return this.targetById.get(id)?.entity ?? null;
+  }
+
+  /**
+   * The entity a press at these stage coordinates lands on, or null.
+   *
+   * Entry reads the stage's own display list to find what was clicked, so an
+   * object that `오브젝트 순서 바꾸기` moved to the front takes the click from
+   * whatever it now covers. The renderer holds that list; the order the work
+   * declared its objects in stands in only while there is no renderer to ask.
+   */
+  entityAtPoint(worldX: number, worldY: number): Entity | null {
+    const scene = this.currentSceneId;
+    const drawn = this.renderer?.drawOrder?.(scene);
+    const order = drawn?.length
+      ? drawn
+      : this.targets
+          .filter((target) => target.sceneId === scene)
+          .flatMap((target) => [target.entity, ...target.clones]);
+    for (const entity of order) {
+      if (this.collision.touchingMouse(entity, worldX, worldY)) {
+        return entity;
+      }
+    }
+    return null;
+  }
+
+  /** Hat blocks that answer a press on the object itself. */
+  private static readonly CLICK_EVENTS = ['when_object_click', 'when_object_click_canceled'];
+
+  /**
+   * Whether a press at these stage coordinates would start a script. The page
+   * shows the reader a pointer over such a spot; a work that is not running has
+   * none, since nothing would answer the press.
+   */
+  clickableAt(worldX: number, worldY: number): boolean {
+    if (this.state !== 'run') {
+      return false;
+    }
+    const entity = this.entityAtPoint(worldX, worldY);
+    return Boolean(
+      entity?.target.scripts.some((script) => Vm.CLICK_EVENTS.includes(script.event)),
+    );
   }
 
   variableAt(index: number, entity: Entity): Variable | null {

@@ -307,7 +307,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   };
 
   const cleanups: Array<() => void> = [];
-  bindInput(vm, renderer, view, options.keyTarget ?? window, cleanups);
+  const syncCursor = bindInput(vm, renderer, view, options.keyTarget ?? window, cleanups);
 
   // The canvas is fitted into the box the host gives us, and that box holds the
   // canvas: writing a new canvas size from inside a ResizeObserver callback
@@ -363,6 +363,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     } catch (error) {
       vm.fail(error);
     }
+    syncCursor();
     if (stats) {
       frames += 1;
       accumulated += now - last;
@@ -462,13 +463,18 @@ function worksKey(vm: Vm, event: KeyboardEvent, code: number): boolean {
   return !target?.isContentEditable && !CONTROL_TAGS.has(target?.tagName ?? '');
 }
 
+/**
+ * Binds the page's keys and pointer to the vm. Hands back the per-frame job of
+ * keeping the cursor in step with what is under it — the stage moves under a
+ * still pointer, so a pointer event alone would leave the cursor behind.
+ */
 function bindInput(
   vm: Vm,
   renderer: PixiRenderer,
   view: HTMLElement,
   keyTarget: HTMLElement | Window,
   cleanups: Array<() => void>,
-): void {
+): () => void {
   const on = <T extends EventTarget>(target: T, type: string, handler: EventListener) => {
     target.addEventListener(type, handler);
     cleanups.push(() => target.removeEventListener(type, handler));
@@ -513,6 +519,16 @@ function bindInput(
     vm.mouseX = point.x;
     vm.mouseY = point.y;
   };
+
+  // The cursor is only worth working out while the pointer is over the stage.
+  let hovering = false;
+  on(view, 'pointerenter', () => {
+    hovering = true;
+  });
+  on(view, 'pointerleave', () => {
+    hovering = false;
+    renderer.setCursor('');
+  });
 
   // Entry lets a list box be dragged around the stage. It reads pointers through
   // its own drag helper; here there is one pointer path, so a press that lands on
@@ -572,7 +588,7 @@ function bindInput(
     }
     vm.mouseDown = true;
     vm.fireEvent('mouse_clicked');
-    const hit = pick(vm, renderer);
+    const hit = pick(vm);
     if (hit) {
       vm.clickedEntityId = hit.id;
       vm.fireEventOn('when_object_click', hit);
@@ -607,24 +623,28 @@ function bindInput(
   };
   on(window, 'pointerup', up);
   on(window, 'pointercancel', up);
+
+  return () => {
+    if (!hovering) {
+      return;
+    }
+    renderer.setCursor(
+      vm.clickableAt(
+        vm.mouseX * stage.scale + stage.worldWidth / 2,
+        -vm.mouseY * stage.scale + stage.worldHeight / 2,
+      )
+        ? 'pointer'
+        : '',
+    );
+  };
 }
 
 /** Front-most entity under the pointer, tested against its own pixels. */
-function pick(vm: Vm, _renderer: PixiRenderer): Entity | null {
-  const worldX = vm.mouseX * stage.scale + stage.worldWidth / 2;
-  const worldY = -vm.mouseY * stage.scale + stage.worldHeight / 2;
-  const scene = vm.currentSceneId;
-  for (const target of vm.targets) {
-    if (target.sceneId !== scene) {
-      continue;
-    }
-    for (const entity of [target.entity, ...target.clones]) {
-      if (vm.collision.touchingMouse(entity, worldX, worldY)) {
-        return entity;
-      }
-    }
-  }
-  return null;
+function pick(vm: Vm): Entity | null {
+  return vm.entityAtPoint(
+    vm.mouseX * stage.scale + stage.worldWidth / 2,
+    -vm.mouseY * stage.scale + stage.worldHeight / 2,
+  );
 }
 
 function makeQuestionField(view: HTMLElement, submit: (value: string) => void) {

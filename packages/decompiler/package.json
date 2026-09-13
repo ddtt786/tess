@@ -1,6 +1,6 @@
 {
   "name": "@tess/decompiler",
-  "version": "1.0.0",
+  "version": "0.1.4",
   "description": "이미 있는 엔트리 작품을 Tess 소스로 되돌린다",
   "license": "MIT",
   "type": "module",

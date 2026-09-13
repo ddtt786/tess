@@ -1460,3 +1460,242 @@ end`,
   }
   assert.equal(translated(machine), '안녕하세요');
 });
+
+// ---------------------------------------------------------------------------
+//  클릭은 그려진 순서를 따른다
+// ---------------------------------------------------------------------------
+/**
+ * 화면 없이 쌓는 순서만 흉내 냅니다 — 앞에 있는 것이 먼저 오는 목록 하나입니다.
+ * 복제본은 엔트리처럼 원본 바로 뒤에 들어갑니다.
+ */
+function fakeStage() {
+  const order: Array<{ id: string }> = [];
+  return {
+    order,
+    addEntity(entity: never, source?: never) {
+      const at = source ? order.indexOf(source) + 1 : order.length;
+      order.splice(at, 0, entity);
+    },
+    removeEntity(entity: never) {
+      const at = order.indexOf(entity);
+      if (at >= 0) order.splice(at, 1);
+    },
+    moveEntity(entity: never, location: string) {
+      const at = order.indexOf(entity);
+      if (at < 0) return;
+      order.splice(at, 1);
+      if (location === 'FRONT') order.unshift(entity);
+      else if (location === 'BACK') order.push(entity);
+      else order.splice(location === 'FORWARD' ? Math.max(0, at - 1) : at + 1, 0, entity);
+    },
+    drawOrder: () => [...order],
+    flush() {},
+    measureTextBox: () => ({ width: 100, height: 40 }),
+  };
+}
+
+/** 겹쳐 놓은 글상자 둘 — 앞의 것이 클릭을 가져간다. */
+const COVERED = `scene "s":
+  text "가림막":
+    text_content = "가림막"
+    when start do
+      say "가림막이 받았다"
+    end
+  end
+  text "복제될것":
+    text_content = "복제될것"
+    when start do
+      clone
+    end
+    when cloned do
+      order first
+      wait clicked
+      say "안녕!"
+    end
+  end
+end`;
+
+/**
+ * `오브젝트 순서 바꾸기` 는 그리기 순서만 바꾸고 작품이 선언한 순서는 그대로입니다.
+ * 클릭을 선언 순서로 찾으면, 맨 앞으로 올라온 복제본이 여전히 가림막에 가려집니다.
+ */
+test('맨 앞으로 보낸 복제본이 클릭을 가져간다', () => {
+  const result = compileProject(COVERED, { path: 'test.tess' });
+  assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+  const view = fakeStage();
+  const machine = new Vm({ renderer: view as never, audio: null });
+  machine.load(result.project as unknown as never);
+  machine.start();
+  machine.tick();
+
+  const target = machine.targets.find((item) => item.name === '복제될것')!;
+  const clone = target.clones[0];
+  assert.ok(clone, '복제본이 만들어져야 합니다');
+  assert.equal(view.order[0], clone as never, '복제본이 맨 앞으로 옵니다');
+
+  // 무대 한가운데는 둘 다 덮고 있는 자리다.
+  const hit = machine.entityAtPoint(stage.worldWidth / 2, stage.worldHeight / 2);
+  assert.equal(hit, clone, '클릭은 맨 앞의 복제본에게 갑니다');
+
+  machine.clickedEntityId = hit!.id;
+  machine.tick();
+  assert.equal(clone.dialog?.message, '안녕!');
+});
+
+test('순서를 바꾸지 않으면 먼저 선언한 오브젝트가 클릭을 가져간다', () => {
+  const result = compileProject(COVERED.replace('      order first\n', ''), { path: 'test.tess' });
+  assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+  const view = fakeStage();
+  const machine = new Vm({ renderer: view as never, audio: null });
+  machine.load(result.project as unknown as never);
+  machine.start();
+  machine.tick();
+
+  const cover = machine.targets.find((item) => item.name === '가림막')!;
+  const hit = machine.entityAtPoint(stage.worldWidth / 2, stage.worldHeight / 2);
+  assert.equal(hit, cover.entity, '앞에 선 것은 여전히 가림막입니다');
+});
+
+/** 그릴 것이 없는 실행기(headless)에서는 작품이 선언한 순서가 그대로 선다. */
+test('렌더러가 없으면 선언한 순서로 찾는다', () => {
+  const machine = runVm(COVERED.replace('      order first\n', ''));
+  machine.tick();
+  const cover = machine.targets.find((item) => item.name === '가림막')!;
+  assert.equal(
+    machine.entityAtPoint(stage.worldWidth / 2, stage.worldHeight / 2),
+    cover.entity,
+  );
+});
+
+/**
+ * 말풍선은 오버레이가 엔티티별로 들고 있습니다. 복제본이 사라질 때 오버레이에
+ * 말하지 않으면 주인 없는 말풍선이 남아, 작품을 껐다 켜도 화면에 그대로 섭니다.
+ * 복제본을 지우는 길(정지·복제본 삭제·장면 바꾸기)은 모두 `removeEntity` 로 모이므로
+ * 거기서 한 번 치웁니다. PixiRenderer 는 화면 없이 만들 수 없으므로 소스에서 봅니다.
+ */
+test('복제본을 지우면 그 말풍선도 함께 지운다', () => {
+  const renderer = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/renderer.ts'),
+    'utf-8',
+  );
+  const remove = renderer.slice(renderer.indexOf('  removeEntity(entity: Entity): void {'));
+  const body = remove.slice(0, remove.indexOf('\n  }'));
+  assert.match(body, /this\.overlay\?\.forget\(entity\)/, 'removeEntity 가 오버레이에 알린다');
+  assert.ok(
+    body.indexOf('this.overlay?.forget(entity)') < body.indexOf('if (!view)'),
+    '그릴 것이 이미 없는 복제본도 말풍선은 지워야 하므로 먼저 알린다',
+  );
+
+  const overlay = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/overlay.ts'),
+    'utf-8',
+  );
+  const forget = overlay.slice(overlay.indexOf('  forget(entity: Entity): void {'));
+  const forgetBody = forget.slice(0, forget.indexOf('\n  }'));
+  assert.match(forgetBody, /view\.root\.destroy\(/, '말풍선을 실제로 없앤다');
+  assert.match(forgetBody, /this\.dialogs\.delete\(entity\)/, '들고 있던 자리도 비운다');
+});
+
+/**
+ * `new Entry.Dialog` 는 그 오브젝트의 기존 말풍선을 버리고 새 말풍선을 무대에 얹습니다.
+ * 그래서 말하기를 한 번 더 하면 — 같은 말이라도 — 그 말풍선이 다른 말풍선들 앞에 섭니다.
+ * 글이 바뀔 때만 손대면 계속 말하는 쪽이 먼저 만들어진 순서에 눌려 뒤에 깔립니다.
+ * Overlay 는 화면 없이 만들 수 없으므로 그 약속을 소스에서 지킵니다.
+ */
+test('다시 말하면 그 말풍선이 맨 앞으로 온다', () => {
+  const overlay = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/overlay.ts'),
+    'utf-8',
+  );
+  const set = overlay.slice(overlay.indexOf('  setDialog(entity: Entity): void {'));
+  const body = set.slice(0, set.indexOf('\n  }'));
+  const existing = body.slice(body.indexOf('    if (existing) {'));
+  assert.match(
+    existing,
+    /^ {6}this\.raise\(existing\.root\);$/m,
+    '글이 그대로여도 올려야 하므로 바뀐 경우 안이 아니라 밖에서 올린다',
+  );
+
+  const raise = overlay.slice(overlay.indexOf('  private raise(root: Container): void {'));
+  assert.match(
+    raise.slice(0, raise.indexOf('\n  }')),
+    /setChildIndex\(root, last\)/,
+    'raise 는 말풍선을 마지막(맨 앞) 자리로 옮긴다',
+  );
+});
+
+/**
+ * 누르면 무언가 도는 자리라는 것은 커서로 알려 줍니다. 무엇이 눌리는지는 클릭과
+ * 같은 규칙(그려진 순서 · 제 픽셀)으로 고르고, 돌고 있지 않은 작품은 눌러도 아무
+ * 일이 없으므로 알려 줄 것도 없습니다.
+ */
+const CLICKABLE = `scene "s":
+  text "버튼":
+    text_content = "버튼"
+    when click do
+      say "눌렸다"
+    end
+  end
+end`;
+
+const middle = (): [number, number] => [stage.worldWidth / 2, stage.worldHeight / 2];
+
+test('클릭을 받는 오브젝트 위에서는 손가락 커서를 알린다', () => {
+  const machine = runVm(CLICKABLE);
+  machine.tick();
+  assert.equal(machine.clickableAt(...middle()), true);
+});
+
+/** 누르고 떼는 것도 그 오브젝트를 누르는 일이므로 같이 알립니다. */
+test('클릭을 뗐을 때만 받는 오브젝트 위에서도 알린다', () => {
+  const machine = runVm(CLICKABLE.replace('when click do', 'when click up do'));
+  machine.tick();
+  assert.equal(machine.clickableAt(...middle()), true);
+});
+
+test('클릭을 받지 않는 오브젝트 위에서는 알리지 않는다', () => {
+  const machine = runVm(CLICKABLE.replace(/when click do\n      say "눌렸다"\n    end/, ''));
+  machine.tick();
+  assert.equal(machine.clickableAt(...middle()), false);
+});
+
+test('멈춘 작품에서는 알리지 않는다', () => {
+  const machine = runVm(CLICKABLE);
+  machine.tick();
+  machine.stop();
+  assert.equal(machine.clickableAt(...middle()), false);
+});
+
+test('빈 자리에서는 알리지 않는다', () => {
+  const machine = runVm(CLICKABLE);
+  machine.tick();
+  assert.equal(machine.clickableAt(0, 0), false, '무대 왼쪽 위 구석에는 아무것도 없습니다');
+});
+
+/** 앞에 있는 것이 클릭을 가져가므로, 커서도 앞에 있는 것을 따라야 합니다. */
+test('클릭을 받지 않는 오브젝트가 가리고 있으면 알리지 않는다', () => {
+  const source = `scene "s":
+  text "가림막":
+    text_content = "가림막"
+  end
+  text "버튼":
+    text_content = "버튼"
+    when click do
+      say "눌렸다"
+    end
+  end
+end`;
+  const result = compileProject(source, { path: 'test.tess' });
+  assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+  const view = fakeStage();
+  const machine = new Vm({ renderer: view as never, audio: null });
+  machine.load(result.project as unknown as never);
+  machine.start();
+  machine.tick();
+  assert.equal(machine.clickableAt(...middle()), false, '앞에 선 가림막이 클릭을 가져갑니다');
+
+  // 버튼을 맨 앞으로 올리면 그때부터는 버튼이 받는다.
+  const button = machine.targets.find((item) => item.name === '버튼')!;
+  view.moveEntity(button.entity as never, 'FRONT');
+  assert.equal(machine.clickableAt(...middle()), true);
+});
