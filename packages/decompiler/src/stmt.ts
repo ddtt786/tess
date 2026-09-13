@@ -14,8 +14,11 @@ import {
   displayNamePart,
 } from "./ident.ts";
 import type {
-  DecompileContext, FunctionInfo, RawBlock, ResourceInfo,
-} from './types.ts';
+  DecompileContext,
+  FunctionInfo,
+  RawBlock,
+  ResourceInfo,
+} from "./types.ts";
 
 const REVERSE_STOP_TARGET: Record<string, string> = {
   thisThread: "",
@@ -63,7 +66,10 @@ export function indent(lines: string[]): string[] {
  * @example
  * const lines = blocksToLines(blocks, ctx);
  */
-export function blocksToLines(blocks: RawBlock[] | undefined, ctx: DecompileContext): string[] {
+export function blocksToLines(
+  blocks: RawBlock[] | undefined,
+  ctx: DecompileContext,
+): string[] {
   const lines: string[] = [];
   for (const block of blocks ?? []) {
     lines.push(...commentLines(block), ...statementLines(block, ctx));
@@ -77,17 +83,25 @@ export function blocksToLines(blocks: RawBlock[] | undefined, ctx: DecompileCont
  * block of the statement, so they all come back above it.
  */
 export function commentLines(block: RawBlock | undefined): string[] {
-  const value = String(block?.comment?.value ?? '').trimEnd();
+  const value = String(block?.comment?.value ?? "").trimEnd();
   if (!value.trim()) return [];
   return tessCommentLines(value);
 }
 
-function branch(block: RawBlock, index: number, ctx: DecompileContext): string[] {
+function branch(
+  block: RawBlock,
+  index: number,
+  ctx: DecompileContext,
+): string[] {
   return indent(blocksToLines(block.statements?.[index] ?? [], ctx));
 }
 
 /** Same as `branch`, for the body of a loop: `break`/`continue`/`skip` fit here. */
-function loopBranch(block: RawBlock, index: number, ctx: DecompileContext): string[] {
+function loopBranch(
+  block: RawBlock,
+  index: number,
+  ctx: DecompileContext,
+): string[] {
   ctx.loopDepth += 1;
   try {
     return branch(block, index, ctx);
@@ -96,14 +110,19 @@ function loopBranch(block: RawBlock, index: number, ctx: DecompileContext): stri
   }
 }
 
-function unsupported(ctx: DecompileContext, block: RawBlock | undefined): string[] {
+function unsupported(
+  ctx: DecompileContext,
+  block: RawBlock | undefined,
+): string[] {
   const type = block?.type ?? "(알 수 없음)";
   ctx.warnings.add(`문장 블록 '${type}' 은(는) 아직 옮길 수 없습니다.`);
   const paramsText = JSON.stringify(summarizeParams(block?.params)).slice(
     0,
     200,
   );
-  return [tessComment(`[decompile] 지원하지 않는 블록: ${type} params=${paramsText}`)];
+  return [
+    tessComment(`[decompile] 지원하지 않는 블록: ${type} params=${paramsText}`),
+  ];
 }
 
 function summarizeParams(params: any[] | undefined) {
@@ -117,7 +136,7 @@ function summarizeParams(params: any[] | undefined) {
 // eslint-disable-next-line complexity
 /** ROW/COL — which way a table block works. */
 function tableLine(property: unknown): string {
-  return String(property) === 'COL' ? 'column' : 'row';
+  return String(property) === "COL" ? "column" : "row";
 }
 
 /**
@@ -125,7 +144,7 @@ function tableLine(property: unknown): string {
  * a call, which would swallow the y coordinate, so such an x gets parentheses.
  */
 function point(x: string, y: string): string {
-  const looksLikeCall = /[\p{L}\p{N}_]$/u.test(x) && y.startsWith('(');
+  const looksLikeCall = /[\p{L}\p{N}_]$/u.test(x) && y.startsWith("(");
   return `${looksLikeCall ? `(${x})` : x} ${y}`;
 }
 
@@ -138,7 +157,7 @@ function point(x: string, y: string): string {
  */
 const LOOP_TRICK: Record<string, string> = {
   continue_repeat: "skip",
-  stop_repeat: "break",
+  stop_repeat: "skip",
 };
 
 /**
@@ -162,7 +181,8 @@ export function carriedTrick(block: RawBlock | undefined): string | null {
   if (!block || (block.statements?.length ?? 0) > 0) return null;
   let carried: string | null = null;
   for (const param of block.params ?? []) {
-    if (param === null || param === undefined || typeof param !== "object") continue;
+    if (param === null || param === undefined || typeof param !== "object")
+      continue;
     const trick = LOOP_TRICK[(param as RawBlock).type ?? ""];
     if (!trick) return null;
     carried = trick;
@@ -269,9 +289,13 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       // A scene deleted while blocks still pointed at it leaves a jump that can
       // never run. Keeping it would only fail the build, so note it instead.
       if (!scene) {
-        ctx.warnings.add(`장면 id '${at(0)}' 이(가) 작품에 없어 그 자리로 가는 'jump' 를 주석으로 남겼습니다.`);
+        ctx.warnings.add(
+          `장면 id '${at(0)}' 이(가) 작품에 없어 그 자리로 가는 'jump' 를 주석으로 남겼습니다.`,
+        );
         return [
-          tessComment(`[decompile] jump ${tessString(String(at(0)))} — 작품에 없는 장면입니다`),
+          tessComment(
+            `[decompile] jump ${tessString(String(at(0)))} — 작품에 없는 장면입니다`,
+          ),
         ];
       }
       return [`jump ${tessString(scene.identifier)}`];
@@ -302,9 +326,7 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
     }
     case "locate_object_time": {
       const target = at(1);
-      return [
-        `go ${tessString(targetName(ctx, target))} in ${e(0)}`,
-      ];
+      return [`go ${tessString(targetName(ctx, target))} in ${e(0)}`];
     }
     case "locate_x":
       return [`x = ${e(0)}`];
@@ -327,9 +349,7 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
     case "direction_absolute":
       return [`way = ${e(0)}`];
     case "see_angle_object":
-      return [
-        `look ${tessString(targetName(ctx, at(0)))}`,
-      ];
+      return [`look ${tessString(targetName(ctx, at(0)))}`];
 
     // --- 모양 · 대화 ---------------------------------------------------------
     case "show":
@@ -362,12 +382,14 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       return ["flip y"];
     case "change_object_index":
       return [
-        ({
-          FRONT: "order first",
-          FORWARD: "order front",
-          BACKWARD: "order back",
-          BACK: "order last",
-        } as Record<string, string>)[at(0)]!,
+        (
+          {
+            FRONT: "order first",
+            FORWARD: "order front",
+            BACKWARD: "order back",
+            BACK: "order last",
+          } as Record<string, string>
+        )[at(0)]!,
       ];
     case "reset_scale_size":
       return ["reset size"];
@@ -438,11 +460,13 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
 
     // --- 초시계 ---------------------------------------------------------------
     case "choose_project_timer_action": {
-      const action = ({
-        START: "start timer",
-        STOP: "stop timer",
-        RESET: "reset timer",
-      } as Record<string, string>)[at(1)];
+      const action = (
+        {
+          START: "start timer",
+          STOP: "stop timer",
+          RESET: "reset timer",
+        } as Record<string, string>
+      )[at(1)];
       return action ? [action] : unsupported(ctx, block);
     }
 
@@ -505,9 +529,13 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
         `in ${ctx.tableName(at(0))} insert ${tableLine(at(2))} at ${exprOf(at(1), ctx)}`,
       ];
     case "delete_row_from_table":
-      return [`remove ${ctx.tableName(at(0))} ${tableLine(at(2))} ${exprOf(at(1), ctx)}`];
+      return [
+        `remove ${ctx.tableName(at(0))} ${tableLine(at(2))} ${exprOf(at(1), ctx)}`,
+      ];
     case "set_value_from_table":
-      return [`${ctx.tableName(at(0))}[${exprOf(at(1), ctx)}, ${exprOf(at(2), ctx)}] = ${e(3)}`];
+      return [
+        `${ctx.tableName(at(0))}[${exprOf(at(1), ctx)}, ${exprOf(at(2), ctx)}] = ${e(3)}`,
+      ];
     case "set_value_from_cell":
       return [`${ctx.tableName(at(0))}[${exprOf(at(1), ctx)}] = ${e(2)}`];
     case "save_current_table":
@@ -518,9 +546,11 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       return [`show ${ctx.tableName(at(0))} for ${e(1)}`];
     case "open_table_chart":
       // 엔트리는 차트 번호를 0부터 세고, Tess 는 다른 번호들처럼 1부터 센다
-      return [`show ${ctx.tableName(at(0))} chart ${tessNumber(Number(at(1) ?? 0) + 1)}`];
+      return [
+        `show ${ctx.tableName(at(0))} chart ${tessNumber(Number(at(1) ?? 0) + 1)}`,
+      ];
     case "close_table_chart":
-      return ['hide chart'];
+      return ["hide chart"];
 
     // --- 자료 -----------------------------------------------------------------
     case "ask_and_wait":
@@ -556,7 +586,6 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
     }
   }
 }
-
 
 /**
  * 색 값 파라미터는 엔트리가 '#RRGGBB' 를 그냥 문자열로 담아 두기도 하고(정적 엔티티
@@ -611,7 +640,11 @@ function literalOf(value: any): string | number | null {
  * 가리키지 않게 되어 컴파일 에러가 난다 — 그래서 프로젝트에 실제로 있는 id 와
  * 맞는지 먼저 확인해서, 맞으면 get_pictures/get_sounds 와 똑같이 그 이름으로 옮긴다.
  */
-function resourceExpr(value: any, ctx: DecompileContext, byId: Map<string, ResourceInfo>): string {
+function resourceExpr(
+  value: any,
+  ctx: DecompileContext,
+  byId: Map<string, ResourceInfo>,
+): string {
   const raw = literalOf(value);
   const literal = raw === null ? null : String(raw);
   if (literal !== null && byId.has(literal)) {
@@ -666,7 +699,8 @@ export function functionDeclarationLines(
   // Entry keeps function locals in a table on the function and initialises them
   // at each call; `var` at the top of the body is the same thing in Tess.
   const locals = (fn.locals ?? []).map(
-    (local) => `var ${local.name}${displayNamePart(local.name, local.entryName)} = ${tessLiteral(local.value)}`,
+    (local) =>
+      `var ${local.name}${displayNamePart(local.name, local.entryName)} = ${tessLiteral(local.value)}`,
   );
 
   const lines = [
@@ -680,7 +714,10 @@ export function functionDeclarationLines(
   return lines;
 }
 
-function functionCallStatement(block: RawBlock, ctx: DecompileContext): string[] {
+function functionCallStatement(
+  block: RawBlock,
+  ctx: DecompileContext,
+): string[] {
   const fn = ctx.functionsById.get(block.type!.slice("func_".length));
   if (!fn) return unsupported(ctx, block);
   const p = block.params ?? [];
