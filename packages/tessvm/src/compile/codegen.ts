@@ -589,14 +589,19 @@ export class Codegen {
         );
       case 'set_value_from_cell':
         return line(`O.tableSetCell(${this.tableRef(p[0])}, ${this.raw(p[1])}, ${this.raw(p[2])});`);
-      case 'save_current_table':
       case 'open_table':
-      case 'open_table_chart':
-      case 'close_table_chart':
-        // Chart and save dialogs are editor UI; the running project sees nothing.
-        return line(comment(block.type));
+        return line(`O.showTable(${this.tableRef(p[0])});`);
+      // Entry does not hold the script here: the window closes itself when the
+      // seconds are up and the blocks below run straight away.
       case 'open_table_wait':
-        return line(`yield* O.waitSecond(${this.num(p[1])});`);
+        return line(`O.showTable(${this.tableRef(p[0])}, ${this.num(p[1])});`);
+      case 'close_table_chart':
+        return line('O.closeTable();');
+      case 'save_current_table':
+      case 'open_table_chart':
+        // The save dialog is editor UI, and a chart window is a drawing of its
+        // own; neither is put up here.
+        return line(comment(block.type));
 
       // ----- text to speech -----
       case 'read_text':

@@ -217,6 +217,7 @@ export interface TableDeclNode extends Base {
  */
 export type StorageScope = 'shared' | 'realtime';
 
+/** 선언에 `visible` 이 붙으면 그 변수·리스트는 무대에 보인 채로 시작한다. */
 export interface VarDeclNode extends Base {
   type: 'VarDecl';
   name: string;
@@ -225,6 +226,8 @@ export interface VarDeclNode extends Base {
   value: Expr;
   /** `from A to B` — entry's slide variable, shown with a slider on its box. */
   range: { min: Expr; max: Expr } | null;
+  /** `visible` — the box stands on the stage from the start. */
+  shown: boolean;
 }
 
 export interface ListDeclNode extends Base {
@@ -233,6 +236,8 @@ export interface ListDeclNode extends Base {
   displayName: string | null;
   scope: StorageScope | null;
   value: Expr;
+  /** `visible` — the box stands on the stage from the start. */
+  shown: boolean;
 }
 
 // ----------------------------------------------------------------------------

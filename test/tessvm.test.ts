@@ -21,6 +21,7 @@ import {
 import {
   CollisionSystem,
   MaskStore,
+  Table,
   Vm,
   cast,
   entityBounds,
@@ -1698,4 +1699,116 @@ end`;
   const button = machine.targets.find((item) => item.name === '버튼')!;
   view.moveEntity(button.entity as never, 'FRONT');
   assert.equal(machine.clickableAt(...middle()), true);
+});
+
+// ---------------------------------------------------------------------------
+//  표 창과 변수 상자
+// ---------------------------------------------------------------------------
+const TABLE_WORK = `table 점수표 as "점수 표":
+  columns "이름", "점수"
+  row "철수", 90
+  row "영희", 85
+end
+
+scene "s":
+  object "o":
+    when start do
+      BODY
+    end
+  end
+end`;
+
+/** 표 창이 열리고 닫힌 자국을 남기는 무대. */
+function tableStage() {
+  const shown: Array<string | null> = [];
+  return {
+    shown,
+    addEntity() {},
+    removeEntity() {},
+    flush() {},
+    showTable(table: { name: string } | null) { shown.push(table ? table.name : null); },
+  };
+}
+
+function runWithTable(body: string) {
+  const result = compileProject(TABLE_WORK.replace('BODY', body), { path: 'test.tess' });
+  assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+  const view = tableStage();
+  const machine = new Vm({ renderer: view as never, audio: null });
+  machine.load(result.project as unknown as never);
+  machine.start();
+  return { machine, view };
+}
+
+test('테이블 창 열기는 그 표를 띄운다', () => {
+  const { machine, view } = runWithTable('show 점수표');
+  machine.tick();
+  assert.deepEqual(view.shown.slice(-1), ['점수 표']);
+});
+
+/**
+ * `Entry.engine.setTimeout` — 엔트리는 창을 띄우고 시간을 걸어 둘 뿐, 스크립트를
+ * 붙잡지 않습니다. 아래 블록은 곧바로 이어집니다.
+ */
+test('초를 준 표 창은 스크립트를 붙잡지 않고 그 시간 뒤에 닫힌다', () => {
+  const { machine, view } = runWithTable('show 점수표 for 1\n      결과 = 1');
+  machine.tick();
+  assert.deepEqual(view.shown.slice(-1), ['점수 표'], '창이 열렸습니다');
+
+  // 1초가 차기 전까지는 열려 있다.
+  for (let i = 0; i < 50; i += 1) machine.tick();
+  assert.equal(view.shown.filter((name) => name === null).length, 1, '아직 닫히지 않았습니다');
+  for (let i = 0; i < 20; i += 1) machine.tick();
+  assert.deepEqual(view.shown.slice(-1), [null], '시간이 차면 닫힙니다');
+});
+
+test('작품을 처음부터 시작하면 열려 있던 표 창은 닫힌다', () => {
+  const { machine, view } = runWithTable('show 점수표');
+  machine.tick();
+  assert.deepEqual(view.shown.slice(-1), ['점수 표']);
+  machine.stop();
+  machine.start();
+  assert.deepEqual(view.shown.slice(-1), [null]);
+});
+
+/**
+ * 엔트리는 표를 두 벌로 듭니다 — `data` 는 지금 값, `origin` 은 처음 값 — 그리고
+ * 정지할 때마다 `data` 를 `origin` 으로 되돌립니다. 그래서 실행이 보는 것은
+ * `origin` 이고, `data` 만 보면 저장될 때 비워져 있던 표가 통째로 사라집니다.
+ */
+test('표는 처음 값(origin)을 읽는다', () => {
+  const table = Table.from({
+    id: 't', name: '표', fields: ['A', 'B'],
+    data: [],
+    origin: [[0, 1], [2, 3]],
+  } as never);
+  assert.deepEqual(table.fields, ['A', 'B']);
+  assert.equal(table.getValue(1, 1), 0, 'A1');
+  assert.equal(table.getValue(2, 2), 3, 'B2');
+
+  // 사이트가 붙인 줄 번호가 함께 담겨 와도 칸만 읽는다.
+  const keyed = Table.from({
+    id: 't', name: '표', fields: ['A'],
+    data: [{ key: 'r1', value: [7] }],
+  } as never);
+  assert.equal(keyed.getValue(1, 1), 7);
+});
+
+/**
+ * 슬라이더 손잡이는 단색이 아닙니다 — 엔트리의 9x20 그림은 파란 바탕 가운데에
+ * 짙은 파랑 세로 두 줄을 쥠자리로 둡니다. Overlay 는 화면 없이 만들 수 없으므로
+ * 그 약속을 소스에서 지킵니다.
+ */
+test('슬라이더 손잡이는 바탕과 쥠자리 두 색으로 그린다', () => {
+  const overlay = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/overlay.ts'),
+    'utf-8',
+  );
+  assert.match(overlay, /const SLIDE_KNOB_COLOR = '#4f80ff';/, '엔트리 그림의 바탕색');
+  assert.match(overlay, /const SLIDE_GRIP_COLOR = '#3759b2';/, '엔트리 그림의 쥠자리색');
+  const knob = overlay.slice(overlay.indexOf('const knobLeft ='));
+  const body = knob.slice(0, knob.indexOf('view.slider.knob.position'));
+  assert.match(body, /fill\(\{ color: SLIDE_KNOB_COLOR \}\)/);
+  assert.match(body, /for \(const gripX of SLIDE_GRIP_X\)/, '쥠자리 두 줄을 그린다');
+  assert.match(body, /fill\(\{ color: SLIDE_GRIP_COLOR \}\)/);
 });

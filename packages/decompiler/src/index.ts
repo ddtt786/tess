@@ -5,7 +5,7 @@
 import { safeIdentifier, tessString, tessNumber, tessLiteral, tessComment, displayNamePart } from './ident.ts';
 import { autoParamName } from '@tess/core';
 import { blocksToLines, commentLines, indent, functionDeclarationLines, colorExpr } from './stmt.ts';
-import { KEY_CODES } from '@tess/core';
+import { KEY_CODES, tableRowCells, tableRows } from '@tess/core';
 import type {
   CollectedAsset, DecompileContext, DecompileOptions, DecompileResult,
   FunctionField, FunctionInfo, FunctionLocal, ObjectInfo, RawBlock, RawEntity,
@@ -629,24 +629,13 @@ function buildContext(
   return ctx;
 }
 
-/**
- * The cells of one table row. A work saved on the site carries each row as
- * `{ key, value }` — the row id and its cells — while a local one carries the
- * cells alone.
- */
-function rowCells(row: unknown): unknown[] {
-  if (Array.isArray(row)) return row;
-  const value = (row as { value?: unknown } | null)?.value;
-  return Array.isArray(value) ? value : [];
-}
-
 /** `table 이름: columns ... row ... end` */
 function tableLines(info: TableInfo): string[] {
   const table = info.source;
-  const cells = (row: unknown) => rowCells(row).map((cell) => tessLiteral(cell)).join(', ');
+  const cells = (row: unknown[]) => row.map((cell) => tessLiteral(cell)).join(', ');
   const lines = [`table ${info.identifier}${displayNamePart(info.identifier, table.name)}:`];
-  lines.push(`  columns ${cells(table.fields)}`);
-  for (const row of Array.isArray(table.data) ? table.data : []) {
+  lines.push(`  columns ${cells(tableRowCells(table.fields))}`);
+  for (const row of tableRows(table)) {
     lines.push(`  row ${cells(row)}`);
   }
   lines.push('end');
@@ -660,15 +649,17 @@ function declarationLine(info: VarInfo, indentLevel = 0): string[] {
   if (source.isCloud) scope = 'shared ';
   else if (source.isRealTime) scope = 'realtime ';
   const named = displayNamePart(info.identifier, source.name);
+  // 엔트리에서 '보이기'로 체크해 둔 변수·리스트는 무대에 상자를 띄운 채로 시작한다.
+  const shown = source.visible ? ' visible' : '';
   if (info.isList) {
     const items = (source.array ?? []).map((item: { data: unknown }) => tessLiteral(item.data));
-    return [`${pad}${scope}list ${info.identifier}${named} = [${items.join(', ')}]`];
+    return [`${pad}${scope}list ${info.identifier}${named} = [${items.join(', ')}]${shown}`];
   }
   // A slide variable keeps the two ends its slider runs between.
   const range = source.variableType === 'slide'
     ? ` from ${tessNumber(Number(source.minValue) || 0)} to ${tessNumber(Number(source.maxValue) || 0)}`
     : '';
-  return [`${pad}${scope}var ${info.identifier}${named} = ${tessLiteral(source.value)}${range}`];
+  return [`${pad}${scope}var ${info.identifier}${named} = ${tessLiteral(source.value)}${range}${shown}`];
 }
 
 // ---------------------------------------------------------------------------

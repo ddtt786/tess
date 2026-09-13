@@ -9,3 +9,4 @@ export * from "./src/suggest.ts";
 export * from "./src/expansion.ts";
 export * from "./src/keycodes.ts";
 export * from "./src/color.ts";
+export * from "./src/table-rows.ts";

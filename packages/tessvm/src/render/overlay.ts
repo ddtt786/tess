@@ -42,7 +42,8 @@ const LIST_BAR_HEIGHT = 20;
 /**
  * `Entry.SlideVariable` — a slide variable's box is 42 tall rather than 24, and
  * carries a grey run with a knob on it. `SLIDE_BAR` is where that run starts and
- * how thick it is, `SLIDE_KNOB` the knob entry draws from a 9x20 image at 0.8.
+ * how thick it is, `SLIDE_KNOB` the knob entry draws from a 9x20 image at 0.8,
+ * grip lines and all.
  */
 const SLIDE_HEIGHT = 42;
 const SLIDE_BAR_X = 6;
@@ -52,8 +53,38 @@ const SLIDE_BAR_RADIUS = 2;
 const SLIDE_BAR_COLOR = '#d8d8d8';
 const SLIDE_KNOB_WIDTH = 9 * 0.8;
 const SLIDE_KNOB_HEIGHT = 20 * 0.8;
-const SLIDE_KNOB_COLOR = '#1bafea';
-const SLIDE_KNOB_BORDER = '#a0a1a1';
+const SLIDE_KNOB_RADIUS = 1 * 0.8;
+const SLIDE_KNOB_COLOR = '#4f80ff';
+/**
+ * 손잡이는 단색이 아니다 — `stage_variable_slider.png` 의 9x20 그림은 파란 바탕
+ * 가운데에 짙은 파랑 세로 두 줄(x=2·5 에서 2픽셀 너비, y=4 부터 12픽셀)을 쥠자리로
+ * 두고 있다.
+ */
+const SLIDE_GRIP_COLOR = '#3759b2';
+const SLIDE_GRIP_X = [2 * 0.8, 5 * 0.8];
+const SLIDE_GRIP_WIDTH = 2 * 0.8;
+const SLIDE_GRIP_Y = 4 * 0.8;
+const SLIDE_GRIP_HEIGHT = 12 * 0.8;
+/**
+ * `DataTable.showTable` — 표 창. 엔트리는 무대 위에 표를 모달로 띄웁니다. 여기서는
+ * 같은 자리에 같은 것을 그립니다: 이름줄과 닫기 단추, 열 이름줄, 그리고 자료 줄들.
+ */
+const TABLE_MARGIN = 24;
+const TABLE_TITLE_HEIGHT = 22;
+const TABLE_HEAD_HEIGHT = 18;
+const TABLE_ROW_HEIGHT = 16;
+/** 줄 번호가 들어가는 맨 왼쪽 칸. */
+const TABLE_INDEX_WIDTH = 26;
+const TABLE_BG = '#ffffff';
+const TABLE_BORDER = '#c0c5cc';
+const TABLE_TITLE_BG = '#4f80ff';
+const TABLE_TITLE_COLOR = '#ffffff';
+const TABLE_HEAD_BG = '#eef1f5';
+const TABLE_LINE = '#dfe3e8';
+const TABLE_TEXT = '#16161a';
+const TABLE_FONT = 11;
+const TABLE_CLOSE = 14;
+
 /** The narrowest a monitor box gets — `Math.max(width, 90)` in entry. */
 const MONITOR_MIN_WIDTH = 90;
 /** Where entry puts the built-in monitors when the work does not say. */
@@ -78,6 +109,21 @@ interface RowView {
   /** What the row is showing now, so an unmoved one is left alone. */
   shown: string;
   stripWidth: number;
+}
+
+/** 표 창이 그리는 데 필요한 만큼의 표. */
+export interface TableLike {
+  name: string;
+  fields: string[];
+  rows: Array<Array<string | number>>;
+}
+
+/** The table window's own display objects. */
+interface TableView {
+  root: Container;
+  frame: Graphics;
+  title: Text;
+  cells: Text[];
 }
 
 interface MonitorView {
@@ -124,9 +170,13 @@ export class Overlay {
   private timerValue: () => number = () => 0;
   private timerShown: () => boolean = () => false;
   private currentScene: () => string = () => '';
+  /** The table window, while one is open. */
+  private readonly tableLayer = new Container();
+  private tableView: TableView | null = null;
+  private openTable: TableLike | null = null;
 
   constructor(parent: Container) {
-    this.root.addChild(this.monitorLayer, this.dialogLayer);
+    this.root.addChild(this.monitorLayer, this.dialogLayer, this.tableLayer);
     parent.addChild(this.root);
     this.applyStageSize();
   }
@@ -153,7 +203,151 @@ export class Overlay {
     this.currentScene = options.scene;
   }
 
+  /**
+   * `DataTable.showTable` · `closeModal` — 어느 표를 띄워 둘지 정합니다. null 이면
+   * 창을 닫습니다.
+   */
+  showTable(table: TableLike | null): void {
+    this.openTable = table;
+  }
+
+  /** Whether a point falls inside the open table window — its close button aside. */
+  tableAt(x: number, y: number): 'close' | 'window' | null {
+    if (!this.openTable) {
+      return null;
+    }
+    const box = Overlay.tableBox();
+    if (x < box.left || x > box.left + box.width || y < box.top || y > box.top + box.height) {
+      return null;
+    }
+    const closeLeft = box.left + box.width - TABLE_TITLE_HEIGHT;
+    const onClose = x >= closeLeft && y <= box.top + TABLE_TITLE_HEIGHT;
+    return onClose ? 'close' : 'window';
+  }
+
+  /** Where the window sits — the stage, less a margin on every side. */
+  private static tableBox(): { left: number; top: number; width: number; height: number } {
+    return {
+      left: -stage.width / 2 + TABLE_MARGIN,
+      top: -stage.height / 2 + TABLE_MARGIN,
+      width: stage.width - TABLE_MARGIN * 2,
+      height: stage.height - TABLE_MARGIN * 2,
+    };
+  }
+
+  /** Draws the open table, or takes the window down when none is open. */
+  private drawTable(): void {
+    const table = this.openTable;
+    if (!table) {
+      if (this.tableView) {
+        this.tableView.root.destroy({ children: true });
+        this.tableView = null;
+      }
+      return;
+    }
+    if (!this.tableView) {
+      const root = new Container();
+      const frame = new Graphics();
+      const title = new Text({
+        text: '',
+        style: { fontFamily: MONITOR_FAMILY, fontSize: TABLE_FONT + 1, fill: TABLE_TITLE_COLOR },
+        resolution: 2,
+      });
+      root.addChild(frame, title);
+      this.tableLayer.addChild(root);
+      this.tableView = { root, frame, title, cells: [] };
+    }
+    const view = this.tableView;
+    const box = Overlay.tableBox();
+    view.root.position.set(box.left, box.top);
+    view.title.text = table.name;
+    view.title.position.set(8, (TABLE_TITLE_HEIGHT - view.title.height) / 2);
+
+    const columns = Math.max(table.fields.length, 1);
+    const cellWidth = (box.width - TABLE_INDEX_WIDTH) / columns;
+    const room = box.height - TABLE_TITLE_HEIGHT - TABLE_HEAD_HEIGHT;
+    const shown = Math.max(0, Math.min(table.rows.length, Math.floor(room / TABLE_ROW_HEIGHT)));
+
+    view.frame
+      .clear()
+      .roundRect(0, 0, box.width, box.height, 6)
+      .fill({ color: TABLE_BG })
+      .stroke({ width: 1, color: TABLE_BORDER })
+      .roundRect(0, 0, box.width, TABLE_TITLE_HEIGHT, 6)
+      .fill({ color: TABLE_TITLE_BG })
+      .rect(0, TABLE_TITLE_HEIGHT - 6, box.width, 6)
+      .fill({ color: TABLE_TITLE_BG })
+      .rect(0, TABLE_TITLE_HEIGHT, box.width, TABLE_HEAD_HEIGHT)
+      .fill({ color: TABLE_HEAD_BG });
+    // 닫기 단추 — 이름줄 오른쪽 끝의 x 표.
+    const closeX = box.width - TABLE_TITLE_HEIGHT / 2;
+    const closeY = TABLE_TITLE_HEIGHT / 2;
+    const arm = TABLE_CLOSE / 4;
+    view.frame
+      .moveTo(closeX - arm, closeY - arm).lineTo(closeX + arm, closeY + arm)
+      .moveTo(closeX + arm, closeY - arm).lineTo(closeX - arm, closeY + arm)
+      .stroke({ width: 1.5, color: TABLE_TITLE_COLOR });
+    // 칸을 가르는 선들.
+    const gridTop = TABLE_TITLE_HEIGHT;
+    for (let column = 0; column <= columns; column += 1) {
+      const x = TABLE_INDEX_WIDTH + column * cellWidth;
+      view.frame.moveTo(x, gridTop).lineTo(x, gridTop + TABLE_HEAD_HEIGHT + shown * TABLE_ROW_HEIGHT);
+    }
+    view.frame.moveTo(TABLE_INDEX_WIDTH - TABLE_INDEX_WIDTH, gridTop + TABLE_HEAD_HEIGHT)
+      .lineTo(box.width, gridTop + TABLE_HEAD_HEIGHT);
+    for (let row = 1; row <= shown; row += 1) {
+      const y = gridTop + TABLE_HEAD_HEIGHT + row * TABLE_ROW_HEIGHT;
+      view.frame.moveTo(0, y).lineTo(box.width, y);
+    }
+    view.frame.stroke({ width: 1, color: TABLE_LINE });
+
+    // 글자는 칸마다 하나씩, 있는 것을 다시 쓴다.
+    const texts: Array<{ text: string; x: number; y: number; head: boolean }> = [];
+    table.fields.forEach((field, column) => {
+      texts.push({
+        text: String(field ?? ''),
+        x: TABLE_INDEX_WIDTH + column * cellWidth + 4,
+        y: gridTop + (TABLE_HEAD_HEIGHT - TABLE_FONT) / 2,
+        head: true,
+      });
+    });
+    for (let row = 0; row < shown; row += 1) {
+      const top = gridTop + TABLE_HEAD_HEIGHT + row * TABLE_ROW_HEIGHT + (TABLE_ROW_HEIGHT - TABLE_FONT) / 2;
+      texts.push({ text: String(row + 1), x: 6, y: top, head: true });
+      for (let column = 0; column < columns; column += 1) {
+        texts.push({
+          text: String(table.rows[row]?.[column] ?? ''),
+          x: TABLE_INDEX_WIDTH + column * cellWidth + 4,
+          y: top,
+          head: false,
+        });
+      }
+    }
+    while (view.cells.length < texts.length) {
+      const cell = new Text({
+        text: '',
+        style: { fontFamily: MONITOR_FAMILY, fontSize: TABLE_FONT, fill: TABLE_TEXT },
+        resolution: 2,
+      });
+      view.root.addChild(cell);
+      view.cells.push(cell);
+    }
+    view.cells.forEach((cell, index) => {
+      const wanted = texts[index];
+      cell.visible = Boolean(wanted);
+      if (!wanted) {
+        return;
+      }
+      if (cell.text !== wanted.text) {
+        cell.text = wanted.text;
+      }
+      cell.position.set(wanted.x, wanted.y);
+    });
+  }
+
   clear(): void {
+    this.showTable(null);
+    this.drawTable();
     this.scrolled.clear();
     for (const view of this.dialogs.values()) {
       view.root.destroy({ children: true });
@@ -409,13 +603,17 @@ export class Overlay {
       .clear()
       .roundRect(SLIDE_BAR_X, SLIDE_BAR_Y, run + 4, SLIDE_BAR_HEIGHT, SLIDE_BAR_RADIUS)
       .fill({ color: SLIDE_BAR_COLOR });
-    // Entry draws the knob from a 9x20 image; a rounded bar of that size is the
-    // same shape without an asset to fetch.
+    // Entry draws the knob from a 9x20 image; the same shape drawn here needs no
+    // asset to fetch. The two lines down its middle are part of that picture.
+    const knobLeft = -SLIDE_KNOB_WIDTH / 2;
     view.slider.knob
       .clear()
-      .roundRect(-SLIDE_KNOB_WIDTH / 2, 0, SLIDE_KNOB_WIDTH, SLIDE_KNOB_HEIGHT, 2)
-      .fill({ color: SLIDE_KNOB_COLOR })
-      .stroke({ width: 1, color: SLIDE_KNOB_BORDER });
+      .roundRect(knobLeft, 0, SLIDE_KNOB_WIDTH, SLIDE_KNOB_HEIGHT, SLIDE_KNOB_RADIUS)
+      .fill({ color: SLIDE_KNOB_COLOR });
+    for (const gripX of SLIDE_GRIP_X) {
+      view.slider.knob.rect(knobLeft + gripX, SLIDE_GRIP_Y, SLIDE_GRIP_WIDTH, SLIDE_GRIP_HEIGHT);
+    }
+    view.slider.knob.fill({ color: SLIDE_GRIP_COLOR });
     view.slider.knob.position.set(Overlay.slideKnobX(variable, run), 9);
   }
 
@@ -675,6 +873,7 @@ export class Overlay {
   }
 
   flush(): void {
+    this.drawTable();
     for (const [entity, view] of this.dialogs) {
       this.placeDialog(entity, view);
     }

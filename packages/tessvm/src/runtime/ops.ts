@@ -1132,6 +1132,15 @@ export function createOps(vm: Vm) {
       return table.getValue(row, col);
     },
 
+    /** `테이블 창 열기` — entry keeps running while the window stands. */
+    showTable(index: number, seconds?: number): void {
+      vm.openTable(vm.tables[index] ?? null, seconds);
+    },
+
+    closeTable(): void {
+      vm.openTable(null);
+    },
+
     tableCalc(index: number, col: unknown, calc: string): number {
       const table = vm.tables[index];
       if (!table) {

@@ -573,6 +573,17 @@ function bindInput(
       event.preventDefault();
       return;
     }
+    // A press on the table window belongs to the window: the close button takes
+    // it down, and the rest of it swallows the press the way entry's modal does.
+    const onTable = renderer.overlayView?.tableAt(vm.mouseX, -vm.mouseY);
+    if (onTable) {
+      if (onTable === 'close') {
+        vm.openTable(null);
+        renderer.flush();
+      }
+      event.preventDefault();
+      return;
+    }
     // A press inside a list box takes hold of it and scrolls; the work is not
     // told about that press.
     const list = renderer.overlayView?.listAt(vm.mouseX, -vm.mouseY);

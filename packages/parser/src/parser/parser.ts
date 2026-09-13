@@ -489,6 +489,8 @@ export class TessParser extends CstParser {
         $.CONSUME(kw.to);
         $.SUBRULE3($.expr, { LABEL: 'max' });
       });
+      // 무대에 상자를 띄운 채로 시작하는 변수 — 엔트리의 '변수 보이기' 체크다.
+      $.OPTION4(() => $.CONSUME(kw.visible, { LABEL: 'shown' }));
     });
 
     $.RULE('listDecl', () => {
@@ -498,6 +500,7 @@ export class TessParser extends CstParser {
       $.OPTION2(() => $.SUBRULE($.displayName, { LABEL: 'displayName' }));
       $.CONSUME(Assign);
       $.SUBRULE($.listLiteral, { LABEL: 'value' });
+      $.OPTION3(() => $.CONSUME(kw.visible, { LABEL: 'shown' }));
     });
 
     // ========================================================================

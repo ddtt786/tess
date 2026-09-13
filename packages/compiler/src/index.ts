@@ -269,7 +269,7 @@ function makeVariable(
   const base: EntryVariable = {
     name: node.displayName ?? node.name,
     id: ctx.newId(),
-    visible: false,
+    visible: node.shown,
     value: 0,
     variableType: 'variable',
     isCloud: node.scope === 'shared',

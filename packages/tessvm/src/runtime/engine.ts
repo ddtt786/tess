@@ -85,6 +85,8 @@ export interface Renderer extends RendererLike, Partial<TextMeasurer> {
    */
   drawOrder?(sceneId: string): Entity[];
   syncDialog?(entity: Entity): void;
+  /** `테이블 창 열기` — the table to show, or null to close the window. */
+  showTable?(table: Table | null): void;
   stamp?(entity: Entity): void;
   eraseAll?(entity: Entity): void;
   penChanged?(entity: Entity): void;
@@ -226,6 +228,9 @@ export class Vm implements Project {
   mouseY = 0;
   mouseDown = false;
   clickedEntityId: string | null = null;
+  /** The table whose window stands open, and when it closes itself. */
+  private shownTable: Table | null = null;
+  private tableCloseAt: number | null = null;
   errors: VmError[] = [];
   /** Called right after an error is recorded, for the debug panel to report it. */
   onError: ((error: VmError) => void) | null = null;
@@ -300,15 +305,7 @@ export class Vm implements Project {
     this.sceneById = new Map(this.scenes.map((scene) => [scene.id, scene]));
     this.currentSceneId = this.scenes[0]?.id ?? '';
     this.messages = project.messages.map((message) => ({ id: message.id, name: message.name }));
-    this.tables = (project.tables ?? []).map(
-      (raw) =>
-        new Table(
-          String(raw.id),
-          String(raw.name ?? ''),
-          (raw.fields as string[]) ?? [],
-          (raw.data as Array<Array<string | number>>) ?? [],
-        ),
-    );
+    this.tables = (project.tables ?? []).map((raw) => Table.from(raw as never));
 
     this.answerVisible = false;
     this.timerVisible = false;
@@ -697,6 +694,7 @@ export class Vm implements Project {
     this.answer = '';
     this.errors = [];
     this.pendingMessages = [];
+    this.openTable(null);
     this.currentSceneId = this.scenes[0]?.id ?? '';
     this.audio?.setVolume(1);
     this.audio?.setSpeed(1);
@@ -760,6 +758,11 @@ export class Vm implements Project {
   tick(deltaMs = 1000 / this.frameRate): void {
     this.clock += deltaMs;
     this.frame += 1;
+    // `Entry.engine.setTimeout` — a window opened for so many seconds closes
+    // itself, and the engine's own clock is what counts them.
+    if (this.tableCloseAt !== null && this.clock >= this.tableCloseAt) {
+      this.openTable(null);
+    }
     if (this.clock - this.lastStoreFlush >= STORE_FLUSH_MS) {
       this.lastStoreFlush = this.clock;
       this.flushStore();
@@ -933,6 +936,17 @@ export class Vm implements Project {
     // `Entry.stage.hideInputField` — the script that asked is gone with the
     // scene, so the box it was waiting on goes with it.
     this.clearQuestion();
+  }
+
+  /**
+   * `DataTable.showTable` — puts a table's window up, or takes it down with
+   * null. Entry's block does not hold the script while the window stands; a
+   * window opened for a number of seconds closes itself when they are up.
+   */
+  openTable(table: Table | null, seconds?: number): void {
+    this.shownTable = table;
+    this.tableCloseAt = table && seconds ? this.clock + seconds * 1000 : null;
+    this.renderer?.showTable?.(table);
   }
 
   /** Takes down the `묻고 기다리기` box and the answer it was waiting for. */

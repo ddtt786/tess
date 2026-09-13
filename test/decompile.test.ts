@@ -1851,6 +1851,56 @@ test('미로 수업의 반복 블록도 무한 반복으로 옮긴다', () => {
   assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
 });
 
+/**
+ * 엔트리에서 '보이기'로 켜 둔 변수·리스트는 무대에 상자를 띄운 채로 시작합니다.
+ * 선언이 그 사실을 담지 않으면, 되돌린 작품은 `show 변수` 를 손으로 적어야 보입니다.
+ */
+test('보이기로 켜 둔 변수와 리스트는 선언에 그대로 남는다', () => {
+  const project = minimalProject();
+  project.variables = [
+    { id: 'v1', name: '점수', variableType: 'variable', value: 3, visible: true, object: null },
+    { id: 'v2', name: '숨김', variableType: 'variable', value: 0, visible: false, object: null },
+    { id: 'v3', name: '기록', variableType: 'list', array: [{ data: 'a' }], visible: true, object: null },
+    {
+      id: 'v4', name: '배속', variableType: 'slide', value: 1,
+      minValue: 1, maxValue: 5, visible: true, object: null,
+    },
+  ];
+
+  const back = decompileProject(project, [], { inline: true });
+  assert.match(back.source, /^var 점수 = 3 visible$/m);
+  assert.match(back.source, /^var 숨김 = 0$/m, '꺼 둔 것에는 붙이지 않습니다');
+  assert.match(back.source, /^list 기록 = \["a"\] visible$/m);
+  assert.match(back.source, /^var 배속 = 1 from 1 to 5 visible$/m);
+
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+  const seen = again.project!.variables
+    .filter((v: { name: string }) => ['점수', '숨김', '기록', '배속'].includes(v.name))
+    .map((v: { name: string; visible: boolean }) => [v.name, v.visible]);
+  assert.deepEqual(seen, [['점수', true], ['숨김', false], ['기록', true], ['배속', true]]);
+});
+
+/**
+ * 표가 처음 값만 들고 있는 경우(`data` 는 비고 `origin` 에만 자료가 있는 작품)에도
+ * 줄이 그대로 나와야 합니다 — 엔트리는 정지할 때마다 `origin` 으로 되돌리므로
+ * 실행이 보는 값이 그쪽입니다.
+ */
+test('표는 origin 에만 자료가 있어도 줄을 그대로 옮긴다', () => {
+  const project = minimalProject();
+  project.tables = [{
+    id: 'tb', name: '표', fields: ['A', 'B'],
+    data: [],
+    origin: [[0, 1], [2, 3]],
+  }];
+
+  const back = decompileProject(project, [], { inline: true });
+  assert.match(back.source, /table 표:\n {2}columns "A", "B"\n {2}row 0, 1\n {2}row 2, 3\nend/);
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+  assert.deepEqual(again.project!.tables[0].data, [['0', '1'], ['2', '3']]);
+});
+
 test('테이블 선언은 엔트리 project.tables 항목이 된다', () => {
   const { project, errors } = compileProject(
     'table 점수표 as "점수 표":\n  columns "이름", "점수"\n  row "철수", 10\n  row "영희", 20\nend',

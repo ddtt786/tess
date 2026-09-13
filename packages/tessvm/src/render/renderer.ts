@@ -25,7 +25,7 @@ import { stage, type Entity, type Picture, type Stroke, type Target } from '../r
 import type { Renderer } from '../runtime/engine.ts';
 import { buildMask } from '../collision/mask-image.ts';
 import type { AlphaMask } from '../collision/mask.ts';
-import { Overlay } from './overlay.ts';
+import { Overlay, type TableLike } from './overlay.ts';
 import {
   MAX_SHARPNESS,
   svgBudgetScale,
@@ -1331,6 +1331,11 @@ export class PixiRenderer implements Renderer {
   // -------------------------------------------------------------------------
   syncDialog(entity: Entity): void {
     this.overlay?.setDialog(entity);
+  }
+
+  /** `DataTable.showTable` — the table window, or null to take it down. */
+  showTable(table: TableLike | null): void {
+    this.overlay?.showTable(table);
   }
 
   /** The ask box is HTML, not canvas — the page hooks these. */

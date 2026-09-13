@@ -6,12 +6,48 @@
  */
 import { isNumber, num } from './cast.ts';
 
+/** 표 한 줄 — 칸 배열이거나, 사이트가 붙인 줄 번호를 함께 단 모양이거나. */
+type RawRow = unknown[] | { value?: unknown } | null | undefined;
+
+/** 작품이 들고 온 표. 실행에 필요한 만큼만 본다. */
+interface RawTable {
+  id?: unknown;
+  name?: unknown;
+  fields?: unknown;
+  data?: unknown;
+  origin?: unknown;
+}
+
+/** 어느 모양으로 담겨 있든 칸 배열로. */
+function cellsOf(row: RawRow): Array<string | number> {
+  const cells = Array.isArray(row) ? row : (row as { value?: unknown } | null)?.value;
+  return Array.isArray(cells) ? (cells as Array<string | number>) : [];
+}
+
 export class Table {
   readonly id: string;
   readonly name: string;
   fields: string[];
   /** Data rows only; row 0 in block coordinates is `fields`. */
   rows: Array<Array<string | number>>;
+
+  /**
+   * 작품이 저장해 둔 표를 실행이 보는 모양으로 읽습니다.
+   *
+   * 엔트리는 표를 두 벌로 듭니다 — `data` 는 지금 값, `origin` 은 처음 값 — 그리고
+   * 정지할 때마다 `data` 를 `origin` 으로 되돌립니다(`DataTableSource` 의 stop 처리).
+   * 그래서 실행이 보는 것은 `origin` 이고, 그것이 비어 있을 때만 `data` 입니다.
+   */
+  static from(raw: RawTable): Table {
+    const origin = Array.isArray(raw.origin) ? (raw.origin as RawRow[]) : [];
+    const data = Array.isArray(raw.data) ? (raw.data as RawRow[]) : [];
+    return new Table(
+      String(raw.id ?? ''),
+      String(raw.name ?? ''),
+      cellsOf(raw.fields as RawRow).map((field) => String(field ?? '')),
+      (origin.length ? origin : data).map((row) => cellsOf(row)),
+    );
+  }
 
   constructor(id: string, name: string, fields: string[], data: Array<Array<string | number>>) {
     this.id = id;
