@@ -83,14 +83,26 @@ function transformedBounds(
   return out;
 }
 
+/** Shifts the horizontal hitbox for single-line aligned text boxes. */
+function textBoxOffset(entity: Entity): number {
+  if (entity.lineBreak) {
+    return 0;
+  }
+  return entity.textAlign === 1
+    ? entity.width / 2
+    : entity.textAlign === 2
+      ? -entity.width / 2
+      : 0;
+}
+
 /** World-space box of an entity, matching what entry asks PIXI for. */
 export function entityBounds(entity: Entity, out: Rect): Rect {
   const m = entity.worldMatrix(matrixA);
   if (entity.type === 'textBox') {
-    // The background rect is centred on the entity, so the box is symmetric.
     const halfW = entity.width / 2;
     const halfH = entity.height / 2;
-    return transformedBounds(m, -halfW, -halfH, halfW, halfH, out);
+    const offset = textBoxOffset(entity);
+    return transformedBounds(m, offset - halfW, -halfH, offset + halfW, halfH, out);
   }
   return transformedBounds(m, 0, 0, entity.width, entity.height, out);
 }
@@ -271,11 +283,14 @@ export class CollisionSystem {
     const localX = (m[3]! * dx - m[2]! * dy) / det;
     const localY = (m[0]! * dy - m[1]! * dx) / det;
     if (entity.type === 'textBox') {
+      const halfW = entity.width / 2;
+      const halfH = entity.height / 2;
+      const offset = textBoxOffset(entity);
       return (
-        localX >= -entity.width / 2 &&
-        localX < entity.width / 2 &&
-        localY >= -entity.height / 2 &&
-        localY < entity.height / 2
+        localX >= offset - halfW &&
+        localX < offset + halfW &&
+        localY >= -halfH &&
+        localY < halfH
       );
     }
     if (localX < 0 || localX >= entity.width || localY < 0 || localY >= entity.height) {

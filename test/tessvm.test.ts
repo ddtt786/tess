@@ -1021,6 +1021,58 @@ test('경계 상자는 무대 픽셀 좌표로 나온다', () => {
   assert.ok(Math.abs(box.x - (stage.worldWidth / 2 - (20 * 4) / 3 / 2)) < 1e-6);
 });
 
+test('글상자의 경계 상자와 마우스 충돌은 정렬(textAlign)에 따라 이동한다', () => {
+  const source = `scene "s":
+  text "t":
+    text_content = "테스트"
+    size 100 40
+    x = 0
+    y = 0
+  end
+end`;
+  const { project } = compileProject(source, { path: 'test.tess' });
+  assert.ok(project);
+  const vm = new Vm({ renderer: null, audio: null });
+  vm.load(project as unknown as never);
+  const entity = vm.targets[0]!.entity;
+  const collision = new CollisionSystem(new MaskStore(() => null));
+  const box = { x: 0, y: 0, width: 0, height: 0 };
+
+  // 기본 (가운데 정렬)
+  entity.textAlign = 0;
+  entityBounds(entity, box);
+  const centerX = stage.worldWidth / 2;
+  const centerY = stage.worldHeight / 2;
+  const scaledW = 100 * stage.scale;
+  const scaledH = 40 * stage.scale;
+  assert.ok(Math.abs(box.x - (centerX - scaledW / 2)) < 1e-6);
+  assert.ok(Math.abs(box.width - scaledW) < 1e-6);
+  assert.equal(collision.touchingMouse(entity, centerX, centerY), true);
+  assert.equal(collision.touchingMouse(entity, centerX + scaledW / 2 + 5, centerY), false);
+
+  // 왼쪽 정렬 (left = 1): 오브젝트 x에서 오른쪽으로 자람
+  entity.textAlign = 1;
+  entityBounds(entity, box);
+  assert.ok(Math.abs(box.x - centerX) < 1e-6);
+  assert.ok(Math.abs(box.width - scaledW) < 1e-6);
+  assert.equal(collision.touchingMouse(entity, centerX - 10, centerY), false);
+  assert.equal(collision.touchingMouse(entity, centerX + 10, centerY), true);
+
+  // 오른쪽 정렬 (right = 2): 오브젝트 x에서 왼쪽으로 자람
+  entity.textAlign = 2;
+  entityBounds(entity, box);
+  assert.ok(Math.abs(box.x - (centerX - scaledW)) < 1e-6);
+  assert.ok(Math.abs(box.width - scaledW) < 1e-6);
+  assert.equal(collision.touchingMouse(entity, centerX + 10, centerY), false);
+  assert.equal(collision.touchingMouse(entity, centerX - 10, centerY), true);
+
+  // 줄바꿈이 켜져 있으면 정렬과 무관하게 상자 중심 유지
+  entity.lineBreak = true;
+  entity.textAlign = 1;
+  entityBounds(entity, box);
+  assert.ok(Math.abs(box.x - (centerX - scaledW / 2)) < 1e-6);
+});
+
 test('무대 크기를 바꾸면 벽과 좌표계가 같이 움직인다', () => {
   const { vm, collision } = collisionVm(() => squareMask(20));
   const a = vm.targets[0]!.entity;

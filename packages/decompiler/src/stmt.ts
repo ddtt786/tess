@@ -157,7 +157,7 @@ function point(x: string, y: string): string {
  */
 const LOOP_TRICK: Record<string, string> = {
   continue_repeat: "skip",
-  stop_repeat: "skip",
+  stop_repeat: "skip", //해당 블록은 skip 트릭 안에 있는 블록이므로 무시되며 위와 같은 동작임.
 };
 
 /**
