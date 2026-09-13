@@ -1333,9 +1333,9 @@ export class PixiRenderer implements Renderer {
     this.overlay?.setDialog(entity);
   }
 
-  /** `DataTable.showTable` — the table window, or null to take it down. */
-  showTable(table: TableLike | null): void {
-    this.overlay?.showTable(table);
+  /** `DataTable.showTable`·`showChart` — the window, or null to take it down. */
+  showTable(table: TableLike | null, chart: number | null = null): void {
+    this.overlay?.showTable(table, chart);
   }
 
   /** The ask box is HTML, not canvas — the page hooks these. */

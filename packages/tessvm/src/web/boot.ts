@@ -9,6 +9,8 @@ import { Vm, type EntryProjectLike, type EntryUser, type VariableStore } from '.
 import { PixiRenderer } from '../render/renderer.ts';
 import { EntryTtsEngine, WebAudioEngine } from '../audio/sound.ts';
 import { EntryTranslator } from './translate.ts';
+import { mountChartWindow } from './chart-view.ts';
+import { LIST_MIN_SIZE } from '../render/overlay.ts';
 import { setStageSize, stage, type Entity } from '../runtime/model.ts';
 import { localVariableStore } from './store.ts';
 
@@ -253,6 +255,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   vm.load(project);
   renderer.overlayView?.bind({
     variables: vm.variables,
+    ownerName: (objectId) => vm.targetOf(objectId)?.name ?? null,
     answer: () => vm.answer,
     answerVisible: () => vm.answerVisible,
     timer: () => vm.timerValue(),
@@ -304,6 +307,18 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   renderer.hideQuestion = () => {
     originalHide();
     question.hide();
+  };
+
+  // 차트 창도 엔트리처럼 캔버스 밖에 둡니다 — 표 창만 캔버스에 남습니다.
+  const chartWindow = mountChartWindow(frame, () => vm.openTable(null));
+  const originalTable = renderer.showTable.bind(renderer);
+  renderer.showTable = (table, chart = null) => {
+    originalTable(table, chart);
+    if (table && chart !== null && table.charts?.[chart]) {
+      chartWindow.show(table, chart);
+    } else {
+      chartWindow.hide();
+    }
   };
 
   const cleanups: Array<() => void> = [];
@@ -364,6 +379,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
       vm.fail(error);
     }
     syncCursor();
+    chartWindow.sync();
     if (stats) {
       frames += 1;
       accumulated += now - last;
@@ -424,6 +440,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
       }
       vm.stop();
       audio.close();
+      chartWindow.dispose();
       renderer.destroy();
       view.remove();
     },
@@ -539,6 +556,8 @@ function bindInput(
     | null = null;
   /** A slide variable's knob, held between the press and the release. */
   let sliding: Dragged | null = null;
+  /** A list box being resized by its corner handle. */
+  let resizing: { variable: Dragged; fromX: number; fromY: number } | null = null;
 
   on(view, 'pointermove', (raw) => {
     const event = raw as PointerEvent;
@@ -546,6 +565,14 @@ function bindInput(
   });
   on(window, 'pointermove', (raw) => {
     const event = raw as PointerEvent;
+    if (resizing) {
+      const point = toStage(event.clientX, event.clientY);
+      const box = resizing.variable as unknown as { width: number; height: number };
+      box.width = Math.max(LIST_MIN_SIZE, point.x - resizing.fromX);
+      box.height = Math.max(LIST_MIN_SIZE, -point.y - resizing.fromY);
+      renderer.flush();
+      return;
+    }
     if (sliding) {
       renderer.overlayView?.dragSlider(sliding, toStage(event.clientX, event.clientY).x);
       renderer.flush();
@@ -584,6 +611,17 @@ function bindInput(
       event.preventDefault();
       return;
     }
+    // The corner handle resizes the list box, the way entry's does.
+    const handle = renderer.overlayView?.listHandleAt(vm.mouseX, -vm.mouseY);
+    if (handle) {
+      resizing = {
+        variable: handle as never,
+        fromX: vm.mouseX - (handle.width || 100),
+        fromY: -vm.mouseY - (handle.height || 120),
+      };
+      event.preventDefault();
+      return;
+    }
     // A press inside a list box takes hold of it and scrolls; the work is not
     // told about that press.
     const list = renderer.overlayView?.listAt(vm.mouseX, -vm.mouseY);
@@ -606,6 +644,10 @@ function bindInput(
     }
   });
   const up = () => {
+    if (resizing) {
+      resizing = null;
+      return;
+    }
     if (sliding) {
       sliding = null;
       return;

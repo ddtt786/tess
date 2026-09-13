@@ -1901,6 +1901,109 @@ test('표는 origin 에만 자료가 있어도 줄을 그대로 옮긴다', () =
   assert.deepEqual(again.project!.tables[0].data, [['0', '1'], ['2', '3']]);
 });
 
+/**
+ * 사이트에서 열던 그대로 놓으려면 상자 자리도 함께 와야 합니다. 다만 사람이 읽을
+ * 소스는 자리 없이 더 깔끔하므로(엔트리도 자리를 안 정한 상자는 스스로 놓습니다),
+ * 명령줄 되돌리기는 기본으로 생략하고 확장만 켭니다.
+ */
+test('변수 상자 자리는 positions 를 켰을 때만 적는다', () => {
+  const project = minimalProject();
+  project.variables = [
+    { id: 'v1', name: '점수', variableType: 'variable', value: 0, visible: true, object: null, x: -120, y: 80 },
+    { id: 'v2', name: '기록', variableType: 'list', array: [], visible: true, object: null, x: 40, y: -30 },
+  ];
+
+  const plain = decompileProject(project, [], { inline: true });
+  assert.match(plain.source, /^var 점수 = 0 visible$/m, '기본은 자리를 적지 않습니다');
+  assert.doesNotMatch(plain.source, / at /);
+
+  const placed = decompileProject(project, [], { inline: true, positions: true });
+  assert.match(placed.source, /^var 점수 = 0 visible at -120 80$/m);
+  assert.match(placed.source, /^list 기록 = \[\] visible at 40 -30$/m);
+
+  const again = compileProject(placed.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+  const placedAt = again.project!.variables
+    .filter((v: { name: string }) => ['점수', '기록'].includes(v.name))
+    .map((v: { name: string; x: number; y: number }) => [v.name, v.x, v.y]);
+  assert.deepEqual(placedAt, [['점수', -120, 80], ['기록', 40, -30]]);
+});
+
+/** 확장은 사이트에서 보던 자리를 그대로 옮긴다. */
+test('확장의 되돌리기는 자리를 적는다', () => {
+  const source = fs.readFileSync(
+    new URL('../packages/extension/src/page/tess-project.ts', import.meta.url),
+    'utf-8',
+  );
+  assert.match(source, /positions: true,/);
+});
+
+/**
+ * 표의 열 고르기 드롭다운(`get_table_fields`)은 이름을 보여 주지만 담고 있는 것은
+ * 1부터 세는 열 번호입니다. 옮기지 못하면 어느 열인지가 통째로 사라집니다.
+ */
+test('표의 열 고르기 드롭다운은 열 번호로 옮긴다', () => {
+  const project = minimalProject();
+  project.tables = [{ id: 'tb', name: '점수표', fields: ['이름', '점수'], data: [['철수', 90]] }];
+  const object = (project.objects as RawEntity[])[0]!;
+  object.script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    {
+      type: 'dialog', params: [{
+        type: 'get_value_from_table',
+        params: ['tb', { type: 'number', params: ['1'] }, { type: 'get_table_fields', params: ['2'] }, null],
+      }, 'speak', null],
+      statements: [],
+    },
+  ]]);
+
+  const back = decompileProject(project, [], { inline: true });
+  assert.deepEqual(back.warnings, [], back.warnings.join('\n'));
+  assert.match(back.source, /점수표\[1, 2\]/);
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+});
+
+/**
+ * 표에 딸린 차트는 엔트리가 `chart` 에 담아 두고 `테이블 차트 창 열기` 가 번호로
+ * 고릅니다. Tess 로 옮기지 못하면 차트가 통째로 사라져 창이 비어서 열립니다.
+ */
+test('표의 차트 정의는 되돌렸다가 다시 컴파일해도 그대로다', () => {
+  const project = minimalProject();
+  project.tables = [{
+    id: 'tb', name: '자료', fields: ['일자', '신규', '누적'],
+    data: [['1/3', 1, 2]],
+    chart: [
+      { type: 'line', title: '꺾은선 차트', xIndex: 0, yIndex: -1, categoryIndexes: [1, 2] },
+      { type: 'pie', title: '원 차트', xIndex: 0, yIndex: 2, categoryIndexes: [] },
+    ],
+  }];
+
+  const back = decompileProject(project, [], { inline: true });
+  assert.deepEqual(back.warnings, [], back.warnings.join('\n'));
+  // 엔트리는 열을 0부터, Tess 는 1부터 센다.
+  assert.match(back.source, /^ {2}chart line "꺾은선 차트" x 1 series 2, 3$/m);
+  assert.match(back.source, /^ {2}chart pie "원 차트" x 1 y 3$/m);
+
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+  assert.deepEqual(again.project!.tables[0].chart, [
+    { type: 'line', title: '꺾은선 차트', xIndex: 0, yIndex: -1, categoryIndexes: [1, 2] },
+    { type: 'pie', title: '원 차트', xIndex: 0, yIndex: 2, categoryIndexes: [] },
+  ]);
+});
+
+test('차트 종류와 열 번호는 있는 것만 받는다', () => {
+  const table = (chart: string) => `table 자료:\n  columns "A", "B"\n  row 1, 2\n  ${chart}\nend`;
+  const kind = compileProject(table('chart donut x 1 y 2'), { path: 'main.tess' });
+  assert.equal(kind.ok, false);
+  assert.match(kind.errors[0].message, /차트는 없습니다/);
+
+  const column = compileProject(table('chart bar x 1 series 5'), { path: 'main.tess' });
+  assert.equal(column.ok, false);
+  assert.match(column.errors[0].message, /5번째 열이 없습니다/);
+});
+
 test('테이블 선언은 엔트리 project.tables 항목이 된다', () => {
   const { project, errors } = compileProject(
     'table 점수표 as "점수 표":\n  columns "이름", "점수"\n  row "철수", 10\n  row "영희", 20\nend',

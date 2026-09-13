@@ -36,6 +36,17 @@ const LIST_TITLE_HEIGHT = 23;
 /** The coloured strip inside one list row. */
 const STRIP_TOP = 4;
 const STRIP_HEIGHT = 17;
+/**
+ * `stage_list_resize_handle.png` — 목록 상자 오른쪽 아래의 크기 조절 손잡이.
+ * 14x14 그림을 0.7 로 줄여 쓰고, 자리는 `(width - 10, height + 6)` 이다.
+ */
+const LIST_HANDLE_SIZE = 14 * 0.7;
+const LIST_HANDLE_X = 10;
+const LIST_HANDLE_Y = 6;
+const LIST_HANDLE_COLOR = '#4f80ff';
+/** `setWidth`·`setHeight` — 엔트리가 허락하는 가장 작은 상자. */
+export const LIST_MIN_SIZE = 100;
+
 /** Where the scroll bar starts and how tall it is (`scrollButton_`). */
 const LIST_BAR_TOP = LIST_TITLE_HEIGHT + 4;
 const LIST_BAR_HEIGHT = 20;
@@ -111,11 +122,23 @@ interface RowView {
   stripWidth: number;
 }
 
-/** 표 창이 그리는 데 필요한 만큼의 표. */
+/** 표 창과 차트 창이 그리는 데 필요한 만큼의 표. */
 export interface TableLike {
   name: string;
   fields: string[];
   rows: Array<Array<string | number>>;
+  charts?: ChartLike[];
+  /** 담긴 것이 바뀔 때마다 오르는 수 — 열려 있는 창이 이것을 보고 다시 그립니다. */
+  revision?: number;
+}
+
+/** 표에 딸린 차트 한 벌 — 엔트리가 저장하는 그대로, 열 번호는 0부터. */
+export interface ChartLike {
+  type: string;
+  title: string;
+  xIndex: number;
+  yIndex: number;
+  categoryIndexes: number[];
 }
 
 /** The table window's own display objects. */
@@ -170,6 +193,7 @@ export class Overlay {
   private timerValue: () => number = () => 0;
   private timerShown: () => boolean = () => false;
   private currentScene: () => string = () => '';
+  private ownerName: (objectId: string) => string | null = () => null;
   /** The table window, while one is open. */
   private readonly tableLayer = new Container();
   private tableView: TableView | null = null;
@@ -189,6 +213,8 @@ export class Overlay {
 
   bind(options: {
     variables: Variable[];
+    /** `Entry.container.getObject(...)` — 오브젝트 변수 이름 앞에 붙는 이름. */
+    ownerName?: (objectId: string) => string | null;
     answer: () => string | number;
     answerVisible: () => boolean;
     timer: () => number;
@@ -196,6 +222,7 @@ export class Overlay {
     scene: () => string;
   }): void {
     this.variables = options.variables;
+    this.ownerName = options.ownerName ?? (() => null);
     this.answerValue = options.answer;
     this.answerShown = options.answerVisible;
     this.timerValue = options.timer;
@@ -205,10 +232,11 @@ export class Overlay {
 
   /**
    * `DataTable.showTable` · `closeModal` — 어느 표를 띄워 둘지 정합니다. null 이면
-   * 창을 닫습니다.
+   * 창을 닫습니다. 차트는 캔버스가 아니라 HTML 로 띄우므로(`web/chart-view.ts`)
+   * 차트 번호가 붙은 창은 여기서 그리지 않습니다.
    */
-  showTable(table: TableLike | null): void {
-    this.openTable = table;
+  showTable(table: TableLike | null, chart: number | null = null): void {
+    this.openTable = chart === null ? table : null;
   }
 
   /** Whether a point falls inside the open table window — its close button aside. */
@@ -268,25 +296,11 @@ export class Overlay {
     const room = box.height - TABLE_TITLE_HEIGHT - TABLE_HEAD_HEIGHT;
     const shown = Math.max(0, Math.min(table.rows.length, Math.floor(room / TABLE_ROW_HEIGHT)));
 
+    view.frame.clear();
+    this.drawWindowFrame(view, box);
     view.frame
-      .clear()
-      .roundRect(0, 0, box.width, box.height, 6)
-      .fill({ color: TABLE_BG })
-      .stroke({ width: 1, color: TABLE_BORDER })
-      .roundRect(0, 0, box.width, TABLE_TITLE_HEIGHT, 6)
-      .fill({ color: TABLE_TITLE_BG })
-      .rect(0, TABLE_TITLE_HEIGHT - 6, box.width, 6)
-      .fill({ color: TABLE_TITLE_BG })
       .rect(0, TABLE_TITLE_HEIGHT, box.width, TABLE_HEAD_HEIGHT)
       .fill({ color: TABLE_HEAD_BG });
-    // 닫기 단추 — 이름줄 오른쪽 끝의 x 표.
-    const closeX = box.width - TABLE_TITLE_HEIGHT / 2;
-    const closeY = TABLE_TITLE_HEIGHT / 2;
-    const arm = TABLE_CLOSE / 4;
-    view.frame
-      .moveTo(closeX - arm, closeY - arm).lineTo(closeX + arm, closeY + arm)
-      .moveTo(closeX + arm, closeY - arm).lineTo(closeX - arm, closeY + arm)
-      .stroke({ width: 1.5, color: TABLE_TITLE_COLOR });
     // 칸을 가르는 선들.
     const gridTop = TABLE_TITLE_HEIGHT;
     for (let column = 0; column <= columns; column += 1) {
@@ -323,6 +337,39 @@ export class Overlay {
         });
       }
     }
+    Overlay.placeCells(view, texts);
+  }
+
+  /** 창의 테두리와 이름줄, 닫기 단추. */
+  private drawWindowFrame(
+    view: TableView,
+    box: { width: number; height: number },
+  ): void {
+    view.frame
+      .roundRect(0, 0, box.width, box.height, 6)
+      .fill({ color: TABLE_BG })
+      .stroke({ width: 1, color: TABLE_BORDER })
+      .roundRect(0, 0, box.width, TABLE_TITLE_HEIGHT, 6)
+      .fill({ color: TABLE_TITLE_BG })
+      .rect(0, TABLE_TITLE_HEIGHT - 6, box.width, 6)
+      .fill({ color: TABLE_TITLE_BG });
+    const closeX = box.width - TABLE_TITLE_HEIGHT / 2;
+    const closeY = TABLE_TITLE_HEIGHT / 2;
+    const arm = TABLE_CLOSE / 4;
+    view.frame
+      .moveTo(closeX - arm, closeY - arm).lineTo(closeX + arm, closeY + arm)
+      .moveTo(closeX + arm, closeY - arm).lineTo(closeX - arm, closeY + arm)
+      .stroke({ width: 1.5, color: TABLE_TITLE_COLOR });
+  }
+
+  /**
+   * 창 안의 글자들을 자리에 놓습니다. 만들어 둔 것을 다시 쓰고, 남는 것은 숨깁니다 —
+   * 창은 프레임마다 그려지므로 글자를 새로 만들면 그때마다 재고 굽습니다.
+   */
+  private static placeCells(
+    view: TableView,
+    texts: Array<{ text: string; x: number; y: number; color?: string }>,
+  ): void {
     while (view.cells.length < texts.length) {
       const cell = new Text({
         text: '',
@@ -340,6 +387,10 @@ export class Overlay {
       }
       if (cell.text !== wanted.text) {
         cell.text = wanted.text;
+      }
+      const color = wanted.color ?? TABLE_TEXT;
+      if (cell.style.fill !== color) {
+        cell.style.fill = color;
       }
       cell.position.set(wanted.x, wanted.y);
     });
@@ -525,6 +576,18 @@ export class Overlay {
    * a coloured box holding the value, 24 units tall, hanging 14 above the point
    * the work stores as the variable's position.
    */
+  /**
+   * `updateView` — 오브젝트에 딸린 변수는 상자에 `오브젝트명:변수명` 으로 선다.
+   * 이름이 겹치는 변수가 여러 오브젝트에 있을 때 어느 것인지 알려 주는 자리다.
+   */
+  private monitorName(variable: Variable): string {
+    if (!variable.objectId) {
+      return variable.name;
+    }
+    const owner = this.ownerName(variable.objectId);
+    return owner ? `${owner}:${variable.name}` : variable.name;
+  }
+
   private drawValueMonitor(
     view: MonitorView,
     name: string,
@@ -545,9 +608,11 @@ export class Overlay {
     view.value.text = text;
     const nameWidth = view.label.width;
     const valueWidth = view.value.width;
+    // `_adjustSingleViewBox` — 보통 변수 상자는 이름과 값이 차지하는 만큼이다.
+    // 최소 너비(90)는 슬라이더 달린 상자에만 있다.
     view.frame
       .clear()
-      .roundRect(0, -14, Math.max(nameWidth + valueWidth + 35, MONITOR_MIN_WIDTH), 24, 4)
+      .roundRect(0, -14, nameWidth + valueWidth + 35, 24, 4)
       .fill({ color: MONITOR_BG })
       .stroke({ width: 1, color: MONITOR_BORDER })
       .roundRect(nameWidth + 14, -10, valueWidth + 15, 16, MONITOR_RADIUS)
@@ -583,7 +648,7 @@ export class Overlay {
       return;
     }
     view.shown = shown;
-    view.label.text = variable.name;
+    view.label.text = this.monitorName(variable);
     view.value.text = text;
     const nameWidth = view.label.width;
     const valueWidth = view.value.width;
@@ -665,8 +730,17 @@ export class Overlay {
           .roundRect(width - 9, run.top + (run.span * first) / run.room, 6, LIST_BAR_HEIGHT, 3)
           .fill({ color: MONITOR_BORDER });
       }
+      // 오른쪽 아래 모서리의 크기 조절 손잡이 — 엔트리 그림과 같은 삼각형이다.
+      const handleX = width - LIST_HANDLE_X;
+      const handleY = height + LIST_HANDLE_Y;
+      view.frame
+        .moveTo(handleX + LIST_HANDLE_SIZE, handleY)
+        .lineTo(handleX + LIST_HANDLE_SIZE, handleY + LIST_HANDLE_SIZE)
+        .lineTo(handleX, handleY + LIST_HANDLE_SIZE)
+        .closePath()
+        .fill({ color: LIST_HANDLE_COLOR });
       view.label.style.fill = '#000000';
-      view.label.text = variable.name;
+      view.label.text = this.monitorName(variable);
       view.label.position.set((width - view.label.width) / 2 + 3, LIST_TITLE_HEIGHT / 2);
     }
 
@@ -741,6 +815,25 @@ export class Overlay {
     const visible = Math.floor(((variable.height || 120) - 15) / LIST_ROW_HEIGHT);
     const last = Math.max(0, variable.array.length - visible);
     this.scrolled.set(variable, Math.max(0, Math.min(last, Math.round(row))));
+  }
+
+  /**
+   * The resize handle under a stage point, if there is one. Entry hands the
+   * handle to its drag helper; pointers come through one path here, so the hit
+   * test lives beside the drawing.
+   */
+  listHandleAt(x: number, y: number): Variable | null {
+    for (const [variable, view] of this.monitors) {
+      if (!variable.isList || !variable.visible || !view.root.visible) {
+        continue;
+      }
+      const left = view.root.x + (variable.width || 100) - LIST_HANDLE_X;
+      const top = view.root.y + (variable.height || 120) + LIST_HANDLE_Y;
+      if (x >= left && x <= left + LIST_HANDLE_SIZE && y >= top && y <= top + LIST_HANDLE_SIZE) {
+        return variable;
+      }
+    }
+    return null;
   }
 
   /**
@@ -902,7 +995,7 @@ export class Overlay {
       } else {
         this.drawValueMonitor(
           view,
-          variable.name,
+          this.monitorName(variable),
           Overlay.formatValue(variable.value),
           at.x,
           at.y,

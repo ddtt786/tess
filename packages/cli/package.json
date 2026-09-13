@@ -1,6 +1,6 @@
 {
   "name": "tess",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Tess 언어(엔트리 블록 코드로 변환되는 텍스트 언어) — 라이브러리와 CLI",
   "license": "MIT",
   "type": "module",

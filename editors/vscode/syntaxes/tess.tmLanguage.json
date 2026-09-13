@@ -143,7 +143,7 @@
         },
         {
           "name": "keyword.other.command.tess",
-          "match": "(?<![A-Za-z0-9_])(?:description|columns|effects|forward|prepend|visible|append|bounce|bubble|center|clones|column|insert|remove|clear|clone|chart|order|pitch|reset|sound|speed|stamp|steer|think|timer|title|voice|write|call|draw|fill|flip|hide|jump|kill|lock|look|move|name|play|read|save|send|show|turn|add|ask|bgm|del|fps|row|say|tts|go)(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_])(?:description|columns|effects|forward|prepend|visible|append|bounce|bubble|center|clones|column|insert|remove|series|clear|clone|chart|order|pitch|reset|sound|speed|stamp|steer|think|timer|title|voice|write|call|draw|fill|flip|hide|jump|kill|lock|look|move|name|play|read|save|send|show|turn|add|ask|bgm|del|fps|row|say|tts|go)(?![A-Za-z0-9_])"
         }
       ]
     },

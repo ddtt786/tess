@@ -99,7 +99,7 @@ export function decompileProject(
   const lines: string[] = [];
   // 선언 묶음과 그 뒤의 코드 사이는 두 줄을 띄운다. 선언은 파일 머리말에 가까워서,
   // 한 줄만 띄우면 바로 아래의 project/scene 블록과 한 덩어리처럼 보인다.
-  for (const varInfo of ctx.globalVars) lines.push(...declarationLine(varInfo));
+  for (const varInfo of ctx.globalVars) lines.push(...declarationLine(varInfo, 0, ctx.positions));
   if (ctx.globalVars.length) lines.push('', '');
 
   for (const [, info] of ctx.tablesById) lines.push(...tableLines(info), '');
@@ -327,6 +327,7 @@ function buildContext(
     notices: new Set(),
     // Write `size W H` on every costume, not just the ones the compiler cannot measure.
     allSizes: options.sizes === true,
+    positions: options.positions === true,
     // Keep SVG costumes as SVG instead of taking the PNG entry captured on save.
     keepSvg: options.keepSvg === true,
     varsById: new Map(),
@@ -629,6 +630,25 @@ function buildContext(
   return ctx;
 }
 
+/**
+ * `chart line "제목" x 1 series 2, 3` — 표에 딸린 차트 한 벌.
+ *
+ * 엔트리는 열을 0부터 세고 안 쓰는 자리를 -1 로 두므로, Tess 의 1부터 세는 번호로
+ * 올려 적고 안 쓰는 자리는 아예 적지 않는다.
+ */
+function chartLine(chart: RawEntity): string {
+  const column = (value: unknown) => Number(value ?? -1) + 1;
+  const parts = [`chart ${String(chart.type ?? 'bar')}`];
+  if (chart.title) parts.push(tessString(chart.title));
+  if (column(chart.xIndex) > 0) parts.push(`x ${column(chart.xIndex)}`);
+  if (column(chart.yIndex) > 0) parts.push(`y ${column(chart.yIndex)}`);
+  const series = (chart.categoryIndexes ?? [])
+    .map((index: unknown) => column(index))
+    .filter((index: number) => index > 0);
+  if (series.length) parts.push(`series ${series.join(', ')}`);
+  return `  ${parts.join(' ')}`;
+}
+
 /** `table 이름: columns ... row ... end` */
 function tableLines(info: TableInfo): string[] {
   const table = info.source;
@@ -638,11 +658,14 @@ function tableLines(info: TableInfo): string[] {
   for (const row of tableRows(table)) {
     lines.push(`  row ${cells(row)}`);
   }
+  for (const chart of (table.chart ?? []) as RawEntity[]) {
+    lines.push(chartLine(chart));
+  }
   lines.push('end');
   return lines;
 }
 
-function declarationLine(info: VarInfo, indentLevel = 0): string[] {
+function declarationLine(info: VarInfo, indentLevel = 0, positions = false): string[] {
   const pad = '  '.repeat(indentLevel);
   const source = info.source;
   let scope = '';
@@ -651,15 +674,19 @@ function declarationLine(info: VarInfo, indentLevel = 0): string[] {
   const named = displayNamePart(info.identifier, source.name);
   // 엔트리에서 '보이기'로 체크해 둔 변수·리스트는 무대에 상자를 띄운 채로 시작한다.
   const shown = source.visible ? ' visible' : '';
+  // 상자가 놓인 자리. 적어 두지 않으면 실행기가 엔트리처럼 알아서 자리를 잡는다.
+  const at = positions
+    ? ` at ${tessNumber(Number(source.x) || 0)} ${tessNumber(Number(source.y) || 0)}`
+    : '';
   if (info.isList) {
     const items = (source.array ?? []).map((item: { data: unknown }) => tessLiteral(item.data));
-    return [`${pad}${scope}list ${info.identifier}${named} = [${items.join(', ')}]${shown}`];
+    return [`${pad}${scope}list ${info.identifier}${named} = [${items.join(', ')}]${shown}${at}`];
   }
   // A slide variable keeps the two ends its slider runs between.
   const range = source.variableType === 'slide'
     ? ` from ${tessNumber(Number(source.minValue) || 0)} to ${tessNumber(Number(source.maxValue) || 0)}`
     : '';
-  return [`${pad}${scope}var ${info.identifier}${named} = ${tessLiteral(source.value)}${range}${shown}`];
+  return [`${pad}${scope}var ${info.identifier}${named} = ${tessLiteral(source.value)}${range}${shown}${at}`];
 }
 
 // ---------------------------------------------------------------------------
@@ -757,7 +784,7 @@ function objectFragmentLines(object: RawEntity, ctx: DecompileContext, isText: b
 
   // 속성과 변수 선언 묶음, 그리고 그 뒤의 when 블록 사이도 main.tess 와 똑같이 두 줄 띄운다
   for (const varInfo of ctx.localVarsByObject.get(object.id) ?? []) {
-    lines.push(...declarationLine(varInfo, 0));
+    lines.push(...declarationLine(varInfo, 0, ctx.positions));
   }
   if (lines.length) lines.push('', '');
 

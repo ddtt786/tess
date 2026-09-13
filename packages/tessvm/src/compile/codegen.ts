@@ -597,10 +597,10 @@ export class Codegen {
         return line(`O.showTable(${this.tableRef(p[0])}, ${this.num(p[1])});`);
       case 'close_table_chart':
         return line('O.closeTable();');
-      case 'save_current_table':
       case 'open_table_chart':
-        // The save dialog is editor UI, and a chart window is a drawing of its
-        // own; neither is put up here.
+        return line(`O.showChart(${this.tableRef(p[0])}, ${this.num(p[1])});`);
+      case 'save_current_table':
+        // The save dialog is editor UI; the running work sees nothing.
         return line(comment(block.type));
 
       // ----- text to speech -----
@@ -839,6 +839,10 @@ export class Codegen {
         return { code: 'false', kind: 'bool', constant: false };
       case 'get_pictures':
       case 'get_sounds':
+        return { code: literal(text(p[0])), kind: 'str', constant: text(p[0]) };
+      // 표의 열 고르기. 엔트리는 이름을 보여 주고 1부터 세는 열 번호를 담아 둔다
+      // (`get_table_fields.func` 는 그 번호를 글자로 돌려준다).
+      case 'get_table_fields':
         return { code: literal(text(p[0])), kind: 'str', constant: text(p[0]) };
       // The colour picker block: `color` fills a brush slot, `text_color` a text
       // slot, and both hold the picked colour in their first param.

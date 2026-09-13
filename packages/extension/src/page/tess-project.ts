@@ -44,6 +44,9 @@ export function toTessProject(work: EntryWork): TessBuild {
     // The vector is kept as it is; the renderer picks between it and the raster
     // beside it, the same way it does for a work loaded from a file.
     keepSvg: true,
+    // 사이트에서 열던 그대로 놓고 싶으니 변수 상자 자리도 함께 옮긴다. 명령줄로
+    // 되돌릴 때는 읽는 사람을 위해 생략하고, 실행기가 알아서 자리를 잡는다.
+    positions: true,
   });
   const compiled = compileProject(decompiled.source, {
     path: `${work.id}.tess`,

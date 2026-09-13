@@ -85,8 +85,8 @@ export interface Renderer extends RendererLike, Partial<TextMeasurer> {
    */
   drawOrder?(sceneId: string): Entity[];
   syncDialog?(entity: Entity): void;
-  /** `테이블 창 열기` — the table to show, or null to close the window. */
-  showTable?(table: Table | null): void;
+  /** `테이블 창 열기` · `차트 창 열기` — null closes whichever window is open. */
+  showTable?(table: Table | null, chart?: number | null): void;
   stamp?(entity: Entity): void;
   eraseAll?(entity: Entity): void;
   penChanged?(entity: Entity): void;
@@ -943,10 +943,10 @@ export class Vm implements Project {
    * null. Entry's block does not hold the script while the window stands; a
    * window opened for a number of seconds closes itself when they are up.
    */
-  openTable(table: Table | null, seconds?: number): void {
+  openTable(table: Table | null, seconds?: number, chart: number | null = null): void {
     this.shownTable = table;
     this.tableCloseAt = table && seconds ? this.clock + seconds * 1000 : null;
-    this.renderer?.showTable?.(table);
+    this.renderer?.showTable?.(table, table ? chart : null);
   }
 
   /** Takes down the `묻고 기다리기` box and the answer it was waiting for. */

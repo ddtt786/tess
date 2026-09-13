@@ -210,6 +210,7 @@ export interface TableDeclNode extends Base {
   displayName: string | null;
   columns: Expr[];
   rows: Expr[][];
+  charts: TableChartNode[];
 }
 
 /**
@@ -218,6 +219,15 @@ export interface TableDeclNode extends Base {
 export type StorageScope = 'shared' | 'realtime';
 
 /** 선언에 `visible` 이 붙으면 그 변수·리스트는 무대에 보인 채로 시작한다. */
+/** `chart line "제목" x 1 series 2, 3` — 표에 딸린 차트 한 벌. */
+export interface TableChartNode {
+  kind: string;
+  title: string | null;
+  x: Expr | null;
+  y: Expr | null;
+  series: Expr[];
+}
+
 export interface VarDeclNode extends Base {
   type: 'VarDecl';
   name: string;
@@ -228,6 +238,8 @@ export interface VarDeclNode extends Base {
   range: { min: Expr; max: Expr } | null;
   /** `visible` — the box stands on the stage from the start. */
   shown: boolean;
+  /** `at X Y` — where the box stands; null leaves it to the runner. */
+  at: { x: Expr; y: Expr } | null;
 }
 
 export interface ListDeclNode extends Base {
@@ -238,6 +250,8 @@ export interface ListDeclNode extends Base {
   value: Expr;
   /** `visible` — the box stands on the stage from the start. */
   shown: boolean;
+  /** `at X Y` — where the box stands; null leaves it to the runner. */
+  at: { x: Expr; y: Expr } | null;
 }
 
 // ----------------------------------------------------------------------------

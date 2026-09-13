@@ -1,6 +1,6 @@
 {
   "name": "@tess/parser",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Tess 소스를 AST 로 읽고 의미를 검사한다",
   "license": "MIT",
   "type": "module",

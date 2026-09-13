@@ -176,6 +176,15 @@ export interface DecompileOptions {
    */
   keepSvg?: boolean;
   /**
+   * Writes where each variable and list box stands (`at X Y`).
+   *
+   * A work opened from the site is played as it was laid out, so the runner in
+   * the extension asks for these. A source someone will read and edit is
+   * tidier without them — entry lays an unplaced box out on its own — so the
+   * command line leaves them off.
+   */
+  positions?: boolean;
+  /**
    * Writes every object into the one source instead of a fragment file each.
    * A caller with nowhere to put files — the browser extension — asks for this;
    * `useobject` would otherwise name files that are not there.
@@ -202,6 +211,8 @@ export interface DecompileContext {
   /** Names entry settles when the block runs — nothing is lost from the source. */
   notices: Set<string>;
   allSizes: boolean;
+  /** `at X Y` 를 선언에 적을지 — `DecompileOptions.positions`. */
+  positions: boolean;
   keepSvg: boolean;
   varsById: Map<string, VarInfo>;
   globalVars: VarInfo[];

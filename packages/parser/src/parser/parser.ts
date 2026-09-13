@@ -151,6 +151,7 @@ export class TessParser extends CstParser {
   declare readonly tableDecl: Rule;
   declare readonly tableLine: Rule;
   declare readonly tableRow: Rule;
+  declare readonly tableChart: Rule;
   declare readonly textStatement: Rule;
   declare readonly topLevelItem: Rule;
   declare readonly ttsStatement: Rule;
@@ -210,7 +211,34 @@ export class TessParser extends CstParser {
       $.CONSUME(Colon);
       $.SUBRULE($.tableColumns, { LABEL: 'columns' });
       $.MANY(() => $.SUBRULE($.tableRow, { LABEL: 'rows' }));
+      $.MANY2(() => $.SUBRULE($.tableChart, { LABEL: 'charts' }));
       $.CONSUME(kw.end);
+    });
+
+    /**
+     * `chart line "제목" x 1 series 2, 3` — 엔트리의 차트 한 벌. 가로축(x)과
+     * 세로축(y)·계열(series)은 열 번호로 적고, 안 쓰는 자리는 비운다.
+     */
+    $.RULE('tableChart', () => {
+      $.CONSUME(kw.chart);
+      $.SUBRULE($.identifier, { LABEL: 'kind' });
+      $.OPTION(() => $.CONSUME(StringLiteral, { LABEL: 'title' }));
+      $.OPTION2(() => {
+        $.CONSUME(kw.x);
+        $.SUBRULE($.posExpr, { LABEL: 'x' });
+      });
+      $.OPTION3(() => {
+        $.CONSUME(kw.y);
+        $.SUBRULE2($.posExpr, { LABEL: 'y' });
+      });
+      $.OPTION4(() => {
+        $.CONSUME(kw.series);
+        $.SUBRULE3($.posExpr, { LABEL: 'series' });
+        $.MANY(() => {
+          $.CONSUME(Comma);
+          $.SUBRULE4($.posExpr, { LABEL: 'series' });
+        });
+      });
     });
 
     $.RULE('tableColumns', () => {
@@ -491,6 +519,13 @@ export class TessParser extends CstParser {
       });
       // 무대에 상자를 띄운 채로 시작하는 변수 — 엔트리의 '변수 보이기' 체크다.
       $.OPTION4(() => $.CONSUME(kw.visible, { LABEL: 'shown' }));
+      // 상자가 놓인 자리. 안 적으면 엔트리처럼 알아서 자리를 잡는다. `go x y` 와
+      // 같은 자리 표현이라, 앞의 값이 뒤의 값을 빼앗지 않도록 posExpr 을 쓴다.
+      $.OPTION5(() => {
+        $.CONSUME(kw.at);
+        $.SUBRULE($.posExpr, { LABEL: 'atX' });
+        $.SUBRULE2($.posExpr, { LABEL: 'atY' });
+      });
     });
 
     $.RULE('listDecl', () => {
@@ -501,6 +536,11 @@ export class TessParser extends CstParser {
       $.CONSUME(Assign);
       $.SUBRULE($.listLiteral, { LABEL: 'value' });
       $.OPTION3(() => $.CONSUME(kw.visible, { LABEL: 'shown' }));
+      $.OPTION4(() => {
+        $.CONSUME(kw.at);
+        $.SUBRULE($.posExpr, { LABEL: 'atX' });
+        $.SUBRULE2($.posExpr, { LABEL: 'atY' });
+      });
     });
 
     // ========================================================================

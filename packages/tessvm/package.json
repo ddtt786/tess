@@ -1,6 +1,6 @@
 {
   "name": "@tess/vm",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Tess 작품을 PixiJS 위에서 엔트리와 같게, 훨씬 빠르게 실행하는 런타임",
   "license": "MIT",
   "type": "module",

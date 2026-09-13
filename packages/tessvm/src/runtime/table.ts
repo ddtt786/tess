@@ -16,6 +16,32 @@ interface RawTable {
   fields?: unknown;
   data?: unknown;
   origin?: unknown;
+  chart?: unknown;
+}
+
+/**
+ * 표에 딸린 차트 한 벌. 엔트리가 저장하는 그대로 — 열 번호는 0부터 세고, 안 쓰는
+ * 자리는 -1 이다.
+ */
+export interface ChartSpec {
+  type: string;
+  title: string;
+  xIndex: number;
+  yIndex: number;
+  categoryIndexes: number[];
+}
+
+/** 저장된 차트 한 벌을 읽는다. */
+function chartOf(raw: unknown): ChartSpec {
+  const spec = (raw ?? {}) as Record<string, unknown>;
+  const indexes = Array.isArray(spec.categoryIndexes) ? spec.categoryIndexes : [];
+  return {
+    type: String(spec.type ?? 'bar'),
+    title: String(spec.title ?? ''),
+    xIndex: Number(spec.xIndex ?? -1),
+    yIndex: Number(spec.yIndex ?? -1),
+    categoryIndexes: indexes.map((index) => Number(index)).filter((index) => index >= 0),
+  };
 }
 
 /** 어느 모양으로 담겨 있든 칸 배열로. */
@@ -30,6 +56,10 @@ export class Table {
   fields: string[];
   /** Data rows only; row 0 in block coordinates is `fields`. */
   rows: Array<Array<string | number>>;
+  /** 표에 딸린 차트들 — `테이블 차트 창 열기` 가 번호로 고른다. */
+  charts: ChartSpec[] = [];
+  /** 담긴 것이 바뀔 때마다 오른다 — 열려 있는 창이 이것을 보고 다시 그린다. */
+  revision = 0;
 
   /**
    * 작품이 저장해 둔 표를 실행이 보는 모양으로 읽습니다.
@@ -41,12 +71,14 @@ export class Table {
   static from(raw: RawTable): Table {
     const origin = Array.isArray(raw.origin) ? (raw.origin as RawRow[]) : [];
     const data = Array.isArray(raw.data) ? (raw.data as RawRow[]) : [];
-    return new Table(
+    const table = new Table(
       String(raw.id ?? ''),
       String(raw.name ?? ''),
       cellsOf(raw.fields as RawRow).map((field) => String(field ?? '')),
       (origin.length ? origin : data).map((row) => cellsOf(row)),
     );
+    table.charts = (Array.isArray(raw.chart) ? raw.chart : []).map((spec) => chartOf(spec));
+    return table;
   }
 
   constructor(id: string, name: string, fields: string[], data: Array<Array<string | number>>) {
@@ -81,11 +113,13 @@ export class Table {
     const target = this.rowAt(row);
     if (target && col >= 1 && col <= target.length) {
       target[col - 1] = value;
+      this.revision += 1;
     }
   }
 
   appendRow(): void {
     this.rows.push(new Array<string>(this.fields.length).fill(''));
+    this.revision += 1;
   }
 
   appendCol(): void {
@@ -93,11 +127,13 @@ export class Table {
     for (const row of this.rows) {
       row.push('');
     }
+    this.revision += 1;
   }
 
   insertRow(index: number): void {
     const at = Math.max(0, Math.min(this.rows.length, index));
     this.rows.splice(at, 0, new Array<string>(this.fields.length).fill(''));
+    this.revision += 1;
   }
 
   insertCol(index: number): void {
@@ -106,11 +142,13 @@ export class Table {
     for (const row of this.rows) {
       row.splice(at, 0, '');
     }
+    this.revision += 1;
   }
 
   deleteRow(index: number): void {
     if (index >= 0 && index < this.rows.length) {
       this.rows.splice(index, 1);
+      this.revision += 1;
     }
   }
 
@@ -121,6 +159,7 @@ export class Table {
       for (const row of this.rows) {
         row.splice(at, 1);
       }
+      this.revision += 1;
     }
   }
 

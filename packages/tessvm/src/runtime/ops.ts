@@ -1137,6 +1137,11 @@ export function createOps(vm: Vm) {
       vm.openTable(vm.tables[index] ?? null, seconds);
     },
 
+    /** `테이블 차트 창 열기` — 엔트리는 차트 번호를 0부터 센다. */
+    showChart(index: number, chart: unknown): void {
+      vm.openTable(vm.tables[index] ?? null, undefined, Math.max(0, Math.floor(Number(chart) || 0)));
+    },
+
     closeTable(): void {
       vm.openTable(null);
     },

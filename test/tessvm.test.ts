@@ -1726,7 +1726,9 @@ function tableStage() {
     addEntity() {},
     removeEntity() {},
     flush() {},
-    showTable(table: { name: string } | null) { shown.push(table ? table.name : null); },
+    showTable(table: { name: string } | null, chart: number | null = null) {
+      shown.push(table ? `${table.name}${chart === null ? '' : `/차트${chart}`}` : null);
+    },
   };
 }
 
@@ -1811,4 +1813,119 @@ test('슬라이더 손잡이는 바탕과 쥠자리 두 색으로 그린다', ()
   assert.match(body, /fill\(\{ color: SLIDE_KNOB_COLOR \}\)/);
   assert.match(body, /for \(const gripX of SLIDE_GRIP_X\)/, '쥠자리 두 줄을 그린다');
   assert.match(body, /fill\(\{ color: SLIDE_GRIP_COLOR \}\)/);
+});
+
+/**
+ * `_adjustSingleViewBox` — 보통 변수 상자는 이름과 값이 차지하는 만큼입니다. 최소
+ * 너비(90)는 슬라이더가 달린 상자에만 있고, 그것을 모두에 걸면 값 오른쪽에 빈
+ * 자리가 남습니다. Overlay 는 화면 없이 만들 수 없으므로 소스에서 봅니다.
+ */
+test('변수 상자는 이름과 값이 차지하는 만큼만 넓다', () => {
+  const overlay = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/overlay.ts'),
+    'utf-8',
+  );
+  const plain = overlay.slice(overlay.indexOf('  private drawValueMonitor('));
+  const plainBody = plain.slice(0, plain.indexOf('\n  }'));
+  assert.match(plainBody, /roundRect\(0, -14, nameWidth \+ valueWidth \+ 35, 24, 4\)/);
+  assert.doesNotMatch(plainBody, /MONITOR_MIN_WIDTH/, '보통 상자에는 최소 너비가 없습니다');
+
+  const slide = overlay.slice(overlay.indexOf('  private drawSlideMonitor('));
+  assert.match(
+    slide.slice(0, slide.indexOf('\n  }')),
+    /Math\.max\(nameWidth \+ valueWidth \+ 35, MONITOR_MIN_WIDTH\)/,
+    '슬라이더 상자는 최소 너비를 지킵니다',
+  );
+});
+
+/** `updateView` — 오브젝트에 딸린 변수는 `오브젝트명:변수명` 으로 섭니다. */
+test('오브젝트 변수 상자는 오브젝트 이름을 앞에 붙인다', () => {
+  const overlay = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/overlay.ts'),
+    'utf-8',
+  );
+  const named = overlay.slice(overlay.indexOf('  private monitorName('));
+  const body = named.slice(0, named.indexOf('\n  }'));
+  assert.match(body, /owner \? `\$\{owner\}:\$\{variable\.name\}` : variable\.name/);
+  // 세 가지 상자가 모두 같은 이름을 쓴다 — 값·슬라이더·목록.
+  assert.equal(overlay.split('this.monitorName(variable)').length - 1, 3);
+});
+
+/** 엔트리의 목록 상자에는 오른쪽 아래에 크기를 바꾸는 손잡이가 있습니다. */
+test('목록 상자에는 크기 조절 손잡이가 있다', () => {
+  const overlay = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/overlay.ts'),
+    'utf-8',
+  );
+  assert.match(overlay, /const LIST_HANDLE_SIZE = 14 \* 0\.7;/, '엔트리 그림과 같은 크기');
+  assert.match(overlay, /listHandleAt\(x: number, y: number\): Variable \| null/);
+  assert.match(overlay, /export const LIST_MIN_SIZE = 100;/, 'setWidth·setHeight 의 하한');
+
+  const boot = fs.readFileSync(path.join(root, 'packages/tessvm/src/web/boot.ts'), 'utf-8');
+  assert.match(boot, /listHandleAt\(vm\.mouseX, -vm\.mouseY\)/, '손잡이를 누르면 잡는다');
+  assert.match(boot, /Math\.max\(LIST_MIN_SIZE, point\.x - resizing\.fromX\)/, '끌면 커진다');
+});
+
+/**
+ * `테이블 차트 창 열기` — 엔트리는 차트 번호를 0부터 세고, Tess 는 다른 번호들처럼
+ * 1부터 셉니다. 창은 표 창과 같은 자리에 열리고, 같은 자리에서 닫힙니다.
+ */
+test('차트 창은 고른 번호의 차트를 띄운다', () => {
+  const source = `table 판매:
+  columns "분기", "서울"
+  row "1분기", 120
+  chart bar "막대" x 1 series 2
+  chart pie "원" x 1 y 2
+end
+
+scene "s":
+  object "o":
+    when start do
+      show 판매 chart 2
+    end
+  end
+end`;
+  const result = compileProject(source, { path: 'test.tess' });
+  assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+  const view = tableStage();
+  const machine = new Vm({ renderer: view as never, audio: null });
+  machine.load(result.project as unknown as never);
+  machine.start();
+  machine.tick();
+  assert.deepEqual(view.shown.slice(-1), ['판매/차트1'], '두 번째 차트는 엔트리의 1번입니다');
+
+  const table = machine.tables[0]!;
+  assert.deepEqual(
+    table.charts.map((chart) => [chart.type, chart.xIndex, chart.yIndex, chart.categoryIndexes]),
+    [['bar', 0, -1, [1]], ['pie', 0, 1, []]],
+  );
+});
+
+/**
+ * 차트는 캔버스가 아니라 창으로 띄웁니다 — 엔트리도 모달(`DataTable.createChart`)로
+ * 올립니다. 그리는 것은 `test/tessvm-chart.test.ts` 가 직접 확인하므로, 여기서는 실행
+ * 페이지가 그 창에 차트를 넘기고 캔버스는 표만 맡는 자리를 지킵니다.
+ */
+test('차트 창은 캔버스가 아니라 HTML 로 띄운다', () => {
+  const overlay = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/overlay.ts'),
+    'utf-8',
+  );
+  assert.match(
+    overlay,
+    /this\.openTable = chart === null \? table : null;/,
+    '차트 번호가 붙은 창은 캔버스가 그리지 않습니다',
+  );
+  const boot = fs.readFileSync(path.join(root, 'packages/tessvm/src/web/boot.ts'), 'utf-8');
+  assert.match(boot, /mountChartWindow\(frame, \(\) => vm\.openTable\(null\)\)/, '창을 무대 옆에 올린다');
+  assert.match(boot, /chartWindow\.show\(table, chart\)/);
+  assert.match(boot, /chartWindow\.hide\(\)/);
+  // 창의 모양은 실행 페이지와 확장이 함께 가져다 씁니다.
+  for (const file of ['packages/tessvm/src/node/page.ts', 'packages/extension/src/page/player.ts']) {
+    assert.match(
+      fs.readFileSync(path.join(root, file), 'utf-8'),
+      /CHART_WINDOW_STYLE/,
+      file,
+    );
+  }
 });

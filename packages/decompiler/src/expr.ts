@@ -3,7 +3,7 @@
  * 알려지지 않은 블록은 자리표시자를 남기고 경고에 기록합니다.
  */
 import { KEY_CODES } from '@tess/core';
-import { tessNumber, tessString, ownsResource, isExactNumber } from './ident.ts';
+import { tessNumber, tessString, tessLiteral, ownsResource, isExactNumber } from './ident.ts';
 import { expansionBlock } from '@tess/core';
 import type { DecompileContext, RawBlock, ResourceInfo } from './types.ts';
 
@@ -314,6 +314,10 @@ export function exprOf(block: any, ctx: DecompileContext): string {
       return `${ctx.tableName(at(0))}[${exprOf(at(1), ctx)}, ${exprOf(at(2), ctx)}]`;
     case 'get_value_from_cell':
       return `${ctx.tableName(at(0))}[${exprOf(at(1), ctx)}]`;
+    // 열 고르기 드롭다운. 엔트리는 이름을 보여 주지만 담고 있는 것은 1부터 세는
+    // 열 번호이고, 표의 열 자리는 그 번호로 읽는다.
+    case 'get_table_fields':
+      return tessLiteral(at(0));
     case 'get_value_from_last_row':
       return `last_row(${ctx.tableName(at(0))}, ${exprOf(at(1), ctx)})`;
     case 'calc_values_from_table': {

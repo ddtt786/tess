@@ -50,7 +50,7 @@ export const KEYWORDS = [
   'name', 'next', 'none', 'not', 'object', 'or', 'order', 'other', 'pitch',
   'play', 'prepend', 'prev', 'project', 'read', 'realtime', 'remove', 'repeat',
   'reset', 'restart', 'return', 'rotation', 'row', 'save', 'say', 'scene', 'send',
-  'shared', 'signal', 'show',
+  'series', 'shared', 'signal', 'show',
   'size', 'skip', 'sound', 'speed', 'stage', 'stamp', 'start', 'steer', 'stop',
   'table', 'text', 'them', 'then', 'think', 'this', 'timer', 'title', 'to', 'transparent',
   'true', 'tts', 'turn', 'until', 'up', 'use', 'useobject', 'usetext', 'var',

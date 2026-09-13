@@ -380,12 +380,24 @@ export class TessAstVisitor extends BaseVisitor {
       displayName: ctx.displayName ? this.visit(ctx.displayName) : null,
       columns: this.visit(ctx.columns),
       rows: (ctx.rows ?? []).map((row: CstNode) => this.visit(row)),
+      charts: (ctx.charts ?? []).map((chart: CstNode) => this.visit(chart)),
       loc: nodeLoc(node),
     };
   }
 
   tableColumns(ctx: Ctx): Expr[] {
     return this.visit(ctx.cells);
+  }
+
+  tableChart(ctx: Ctx) {
+    const series = (ctx.series ?? []) as CstNode[];
+    return {
+      kind: this.visit(ctx.kind).name,
+      title: ctx.title ? JSON.parse(ctx.title[0].image) : null,
+      x: ctx.x ? this.visit(ctx.x) : null,
+      y: ctx.y ? this.visit(ctx.y) : null,
+      series: series.map((node) => this.visit(node)),
+    };
   }
 
   tableRow(ctx: Ctx): Expr[] {
@@ -409,6 +421,7 @@ export class TessAstVisitor extends BaseVisitor {
       value: this.visit(ctx.value),
       range: ctx.min ? { min: this.visit(ctx.min), max: this.visit(ctx.max) } : null,
       shown: Boolean(ctx.shown),
+      at: ctx.atX ? { x: this.visit(ctx.atX), y: this.visit(ctx.atY) } : null,
       loc: nodeLoc(node),
     };
   }
@@ -421,6 +434,7 @@ export class TessAstVisitor extends BaseVisitor {
       scope: ctx.scope ? this.visit(ctx.scope) : null,
       value: this.visit(ctx.value),
       shown: Boolean(ctx.shown),
+      at: ctx.atX ? { x: this.visit(ctx.atX), y: this.visit(ctx.atY) } : null,
       loc: nodeLoc(node),
     };
   }

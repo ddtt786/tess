@@ -9,6 +9,7 @@
  */
 import { boot, type TessVmHandle } from "../../../tessvm/src/web/boot.ts";
 import { ASK_FIELD_STYLE } from "../../../tessvm/src/web/ask-style.ts";
+import { CHART_WINDOW_STYLE } from "../../../tessvm/src/web/chart-view.ts";
 import { fetchWork, thumbUrl } from "./entry-project.ts";
 import { CloudClient } from "./cloud.ts";
 
@@ -29,7 +30,7 @@ const ICONS = {
     'M6 13.2V10H2.8M10 13.2V10h3.2"/></svg>',
 };
 
-const ASK_STYLE_ID = "tessvm-ask-style";
+const STAGE_STYLE_ID = "tessvm-stage-style";
 
 /**
  * Lets the browser paint before the next thing takes the thread.
@@ -59,14 +60,14 @@ export interface MountedPlayer {
   setShowNotice(show: boolean): void;
 }
 
-/** The answer field is tessvm's own, so its look comes with it. */
-function ensureAskStyle(): void {
-  if (document.getElementById(ASK_STYLE_ID)) {
+/** 대답 입력칸과 차트 창은 tessvm 이 얹는 것이므로 그 모양도 함께 옵니다. */
+function ensureStageStyle(): void {
+  if (document.getElementById(STAGE_STYLE_ID)) {
     return;
   }
   const style = document.createElement("style");
-  style.id = ASK_STYLE_ID;
-  style.textContent = ASK_FIELD_STYLE;
+  style.id = STAGE_STYLE_ID;
+  style.textContent = `${ASK_FIELD_STYLE}\n${CHART_WINDOW_STYLE}`;
   (document.head ?? document.documentElement).appendChild(style);
 }
 
@@ -107,7 +108,7 @@ export function mountPlayer(
   maskUserId = true,
   showNotice = false,
 ): MountedPlayer {
-  ensureAskStyle();
+  ensureStageStyle();
   // Idle from the start so the cover shows while the work is still on its way.
   const root = el("div", "tessvm-player is-idle", host);
   // Keys belong to the work only while the player has focus; the page around it

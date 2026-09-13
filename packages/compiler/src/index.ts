@@ -21,7 +21,7 @@ import { validate } from '@tess/parser';
 import { isAutoParamName } from '@tess/core';
 import type {
   AssignNode, CostumeNode, EventNode, FunctionDeclNode, Expr, ListDeclNode, Node, ObjectNode,
-  ProgramNode, ReturnNode, SceneMember, SoundNode, Stmt, TableDeclNode,
+  ProgramNode, ReturnNode, SceneMember, SoundNode, Stmt, TableChartNode, TableDeclNode,
   TopLevelItem, VarDeclNode,
 } from '@tess/parser';
 import type {
@@ -222,6 +222,48 @@ function collectGlobals(program: ProgramNode, ctx: Context) {
 }
 
 /** table 선언 -> 엔트리 project.tables 항목 */
+/** 엔트리가 그릴 수 있는 차트 종류 — 막대·선·원·점. */
+const CHART_KINDS = new Set(['bar', 'line', 'pie', 'scatter']);
+
+/**
+ * `chart line "제목" x 1 series 2, 3` -> 엔트리의 차트 한 벌.
+ *
+ * 엔트리는 열을 0부터 세고 안 쓰는 자리는 -1 로 둡니다. Tess 는 다른 번호들처럼
+ * 1부터 세므로 여기서 한 칸씩 내려 적습니다.
+ */
+function chartSpec(
+  chart: TableChartNode,
+  node: TableDeclNode,
+  columns: number,
+  ctx: Context,
+): { type: string; title: string; xIndex: number; yIndex: number; categoryIndexes: number[] } | null {
+  if (!CHART_KINDS.has(chart.kind)) {
+    return ctx.error(node, `'${chart.kind}' 차트는 없습니다. ${[...CHART_KINDS].join(' · ')} 중에서 고르세요.`);
+  }
+  const column = (value: Expr | null): number | null => {
+    if (!value) return -1;
+    const constant = constantOf(value, ctx);
+    if (constant === null) return null;
+    const index = Number(constant);
+    if (!Number.isInteger(index) || index < 1 || index > columns) {
+      ctx.error(node, `테이블 '${node.name}' 에는 ${index}번째 열이 없습니다. (열은 ${columns}개입니다)`);
+      return null;
+    }
+    return index - 1;
+  };
+
+  const xIndex = column(chart.x);
+  const yIndex = column(chart.y);
+  if (xIndex === null || yIndex === null) return null;
+  const categoryIndexes = [];
+  for (const value of chart.series) {
+    const index = column(value);
+    if (index === null) return null;
+    categoryIndexes.push(index);
+  }
+  return { type: chart.kind, title: chart.title ?? '', xIndex, yIndex, categoryIndexes };
+}
+
 function collectTable(node: TableDeclNode, ctx: Context): EntryTable | null {
   if (ctx.tableByName.has(node.name)) {
     return ctx.error(node, `'${node.name}' 테이블이 이미 있습니다.`);
@@ -243,13 +285,20 @@ function collectTable(node: TableDeclNode, ctx: Context): EntryTable | null {
     data.push(values);
   }
 
+  const charts = [];
+  for (const chart of node.charts ?? []) {
+    const built = chartSpec(chart, node, fields.length, ctx);
+    if (!built) return null;
+    charts.push(built);
+  }
+
   const entry = {
     id: ctx.newId(),
     name: node.displayName ?? node.name,
     object: null,
     fields,
     data,
-    chart: [],
+    chart: charts,
   };
   ctx.tables.push(entry);
   ctx.tableByName.set(node.name, entry);
@@ -276,8 +325,9 @@ function makeVariable(
     isRealTime: node.scope === 'realtime',
     cloudDate: false,
     object: objectId,
-    x: 0,
-    y: 0,
+    // `at X Y` — 적어 두지 않으면 0 으로 두고, 실행기가 엔트리처럼 자리를 잡는다.
+    x: node.at ? Number(constantOf(node.at.x, ctx) ?? 0) : 0,
+    y: node.at ? Number(constantOf(node.at.y, ctx) ?? 0) : 0,
   };
 
   if (node.type === 'ListDecl') {

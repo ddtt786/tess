@@ -115,14 +115,17 @@ ObjectFragment = ObjectMember*  // object/text 안에 use 로 끼워 넣을 때
 | `rotateMethod`            | `free \| vertical \| none`                                                       | 회전 방식                                                                |
 | `FunctionDecl`            | `function id "(" ListOf<FunctionParam, ","> ")" blockOpen Block end_`            | 함수 선언. 매개변수는 콤마로 나열                                        |
 | `FunctionParam`           | `identifier "?"?`                                                                | 매개변수 하나. 뒤의 `?` 는 "엔트리에서도 판단 칸" (SPEC-ADDENDUM.md 4.6) |
-| `VarDecl`                 | `storageScope? var id DisplayName? "=" ~"=" Expr SlideRange?`                    | 변수 선언(대입 연산자 `==`와 헷갈리지 않게 `~"="`로 막음)                |
+| `VarDecl`                 | `storageScope? var id DisplayName? "=" ~"=" Expr SlideRange? visible? MonitorPlace?` | 변수 선언(대입 연산자 `==`와 헷갈리지 않게 `~"="`로 막음)           |
 | `SlideRange`              | `from Expr to Expr`                                                              | 엔트리의 슬라이드 변수(`variableType: "slide"`). 두 끝은 숫자 상수       |
-| `ListDecl`                | `storageScope? list id DisplayName? "=" ~"=" ListLiteral`                        | 리스트 선언. 초기값은 반드시 `[...]` 리터럴                              |
+| `ListDecl`                | `storageScope? list id DisplayName? "=" ~"=" ListLiteral visible? MonitorPlace?` | 리스트 선언. 초기값은 반드시 `[...]` 리터럴                          |
+| `visible`                 | `visible`                                                                        | 무대에 상자를 띄운 채로 시작한다(엔트리의 '변수 보이기' 체크)            |
+| `MonitorPlace`            | `at posExpr posExpr`                                                             | 상자를 놓을 자리. 없으면 엔트리가 자리를 잡는다. `go x y` 와 같은 자리 표현 |
 | `storageScope`            | `shared \| realtime`                                                             | 공유 변수(`isCloud`) · 실시간 변수(`isRealTime`). 전역 선언에만 붙는다   |
 | `DisplayName`             | `as stringLiteral`                                                               | 식별자로 못 적는 엔트리 이름을 그대로 남긴다 (SPEC-ADDENDUM.md 1.5)      |
-| `TableDecl`               | `table id DisplayName? ":" TableColumns TableRow* end_`                          | 테이블(엔트리 '자료 분석'). `project.tables` 항목이 된다                 |
+| `TableDecl`               | `table id DisplayName? ":" TableColumns TableRow* TableChart* end_`              | 테이블(엔트리 '자료 분석'). `project.tables` 항목이 된다                 |
 | `TableColumns`            | `columns NonemptyListOf<Expr, ",">`                                              | 열 이름 줄. 딱 한 번 온다                                                |
 | `TableRow`                | `row NonemptyListOf<Expr, ",">`                                                  | 자료 한 줄. 칸 수가 열 개수와 같아야 한다(컴파일러가 검사)               |
+| `TableChart`              | `chart id stringLiteral? (x posExpr)? (y posExpr)? (series NonemptyListOf<posExpr, ",">)?` | 표에 딸린 차트 한 벌(`bar`·`line`·`pie`·`scatter`). 열 번호는 1부터 세고, 안 적은 자리는 엔트리의 `-1` 이 된다 |
 
 `PropertyDecl`의 케이스는 **선언 순서가 그대로 우선순위**다 (PEG의 순서 있는
 선택은 처음 성공하는 대안을 채택하므로, 더 긴/더 구체적인 형태를 먼저 둬야
