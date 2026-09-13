@@ -1791,6 +1791,66 @@ test('번역 블록의 언어 자리는 문자열로 적어야 한다', () => {
   assert.match(result.errors[0].message, /목록에서 고르는 자리/);
 });
 
+/**
+ * 값 자리에 놓인 흐름 블록은 그 자리에서 실행됩니다 — 엔트리는 블록을 돌리기 전에
+ * 값부터 읽기 때문입니다(`executor.breakLoop` · `continueLoop`). `continue_repeat`
+ * 는 이미 `skip` 으로 옮기고 있었고, `stop_repeat` 도 같은 자리에서 `break` 입니다.
+ */
+test('값 자리에 놓인 반복 중단은 break 로 옮긴다', () => {
+  const project = minimalProject();
+  const object = (project.objects as RawEntity[])[0]!;
+  const trick = (type: string) => ({
+    type: 'wait_until_true',
+    params: [{ type: 'boolean_not', params: [null, { type, params: [null] }] }, null],
+    statements: [],
+  });
+  object.script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    {
+      type: 'repeat_inf',
+      params: [null],
+      statements: [[trick('stop_repeat')]],
+    },
+    {
+      type: 'repeat_inf',
+      params: [null],
+      statements: [[trick('continue_repeat')]],
+    },
+  ]]);
+
+  const back = decompileProject(project, [], { inline: true });
+  assert.deepEqual(back.warnings, [], back.warnings.join('\n'));
+  assert.match(back.source, /forever:\n\s+break\n\s+end/);
+  assert.match(back.source, /forever:\n\s+skip\n\s+end/);
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+});
+
+/**
+ * 미로 수업의 반복 블록이 일반 작품에 섞여 들어오기도 합니다. 엔트리는 안쪽을
+ * 끝내면 곧바로 다시 들어가므로 무한 반복과 같은 자리이고, 옮기지 못하면 그 안의
+ * 움직임이 통째로 사라집니다.
+ */
+test('미로 수업의 반복 블록도 무한 반복으로 옮긴다', () => {
+  const project = minimalProject();
+  const object = (project.objects as RawEntity[])[0]!;
+  object.script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    {
+      type: 'ai_repeat_until_reach',
+      params: [null],
+      statements: [[{ type: 'move_y', params: [{ type: 'number', params: ['10'] }, null], statements: [] }]],
+    },
+  ]]);
+
+  const back = decompileProject(project, [], { inline: true });
+  assert.deepEqual(back.warnings, [], back.warnings.join('\n'));
+  // 끝의 `skip` 이 "프레임을 넘기지 않고 다음 바퀴" — 엔트리가 이 블록을 도는 방식이다.
+  assert.match(back.source, /forever:\n\s+y \+= 10\n\s+skip\n\s+end/);
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+});
+
 test('테이블 선언은 엔트리 project.tables 항목이 된다', () => {
   const { project, errors } = compileProject(
     'table 점수표 as "점수 표":\n  columns "이름", "점수"\n  row "철수", 10\n  row "영희", 20\nend',

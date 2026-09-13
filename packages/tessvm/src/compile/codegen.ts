@@ -69,6 +69,15 @@ const HAT_FILTER: Record<string, number> = {
 
 const RESERVED_PARAM = /^(string|boolean)Param_/;
 
+/**
+ * How many times a loop that need not give up a frame may go round inside one
+ * before it gives way anyway. Entry has no such ceiling — a work that spins
+ * there hangs its page too — and neither should this one in any way a work can
+ * feel: the number is a last resort against a runner that cannot be stopped,
+ * set far above what a real work does in a frame rather than anywhere near it.
+ */
+const SPIN_LIMIT = 10_000_000;
+
 type Kind = 'num' | 'str' | 'bool' | 'any';
 
 interface Value {
@@ -136,26 +145,38 @@ function isBlock(value: unknown): value is RawBlock {
   return Boolean(value) && typeof value === 'object' && typeof (value as RawBlock).type === 'string';
 }
 
-/** `not(continue_repeat)` — the boolean slot `skip` compiles to. */
-function isSkipPattern(param: unknown): boolean {
-  if (!isBlock(param) || param.type !== 'boolean_not') return false;
-  return isBlock(param.params?.[1]) && (param.params[1] as RawBlock).type === 'continue_repeat';
+/**
+ * Flow blocks that work from a value slot, and what they do to the loop they
+ * sit in. Entry reads a block's slots before running the block itself, so one
+ * of these put in a slot runs there — `continue_repeat` restarts the loop
+ * (`continueLoop`) and `stop_repeat` ends it (`breakLoop`) — and the block that
+ * carried it is never reached.
+ */
+const LOOP_TRICKS: Record<string, 'continue' | 'break'> = {
+  continue_repeat: 'continue',
+  stop_repeat: 'break',
+};
+
+/** `not(continue_repeat)` · `not(stop_repeat)` — the boolean slot these ride in. */
+function slotTrick(param: unknown): 'continue' | 'break' | null {
+  if (!isBlock(param) || param.type !== 'boolean_not') return null;
+  const inner = param.params?.[1];
+  return isBlock(inner) ? pick(LOOP_TRICKS, inner.type) ?? null : null;
 }
 
 /**
- * The other way a work skips a frame: `continue_repeat` dropped into the value
- * slots of a block that is never meant to run — usually a hardware one. Entry
- * reads the slots before the block itself, so the loop restarts there and the
- * block is never reached. It runs as `skip`, and the block it rode in on is
- * neither run nor reported.
+ * The other carrier: a flow block dropped into the value slots of a block that
+ * is never meant to run — usually a hardware one. It runs as the flow block,
+ * and the block it rode in on is neither run nor reported.
  */
-function isSkipCarrier(block: RawBlock): boolean {
-  if ((block.statements?.length ?? 0) > 0) return false;
-  let carried = false;
+function carriedTrick(block: RawBlock): 'continue' | 'break' | null {
+  if ((block.statements?.length ?? 0) > 0) return null;
+  let carried: 'continue' | 'break' | null = null;
   for (const param of block.params ?? []) {
     if (!isBlock(param)) continue;
-    if (param.type !== 'continue_repeat') return false;
-    carried = true;
+    const trick = pick(LOOP_TRICKS, param.type);
+    if (!trick) return null;
+    carried = trick;
   }
   return carried;
 }
@@ -176,6 +197,11 @@ export class Codegen {
   private paramSlots: Map<string, number> | null = null;
   private funcLocals: Set<string> | null = null;
   private loopDepth = 0;
+  /**
+   * One entry per loop being compiled, set when something inside it can start
+   * the next round without giving up a frame. Such a loop carries a guard.
+   */
+  private readonly spinning: boolean[] = [];
   /** Set while compiling a function body; ending the executor jumps to this label. */
   private funcLabel: string | null = null;
 
@@ -389,6 +415,10 @@ export class Codegen {
         return this.repeatBasic(block, ind);
       case 'repeat_inf':
         return this.loop(`while (true) {`, block.statements?.[0] ?? [], ind);
+      // The maze lesson's loop. Entry does not mark its scope as a loop, so the
+      // body ending does not end the frame — it goes straight round again.
+      case 'ai_repeat_until_reach':
+        return this.loop(`while (true) {`, block.statements?.[0] ?? [], ind, true);
       case 'repeat_while_true':
         return this.repeatWhile(block, ind);
       case '_if':
@@ -405,13 +435,15 @@ export class Codegen {
           this.compileStack(block.statements?.[1] ?? [], `${ind}  `) +
           line('}')
         );
-      case 'wait_until_true':
-        // `not(continue_repeat)` in the slot unwinds to the loop and keeps
-        // running, so this form restarts the iteration without a frame.
-        if (isSkipPattern(p[0])) {
-          return this.loopDepth > 0 ? line('continue;') : line('yield 0;');
+      case 'wait_until_true': {
+        // A flow block in the slot unwinds to the loop and either keeps it
+        // running or ends it, both without spending a frame.
+        const trick = slotTrick(p[0]);
+        if (trick) {
+          return line(this.trickCode(trick));
         }
         return line(`while (!(${this.bool(p[0])})) { yield 0; }`);
+      }
       case 'stop_repeat':
         return this.loopDepth > 0 ? line('break;') : line(this.endExecutor());
       case 'continue_repeat':
@@ -586,24 +618,63 @@ export class Codegen {
         if (block.type.startsWith('func_')) {
           return this.callFunction(block, ind, false).code;
         }
-        if (isSkipCarrier(block)) {
-          return this.loopDepth > 0 ? line('continue;') : line('yield 0;');
+        {
+          const carried = carriedTrick(block);
+          if (carried) {
+            return line(this.trickCode(carried));
+          }
         }
         this.note(block.type);
         return line(comment(block.type));
     }
   }
 
+  /**
+   * What a flow block read from a value slot compiles to. Outside a loop entry
+   * unwinds the call stack instead: restarting gives the frame up, and ending
+   * takes the script with it.
+   */
+  private trickCode(trick: 'continue' | 'break'): string {
+    if (this.loopDepth > 0) {
+      if (trick === 'continue' && this.spinning.length) {
+        // This round ends without a frame, so the loop around it needs a guard.
+        this.spinning[this.spinning.length - 1] = true;
+      }
+      return trick === 'break' ? 'break;' : 'continue;';
+    }
+    return trick === 'break' ? this.endExecutor() : 'yield 0;';
+  }
+
+  /**
+   * The line that keeps a loop which need not yield from holding the frame. It
+   * sits at the top of the body so a `continue` cannot slip past it.
+   */
+  private spinGuard(depth: number, ind: string): string {
+    const spins = `s${depth}`;
+    const mark = `m${depth}`;
+    return (
+      `${ind}  if (${mark} !== O.frame()) { ${mark} = O.frame(); ${spins} = 0; }\n` +
+      `${ind}  else if ((${spins} += 1) >= ${SPIN_LIMIT}) { ${spins} = 0; yield 0; ${mark} = O.frame(); }\n`
+    );
+  }
+
   private repeatBasic(block: RawBlock, ind: string): string {
     const count = this.num(block.params[0]);
-    const varName = `i${this.loopDepth}`;
-    let out = `${ind}{ let ${varName} = Math.floor(${count});\n`;
+    const depth = this.loopDepth;
+    const varName = `i${depth}`;
     this.loopDepth += 1;
-    out += `${ind}while (${varName} !== 0 && !(${varName} < 0)) { ${varName}--;\n`;
-    out += this.compileStack(block.statements?.[0] ?? [], `${ind}  `);
-    out += `${ind}  yield 0;\n${ind}} }\n`;
+    this.spinning.push(false);
+    const inner = this.compileStack(block.statements?.[0] ?? [], `${ind}  `);
+    const spins = this.spinning.pop() ?? false;
     this.loopDepth -= 1;
-    return out;
+    const head = spins ? `, s${depth} = 0, m${depth} = O.frame()` : '';
+    return (
+      `${ind}{ let ${varName} = Math.floor(${count})${head};\n` +
+      `${ind}while (${varName} !== 0 && !(${varName} < 0)) { ${varName}--;\n` +
+      (spins ? this.spinGuard(depth, ind) : '') +
+      inner +
+      `${ind}  yield 0;\n${ind}} }\n`
+    );
   }
 
   private repeatWhile(block: RawBlock, ind: string): string {
@@ -612,11 +683,26 @@ export class Codegen {
     return this.loop(`while (${condition}) {`, block.statements?.[0] ?? [], ind);
   }
 
-  private loop(header: string, body: RawBlock[], ind: string): string {
+  /**
+   * A loop and its body. `tight` is the maze lesson's loop, which entry steps
+   * straight back into: it spends no frame on a round, so the body's own waits
+   * are what pace it.
+   */
+  private loop(header: string, body: RawBlock[], ind: string, tight = false): string {
+    const depth = this.loopDepth;
     this.loopDepth += 1;
+    this.spinning.push(tight);
     const inner = this.compileStack(body, `${ind}  `);
+    const spins = this.spinning.pop() ?? false;
     this.loopDepth -= 1;
-    return `${ind}${header}\n${inner}${ind}  yield 0;\n${ind}}\n`;
+    const tail = tight ? '' : `${ind}  yield 0;\n`;
+    if (!spins) {
+      return `${ind}${header}\n${inner}${tail}${ind}}\n`;
+    }
+    return (
+      `${ind}{ let s${depth} = 0, m${depth} = O.frame();\n` +
+      `${ind}${header}\n${this.spinGuard(depth, ind)}${inner}${tail}${ind}} }\n`
+    );
   }
 
   private stopObject(target: string, ind: string): string {

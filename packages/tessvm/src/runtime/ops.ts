@@ -1269,6 +1269,11 @@ export function createOps(vm: Vm) {
       return vm.timerValue();
     },
 
+    /** Ticks since the run began. A script that has given up a frame sees a new one. */
+    frame(): number {
+      return vm.frame;
+    },
+
     // -----------------------------------------------------------------------
     //  Calculation
     // -----------------------------------------------------------------------

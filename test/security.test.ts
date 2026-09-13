@@ -172,6 +172,82 @@ test('함수 지역 변수의 이름이 글자가 아니어도 프로그램은 �
   }
 });
 
+/**
+ * 엔트리는 블록을 돌리기 전에 값 자리부터 읽으므로, 값 자리에 놓인 흐름 블록이 그
+ * 자리에서 실행되어 감싸는 반복을 다시 돌리거나(`continueLoop`) 끝냅니다
+ * (`breakLoop`). 어느 쪽이든 그것을 실은 블록은 실행되지 않습니다.
+ */
+test('값 자리에 놓인 흐름 블록은 그 자리에서 반복을 다시 돌리거나 끝낸다', () => {
+  const slot = (type: string) => ({
+    id: 'w', type: 'wait_until_true',
+    params: [{ id: 'n', type: 'boolean_not', params: [null, { id: 'f', type, params: [null] }] }, null],
+    statements: [],
+  });
+  const carrier = (type: string) => ({
+    id: 'h', type: 'some_hardware_block',
+    params: [{ id: 'f', type, params: [null] }],
+    statements: [],
+  });
+  const inLoop = (inner: unknown) => [
+    HAT,
+    { id: 'r', type: 'repeat_inf', params: [null], statements: [[inner]] },
+  ];
+
+  for (const make of [slot, carrier]) {
+    const ended = new Codegen(work(inLoop(make('stop_repeat'))) as never).compile().source;
+    assert.match(ended, /while \(true\) \{\n\s*break;/, '반복 중단은 break 다');
+    const again = new Codegen(work(inLoop(make('continue_repeat'))) as never).compile().source;
+    assert.match(again, /while \(true\) \{\n\s*\{ yield 0; continue; \}|continue;/, '이어 하기는 continue 다');
+    for (const source of [ended, again]) {
+      assert.doesNotThrow(() => new Function('R', source));
+    }
+  }
+
+  // 반복 밖이면 엔트리는 호출 스택을 풀어 그 스크립트를 끝낸다.
+  const loose = new Codegen(work([HAT, slot('stop_repeat')]) as never).compile().source;
+  assert.match(loose, /return;/);
+});
+
+/** 미로 수업의 반복 블록. 엔트리는 안쪽이 끝나면 곧바로 다시 들어간다. */
+test('미로 수업의 반복 블록은 무한 반복으로 돈다', () => {
+  const program = new Codegen(work([
+    HAT,
+    {
+      id: 'r', type: 'ai_repeat_until_reach', params: [null],
+      statements: [[{ id: 'm', type: 'move_y', params: [{ id: 'n', type: 'number', params: ['10'] }, null], statements: [] }]],
+    },
+  ]) as never).compile();
+  assert.deepEqual([...program.unknown.keys()], [], '모르는 블록이 아니다');
+  // 한 바퀴에 프레임을 넘기지 않는다 — 엔트리가 이 블록의 스코프를 반복으로 세우지
+  // 않기 때문이다. 대신 한 프레임 안에서만 도는 것을 막는 가드가 위에 선다.
+  const body = program.source.slice(program.source.indexOf('while (true) {'));
+  assert.match(body, /while \(true\) \{\n\s*if \(m0 !== O\.frame\(\)\)/);
+  assert.doesNotMatch(body.slice(0, body.indexOf('\n  }')), /O\.moveY\(e, 10\);\n\s*yield 0;/);
+  assert.doesNotThrow(() => new Function('R', program.source));
+});
+
+/**
+ * 프레임을 넘기지 않고 다음 바퀴로 가는 반복은 한 프레임을 영영 붙잡을 수 있습니다.
+ * 엔트리도 같은 자리에서 멈추지만, 멈춘 실행기는 끌 수도 없으므로 한 프레임에 도는
+ * 횟수를 세어 그만큼 돌면 한 번 비켜 줍니다.
+ */
+test('프레임을 안 넘기는 반복도 실행기를 붙잡지 못한다', async () => {
+  const { compileProject } = await import('@tess/compiler');
+  const { Vm } = await import('@tess/vm');
+  const result = compileProject(
+    'scene "s":\n  object "o":\n    when start do\n      forever:\n        skip\n      end\n    end\n  end\nend',
+    { path: 'spin.tess' },
+  );
+  assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+  const machine = new Vm({ renderer: null, audio: null });
+  machine.load(result.project as unknown as never);
+  machine.start();
+  for (let i = 0; i < 5; i += 1) {
+    machine.tick();
+  }
+  assert.equal(machine.frame, 5, '틱마다 돌아와야 합니다');
+});
+
 test('되돌린 소스에서 주석과 문자열은 한 줄을 벗어나지 못한다', () => {
   // 렉서가 줄의 끝으로 치는 네 글자 — 주석은 여기서 끊기고 문자열은 이것을 담지 못한다.
   for (const brk of ['\n', '\r', '\u2028', '\u2029']) {

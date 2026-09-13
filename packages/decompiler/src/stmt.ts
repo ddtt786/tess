@@ -130,30 +130,42 @@ function point(x: string, y: string): string {
 }
 
 /**
- * Recognises `wait_until_true(not(continue_repeat))` — the boolean slot that
- * restarts a loop without spending a frame, which `skip` compiles to.
+ * 값 자리에 놓인 흐름 블록과, 그것이 감싸는 반복에 하는 일입니다.
+ *
+ * 엔트리는 블록을 실행하기 전에 값 자리부터 읽으므로, 값 자리에 놓인 이 블록들이
+ * 그 자리에서 실행되어 반복을 다시 돌리거나(`continue_repeat`) 끝냅니다
+ * (`stop_repeat` -> `executor.breakLoop`). 바깥 블록은 아예 실행되지 않습니다.
  */
-function isSkipPattern(param: unknown): boolean {
+const LOOP_TRICK: Record<string, string> = {
+  continue_repeat: "skip",
+  stop_repeat: "break",
+};
+
+/**
+ * Recognises `wait_until_true(not(<흐름 블록>))` — the boolean slot that restarts
+ * or ends a loop without spending a frame.
+ */
+function slotTrick(param: unknown): string | null {
   const not = param as RawBlock | undefined;
-  if (not?.type !== "boolean_not") return false;
+  if (not?.type !== "boolean_not") return null;
   const inner = not.params?.[1] as RawBlock | undefined;
-  return inner?.type === "continue_repeat";
+  return LOOP_TRICK[inner?.type ?? ""] ?? null;
 }
 
 /**
- * Recognises the other way a work skips a frame: `continue_repeat` dropped into
- * the value slots of a block that is never meant to run — usually a hardware
- * one. Entry reads the slots before the block itself, so the loop restarts
- * there and the block is never reached. It is `skip` with a different carrier,
- * and it decompiles to `skip`.
+ * Recognises the other carrier: a flow block dropped into the value slots of a
+ * block that is never meant to run — usually a hardware one. Entry reads the
+ * slots before the block itself, so the loop restarts or ends there and the
+ * block is never reached.
  */
-export function isSkipCarrier(block: RawBlock | undefined): boolean {
-  if (!block || (block.statements?.length ?? 0) > 0) return false;
-  let carried = false;
+export function carriedTrick(block: RawBlock | undefined): string | null {
+  if (!block || (block.statements?.length ?? 0) > 0) return null;
+  let carried: string | null = null;
   for (const param of block.params ?? []) {
     if (param === null || param === undefined || typeof param !== "object") continue;
-    if ((param as RawBlock).type !== "continue_repeat") return false;
-    carried = true;
+    const trick = LOOP_TRICK[(param as RawBlock).type ?? ""];
+    if (!trick) return null;
+    carried = trick;
   }
   return carried;
 }
@@ -199,14 +211,24 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       return [`repeat ${e(0)}:`, ...loopBranch(block, 0, ctx), "end"];
     case "repeat_inf":
       return ["forever:", ...loopBranch(block, 0, ctx), "end"];
+    // 미로 수업의 반복 블록. 엔트리는 이 블록의 스코프를 반복으로 세워 두지
+    // 않으므로(`isLooped`), 안쪽이 끝나면 프레임을 넘기지 않고 곧바로 다시
+    // 들어간다. 끝에 붙인 `skip` 이 바로 그 "프레임 없이 다음 바퀴" 다.
+    case "ai_repeat_until_reach":
+      return ["forever:", ...loopBranch(block, 0, ctx), "  skip", "end"];
     case "repeat_while_true": {
       const kind = at(1) === "until" ? "until" : "while";
       return [`${kind} ${e(0)}:`, ...loopBranch(block, 0, ctx), "end"];
     }
     case "wait_second":
       return [`wait ${e(0)}`];
-    case "wait_until_true":
-      return isSkipPattern(at(0)) ? ["skip"] : [`wait ${e(0)}`];
+    case "wait_until_true": {
+      const trick = slotTrick(at(0));
+      if (!trick) return [`wait ${e(0)}`];
+      // 반복 밖에서 `break` 는 엔트리에서 그 스크립트를 끝낸다(`breakLoop`).
+      if (trick === "break" && ctx.loopDepth === 0) return ["stop"];
+      return [trick];
+    }
     case "stop_repeat":
       return ["break"];
     case "continue_repeat":
@@ -525,10 +547,11 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
     default: {
       if (block.type.startsWith("func_"))
         return functionCallStatement(block, ctx);
-      // A block carrying `continue_repeat` in its slots is a skip, whatever it
-      // says on the outside. Written as one inside a loop; outside one it never
-      // reaches the block either, so nothing is written. Both are quiet.
-      if (isSkipCarrier(block)) return ctx.loopDepth > 0 ? ["skip"] : [];
+      // A block carrying a flow block in its slots is that flow block, whatever
+      // it says on the outside. Written as one inside a loop; outside one it
+      // never reaches the block either, so nothing is written. Both are quiet.
+      const carried = carriedTrick(block);
+      if (carried) return ctx.loopDepth > 0 ? [carried] : [];
       return unsupported(ctx, block);
     }
   }

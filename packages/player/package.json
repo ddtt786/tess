@@ -1,6 +1,6 @@
 {
   "name": "@tess/player",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "컴파일한 작품을 브라우저에서 돌리는 실행 서버와 디버그 패널",
   "license": "MIT",
   "type": "module",
