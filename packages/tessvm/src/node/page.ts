@@ -8,6 +8,7 @@
 import { DEBUG_PANEL_STYLE, DEBUG_UI_PATH, ENTRY_FONT_STYLES } from '@tess/player';
 import { ASK_FIELD_STYLE } from '../web/ask-style.ts';
 import { CHART_WINDOW_STYLE } from '../web/chart-view.ts';
+import { EXTRAS_DIALOG_STYLE } from '../web/extras.ts';
 
 export interface PageOptions {
   name: string;
@@ -80,6 +81,7 @@ main {
 .tessvm-stage canvas { display: block; box-shadow: 0 8px 30px #0008; }
 ${ASK_FIELD_STYLE}
 ${CHART_WINDOW_STYLE}
+${EXTRAS_DIALOG_STYLE}
 .tessvm-stats {
   position: absolute; right: 0; bottom: -22px; padding: 0 4px; border-radius: 4px;
   color: #8b93a1; font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none;

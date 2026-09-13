@@ -10,6 +10,7 @@
 import { boot, type TessVmHandle } from "../../../tessvm/src/web/boot.ts";
 import { ASK_FIELD_STYLE } from "../../../tessvm/src/web/ask-style.ts";
 import { CHART_WINDOW_STYLE } from "../../../tessvm/src/web/chart-view.ts";
+import { EXTRAS_DIALOG_STYLE } from "../../../tessvm/src/web/extras.ts";
 import { fetchWork, thumbUrl } from "./entry-project.ts";
 import { CloudClient } from "./cloud.ts";
 
@@ -67,7 +68,7 @@ function ensureStageStyle(): void {
   }
   const style = document.createElement("style");
   style.id = STAGE_STYLE_ID;
-  style.textContent = `${ASK_FIELD_STYLE}\n${CHART_WINDOW_STYLE}`;
+  style.textContent = `${ASK_FIELD_STYLE}\n${CHART_WINDOW_STYLE}\n${EXTRAS_DIALOG_STYLE}`;
   (document.head ?? document.documentElement).appendChild(style);
 }
 
@@ -94,6 +95,94 @@ function iconButton(
   button.setAttribute("aria-label", label);
   button.innerHTML = icon;
   return button;
+}
+
+/** One line of the right-click menu. A `null` is a divider. */
+interface MenuItem {
+  label: string;
+  run(): void;
+  disabled?: boolean;
+}
+
+/**
+ * The right-click menu on the stage.
+ *
+ * Entry has no such thing, but the bar it copies is gone in full screen and was
+ * never there for the scenes, which only the debug panel could move — and the
+ * extension has no panel. The lines are built when the menu opens, so they say
+ * what the work can do right then.
+ */
+function mountMenu(
+  root: HTMLElement,
+  lines: () => Array<MenuItem | null>,
+): { close(): void; dispose(): void } {
+  const menu = el("div", "tessvm-menu", root);
+  menu.hidden = true;
+  menu.setAttribute("role", "menu");
+
+  const close = () => {
+    menu.hidden = true;
+  };
+
+  const open = (clientX: number, clientY: number) => {
+    menu.textContent = "";
+    for (const line of lines()) {
+      if (!line) {
+        menu.appendChild(document.createElement("hr"));
+        continue;
+      }
+      const item = el("button", "", menu);
+      item.type = "button";
+      item.textContent = line.label;
+      item.disabled = Boolean(line.disabled);
+      item.onclick = () => {
+        close();
+        line.run();
+      };
+    }
+    // Measured where it will stand, then pulled back inside the player.
+    const box = root.getBoundingClientRect();
+    menu.hidden = false;
+    menu.style.left = "0px";
+    menu.style.top = "0px";
+    const size = menu.getBoundingClientRect();
+    const left = Math.max(0, Math.min(clientX - box.left, box.width - size.width - 4));
+    const top = Math.max(0, Math.min(clientY - box.top, box.height - size.height - 4));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  };
+
+  const onContext = (event: Event) => {
+    event.preventDefault();
+    const pointer = event as MouseEvent;
+    open(pointer.clientX, pointer.clientY);
+  };
+  // Anywhere outside takes it down, including a press the page around us gets.
+  const onDown = (event: Event) => {
+    if (!menu.hidden && !menu.contains(event.target as Node)) {
+      close();
+    }
+  };
+  const onKey = (event: Event) => {
+    if ((event as KeyboardEvent).key === "Escape") {
+      close();
+    }
+  };
+  root.addEventListener("contextmenu", onContext);
+  document.addEventListener("pointerdown", onDown, true);
+  document.addEventListener("keydown", onKey, true);
+  window.addEventListener("blur", close);
+
+  return {
+    close,
+    dispose() {
+      root.removeEventListener("contextmenu", onContext);
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("blur", close);
+      menu.remove();
+    },
+  };
 }
 
 /**
@@ -156,6 +245,7 @@ export function mountPlayer(
   let cloudStore: CloudClient | null = null;
   let disposed = false;
   let onTick: (() => void) | null = null;
+  let menu: { close(): void; dispose(): void } | null = null;
 
   const showError = (text: string) => {
     errorBox.classList.remove("is-notice");
@@ -193,6 +283,7 @@ export function mountPlayer(
     }
     disposed = true;
     clearInterval(timer);
+    menu?.dispose();
     onTick = null;
     document.removeEventListener("fullscreenchange", onFullscreen);
     handle?.dispose();
@@ -432,6 +523,33 @@ export function mountPlayer(
       live.vm.boost = boostInput.checked;
     };
     boostInput.checked = live.vm.boost;
+
+    const sceneStep = (to: "prev" | "next") => {
+      live.vm.ops.startNeighborScene(to);
+      root.focus({ preventScroll: true });
+    };
+    const sceneAt = (offset: number) =>
+      live.vm.scenes[
+        live.vm.scenes.findIndex((scene) => scene.id === live.vm.currentSceneId) + offset
+      ];
+    menu = mountMenu(root, () => {
+      const state = live.vm.state;
+      const still = state === "stop";
+      return [
+        still || state === "pause"
+          ? { label: still ? "시작하기" : "이어서 하기", run: still ? start : live.start }
+          : { label: "일시정지", run: () => live.pause() },
+        { label: "정지", run: stop, disabled: still },
+        null,
+        { label: "이전 장면", run: () => sceneStep("prev"), disabled: still || !sceneAt(-1) },
+        { label: "다음 장면", run: () => sceneStep("next"), disabled: still || !sceneAt(1) },
+        null,
+        {
+          label: document.fullscreenElement === root ? "전체화면 끄기" : "전체화면",
+          run: () => fullButton.click(),
+        },
+      ];
+    });
 
     // The work can stop itself, so the bar follows the vm rather than clicks.
     onTick = showState;

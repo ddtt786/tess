@@ -35,6 +35,8 @@ export { CollisionSystem, entityBounds, wallRect } from './src/collision/detect.
 export { MaskStore, maskFromPixels, solidMask } from './src/collision/mask.ts';
 export type { AlphaMask, MaskLoader } from './src/collision/mask.ts';
 export { Table, columnIndex, cellToRowCol } from './src/runtime/table.ts';
+export { CURSORS, EXTRA_VARIABLES, Extras, SCROLL_MESSAGE } from './src/runtime/extras.ts';
+export type { ExtrasHost, ExtrasUse } from './src/runtime/extras.ts';
 export { loadProject, assetDirsFor } from './src/node/load.ts';
 export type { LoadedProject, LoadOptions } from './src/node/load.ts';
 export { serveVm, DEFAULT_PORT } from './src/node/server.ts';

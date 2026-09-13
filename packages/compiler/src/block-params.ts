@@ -174,6 +174,7 @@ export const BLOCK_PARAM_COUNTS: Record<string, number> = {
   stop_drawing: 1,
   stop_fill: 1,
   stop_object: 2,
+  stop_run: 1,
   stop_repeat: 1,
   stretch_scale_size: 3,
   substring: 7,

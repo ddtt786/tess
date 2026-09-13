@@ -600,6 +600,15 @@ export function createOps(vm: Vm) {
       vm.start();
     },
 
+    /**
+     * `작품 정지하기`. `Entry.engine.toggleStop` — the stop button, not
+     * `stop all`: every script ends and the work goes back to its start screen.
+     */
+    stopRun(): void {
+      vm.stop();
+      vm.reset();
+    },
+
     createClone(entity: Entity, targetId: string): void {
       if (targetId === 'self') {
         vm.addClone(entity.target, entity);

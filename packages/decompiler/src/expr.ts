@@ -136,7 +136,42 @@ function isParamBlock(type: string): boolean {
   return type.startsWith('stringParam_') || type.startsWith('booleanParam_');
 }
 
+/**
+ * 소리를 트는 문장 블록입니다. 값 자리에 놓이면 아래 `SOUND_PROBE` 규칙이 걸립니다.
+ */
+const SOUND_PLAY_BLOCKS = new Set([
+  'sound_something_with_block',
+  'sound_something_wait_with_block',
+  'sound_something_second_with_block',
+  'sound_something_second_wait_with_block',
+  'sound_from_to',
+  'sound_from_to_and_wait',
+]);
+
+/**
+ * 값 자리에 놓인 소리 블록은 1 로 읽습니다.
+ *
+ * 엔트리는 블록보다 값 자리를 먼저 읽으므로 이 자리의 소리 블록이 실제로 돌고, 소리가
+ * 아직 풀리지 않았으면 조용히 지나가고 다 풀렸으면 `AudioBufferSourceNode.start` 가
+ * 던져서 **대입 자체가 건너뛰어집니다.** 대입 앞줄에서 1 을 넣어 두고 이 블록으로 그
+ * 1 이 살아남는지 보는 것이 널리 쓰이는 '소리 다 받았나' 확인법입니다
+ * (`__entryMergy_*` 가 붙은 합작 작품들).
+ *
+ * tessvm 은 소리를 전부 받은 뒤에야 작품을 시작하므로 그 답은 언제나 '다 받았다' 이고,
+ * 그래서 이 자리를 1 로 둡니다. 블록 자체는 옮기지 않습니다 — 값 자리에 놓인 문장은
+ * Tess 에 적을 자리가 없습니다.
+ */
+function soundProbe(ctx: DecompileContext, block: RawBlock | undefined): string | null {
+  if (!block?.type || !SOUND_PLAY_BLOCKS.has(block.type)) return null;
+  ctx.notices.add(
+    `값 자리의 '${block.type}' 은(는) 소리가 다 준비됐는지 보는 자리라 1 로 옮겼습니다.`,
+  );
+  return '1';
+}
+
 function placeholder(ctx: DecompileContext, block: RawBlock | undefined): string {
+  const probe = soundProbe(ctx, block);
+  if (probe !== null) return probe;
   const type = block?.type ?? '(빈 슬롯)';
   ctx.warnings.add(`값 블록 '${type}' 은(는) 아직 옮길 수 없습니다.`);
   return `"[decompile: ${type}]"`;

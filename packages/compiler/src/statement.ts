@@ -245,6 +245,10 @@ function compile(node: Stmt, ctx: Context): EntryBlock[] | null {
     case "Stop":
       return one(ctx.block("stop_object", [STOP_TARGETS[node.target], null]));
 
+    // `작품 정지하기`. `stop all` 은 스크립트만 끝내지만 이것은 실행기를 멈춥니다.
+    case "StopProject":
+      return one(ctx.block("stop_run", [null]));
+
     case "Return":
       return blocksOf([
         ctx.error(node, "return 은 함수의 마지막 문장에서만 쓸 수 있습니다."),

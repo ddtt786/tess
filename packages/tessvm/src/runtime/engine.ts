@@ -28,6 +28,7 @@ import {
 } from './model.ts';
 import { Table } from './table.ts';
 import { ThreadStop, createOps, type Ops } from './ops.ts';
+import { Extras } from './extras.ts';
 
 /**
  * Tick rate used when the project does not declare one. Entry drives its loop
@@ -201,6 +202,8 @@ export class Vm implements Project {
   renderer: Renderer | null;
   audio: AudioEngine | null;
   readonly cast = cast;
+  /** `$TESSVM` and the names beside it — what this runner has and entry has not. */
+  readonly extras = new Extras(this);
   readonly masks: MaskStore;
   readonly collision: CollisionSystem;
   ops!: Ops;
@@ -379,6 +382,7 @@ export class Vm implements Project {
     });
 
     this.compile(project);
+    this.extras.bind();
     this.snapshot();
     this.renderer?.attach?.(this.targets, this.scenes);
     for (const target of this.targets) {
@@ -644,6 +648,7 @@ export class Vm implements Project {
     this.lastTime = 0;
     this.accumulator = 0;
     this.clearTimer();
+    this.extras.started();
     this.fireEvent('start');
   }
 
@@ -666,6 +671,7 @@ export class Vm implements Project {
     this.audio?.resume?.();
     this.speech?.resume?.();
     this.clearQuestion();
+    this.extras.stopped();
   }
 
   pause(): void {
@@ -786,6 +792,7 @@ export class Vm implements Project {
         this.runThread(thread);
       }
     }
+    this.extras.frame();
     this.flushMessages();
   }
 

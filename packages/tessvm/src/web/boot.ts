@@ -13,6 +13,7 @@ import { mountChartWindow } from './chart-view.ts';
 import { LIST_MIN_SIZE } from '../render/overlay.ts';
 import { setStageSize, stage, type Entity } from '../runtime/model.ts';
 import { localVariableStore } from './store.ts';
+import { bindExtras } from './extras.ts';
 
 export interface BootOptions {
   projectUrl?: string;
@@ -322,7 +323,18 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   };
 
   const cleanups: Array<() => void> = [];
-  const syncCursor = bindInput(vm, renderer, view, options.keyTarget ?? window, cleanups);
+  // The clipboard, the cursor and the pointer the work can ask for; a work that
+  // names none of them binds listeners that never fire.
+  const extras = bindExtras(vm, renderer, frame, view, cleanups);
+  cleanups.push(() => extras.dispose());
+  const syncCursor = bindInput(
+    vm,
+    renderer,
+    view,
+    options.keyTarget ?? window,
+    cleanups,
+    extras.cursor,
+  );
 
   // The canvas is fitted into the box the host gives us, and that box holds the
   // canvas: writing a new canvas size from inside a ResizeObserver callback
@@ -491,6 +503,8 @@ function bindInput(
   view: HTMLElement,
   keyTarget: HTMLElement | Window,
   cleanups: Array<() => void>,
+  /** Cursor `$CURSOR` asked for; it comes before the runner's own. */
+  workCursor: () => string,
 ): () => void {
   const on = <T extends EventTarget>(target: T, type: string, handler: EventListener) => {
     target.addEventListener(type, handler);
@@ -544,7 +558,7 @@ function bindInput(
   });
   on(view, 'pointerleave', () => {
     hovering = false;
-    renderer.setCursor('');
+    renderer.setCursor(workCursor());
   });
 
   // Entry lets a list box be dragged around the stage. It reads pointers through
@@ -677,7 +691,21 @@ function bindInput(
   on(window, 'pointerup', up);
   on(window, 'pointercancel', up);
 
+  /** What `$CURSOR` last put on the canvas, so giving it back is noticed. */
+  let forced = '';
   return () => {
+    const asked = workCursor();
+    if (asked) {
+      forced = asked;
+      renderer.setCursor(asked);
+      return;
+    }
+    // The work stopped asking: the cursor goes back to the runner's own, even
+    // with the pointer away from the stage.
+    if (forced) {
+      forced = '';
+      renderer.setCursor('');
+    }
     if (!hovering) {
       return;
     }

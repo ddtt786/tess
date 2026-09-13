@@ -724,6 +724,7 @@ export class TessParser extends CstParser {
           { ALT: () => $.CONSUME(kw.fill, { LABEL: 'what' }) },
           { ALT: () => $.CONSUME(kw.bgm, { LABEL: 'what' }) },
           { ALT: () => $.CONSUME(kw.timer, { LABEL: 'what' }) },
+          { ALT: () => $.CONSUME(kw.project, { LABEL: 'what' }) },
           { ALT: () => $.CONSUME(kw.other, { LABEL: 'scope' }) },
           { ALT: () => $.CONSUME(kw.me, { LABEL: 'scope' }) },
           { ALT: () => $.CONSUME(kw.them, { LABEL: 'scope' }) },

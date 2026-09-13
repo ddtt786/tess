@@ -78,6 +78,23 @@ const RESERVED_PARAM = /^(string|boolean)Param_/;
  */
 const SPIN_LIMIT = 10_000_000;
 
+/**
+ * How deep function calls may nest before one stops running.
+ *
+ * Entry nests its function calls on the javascript stack, so a work that
+ * recurses without end ends in a stack overflow there as well. Entry catches
+ * that inside the function call: the chain unwinds, every call counts as done,
+ * and the caller carries straight on with the next block. Works built by the
+ * merge tool rely on it — `__entryMergy_throwCallStackError` calls itself for
+ * no other reason.
+ *
+ * A thrown stack overflow cannot be answered the same way here: the generators
+ * it passes through are finished by the throw, so the thread has nothing left
+ * to carry on with. The wall is drawn at a fixed depth instead, which also
+ * keeps the behaviour off the engine's own stack size.
+ */
+const CALL_DEPTH_LIMIT = 1000;
+
 type Kind = 'num' | 'str' | 'bool' | 'any';
 
 interface Value {
@@ -291,12 +308,19 @@ export class Codegen {
     const body = this.compileStack(functionBody(stack!), '    ');
     this.funcLabel = previousLabel;
 
-    let source = `function* (e, th, P) {\n  const L = {${locals}};\n  fn: {\n${body}  }\n`;
+    // Past the depth limit the call runs nothing and gives no value, which is
+    // what the caller sees from entry once its stack has run out.
+    let source =
+      `function* (e, th, P) {\n` +
+      `  if (th.depth >= ${CALL_DEPTH_LIMIT}) return;\n` +
+      `  th.depth += 1;\n` +
+      `  try {\n` +
+      `  const L = {${locals}};\n  fn: {\n${body}  }\n`;
     if (define.type === 'function_create_value') {
       const result = this.value(define.params[3]);
       source += `  return ${result.code};\n`;
     }
-    source += '}';
+    source += '  } finally { th.depth -= 1; }\n}';
 
     this.paramSlots = null;
     this.funcLocals = null;
@@ -452,6 +476,8 @@ export class Codegen {
         return this.stopObject(text(p[0]), ind);
       case 'restart_project':
         return line('O.restart(); O.die();');
+      case 'stop_run':
+        return line('O.stopRun(); O.die();');
       case 'create_clone':
         return line(`O.createClone(e, ${this.field(p[0])});`);
       // Removing a clone ends every script of that clone, this one included.

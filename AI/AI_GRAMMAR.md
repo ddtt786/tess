@@ -254,6 +254,7 @@ StopStatement
   | stop fill        -- fill
   | stop bgm         -- bgm
   | stop timer       -- timer
+  | stop project     -- project   // 엔트리 `작품 정지하기`(stop_run)
   | stop other       -- other
   | stop me          -- me
   | stop them        -- them
@@ -659,6 +660,7 @@ say "숨었다"
 | `RepeatStatement` / `WhileStatement` / `UntilStatement` / `ForeverStatement`              | `Repeat` / `While` / `Until` / `Forever`                                 |
 | `WaitStatement`                                                                           | `Wait`                                                                   |
 | `FlowStatement_break` / `_continue` / `_skip` / `_restart`                                | `Break` / `Continue` / `Skip` / `Restart`                                |
+| `StopStatement_project`                                                                   | `StopProject`                                                            |
 | `ReturnStatement`                                                                         | `Return`                                                                 |
 | `StopStatement_*`                                                                         | `Stop` / `StopSound` / `StopDraw` / `StopFill` / `StopBgm` / `StopTimer` |
 | `StartStatement_*`                                                                        | `StartDraw` / `StartFill` / `StartTimer`                                 |

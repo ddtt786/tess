@@ -255,6 +255,8 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       return ["continue"];
     case "restart_project":
       return ["restart"];
+    case "stop_run":
+      return ["stop project"];
     case "stop_object": {
       const target = REVERSE_STOP_TARGET[at(0)];
       return [

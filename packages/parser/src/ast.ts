@@ -332,6 +332,7 @@ export type NullaryStatementType =
   | 'StopFill'
   | 'StopBgm'
   | 'StopTimer'
+  | 'StopProject'
   | 'StartDraw'
   | 'StartFill'
   | 'StartTimer'

@@ -640,6 +640,12 @@ export class Variable {
   height = 120;
   minValue = 0;
   maxValue = 100;
+  /**
+   * Called after every write. Only the runner's own names (`extras.ts`) set
+   * this, and they want each write, not each change: a work writing the same
+   * text to `$CLIPBOARD` twice means to copy it twice.
+   */
+  onWrite: (() => void) | null = null;
   /** Snapshot taken when the project starts, restored on stop. */
   private snapshotValue: string | number = 0;
   private snapshotArray: Array<{ data: string | number }> = [];
@@ -662,9 +668,11 @@ export class Variable {
     if (this.isSlide) {
       const n = num(value);
       this.value = clamp(n, this.minValue, this.maxValue);
+      this.onWrite?.();
       return;
     }
     this.value = value;
+    this.onWrite?.();
   }
 
   /** `Entry.Variable.isNumber` — decides whether `change_variable` adds or joins. */
@@ -721,6 +729,8 @@ export class Thread {
   running = false;
   /** Scratch space the compiled body keeps between frames. */
   state: Record<string, unknown> = {};
+  /** How many function calls are nested right now — the compiler's recursion guard. */
+  depth = 0;
 
   constructor(target: Target, entity: Entity, script: CompiledScript) {
     this.target = target;

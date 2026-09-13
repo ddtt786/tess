@@ -1981,3 +1981,248 @@ test('차트 창은 캔버스가 아니라 HTML 로 띄운다', () => {
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+//  함수 재귀 — 엔트리처럼 스택이 넘쳐도 작품은 멈추지 않는다
+// ---------------------------------------------------------------------------
+/**
+ * 엔트리는 함수 호출을 자바스크립트 스택에 쌓으므로 끝없는 재귀가 `RangeError` 로
+ * 끝납니다. 그 오류는 함수 호출 안에서 잡혀 사라지고, 부르던 자리는 다음 블록으로
+ * 그대로 이어집니다(`executor.js` 의 `isFuncExecutor` 갈래). 합치기 도구가 만든
+ * 작품이 `__entryMergy_throwCallStackError` 하나로 기대는 것이 이 동작입니다.
+ *
+ * playentry.org 의 `6aa53c18aac9c815d91518dd` 를 엔트리에서 직접 돌려 확인한 결과도
+ * 같습니다 — 오류가 나도 실행 상태는 `run` 이고 장면이 계속 넘어갑니다.
+ */
+test('끝없는 재귀는 스레드를 죽이지 않고 다음 블록으로 이어간다', () => {
+  const vm = runVm(
+    wrap(
+      `깊이 = 0
+      재귀()
+      끝났다 = 1`,
+      `var 깊이 = 0
+var 끝났다 = 0
+
+function 재귀():
+  깊이 = 깊이 + 1
+  재귀()
+end`,
+    ),
+  );
+  vm.tick();
+  assert.equal(vm.errors.length, 0, '스택이 넘쳐도 오류로 보고하지 않습니다');
+  assert.equal(valueOf(vm, '끝났다'), 1, '부르던 자리는 다음 블록으로 이어집니다');
+  assert.ok(valueOf(vm, '깊이') > 100, `한계까지는 실제로 들어갑니다 (${valueOf(vm, '깊이')})`);
+  const source = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/compile/codegen.ts'),
+    'utf-8',
+  );
+  assert.match(source, /const CALL_DEPTH_LIMIT = \d+;/, '한계는 이름 붙은 상수입니다');
+});
+
+test('재귀 한계는 호출이 끝나면 돌아온다', () => {
+  const vm = runVm(
+    wrap(
+      `한번()
+      한번()
+      한번()`,
+      `var 횟수 = 0
+
+function 한번():
+  횟수 = 횟수 + 1
+end`,
+    ),
+  );
+  vm.tick();
+  assert.equal(valueOf(vm, '횟수'), 3, '깊이는 함수가 끝날 때마다 되돌아옵니다');
+});
+
+// ---------------------------------------------------------------------------
+//  tessvm 확장 이름 — 엔트리에는 없고, 엔트리에서도 작품이 깨지지 않는 것
+// ---------------------------------------------------------------------------
+/** `$TESSVM` 등 확장 이름을 모두 가진 작품. */
+const EXTRA_WORK = `var TESSVM as "$TESSVM" = 0
+var CLIPBOARD as "$CLIPBOARD" = ""
+var CURSOR as "$CURSOR" = ""
+var LOCK as "$MOUSE_LOCK" = 0
+var DX as "$DELTA_X" = 0
+var DY as "$DELTA_Y" = 0
+var SX as "$SCROLL_X" = 0
+var SY as "$SCROLL_Y" = 0
+var 스크롤 = 0
+
+scene "s":
+  object "o":
+    when start do
+      wait 10
+    end
+
+    when signal "$SCROLL" do
+      스크롤 = 스크롤 + 1
+    end
+  end
+end`;
+
+/** 확장 이름이 붙은 작품과, 그 호출을 받아 적는 가짜 페이지. */
+function extrasVm(): { vm: Vm; calls: string[][] } {
+  const vm = runVm(EXTRA_WORK);
+  const calls: string[][] = [];
+  vm.extras.host = {
+    copy: (text) => calls.push(['copy', text]),
+    cursor: (value) => calls.push(['cursor', value]),
+    lock: (on) => calls.push(['lock', String(on)]),
+    release: () => calls.push(['release']),
+  };
+  return { vm, calls };
+}
+
+const extraValue = (vm: Vm, name: string) =>
+  vm.variables.find((variable) => variable.name === name)?.getValue();
+
+test('$TESSVM 은 작품이 한 블록도 돌기 전에 1 이다', () => {
+  const vm = runVm(EXTRA_WORK);
+  assert.equal(extraValue(vm, '$TESSVM'), 1);
+  vm.stop();
+  vm.reset();
+  assert.equal(extraValue(vm, '$TESSVM'), 1, '멈춰도 되돌아가지 않습니다');
+});
+
+test('$TESSVM 이 없는 작품은 아무것도 쓰지 않는다', () => {
+  const vm = runVm(wrap('wait 1'));
+  assert.deepEqual(vm.extras.uses, {
+    clipboard: false,
+    cursor: false,
+    mouseLock: false,
+    scroll: false,
+  });
+});
+
+test('$CLIPBOARD 에 쓰면 복사를 맡기고, 같은 값을 다시 써도 다시 맡긴다', () => {
+  const { vm, calls } = extrasVm();
+  const clipboard = vm.variables.find((variable) => variable.name === '$CLIPBOARD')!;
+  clipboard.setValue('가나다');
+  vm.tick();
+  clipboard.setValue('가나다');
+  vm.tick();
+  assert.deepEqual(calls, [['copy', '가나다'], ['copy', '가나다']]);
+});
+
+test('붙여넣은 값은 $CLIPBOARD 로 들어오고 다시 복사되지 않는다', () => {
+  const { vm, calls } = extrasVm();
+  vm.extras.pasted('붙여넣기');
+  vm.tick();
+  assert.equal(extraValue(vm, '$CLIPBOARD'), '붙여넣기');
+  assert.deepEqual(calls, [], '들어온 값을 되돌려 복사하지 않습니다');
+});
+
+test('$CURSOR 는 css 가 아는 이름만 넘긴다', () => {
+  const { vm, calls } = extrasVm();
+  const cursor = vm.variables.find((variable) => variable.name === '$CURSOR')!;
+  cursor.setValue('Pointer');
+  vm.tick();
+  cursor.setValue('url(http://x/y.png)');
+  vm.tick();
+  assert.deepEqual(calls, [['cursor', 'pointer'], ['cursor', '']]);
+});
+
+test('엔트리 이름 길이에 맞춘 $M_LOCK 도 같은 자리로 읽는다', () => {
+  // 엔트리의 변수 이름 칸은 열 글자까지라 `$MOUSE_LOCK` 은 들어가지 않습니다.
+  const vm = runVm(EXTRA_WORK.replace('"$MOUSE_LOCK"', '"$M_LOCK"'));
+  const calls: string[][] = [];
+  vm.extras.host = {
+    copy: () => undefined,
+    cursor: () => undefined,
+    lock: (on) => calls.push(['lock', String(on)]),
+    release: () => undefined,
+  };
+  assert.equal(vm.extras.uses.mouseLock, true);
+  vm.variables.find((variable) => variable.name === '$M_LOCK')!.setValue(1);
+  vm.tick();
+  assert.deepEqual(calls, [['lock', 'true']]);
+  vm.extras.lockChanged(false);
+  assert.equal(extraValue(vm, '$M_LOCK'), 0, '돌려주는 자리도 같은 이름입니다');
+});
+
+test('$MOUSE_LOCK 은 페이지에 맡기고, 놓친 것은 다시 0 이 된다', () => {
+  const { vm, calls } = extrasVm();
+  const lock = vm.variables.find((variable) => variable.name === '$MOUSE_LOCK')!;
+  lock.setValue(1);
+  vm.tick();
+  assert.deepEqual(calls, [['lock', 'true']]);
+  vm.extras.lockChanged(true);
+  vm.extras.moved(7, -3);
+  vm.tick();
+  assert.equal(extraValue(vm, '$DELTA_X'), 7);
+  assert.equal(extraValue(vm, '$DELTA_Y'), -3);
+  vm.tick();
+  assert.equal(extraValue(vm, '$DELTA_X'), 0, '움직이지 않은 프레임은 0 입니다');
+  // `Esc` 로 놓친 자리 — 작품이 쓴 것이 아니므로 페이지에 되묻지 않습니다.
+  vm.extras.lockChanged(false);
+  vm.tick();
+  assert.equal(extraValue(vm, '$MOUSE_LOCK'), 0);
+  assert.deepEqual(calls, [['lock', 'true']]);
+});
+
+test('스크롤은 한 프레임에 신호 하나와 그 프레임의 합을 준다', () => {
+  const { vm } = extrasVm();
+  vm.extras.scrolled(0, -1);
+  vm.extras.scrolled(0, -0.5);
+  vm.tick();
+  assert.equal(extraValue(vm, '$SCROLL_Y'), -1.5);
+  vm.tick();
+  assert.equal(valueOf(vm, '스크롤'), 1, '신호는 한 번만 올라갑니다');
+});
+
+test('작품이 멈추면 페이지가 빌려준 것을 돌려받는다', () => {
+  const { vm, calls } = extrasVm();
+  vm.stop();
+  assert.deepEqual(calls, [['release']]);
+});
+
+/**
+ * `작품 정지하기`(`stop_run`)는 `Entry.engine.toggleStop` 입니다 — 정지 단추와 같아서
+ * 스크립트만 끝내는 `stop all` 과 달리 실행기가 멈추고 작품이 처음 상태로 돌아갑니다.
+ */
+test('stop project 는 실행기를 멈추고 처음 상태로 되돌린다', () => {
+  const vm = runVm(
+    wrap(
+      `점수 = 7
+      stop project
+      점수 = 9`,
+      'var 점수 = 0',
+    ),
+  );
+  vm.tick();
+  assert.equal(vm.state, 'stop');
+  assert.equal(valueOf(vm, '점수'), 0, '멈추면 변수는 저장된 값으로 돌아갑니다');
+});
+
+test('확장 플레이어에는 우클릭 메뉴가 있다', () => {
+  const player = fs.readFileSync(
+    path.join(root, 'packages/extension/src/page/player.ts'),
+    'utf-8',
+  );
+  assert.match(player, /addEventListener\("contextmenu"/);
+  for (const label of ['정지', '일시정지', '이전 장면', '다음 장면']) {
+    assert.ok(player.includes(`"${label}"`), label);
+  }
+  const css = fs.readFileSync(path.join(root, 'packages/extension/src/player.css'), 'utf-8');
+  assert.match(css, /\.tessvm-menu button \{/, '메뉴 단추 모양은 페이지의 button 초기화를 이깁니다');
+});
+
+/**
+ * 허용 창은 무대 안에 그리는 것이 아니라 실행기가 보는 사람에게 말하는 자리이므로
+ * 무대 크기를 따라가지 않습니다 — 확장처럼 무대가 작으면 단추가 몇 픽셀로 납작해집니다.
+ */
+test('허용 창 크기는 무대 폭을 따라가지 않는다', () => {
+  const style = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/web/extras.ts'),
+    'utf-8',
+  );
+  const block = style.slice(
+    style.indexOf('EXTRAS_DIALOG_STYLE'),
+    style.indexOf('interface Request'),
+  );
+  assert.equal(block.includes('--tessvm-stage-width'), false, '무대 폭을 읽지 않습니다');
+  assert.match(block, /padding: 9px 16px;/, '단추는 고정 픽셀입니다');
+});

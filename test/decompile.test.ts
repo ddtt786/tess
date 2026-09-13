@@ -2800,3 +2800,66 @@ test('함수 정의 다음에 이어 붙은 본문도 되돌린다 (playentry �
   }];
   assert.match(decompileProject(nested, []).source, /^function 짓기\(\):\n {2}forward 10\nend$/m);
 });
+
+/**
+ * 값 자리에 놓인 소리 블록은 1 로 되돌립니다.
+ *
+ * 엔트리는 블록보다 값 자리를 먼저 읽으므로 그 자리의 소리 블록이 실제로 돌고, 소리가
+ * 다 풀렸으면 `AudioBufferSourceNode.start` 가 던져서 대입이 건너뛰어집니다 — 합작
+ * 작품들이 '소리 다 받았나' 를 이 방법으로 확인합니다. tessvm 은 소리를 전부 받은 뒤에야
+ * 작품을 시작하므로 답은 언제나 '다 받았다' 입니다.
+ */
+test('값 자리에 놓인 소리 블록은 1 로 되돌린다', () => {
+  const project = minimalProject(1);
+  const probe = {
+    type: 'set_variable',
+    params: [
+      'v1',
+      {
+        type: 'sound_something_second_with_block',
+        params: [
+          { type: 'get_sounds', params: ['s1'] },
+          { type: 'text', params: ['Infinity'] },
+          null,
+        ],
+      },
+      null,
+    ],
+    statements: [],
+  };
+  project.variables = [{ id: 'v1', name: '로딩됨', variableType: 'variable', value: 0 }] as never;
+  (project.objects as never[])[0] = {
+    ...(project.objects as Record<string, unknown>[])[0],
+    script: JSON.stringify([[{ type: 'when_run_button_click', params: [null], statements: [] }, probe]]),
+  } as never;
+
+  const result = decompileProject(project, [], { inline: true });
+  assert.match(result.source, /로딩됨 = 1/, '자리표시자가 아니라 1 이 들어갑니다');
+  assert.equal(
+    result.warnings.some((warning) => warning.includes('sound_something_second_with_block')),
+    false,
+    '옮기지 못한 블록으로 세지 않습니다',
+  );
+  // 되돌린 소스는 다시 컴파일됩니다.
+  assert.ok(compileProject(result.source, { path: 'main.tess' }).project);
+});
+
+/** `작품 정지하기` — `stop all` 과 달리 실행기를 멈춥니다. */
+test('stop_run 은 stop project 로 되돌아가고 다시 그 블록이 된다', () => {
+  const project = minimalProject(1);
+  (project.objects as never[])[0] = {
+    ...(project.objects as Record<string, unknown>[])[0],
+    script: JSON.stringify([
+      [{ type: 'when_run_button_click', params: [null], statements: [] },
+       { type: 'stop_run', params: [null], statements: [] }],
+    ]),
+  } as never;
+
+  const result = decompileProject(project, [], { inline: true });
+  assert.match(result.source, /stop project/);
+  assert.equal(result.warnings.length, 0, JSON.stringify(result.warnings));
+
+  const again = compileProject(result.source, { path: 'main.tess' });
+  assert.ok(again.project, again.errors[0]?.message);
+  assert.match(JSON.stringify(again.project), /stop_run/);
+});

@@ -535,6 +535,7 @@ export class TessAstVisitor extends BaseVisitor {
     if (ctx.what) {
       const kinds: Record<string, NullaryStatementType> = {
         draw: 'StopDraw', fill: 'StopFill', bgm: 'StopBgm', timer: 'StopTimer',
+        project: 'StopProject',
       };
       return { type: kinds[ctx.what[0].image], loc };
     }

@@ -310,3 +310,56 @@
   background: rgba(40, 30, 4, 0.82);
   color: #ffd479;
 }
+
+/* ------------------------------------------------ the right-click menu */
+/* Sizes here are plain pixels, not stage fractions: this is the runner talking
+   to the viewer, not a part of the work's picture. Each rule also outweighs the
+   host page's own button reset, which zeroes padding and line height. */
+.tessvm-menu {
+  position: absolute;
+  z-index: 6;
+  min-width: 168px;
+  padding: 6px;
+  box-sizing: border-box;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(16, 19, 26, 0.22);
+  font-family: 'Nanum Gothic', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #2c313d;
+}
+
+.tessvm-menu[hidden] {
+  display: none !important;
+}
+
+.tessvm-menu button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  background: none;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tessvm-menu button:hover:not(:disabled) {
+  background: #f2f4f6;
+}
+
+.tessvm-menu button:disabled {
+  color: #b6bac1;
+  cursor: default;
+}
+
+.tessvm-menu hr {
+  margin: 5px 6px;
+  border: 0;
+  border-top: 1px solid #e4e6eb;
+}
