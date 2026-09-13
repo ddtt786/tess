@@ -235,13 +235,24 @@ export interface DecompileContext {
   loopDepth: number;
   /** Objects go into the one source rather than a fragment file each. */
   inline: boolean;
-  funcLocalsById: Map<string, string>;
-  /** `stringParam_xxxx` -> the function that declares it and the name it got. */
-  funcParamsByBlockType: Map<string, { name: string; functionId: string }>;
+  /**
+   * Function id -> its own locals, by the local's id.
+   *
+   * Both of these are per function rather than one map for the work: a merged
+   * work copies a function whole and the copy keeps the original's local ids and
+   * parameter block types, so several functions claim the same key. Entry reads
+   * each of them out of the **running** function's own tables, so a work with
+   * twelve copies of one function works there and only a per-function map here
+   * gives the same answer.
+   */
+  funcLocalsById: Map<string, Map<string, string>>;
+  /** Function id -> its own parameters, by `stringParam_xxxx` block type. */
+  funcParamsByBlockType: Map<string, Map<string, string>>;
   /** The function whose body is being written, or null outside one. */
   functionId: string | null;
   varName(id: string): string;
-  funcLocalName(id: string): string;
+  /** Null when the id is not a local of the function whose body is being written. */
+  funcLocalName(id: string): string | null;
   funcParamName(blockType: string): string | null;
   pictureName(id: string): string;
   soundName(id: string): string;

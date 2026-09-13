@@ -169,6 +169,23 @@ function soundProbe(ctx: DecompileContext, block: RawBlock | undefined): string 
   return '1';
 }
 
+/**
+ * 함수 지역변수 이름. 지금 쓰고 있는 함수의 것이 아니면 null 입니다.
+ *
+ * 엔트리는 실행 중인 함수의 목록에서만 찾고 없으면 `0` 을 돌려줍니다
+ * (`Entry.Func.getValue`). 합쳐서 만든 작품에는 함수를 통째로 복사하면서 본체가 원본의
+ * 지역변수를 그대로 가리키는 자리가 남습니다.
+ */
+function funcLocal(ctx: DecompileContext, id: string): string | null {
+  const name = ctx.funcLocalName(id);
+  if (name === null) {
+    ctx.notices.add(
+      `'${id}' 은(는) 다른 함수의 지역변수입니다. 엔트리도 이 자리를 0 으로 읽으므로 그렇게 옮겼습니다.`,
+    );
+  }
+  return name;
+}
+
 function placeholder(ctx: DecompileContext, block: RawBlock | undefined): string {
   const probe = soundProbe(ctx, block);
   if (probe !== null) return probe;
@@ -212,7 +229,7 @@ export function exprOf(block: any, ctx: DecompileContext): string {
     case 'angle': return tessNumber(Number(at(0)) || 0);
 
     case 'get_variable': return ctx.varName(at(0));
-    case 'get_func_variable': return ctx.funcLocalName(at(0));
+    case 'get_func_variable': return funcLocal(ctx, at(0)) ?? '0';
 
     case 'coordinate_object': {
       const target = at(1);

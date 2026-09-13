@@ -2863,3 +2863,47 @@ test('stop_run 은 stop project 로 되돌아가고 다시 그 블록이 된다'
   assert.ok(again.project, again.errors[0]?.message);
   assert.match(JSON.stringify(again.project), /stop_run/);
 });
+
+/**
+ * 합치기 도구가 만든 작품은 함수를 통째로 복사하면서 **매개변수 블록 타입과 지역변수
+ * id 를 그대로 둡니다.** 엔트리는 그것을 돌고 있는 함수 자신의 `register.paramMap` 과
+ * `executor.localVariables` 에서 찾으므로 복사본이 열두 개여도 잘 돕니다. 되돌리기가
+ * 작품 전체에 하나씩만 들고 있으면 마지막 함수만 이기고 나머지는 매개변수가 빈 값이
+ * 됩니다 — redred.ent 에서 함수 400개 중 186개, 참조 9126군데가 그랬습니다.
+ */
+test('여러 함수가 같은 매개변수·지역변수 id 를 가져도 각자 자기 것으로 읽는다', () => {
+  const project = minimalProject() as unknown as Record<string, unknown>;
+  const header = (label: string) => ({
+    type: 'function_field_label',
+    params: [label, { type: 'function_field_string', params: [{ type: 'stringParam_same', params: [] }] }],
+  });
+  // Both carry the same parameter block type and the same local id.
+  const copy = (id: string, label: string) => ({
+    id,
+    localVariables: [{ id: 'same_local', name: 'n', value: 0 }],
+    content: JSON.stringify([[
+      {
+        type: 'function_create_value',
+        params: [header(label), null, null, { type: 'get_func_variable', params: ['same_local', null] }],
+        statements: [[
+          { type: 'set_func_variable', params: ['same_local', { type: 'stringParam_same', params: [] }, null], statements: [] },
+        ]],
+      },
+    ]]),
+  });
+  project.functions = [copy('aaaa', 'first'), copy('bbbb', 'second')];
+
+  const result = decompileProject(project as unknown as RawEntity, []);
+  for (const label of ['first', 'second']) {
+    const body = result.source.slice(result.source.indexOf(`function ${label}(`));
+    const upToEnd = body.slice(0, body.indexOf('\nend'));
+    assert.match(upToEnd, /n = a/, `${label}: 자기 매개변수를 읽습니다`);
+    assert.match(upToEnd, /return n/, `${label}: 자기 지역변수를 읽습니다`);
+  }
+  const compiled = compileProject(result.source, { path: 'main.tess' });
+  assert.equal(
+    compiled.errors.filter((error) => /선언되지 않은 이름/.test(error.message)).length,
+    0,
+    compiled.errors[0]?.message ?? '',
+  );
+});

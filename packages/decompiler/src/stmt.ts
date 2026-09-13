@@ -573,8 +573,18 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       return [`${ctx.varName(at(0))} = ${e(1)}`];
     case "change_variable":
       return [`${ctx.varName(at(0))} += ${e(1)}`];
-    case "set_func_variable":
-      return [`${ctx.funcLocalName(at(0))} = ${e(1)}`];
+    case "set_func_variable": {
+      const name = ctx.funcLocalName(at(0));
+      if (name === null) {
+        // Entry finds nothing to write to and throws inside the block, so the
+        // value never lands. Leaving the line out is that, without the throw.
+        ctx.notices.add(
+          `'${at(0)}' 은(는) 다른 함수의 지역변수라 엔트리에서도 값이 들어가지 않습니다. 그 문장은 옮기지 않았습니다.`,
+        );
+        return [];
+      }
+      return [`${name} = ${e(1)}`];
+    }
 
     default: {
       if (block.type.startsWith("func_"))

@@ -89,6 +89,27 @@ function svgSize(svg: Uint8Array | undefined): { width: number; height: number }
   return box ? { width: Number(box[1]), height: Number(box[2]) } : null;
 }
 
+/** The inner map for one function, made on first use. */
+function mapOf(
+  outer: Map<string, Map<string, string>>,
+  functionId: string,
+): Map<string, string> {
+  let inner = outer.get(functionId);
+  if (!inner) {
+    inner = new Map();
+    outer.set(functionId, inner);
+  }
+  return inner;
+}
+
+/** Whether any function declares this local id — a name no one does is a missing one. */
+function declaresLocal(ctx: DecompileContext, id: string): boolean {
+  for (const locals of ctx.funcLocalsById.values()) {
+    if (locals.has(id)) return true;
+  }
+  return false;
+}
+
 export function decompileProject(
   project: RawEntity,
   entries: TarEntry[],
@@ -239,7 +260,7 @@ function reviveDanglingVariables(project: RawEntity, ctx: DecompileContext, used
   const kinds: Array<[Set<string>, boolean]> = [[found.variables, false], [found.lists, true]];
   for (const [ids, isList] of kinds) {
     for (const id of ids) {
-      if (ctx.varsById.has(id) || ctx.funcLocalsById.has(id)) continue;
+      if (ctx.varsById.has(id) || declaresLocal(ctx, id)) continue;
       const identifier = safeIdentifier(`_missing_${isList ? 'list' : 'var'}_${id}`, usedNames, 'missing');
       const source = isList ? { name: identifier, array: [] } : { name: identifier, value: 0 };
       const info = { identifier, isList, objectId: null, source };
@@ -365,11 +386,16 @@ function buildContext(
       ctx.warnings.add(`변수/리스트 id '${id}' 를 찾지 못했습니다.`);
       return `_missing_var_${id}`;
     },
+    // Entry reads a function local out of `executor.localVariables`, a copy of
+    // the **running** function's own list — an id no line of this function
+    // declares is not in it, whatever other functions call it.
     funcLocalName(id: string) {
-      const info = ctx.funcLocalsById.get(id);
-      if (info) return info;
-      ctx.warnings.add(`함수 지역변수 id '${id}' 를 찾지 못했습니다.`);
-      return `_missing_local_${id}`;
+      const name = ctx.funcLocalsById.get(ctx.functionId ?? '')?.get(id);
+      if (name !== undefined) return name;
+      if (!declaresLocal(ctx, id)) {
+        ctx.warnings.add(`함수 지역변수 id '${id}' 를 찾지 못했습니다.`);
+      }
+      return null;
     },
     // 함수 본문에서 매개변수를 가리키는 블록 타입(stringParam_xxxx / booleanParam_xxxx)
     // -> 그 매개변수를 선언한 함수와 그 매개변수의 Tess 이름
@@ -380,11 +406,7 @@ function buildContext(
     // function finds nothing there. Scoping the lookup the same way keeps a
     // stray parameter from being written as a name that is not in scope.
     funcParamName(blockType: string) {
-      const param = ctx.funcParamsByBlockType.get(blockType);
-      if (!param || param.functionId !== ctx.functionId) {
-        return null;
-      }
-      return param.name;
+      return ctx.funcParamsByBlockType.get(ctx.functionId ?? '')?.get(blockType) ?? null;
     },
     pictureName(id: string) {
       const info = ctx.picturesById.get(id);
@@ -501,7 +523,7 @@ function buildContext(
       params.push(field.boolean ? `${name}?` : name);
       // 함수 본문에서 이 매개변수를 가리키는 블록(stringParam_xxxx)을 이름으로 되돌릴 때 쓴다
       if (field.blockType) {
-        ctx.funcParamsByBlockType.set(field.blockType, { name, functionId: String(fn.id) });
+        mapOf(ctx.funcParamsByBlockType, String(fn.id)).set(field.blockType, name);
       }
     });
 
@@ -513,7 +535,7 @@ function buildContext(
     const locals: FunctionLocal[] = [];
     for (const local of (fn.localVariables ?? []) as RawEntity[]) {
       const name = safeIdentifier(local.name, localUsed, 'local');
-      ctx.funcLocalsById.set(local.id, name);
+      mapOf(ctx.funcLocalsById, String(fn.id)).set(local.id, name);
       locals.push({ name, entryName: String(local.name ?? ''), value: local.value });
     }
 
