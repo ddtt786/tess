@@ -434,6 +434,26 @@ export class Codegen {
         return line(`O.stretchSize(e, ${this.raw(p[0])}, ${this.num(p[1])});`);
       case 'reset_scale_size':
         return line('e.resetSize();');
+
+      // ----- 10여 년 전 이름 -----
+      // 엔트리가 옛 작품을 위해 아직 들고 있는 블록들. 이름만 다르고 하는 일은
+      // 지금 블록과 같거나, 몇 가지는 값의 방향만 다릅니다.
+      case 'set_scale_percent':
+        return line(`O.setScalePercent(e, ${this.num(p[0])});`);
+      case 'change_scale_percent':
+        return line(`O.changeScalePercent(e, ${this.num(p[0])});`);
+      // `set_effect` 의 `opacity` 는 불투명도라 투명도와 방향이 반대입니다.
+      case 'set_effect':
+      case 'set_entity_effect':
+        return line(
+          text(p[0]) === 'opacity'
+            ? `O.setEffect(e, 'transparency', 100 - ${this.num(p[1])});`
+            : `O.setEffect(e, ${this.field(p[0])}, ${this.num(p[1])});`,
+        );
+      case 'set_effect_amount':
+        return line(`O.addEffect(e, ${this.field(p[0])}, ${this.num(p[1])});`);
+      case 'reset_project_timer':
+        return line("O.timerAction('RESET');");
       case 'flip_x':
         return line('e.setScaleY(-e.getScaleY());');
       case 'flip_y':
@@ -895,6 +915,18 @@ export class Codegen {
         return { code: `O.mouseCoordinate(${this.field(p[1])})`, kind: 'num' };
       case 'coordinate_object':
         return { code: `O.objectProperty(e, ${this.field(p[1])}, ${this.field(p[3])})`, kind: 'any' };
+      // ----- 10여 년 전 이름 -----
+      case 'get_x_coordinate':
+        return { code: 'e.getX()', kind: 'num' };
+      case 'get_y_coordinate':
+        return { code: 'e.getY()', kind: 'num' };
+      case 'calc_mod':
+        return { code: `(${this.num(p[0])} % ${this.num(p[2])})`, kind: 'num' };
+      case 'calc_share':
+        return { code: `Math.floor(${this.num(p[0])} / ${this.num(p[2])})`, kind: 'num' };
+      // 리스트 자리의 `첫번째`·`마지막`·`무작위`. 그 글자 그대로 번호 자리에서 풀립니다.
+      case 'options_for_list':
+        return { code: this.field(p[0]), kind: 'str' };
       case 'distance_something':
         return { code: `O.distanceTo(e, ${this.field(p[1])})`, kind: 'num' };
       case 'get_project_timer_value':

@@ -525,6 +525,23 @@ export function createOps(vm: Vm) {
       entity.applyEffects();
     },
 
+    /**
+     * `크기를 N% 로 정하기` — the size block of ten years ago. It reads the scale
+     * the work was saved with, so 100 is that size however big it is now.
+     */
+    setScalePercent(entity: Entity, percent: number): void {
+      const scale = percent / 100;
+      entity.setScaleX(scale * entity.scaleOriginX);
+      entity.setScaleY(scale * entity.scaleOriginY);
+    },
+
+    /** `크기를 N% 만큼 바꾸기` — multiplies both axes by `(N + 100)%`. */
+    changeScalePercent(entity: Entity, percent: number): void {
+      const scale = (percent + 100) / 100;
+      entity.setScaleX(entity.getScaleX() * scale);
+      entity.setScaleY(entity.getScaleY() * scale);
+    },
+
     stretchSize(entity: Entity, dimension: unknown, value: number): void {
       if (dimension === 'WIDTH') {
         entity.setXSize(entity.getSize() + value);

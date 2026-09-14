@@ -729,6 +729,8 @@ export class TessParser extends CstParser {
           { ALT: () => $.CONSUME(kw.project, { LABEL: 'what' }) },
           { ALT: () => $.CONSUME(kw.other, { LABEL: 'scope' }) },
           { ALT: () => $.CONSUME(kw.me, { LABEL: 'scope' }) },
+          // 이 오브젝트의 모든 코드 — 복제본까지. 엔트리의 옛 `thisObject` 자리다.
+          { ALT: () => $.CONSUME(kw.object, { LABEL: 'scope' }) },
           { ALT: () => $.CONSUME(kw.them, { LABEL: 'scope' }) },
           { ALT: () => $.CONSUME2(kw.all, { LABEL: 'scope' }) },
         ]);

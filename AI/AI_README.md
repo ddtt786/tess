@@ -1213,6 +1213,27 @@ BigNumber 를 쓰므로 `(abs(x) - floor(abs(x)))` 가 엔트리와 같은 값�
 `deltarune.ent` 에서 `[`·`\`·`]` 키로 시작하는 스레드 4개(장면 이동까지 들어 있는
 뭉치)가 그렇게 사라졌습니다.
 
+**10여 년 전 블록도 옮깁니다.** 엔트리는 옛 작품이 열리도록 예전 이름의 블록을 아직
+들고 있습니다. 이름을 모르면 그 블록만 빠지는 것이 아니라 **그것을 담은 스크립트가
+통째로 주석**이 되므로(`ladybug.ent` 에서 11가지가 그랬습니다), 지금 문법으로 옮깁니다.
+
+| 옛 이름                                 | Tess                            | 메모                                   |
+| --------------------------------------- | ------------------------------- | -------------------------------------- |
+| `get_x_coordinate` · `get_y_coordinate` | `x` · `y`                       | 자기 좌표                              |
+| `calc_mod` · `calc_share`               | `a % b` · `a // b`              | 나머지 · 몫                            |
+| `set_scale_percent`                     | `scale_x = N` · `scale_y = N`   | 원본 대비 %, 두 축을 같이 맞춘다       |
+| `change_scale_percent`                  | `size = size * (N + 100) / 100` | 엔트리의 `크기` 는 두 축에 비례한다     |
+| `set_effect` · `set_entity_effect`      | `effect_색 = N`                 | `opacity` 는 투명도와 반대라 `100 - N` |
+| `set_effect_amount`                     | `effect_색 += N`                | 더하는 쪽                              |
+| `reset_project_timer`                   | `reset timer`                   |                                        |
+| `options_for_list`                      | `리스트["FIRST"]`               | 엔트리도 그 글자를 번호 자리에서 푼다  |
+| `stop_object` 의 `thisObject`           | `stop object`                   | 복제본까지 이 오브젝트의 모든 코드     |
+
+`stop object` 는 이번에 생긴 Tess 낱말입니다 — 엔트리의 지금 드롭다운에는 없지만 옛
+작품에는 남아 있는 값이고, `stop me`(이 개체)와는 복제본을 멈추느냐가 다릅니다.
+tessvm 도 같은 블록들을 그대로 실행하므로(`compile/codegen.ts`), 되돌리지 않고
+`project.json` 을 바로 돌려도 같습니다.
+
 **엔트리 목록에 아예 없는 키도 살려 둡니다.** 엔트리의 드롭다운(`keyInputList`)에는
 없지만 브라우저는 보내 주는 키들이 있고, 손으로 고친 작품·다른 도구가 만든 작품이
 그런 코드를 들고 옵니다(45 `insert` 가 그랬습니다 — 스레드 머리가 통째로 사라졌습니다).

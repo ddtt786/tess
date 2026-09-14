@@ -32,7 +32,8 @@ import type {
 const STOP_TARGETS: Record<string, string> = {
   this: "thisThread", // 현재 스크립트만
   other: "otherThread", // 이 오브젝트의 다른 스크립트
-  me: "thisOnly", // 이 오브젝트의 모든 스크립트
+  me: "thisOnly", // 이 개체의 모든 스크립트
+  object: "thisObject", // 이 오브젝트의 모든 스크립트 — 복제본까지
   them: "other_objects", // 다른 모든 오브젝트
   all: "all", // 프로젝트 전체
 };

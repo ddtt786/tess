@@ -22,6 +22,8 @@ import type {
 
 const REVERSE_STOP_TARGET: Record<string, string> = {
   thisThread: "",
+  // 엔트리의 드롭다운에서는 빠진 옛 값 — 이 오브젝트의 모든 코드를 복제본까지 멈춘다.
+  thisObject: "object",
   otherThread: "other",
   thisOnly: "me",
   other_objects: "them",
@@ -405,6 +407,27 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       return [`${REVERSE_EFFECT[at(0)] ?? at(0)} += ${e(1)}`];
     case "erase_all_effects":
       return ["clear effects"];
+
+    // --- 10여 년 전 이름 ------------------------------------------------------
+    // 크기를 원래 크기의 N% 로 정한다. 두 축을 같은 비율로 맞추는 자리가 `scale_x`·
+    // `scale_y` 다 (둘 다 원본 대비 %).
+    case "set_scale_percent":
+      return [`scale_x = ${e(0)}`, `scale_y = ${e(0)}`];
+    // 지금 크기에 (N+100)% 를 곱한다. 엔트리의 `크기` 값은 두 축에 비례하므로 곱하기
+    // 하나로 같은 자리가 된다.
+    case "change_scale_percent":
+      return [`size = size * (${e(0)} + 100) / 100`];
+    // 옛 효과 블록들. `set_effect` 의 `opacity` 만 방향이 반대다(불투명도 ↔ 투명도).
+    case "set_effect":
+    case "set_entity_effect": {
+      const name = at(0) === "opacity" ? "transparency" : at(0);
+      const value = at(0) === "opacity" ? `100 - ${e(1)}` : e(1);
+      return [`${REVERSE_EFFECT[name] ?? name} = ${value}`];
+    }
+    case "set_effect_amount":
+      return [`${REVERSE_EFFECT[at(0)] ?? at(0)} += ${e(1)}`];
+    case "reset_project_timer":
+      return ["reset timer"];
     case "remove_dialog":
       return ["clear bubble"];
 

@@ -256,6 +256,15 @@ export function exprOf(block: any, ctx: DecompileContext): string {
       if (target === 'self' || target === null) return coordinate;
       return `${coordinate}(${tessString(targetName(ctx, target))})`;
     }
+    // --- 10여 년 전 이름 (엔트리가 옛 작품을 위해 아직 들고 있는 블록) ---------
+    case 'get_x_coordinate': return 'x';
+    case 'get_y_coordinate': return 'y';
+    case 'calc_mod': return `(${exprOf(at(0), ctx)} % ${exprOf(at(2), ctx)})`;
+    case 'calc_share': return `(${exprOf(at(0), ctx)} // ${exprOf(at(2), ctx)})`;
+    // 리스트 자리의 `첫번째`·`마지막`·`무작위`. 엔트리는 그 글자를 그대로 번호 자리에서
+    // 풀고(`Entry.getListRealIndex`), tessvm 도 같은 자리에서 같게 읽습니다.
+    case 'options_for_list': return tessString(String(at(0) ?? 'FIRST'));
+
     case 'coordinate_mouse': {
       const coordinate = REVERSE_OBJECT_COORD[at(1)];
       return coordinate ? `${coordinate}(${tessString('mouse')})` : placeholder(ctx, block);
