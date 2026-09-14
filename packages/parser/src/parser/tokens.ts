@@ -41,7 +41,7 @@ function unicodePattern(source: string) {
  * @example console.log(KEYWORDS.includes('if')); // true
  */
 export const KEYWORDS = [
-  'add', 'all', 'and', 'append', 'as', 'ask', 'at', 'back', 'bgm', 'bounce', 'break',
+  'add', 'all', 'and', 'append', 'as', 'ask', 'async', 'at', 'back', 'bgm', 'bounce', 'break',
   'bubble', 'call', 'center', 'clear', 'click', 'clone', 'cloned', 'clones',
   'chart', 'column', 'columns', 'continue', 'costume', 'default', 'del', 'description', 'do', 'draw', 'effects', 'else',
   'end', 'false', 'fill', 'flip', 'for', 'force', 'forever', 'forward', 'fps',
@@ -51,7 +51,7 @@ export const KEYWORDS = [
   'play', 'prepend', 'prev', 'project', 'read', 'realtime', 'remove', 'repeat',
   'reset', 'restart', 'return', 'rotation', 'row', 'save', 'say', 'scene', 'send',
   'series', 'shared', 'signal', 'show',
-  'size', 'skip', 'sound', 'speed', 'stage', 'stamp', 'start', 'steer', 'stop',
+  'size', 'skip', 'sound', 'speed', 'stage', 'stamp', 'start', 'steer', 'stop', 'store',
   'table', 'text', 'them', 'then', 'think', 'this', 'timer', 'title', 'to', 'transparent',
   'true', 'tts', 'turn', 'until', 'up', 'use', 'useobject', 'usetext', 'var',
   'vertical', 'visible', 'voice', 'wait', 'when', 'while', 'write', 'x', 'y',

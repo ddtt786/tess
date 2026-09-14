@@ -216,7 +216,7 @@ export interface TableDeclNode extends Base {
 /**
  * 일반 지역 스토리지가 아닌 경우, 변수나 리스트가 저장되는 스코프를 나타냅니다.
  */
-export type StorageScope = 'shared' | 'realtime';
+export type StorageScope = 'shared' | 'realtime' | 'store';
 
 /** 선언에 `visible` 이 붙으면 그 변수·리스트는 무대에 보인 채로 시작한다. */
 /** `chart line "제목" x 1 series 2, 3` — 표에 딸린 차트 한 벌. */
@@ -514,6 +514,13 @@ export interface TableSaveNode extends Base {
   table: Expr;
 }
 
+/** `save` · `save async` — writes every `store` variable and list out. */
+export interface StoreSaveNode extends Base {
+  type: 'StoreSave';
+  /** `async` — the work carries on without waiting for the write to land. */
+  async: boolean;
+}
+
 export interface AskNode extends Base {
   type: 'Ask';
   question: Expr;
@@ -567,6 +574,7 @@ export type Stmt =
   | TableAddLineNode
   | TableRemoveLineNode
   | TableSaveNode
+  | StoreSaveNode
   | AskNode
   | ExpressionStatementNode
   | AssignNode

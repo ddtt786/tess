@@ -39,7 +39,7 @@ const STATEMENT_LEADERS = idxSet(
   kw.move, kw.go, kw.turn, kw.steer, kw.look, kw.show, kw.hide, kw.next,
   kw.prev, kw.say, kw.think, kw.flip, kw.order, kw.write, kw.append,
   kw.prepend, kw.stamp, kw.play, kw.read, kw.tts, kw.in, kw.remove, kw.ask,
-  kw.var, kw.list, kw.save,
+  kw.var, kw.list, kw.save, kw.store,
 );
 
 // Statements that are complete on their own. The grammar commits to these as
@@ -494,11 +494,13 @@ export class TessParser extends CstParser {
       $.OPTION(() => $.CONSUME(Question, { LABEL: 'boolean' }));
     });
 
-    // `shared` marks an Entry cloud variable, `realtime` a real-time one.
+    // `shared` marks an Entry cloud variable, `realtime` a real-time one, and
+    // `store` one the save manager keeps between runs (`@이름`).
     $.RULE('storageScope', () => {
       $.OR([
         { ALT: () => $.CONSUME(kw.shared, { LABEL: 'shared' }) },
         { ALT: () => $.CONSUME(kw.realtime, { LABEL: 'realtime' }) },
+        { ALT: () => $.CONSUME(kw.store, { LABEL: 'store' }) },
       ]);
     });
 
@@ -1098,10 +1100,23 @@ export class TessParser extends CstParser {
       $.SUBRULE($.expr, { LABEL: 'question' });
     });
 
-    /** `save 표` — writes the table's current contents back over the saved one. */
+    /**
+     * `save` · `save async` writes the `store` names out; `save 표` writes the
+     * table's current contents back over the saved one. `async` is IdentLike,
+     * so a table could carry that name — the store form wins there.
+     */
     $.RULE('saveStatement', () => {
       $.CONSUME(kw.save);
-      $.SUBRULE($.identifier, { LABEL: 'table' });
+      $.OPTION({
+        GATE: () => $.sameLine() && $.isIdentLike($.LA(1)),
+        DEF: () => $.OR({
+          IGNORE_AMBIGUITIES: true,
+          DEF: [
+            { ALT: () => $.CONSUME(kw.async, { LABEL: 'async' }) },
+            { ALT: () => $.SUBRULE($.identifier, { LABEL: 'table' }) },
+          ],
+        }),
+      });
     });
 
     // ========================================================================
@@ -1359,13 +1374,16 @@ export class TessParser extends CstParser {
 
   /**
    * True where a `var`/`list` declaration begins, including one prefixed by a
-   * `shared`/`realtime` storage scope. Both prefixes stay usable as names, so
-   * they only lead when the declaration keyword follows.
+   * `shared`/`realtime`/`store` storage scope. Every prefix stays usable as a
+   * name, so they only lead when the declaration keyword follows.
    */
   leadsDecl(tokenType: TokenType) {
     if (this.leads(tokenType)) return true;
     const token = this.LA(1);
-    if (token.tokenTypeIdx !== idx(kw.shared) && token.tokenTypeIdx !== idx(kw.realtime)) return false;
+    const scope = [kw.shared, kw.realtime, kw.store].some(
+      (prefix) => token.tokenTypeIdx === idx(prefix),
+    );
+    if (!scope) return false;
     return this.LA(2).tokenTypeIdx === idx(tokenType);
   }
 
@@ -1378,7 +1396,7 @@ export class TessParser extends CstParser {
     const token = this.LA(1);
     if (token.tokenTypeIdx === idx(EOF)) return false;
     return [kw.project, kw.scene, kw.object, kw.text, kw.function, kw.useobject,
-      kw.usetext, kw.use, kw.var, kw.list, kw.shared, kw.realtime, kw.table]
+      kw.usetext, kw.use, kw.var, kw.list, kw.shared, kw.realtime, kw.store, kw.table]
       .some((type) => token.tokenTypeIdx === idx(type));
   }
 

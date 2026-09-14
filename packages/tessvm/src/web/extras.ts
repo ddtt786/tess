@@ -32,6 +32,8 @@ const NOTICE_TIME = 1800;
 const DETAIL_LIMIT = 20_000;
 /** Wheel units per notch, by `WheelEvent.deltaMode`: pixels, lines, pages. */
 const WHEEL_UNITS = [100, 3, 1];
+/** Controls of the page that read text of their own. */
+const FIELD_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
 
 export const EXTRAS_DIALOG_STYLE = `
 /* The ask field and the chart window are drawn to stage units because entry
@@ -142,9 +144,33 @@ export const EXTRAS_DIALOG_STYLE = `
 
 .tessvm-ask-permission .tessvm-permit-buttons {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 2px;
+}
+
+/* The box that keeps the answer, at the far end of the button row. */
+.tessvm-ask-permission .tessvm-permit-keep {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #5a616e;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tessvm-ask-permission .tessvm-permit-keep[hidden] { display: none !important; }
+
+.tessvm-ask-permission .tessvm-permit-keep input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #4f80ff;
+  cursor: pointer;
 }
 
 .tessvm-ask-permission button {
@@ -212,8 +238,10 @@ interface Request {
   /** Shown folded away, in a box of its own. Left out, there is no box. */
   detail?: string;
   confirm: string;
+  /** Label for the box that keeps the answer. Left out, there is no box. */
+  remember?: string;
   /** Run inside the click on the button, so the browser still counts it. */
-  answer(allowed: boolean): void;
+  answer(allowed: boolean, remember: boolean): void;
 }
 
 interface Dialog {
@@ -242,6 +270,12 @@ function makeDialog(parent: HTMLElement): Dialog {
   details.append(summary, content);
   const buttons = document.createElement('div');
   buttons.className = 'tessvm-permit-buttons';
+  const keep = document.createElement('label');
+  keep.className = 'tessvm-permit-keep';
+  const keepBox = document.createElement('input');
+  keepBox.type = 'checkbox';
+  const keepText = document.createElement('span');
+  keep.append(keepBox, keepText);
   const deny = document.createElement('button');
   deny.type = 'button';
   deny.className = 'tessvm-permit-deny';
@@ -250,7 +284,7 @@ function makeDialog(parent: HTMLElement): Dialog {
   allow.type = 'button';
   allow.className = 'tessvm-permit-allow';
   card.append(heading, body, details, buttons);
-  buttons.append(deny, allow);
+  buttons.append(keep, deny, allow);
   root.appendChild(card);
   parent.appendChild(root);
 
@@ -261,7 +295,7 @@ function makeDialog(parent: HTMLElement): Dialog {
     pending = null;
     root.hidden = true;
     content.textContent = '';
-    request?.answer(allowed);
+    request?.answer(allowed, keepBox.checked);
   };
   allow.addEventListener('click', () => close(true));
   deny.addEventListener('click', () => close(false));
@@ -286,6 +320,10 @@ function makeDialog(parent: HTMLElement): Dialog {
       heading.textContent = request.title;
       body.textContent = request.body;
       allow.textContent = request.confirm;
+      const remember = request.remember ?? '';
+      keep.hidden = remember === '';
+      keepText.textContent = remember;
+      keepBox.checked = false;
       const detail = request.detail ?? '';
       details.hidden = detail === '';
       details.open = false;
@@ -379,26 +417,51 @@ export function bindExtras(
   let hideAllowed: boolean | null = null;
   /** Set while the run has been allowed to hold the pointer. */
   let lockAllowed = false;
+  /** Answers the viewer asked not to be asked for again. They last the page's life. */
+  let copyAlways: boolean | null = null;
+  let lockAlways: boolean | null = null;
   let lastCopy = 0;
+
+  /** Puts the text on the clipboard. The browser only allows it inside a gesture. */
+  const write = (text: string): Promise<void> =>
+    navigator.clipboard?.writeText(text) ?? Promise.reject(new Error('no clipboard'));
+
+  const askCopy = (text: string) =>
+    dialog.ask({
+      title: '클립보드 복사',
+      body: '작품이 클립보드에 내용을 복사하려고 합니다.',
+      detail: text,
+      confirm: '복사',
+      remember: '다시 묻지 않기',
+      answer: (allowed, remember) => {
+        if (remember) {
+          copyAlways = allowed;
+        }
+        if (allowed) {
+          void write(text).catch(() => undefined);
+        }
+      },
+    });
 
   extras.host = {
     copy(text) {
       const now = performance.now();
-      if (text === '' || dialog.open || now - lastCopy < COPY_INTERVAL) {
+      if (text === '' || copyAlways === false || now - lastCopy < COPY_INTERVAL) {
         return;
       }
       lastCopy = now;
-      dialog.ask({
-        title: '클립보드 복사',
-        body: '작품이 클립보드에 내용을 복사하려고 합니다.',
-        detail: text,
-        confirm: '복사',
-        answer: (allowed) => {
-          if (allowed) {
-            void navigator.clipboard?.writeText(text).catch(() => undefined);
-          }
-        },
-      });
+      if (copyAlways) {
+        // The answer is in; the write is tried straight away and the viewer is
+        // asked again only where the browser refuses it outside a gesture.
+        void write(text).then(
+          () => notice.show('작품이 클립보드에 복사했습니다.'),
+          () => askCopy(text),
+        );
+        return;
+      }
+      if (!dialog.open) {
+        askCopy(text);
+      }
     },
 
     cursor(value) {
@@ -431,8 +494,12 @@ export function bindExtras(
       if (document.pointerLockElement === view) {
         return;
       }
-      if (lockAllowed) {
+      if (lockAllowed || lockAlways) {
         request();
+        return;
+      }
+      if (lockAlways === false) {
+        extras.lockChanged(false);
         return;
       }
       // A question already standing is left to be answered; the work asking
@@ -441,7 +508,11 @@ export function bindExtras(
         title: '마우스 잠금',
         body: '작품이 마우스 포인터를 무대 안에 가두려고 합니다.\nEsc 키를 누르면 언제든 빠져나올 수 있습니다.',
         confirm: '허용',
-        answer: (allowed) => {
+        remember: '다시 묻지 않기',
+        answer: (allowed, remember) => {
+          if (remember) {
+            lockAlways = allowed;
+          }
           lockAllowed = allowed;
           if (allowed) {
             request();
@@ -467,38 +538,56 @@ export function bindExtras(
     void result?.catch?.(() => extras.lockChanged(false));
   };
 
+  /** A control of the page's own that reads text: its paste is its own. */
+  const field = (node: Element | null): boolean =>
+    node !== null &&
+    (FIELD_TAGS.has(node.tagName) || (node as HTMLElement).isContentEditable === true);
+
   /**
    * Whether a paste was meant for the work. The listener is on the window
    * because the player is not an input and never gets the event itself, and the
    * page around it — a comment box on playentry.org — has pastes of its own.
+   *
+   * Only such a box keeps its paste. Anything else the page holds focus on —
+   * the button that started the work, a link, nothing at all — leaves it to the
+   * work, which is what a viewer pressing ctrl+v over the stage means.
    */
   const ours = (target: EventTarget | null): boolean => {
     if (target instanceof Node && view.contains(target)) {
       return true;
     }
     const active = document.activeElement;
-    return !active || active === document.body || view.contains(active);
+    return !active || view.contains(active) || !field(active);
   };
 
   /** Whether the paste went into the answer field, which shows the text itself. */
   const intoAnswer = (target: EventTarget | null): boolean =>
     target instanceof Element && target.closest('.tessvm-ask') !== null;
 
-  on(window, 'paste', (raw) => {
-    const event = raw as ClipboardEvent;
-    if (!extras.uses.clipboard || vm.state !== 'run' || dialog.open || !ours(event.target)) {
-      return;
-    }
-    const text = event.clipboardData?.getData('text/plain');
-    if (text) {
-      extras.pasted(text);
-      // The answer field shows the pasted text itself; a paste at the stage
-      // leaves nothing to see, so that one is told.
-      if (!intoAnswer(event.target)) {
-        notice.show('작품이 클립보드를 읽었습니다.');
+  // Pasting is the viewer's own doing, so it is never held back — no gap
+  // between two of them, and a question standing over the stage does not stop
+  // one. The listener catches the event on its way down so a page that handles
+  // pastes of its own cannot take it first.
+  on(
+    window,
+    'paste',
+    (raw) => {
+      const event = raw as ClipboardEvent;
+      if (!extras.uses.clipboard || vm.state !== 'run' || !ours(event.target)) {
+        return;
       }
-    }
-  });
+      const text = event.clipboardData?.getData('text/plain');
+      if (text) {
+        extras.pasted(text);
+        // The answer field shows the pasted text itself; a paste at the stage
+        // leaves nothing to see, so that one is told.
+        if (!intoAnswer(event.target)) {
+          notice.show('작품이 클립보드를 읽었습니다.');
+        }
+      }
+    },
+    { capture: true },
+  );
 
   on(
     view,

@@ -62,6 +62,9 @@ const SRC_DIR = fileURLToPath(new URL('../', import.meta.url));
 const PIXI_FILE = fileURLToPath(
   new URL('../../node_modules/pixi.js/dist/pixi.mjs', import.meta.url),
 );
+const DEXIE_FILE = fileURLToPath(
+  new URL('../../node_modules/dexie/dist/modern/dexie.mjs', import.meta.url),
+);
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -205,6 +208,10 @@ export async function serveVm(options: ServeOptions): Promise<RunningServer> {
 
     if (url === '/vm/pixi.mjs') {
       return sendFile(response, PIXI_FILE, MIME['.mjs']!);
+    }
+
+    if (url === '/vm/dexie.mjs') {
+      return sendFile(response, DEXIE_FILE, MIME['.mjs']!);
     }
 
     if (url.startsWith('/vm/')) {

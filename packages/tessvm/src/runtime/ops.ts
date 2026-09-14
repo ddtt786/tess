@@ -548,6 +548,25 @@ export function createOps(vm: Vm) {
       }
     },
 
+    /**
+     * `save` — writes the `store` names out and waits for the write to land.
+     * `save async` calls `saveStore` instead and carries straight on.
+     */
+    *saveStoreWait() {
+      let done = false;
+      void vm.save.write().then(() => {
+        done = true;
+      });
+      while (!done) {
+        yield 0;
+      }
+    },
+
+    /** `save async` — hands the write over without waiting for it. */
+    saveStore(): void {
+      void vm.save.write();
+    },
+
     /** Ends the running script here and now; nothing after this call runs. */
     die(): never {
       throw new ThreadStop();

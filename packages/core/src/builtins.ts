@@ -25,6 +25,7 @@ export const STATE_VALUES = new Set([
   "answer",
   "block_count",
   "costume_number",
+  "can_save",
 ]);
 
 /**

@@ -1,25 +1,31 @@
-/* The toggle panel behind the toolbar button. */
+/* The toggle panel behind the toolbar button. One press turns the runner on,
+   the next takes it off again; the rows under it are the runner's own settings. */
 :root {
   color-scheme: light dark;
   --ink: #16191d;
   --muted: #6b7076;
   --line: #e6e8eb;
   --paper: #fff;
+  --sunken: #f4f6f8;
   --accent: #16d799;
+  --accent-deep: #06a877;
+  --off: #aeb4bb;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --ink: #e8eaed;
     --muted: #9aa0a6;
-    --line: #33373d;
-    --paper: #1c1f24;
+    --line: #2f343a;
+    --paper: #16181c;
+    --sunken: #1e2126;
+    --off: #555c64;
   }
 }
 
 body {
   margin: 0;
-  width: 264px;
+  width: 296px;
   background: var(--paper);
   color: var(--ink);
   font:
@@ -31,37 +37,208 @@ body {
 }
 
 .panel {
-  padding: 16px;
+  padding: 14px 16px 16px;
+  text-align: center;
 }
 
-h1 {
-  margin: 0;
-  font-size: 15px;
+/* --- 머리줄 ------------------------------------------------------------- */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  text-align: left;
+}
+
+.brand-mark {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgb(22 215 153 / 18%);
+  transition:
+    background 0.2s ease-out,
+    box-shadow 0.2s ease-out;
+}
+
+.brand-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(22 215 153 / 14%);
+  color: var(--accent-deep);
+  font-size: 11px;
+  font-weight: 700;
+  transition:
+    background 0.2s ease-out,
+    color 0.2s ease-out;
+}
+
+/* --- 켜고 끄는 단추 ------------------------------------------------------ */
+.power {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 124px;
+  height: 124px;
+  margin: 18px auto 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 켜져 있는 동안 밖으로 퍼지는 테. */
+.power-wave {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0;
+}
+
+.power[aria-checked="true"] .power-wave {
+  animation: wave 2.4s ease-out infinite;
+}
+
+@keyframes wave {
+  0% {
+    transform: scale(0.82);
+    opacity: 0.55;
+  }
+
+  70% {
+    transform: scale(1.12);
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+.power-face {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: var(--sunken);
+  color: var(--muted);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    0 6px 16px rgb(0 0 0 / 8%);
+  transition:
+    background 0.22s ease-out,
+    color 0.22s ease-out,
+    box-shadow 0.22s ease-out,
+    transform 0.12s ease-out;
+}
+
+.power[aria-checked="true"] .power-face {
+  background: linear-gradient(160deg, var(--accent), var(--accent-deep));
+  color: #fff;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 24%),
+    0 10px 24px rgb(22 215 153 / 38%);
+}
+
+.power:hover .power-face {
+  transform: translateY(-1px);
+}
+
+.power:active .power-face {
+  transform: scale(0.96);
+}
+
+.power:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.power-face svg {
+  width: 38px;
+  height: 38px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+/* --- 상태 줄 ------------------------------------------------------------ */
+.state {
+  margin: 16px 0 0;
+  font-size: 14px;
   font-weight: 700;
 }
 
-.sub {
-  margin: 4px 0 14px;
+.note {
+  margin: 5px 0 0;
+  min-height: 2.8em;
+  padding: 0 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11.5px;
+}
+
+/* --- 실행기 설정 -------------------------------------------------------- */
+.card {
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--sunken);
+  text-align: left;
+  transition: opacity 0.22s ease-out;
+}
+
+body.is-off .card {
+  opacity: 0.55;
+}
+
+body.is-off .brand-mark {
+  background: var(--off);
+  box-shadow: none;
+}
+
+body.is-off .chip {
+  background: rgb(128 136 144 / 16%);
+  color: var(--muted);
 }
 
 .row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  padding: 11px 12px;
   cursor: pointer;
 }
 
-.note:not(:last-child) {
-  padding-bottom: 10px;
+.row + .row {
+  border-top: 1px solid var(--line);
 }
 
-.label {
+.row-text {
   flex: 1;
+  display: block;
+}
+
+.row-title {
+  display: block;
   font-weight: 600;
+}
+
+.row-hint {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .row input {
@@ -77,22 +254,22 @@ h1 {
   display: block;
   flex: none;
   width: 38px;
-  height: 20px;
-  border-radius: 10px;
-  background: #c9ced4;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--off);
   transition: background 0.15s ease-out;
 }
 
 .switch::after {
   content: "";
   position: absolute;
-  top: 2px;
-  left: 2px;
+  top: 3px;
+  left: 3px;
   width: 16px;
   height: 16px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 28%);
   transition: transform 0.15s ease-out;
 }
 
@@ -101,22 +278,10 @@ h1 {
 }
 
 .row input:checked + .switch::after {
-  transform: translateX(18px);
+  transform: translateX(16px);
 }
 
 .row input:focus-visible + .switch {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-.note {
-  margin: 10px 0 0;
-  min-height: 1.5em;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.note code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
 }

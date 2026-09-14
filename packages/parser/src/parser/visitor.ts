@@ -18,7 +18,7 @@ import type {
   ProjectNode, PropertyNode, ReadNode, RepeatNode, ReturnNode, SayNode,
   SceneMember, SceneNode, SendNode, ShowHideNode, SoundNode, StopNode,
   StopSoundNode, StorageScope, StringNode, Stmt, TableAddLineNode, TableDeclNode,
-  TableLine, TableRemoveLineNode, TableSaveNode, TextWriteNode, TopLevelItem,
+  StoreSaveNode, TableLine, TableRemoveLineNode, TableSaveNode, TextWriteNode, TopLevelItem,
   TtsSettingNode, TurnNode, UntilNode, UseNode, UseObjectNode, VarDeclNode,
   WaitNode, WhileNode,
 } from '../ast.ts';
@@ -409,7 +409,8 @@ export class TessAstVisitor extends BaseVisitor {
   }
 
   storageScope(ctx: Ctx): StorageScope {
-    return ctx.shared ? 'shared' : 'realtime';
+    if (ctx.shared) return 'shared';
+    return ctx.store ? 'store' : 'realtime';
   }
 
   varDecl(ctx: Ctx, node: CstNode): VarDeclNode {
@@ -761,8 +762,12 @@ export class TessAstVisitor extends BaseVisitor {
     return ctx.row ? 'row' : 'column';
   }
 
-  saveStatement(ctx: Ctx, node: CstNode): TableSaveNode {
-    return { type: 'TableSave', table: this.visit(ctx.table), loc: nodeLoc(node) };
+  saveStatement(ctx: Ctx, node: CstNode): TableSaveNode | StoreSaveNode {
+    const loc = nodeLoc(node);
+    if (ctx.table) {
+      return { type: 'TableSave', table: this.visit(ctx.table), loc };
+    }
+    return { type: 'StoreSave', async: Boolean(ctx.async), loc };
   }
 
   listRemoveStatement(ctx: Ctx, node: CstNode): ListRemoveNode | TableRemoveLineNode {

@@ -2,23 +2,45 @@
  * @fileoverview The toolbar panel: switches written straight to storage.
  *
  * Open work pages watch the same keys, so a change lands without a reload.
+ * The runner itself is one button — pressing it turns it on, pressing it again
+ * takes it off — and the rows under it are that runner's own settings.
  */
 import { readSettings, write, ENABLED_KEY, SVG_KEY, MASK_KEY, NOTICE_KEY } from '../browser.ts';
 
-const enabled = document.getElementById('enabled') as HTMLInputElement;
+const power = document.getElementById('enabled') as HTMLButtonElement;
 const svg = document.getElementById('svg') as HTMLInputElement;
 const mask = document.getElementById('mask') as HTMLInputElement;
 const notice = document.getElementById('notice') as HTMLInputElement;
+const chip = document.getElementById('chip') as HTMLElement;
+const state = document.getElementById('state') as HTMLElement;
 const note = document.getElementById('note') as HTMLElement;
 
-const NOTE = {
-  on: '작품 페이지에서 tessvm 실행기가 켜집니다.',
-  off: '엔트리 기본 실행기를 그대로 씁니다.',
+const TEXT = {
+  on: {
+    chip: '켜짐',
+    state: 'tessvm 으로 실행 중',
+    note: '작품 페이지의 실행 화면을 tessvm 이 대신합니다. 눌러서 끌 수 있습니다.',
+  },
+  off: {
+    chip: '꺼짐',
+    state: '엔트리 기본 실행기',
+    note: '작품 페이지를 원래대로 둡니다. 눌러서 tessvm 실행기를 켭니다.',
+  },
 };
 
-enabled.addEventListener('change', () => {
-  note.textContent = enabled.checked ? NOTE.on : NOTE.off;
-  void write(ENABLED_KEY, enabled.checked);
+function paint(on: boolean): void {
+  const text = on ? TEXT.on : TEXT.off;
+  power.setAttribute('aria-checked', String(on));
+  document.body.classList.toggle('is-off', !on);
+  chip.textContent = text.chip;
+  state.textContent = text.state;
+  note.textContent = text.note;
+}
+
+power.addEventListener('click', () => {
+  const on = power.getAttribute('aria-checked') !== 'true';
+  paint(on);
+  void write(ENABLED_KEY, on);
 });
 
 svg.addEventListener('change', () => {
@@ -34,9 +56,8 @@ notice.addEventListener('change', () => {
 });
 
 void readSettings().then((settings) => {
-  enabled.checked = settings.enabled;
   svg.checked = settings.svg;
   mask.checked = settings.mask;
   notice.checked = settings.notice;
-  note.textContent = settings.enabled ? NOTE.on : NOTE.off;
+  paint(settings.enabled);
 });

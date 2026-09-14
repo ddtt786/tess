@@ -1,6 +1,6 @@
 {
   "name": "@tess/vm",
-  "version": "0.2.4",
+  "version": "0.2.6",
   "description": "Tess 작품을 PixiJS 위에서 엔트리와 같게, 훨씬 빠르게 실행하는 런타임",
   "license": "MIT",
   "type": "module",
@@ -21,6 +21,7 @@
     "@tess/decompiler": "workspace:*",
     "@tess/parser": "workspace:*",
     "@tess/player": "workspace:*",
+    "dexie": "^4.4.6",
     "es-toolkit": "^1.40.0",
     "pixi.js": "^8.20.1"
   }

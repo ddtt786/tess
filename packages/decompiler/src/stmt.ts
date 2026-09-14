@@ -730,6 +730,8 @@ function functionCallStatement(
 ): string[] {
   const fn = ctx.functionsById.get(block.type!.slice("func_".length));
   if (!fn) return unsupported(ctx, block);
+  // 세이브 매니저의 빈 함수를 부르는 것이 저장이다.
+  if (fn.saveKind) return [fn.saveKind === "async" ? "save async" : "save"];
   const p = block.params ?? [];
   const args = p
     .filter((_: unknown, i: number) => i < fn.params.length)

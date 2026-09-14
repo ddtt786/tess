@@ -8,8 +8,15 @@
  * 이 값을 통해 현재 비율을 파악하고, 원래 크기로 되돌린 후 목표하는 가로/세로 비율에 맞게 정확히 크기를 조절합니다.
  */
 
+import {
+  STORE_FLAG_VARIABLE,
+  STORE_SAVE_ASYNC_FUNCTION,
+  STORE_SAVE_FUNCTION,
+} from '@tess/core';
 import type { Context } from './context.ts';
-import type { CompiledFunction, EntryBlock, EntryParam, FuncLocalVariable } from './types.ts';
+import type {
+  CompiledFunction, EntryBlock, EntryParam, EntryVariable, FuncLocalVariable,
+} from './types.ts';
 
 const MEASURE = 100000;
 const AXES: Record<string, { setter: string; probe: string; label: string }> = {
@@ -197,4 +204,86 @@ export function requirePowerRefiner(ctx: Context): CompiledFunction {
   ctx.functions.push(fn);
   ctx.runtimeFunctions.set('power', fn);
   return fn;
+}
+
+
+// ---------------------------------------------------------------------------
+//  저장 (Entry Save Manager)
+// ---------------------------------------------------------------------------
+
+/**
+ * `save` · `save async` 가 부르는 빈 함수를 만들어 등록합니다.
+ *
+ * 세이브 매니저는 작품 안에 있는 `@저장`(기다림) · `@비동기저장`(안 기다림) 함수의
+ * 호출을 가로채므로, 컴파일러는 그 이름의 **빈 함수**와 그것을 부르는 블록만 놓습니다.
+ * 확장이 없는 곳에서는 아무 일도 하지 않는 함수 호출이 됩니다.
+ *
+ * @param async 기다리지 않는 저장인지 여부
+ * @param ctx 컴파일 컨텍스트
+ * @returns 만들어졌거나 이미 있던 저장 함수
+ */
+export function requireSaveFunction(async: boolean, ctx: Context): CompiledFunction {
+  const key = async ? 'save-async' : 'save';
+  const cached = ctx.runtimeFunctions.get(key);
+  if (cached) return cached;
+
+  const name = async ? STORE_SAVE_ASYNC_FUNCTION : STORE_SAVE_FUNCTION;
+  // 작품이 그 함수를 이미 들고 있으면(되돌린 작품 등) 그것을 부릅니다.
+  const declared = ctx.functions.find((fn) => fn.name === name);
+  if (declared) {
+    ctx.runtimeFunctions.set(key, declared);
+    return declared;
+  }
+
+  const id = ctx.newId();
+  const create = ctx.block('function_create', [
+    ctx.block('function_field_label', [name, null]),
+    null,
+  ], [[]]);
+  create.x = 50;
+  create.y = 30;
+
+  const fn: CompiledFunction = {
+    id,
+    name,
+    generated: true,
+    type: 'normal',
+    params: [],
+    paramTypes: new Map(),
+    isValue: false,
+    localVariables: [],
+    content: [[create]],
+  };
+  ctx.functions.push(fn);
+  ctx.runtimeFunctions.set(key, fn);
+  return fn;
+}
+
+/**
+ * `can_save` 가 읽는 `@확장프로그램` 변수를 만들어 등록합니다. 세이브 매니저가 있으면
+ * 이 변수를 1 로 만들고, 없으면 작품이 저장한 값(0) 그대로 남습니다.
+ *
+ * @param ctx 컴파일 컨텍스트
+ * @returns 만들어졌거나 이미 있던 변수
+ */
+export function requireStoreFlag(ctx: Context): EntryVariable {
+  const existing = ctx.variables.find(
+    (variable) => variable.name === STORE_FLAG_VARIABLE && variable.object === null,
+  );
+  if (existing) return existing;
+  const variable: EntryVariable = {
+    name: STORE_FLAG_VARIABLE,
+    id: ctx.newId(),
+    visible: false,
+    value: 0,
+    variableType: 'variable',
+    isCloud: false,
+    isRealTime: false,
+    cloudDate: false,
+    object: null,
+    x: 0,
+    y: 0,
+  };
+  ctx.variables.push(variable);
+  return variable;
 }

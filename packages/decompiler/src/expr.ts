@@ -2,7 +2,7 @@
  * 엔트리 값(value) 및 판단(boolean) 블록을 Tess 표현식 문자열로 변환하는 기능을 제공합니다.
  * 알려지지 않은 블록은 자리표시자를 남기고 경고에 기록합니다.
  */
-import { KEY_CODES } from '@tess/core';
+import { KEY_CODES, STORE_FLAG_ON, STORE_FLAG_VARIABLE } from '@tess/core';
 import { tessNumber, tessString, tessLiteral, ownsResource, isExactNumber } from './ident.ts';
 import { expansionBlock } from '@tess/core';
 import type { DecompileContext, RawBlock, ResourceInfo } from './types.ts';
@@ -25,6 +25,24 @@ const REVERSE_MATH: Record<string, string> = {
   // rather than to a placeholder.
   asin: 'asin', acos: 'acos', atan: 'atan',
 };
+/**
+ * `@확장프로그램 == 1` — Tess 의 `can_save` 다. 세이브 매니저가 있을 때만 그 변수를 1 로
+ * 두므로, 작품은 이 비교로 저장 기능이 있는지 본다.
+ */
+function isStoreFlagTest(block: RawBlock, ctx: DecompileContext): boolean {
+  const params = block.params ?? [];
+  if (params[1] !== 'EQUAL') return false;
+  const read = params[0] as RawBlock | undefined;
+  if (read?.type !== 'get_variable') return false;
+  const variable = ctx.varsById.get(String(read.params?.[0] ?? ''));
+  if (variable?.source.name !== STORE_FLAG_VARIABLE) return false;
+  const value = params[2] as RawBlock | undefined;
+  const literal = value?.type === 'number' || value?.type === 'text'
+    ? value.params?.[0]
+    : value;
+  return Number(literal) === STORE_FLAG_ON;
+}
+
 /**
  * 좌표 객체의 속성을 Tess 속성 이름으로 매핑합니다.
  * x, y, 방향, 크기 외에도 모양 번호와 모양 이름 등을 처리합니다.
@@ -279,6 +297,7 @@ export function exprOf(block: any, ctx: DecompileContext): string {
     case 'boolean_basic_operator': {
       const op = REVERSE_COMPARE[at(1)];
       if (!op) return placeholder(ctx, block);
+      if (isStoreFlagTest(block, ctx)) return 'can_save';
       return `(${exprOf(at(0), ctx)} ${op} ${exprOf(at(2), ctx)})`;
     }
     case 'boolean_and_or': return `(${exprOf(at(0), ctx)} ${at(1) === 'AND' ? 'and' : 'or'} ${exprOf(at(2), ctx)})`;

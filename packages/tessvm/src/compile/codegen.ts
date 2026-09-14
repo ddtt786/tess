@@ -7,6 +7,7 @@
  * 문장이 됩니다. 리터럴은 컴파일 시점에 접어 두고, 변수·오브젝트·함수는 배열 인덱스로
  * 미리 풀어 둡니다.
  */
+import { SAVE_FUNCTIONS, functionLabel } from '../runtime/save.ts';
 
 /** A block as it appears in `project.json`. */
 export interface RawBlock {
@@ -288,6 +289,14 @@ export class Codegen {
   }
 
   private compileFunction(fn: FunctionEntry): string {
+    // The save manager's own functions are empty in the work — the extension
+    // takes their call. This runner takes it here instead.
+    const saving = SAVE_FUNCTIONS[functionLabel(fn.content)];
+    if (saving) {
+      return saving === 'wait'
+        ? 'function* (e, th, P) { yield* O.saveStoreWait(); }'
+        : 'function* (e, th, P) { O.saveStore(); }';
+    }
     const content = parseScript(fn.content);
     const stack = findFunctionDefine(content);
     const define = stack?.[0];

@@ -7,8 +7,8 @@
  */
 import { KEY_CODES, keyCodeOf } from '@tess/core';
 import { didYouMean, orHint } from '@tess/core';
-import { requirePowerRefiner } from './runtime.ts';
-import { BUILTIN_FUNCTIONS, OPTION_KEYWORDS, STATE_VALUES } from '@tess/core';
+import { requirePowerRefiner, requireStoreFlag } from './runtime.ts';
+import { BUILTIN_FUNCTIONS, OPTION_KEYWORDS, STATE_VALUES, STORE_FLAG_ON } from '@tess/core';
 import { expansionBlock } from '@tess/core';
 import type {
   BinaryNode, CallNode, Expr, IndexNode, Node, UnaryNode,
@@ -205,6 +205,15 @@ function compileIdentifier(node: Node & { name: string }, ctx: Context): EntryBl
   }
 
   if (name === 'block_count') return ctx.block('get_block_count', ['all']);
+  // 세이브 매니저가 있으면 `@확장프로그램` 을 1 로 둔다. 값이 아니라 판단으로 읽는다.
+  if (name === 'can_save') {
+    const flag = requireStoreFlag(ctx);
+    return ctx.block('boolean_basic_operator', [
+      ctx.block('get_variable', [flag.id, null]),
+      'EQUAL',
+      ctx.number(STORE_FLAG_ON),
+    ]);
+  }
   if (STATE_BLOCKS[name]) {
     // 블록마다 파라미터 자리 개수가 다르다 (엔트리 블록 스키마 기준)
     const slots: Record<string, number> = { get_nickname: 0, get_user_name: 0, get_project_timer_value: 2 };

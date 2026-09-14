@@ -15,7 +15,7 @@ import { buildCommentMap } from './comments.ts';
 import { makeAsset } from './assets.ts';
 import { compileStatements, compileStatement } from './statement.ts';
 import { compileValue, BOOLEAN_TEXT } from './expression.ts';
-import { KEY_CODES, keyCodeOf } from '@tess/core';
+import { KEY_CODES, STORE_PREFIX, keyCodeOf } from '@tess/core';
 import { didYouMean } from '@tess/core';
 import { validate } from '@tess/parser';
 import { isAutoParamName } from '@tess/core';
@@ -315,8 +315,11 @@ function makeVariable(
   if (node.scope && objectId) {
     ctx.error(node, `'${node.scope}' 는 오브젝트 안의 변수·리스트에는 쓸 수 없습니다. 전역 선언에만 붙일 수 있습니다.`);
   }
+  // `store` is the save manager's mark: it keeps every global name that starts
+  // with `@`, and that prefix is the whole of what it looks at.
+  const entryName = node.displayName ?? node.name;
   const base: EntryVariable = {
-    name: node.displayName ?? node.name,
+    name: node.scope === 'store' ? `${STORE_PREFIX}${entryName}` : entryName,
     id: ctx.newId(),
     visible: node.shown,
     value: 0,

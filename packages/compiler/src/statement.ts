@@ -17,7 +17,7 @@ import {
   resolveList,
   resolveTarget,
 } from "./expression.ts";
-import { requireScaleSetter } from "./runtime.ts";
+import { requireSaveFunction, requireScaleSetter } from "./runtime.ts";
 import { didYouMean, orHint } from '@tess/core';
 import type {
   AssignNode, Expr, ExpressionStatementNode, Identifier, IndexNode, PlaySoundNode,
@@ -532,6 +532,12 @@ function compile(node: Stmt, ctx: Context): EntryBlock[] | null {
     case "TableSave": {
       const table = requireTable(node.table as Identifier, ctx);
       return table ? one(ctx.block("save_current_table", [table.id, null])) : [];
+    }
+
+    // 세이브 매니저가 가로채는 빈 함수를 부르는 것이 저장이다 (runtime.ts).
+    case "StoreSave": {
+      const fn = requireSaveFunction(node.async, ctx);
+      return one(ctx.block(`func_${fn.id}`, [null]));
     }
 
     case "VarDecl":

@@ -228,7 +228,7 @@ mismatches: 0
 | 갈래           | 스코프                       | 내용                                                         |
 | -------------- | ---------------------------- | ------------------------------------------------------------ |
 | `DECLARATION`  | `keyword.declaration`        | `project` `scene` `object` `text` `table` `function` `use*` `var` `list` |
-| `STORAGE`      | `storage.modifier`           | `shared` `realtime` — 전역 선언의 저장 범위                  |
+| `STORAGE`      | `storage.modifier`           | `shared` `realtime` `store` — 전역 선언의 저장 범위          |
 | `MODIFIER`     | `storage.modifier`           | `as` `force` `id` `default` — 선언 뒤에 붙는 수식어          |
 | `CONTROL`      | `keyword.control`            | 블록 경계와 흐름 제어                                        |
 | `EVENT`        | `keyword.control.event`      | `when` 절을 이루는 낱말                                      |

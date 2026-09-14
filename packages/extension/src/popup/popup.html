@@ -9,32 +9,52 @@
 
 <body>
   <main class="panel">
-    <h1>tessvm 실행기</h1>
-    <p class="sub">엔트리 작품 페이지의 실행 화면을 tessvm 으로 바꿉니다.</p>
-    <label class="row">
-      <span class="label">작품 실행기 바꾸기</span>
-      <input id="enabled" type="checkbox" checked>
-      <span class="switch"></span>
-    </label>
-    <p id="note" class="note"></p>
-    <label class="row">
-      <span class="label">벡터 모양 그대로 쓰기</span>
-      <input id="svg" type="checkbox" checked>
-      <span class="switch"></span>
-    </label>
-    <p class="note">벡터로 그린 모양을 그림판 사본 대신 원본으로 불러옵니다. 960×540 을 넘는 모양은 사본을 씁니다.</p>
-    <label class="row">
-      <span class="label">아이디 가리기</span>
-      <input id="mask" type="checkbox" checked>
-      <span class="switch"></span>
-    </label>
-    <p class="note">아이디의 첫 두 글자를 제외한 나머지 글자를 가립니다.</p>
-    <label class="row">
-      <span class="label">모르는 블록 알리기</span>
-      <input id="notice" type="checkbox">
-      <span class="switch"></span>
-    </label>
-    <p class="note">이 실행기가 아직 옮기지 못한 블록이 있으면 무대 아래에 알립니다. 꺼 두면 그 블록만 빠진 채로 조용히 실행합니다.</p>
+    <header class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">tessvm</span>
+      <span id="chip" class="chip">켜짐</span>
+    </header>
+
+    <button id="enabled" class="power" type="button" role="switch" aria-checked="true"
+      aria-label="작품 실행기 바꾸기">
+      <span class="power-wave" aria-hidden="true"></span>
+      <span class="power-face">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3.2v8.4" />
+          <path d="M18.1 6.4a8.6 8.6 0 1 1-12.2 0" />
+        </svg>
+      </span>
+    </button>
+
+    <p id="state" class="state">작품 실행기 바꾸기</p>
+    <p id="note" class="note">작품 페이지에서 tessvm 실행기가 켜집니다.</p>
+
+    <section class="card">
+      <label class="row">
+        <span class="row-text">
+          <span class="row-title">벡터 모양 그대로 쓰기</span>
+          <span class="row-hint">벡터로 그린 모양을 그림판 사본 대신 원본으로 불러옵니다. 960×540 을 넘는 모양은 사본을 씁니다.</span>
+        </span>
+        <input id="svg" type="checkbox" checked>
+        <span class="switch" aria-hidden="true"></span>
+      </label>
+      <label class="row">
+        <span class="row-text">
+          <span class="row-title">아이디 가리기</span>
+          <span class="row-hint">아이디의 첫 두 글자를 제외한 나머지 글자를 가립니다.</span>
+        </span>
+        <input id="mask" type="checkbox" checked>
+        <span class="switch" aria-hidden="true"></span>
+      </label>
+      <label class="row">
+        <span class="row-text">
+          <span class="row-title">모르는 블록 알리기</span>
+          <span class="row-hint">이 실행기가 아직 옮기지 못한 블록이 있으면 무대 아래에 알립니다. 꺼 두면 그 블록만 빠진 채로 조용히 실행합니다.</span>
+        </span>
+        <input id="notice" type="checkbox">
+        <span class="switch" aria-hidden="true"></span>
+      </label>
+    </section>
   </main>
   <script type="module" src="popup.js"></script>
 </body>

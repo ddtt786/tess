@@ -5,7 +5,10 @@
 import { safeIdentifier, tessString, tessNumber, tessLiteral, tessComment, displayNamePart } from './ident.ts';
 import { autoParamName } from '@tess/core';
 import { blocksToLines, commentLines, indent, functionDeclarationLines, colorExpr } from './stmt.ts';
-import { KEY_CODES, tableRowCells, tableRows } from '@tess/core';
+import {
+  KEY_CODES, STORE_PREFIX, STORE_SAVE_ASYNC_FUNCTION, STORE_SAVE_FUNCTION,
+  tableRowCells, tableRows,
+} from '@tess/core';
 import type {
   CollectedAsset, DecompileContext, DecompileOptions, DecompileResult,
   FunctionField, FunctionInfo, FunctionLocal, ObjectInfo, RawBlock, RawEntity,
@@ -139,6 +142,8 @@ export function decompileProject(
     if (!entry) continue;
     // 한 오브젝트 것만 건드리는 함수는 그 오브젝트 조각 파일에 이미 들어갔다
     if (ctx.functionOwnerById.has(fn.id)) continue;
+    // 세이브 매니저가 가로채는 빈 함수는 Tess 에서 `save` 문장이므로 선언하지 않는다.
+    if (entry.saveKind) continue;
     try {
       const content = JSON.parse(fn.content ?? '[]');
       const createBlock = functionCreateBlock(content);
@@ -470,14 +475,18 @@ function buildContext(
   for (const entry of project.variables ?? []) {
     if (entry.variableType === 'timer' || entry.variableType === 'answer') continue;
     const isList = entry.variableType === 'list';
-    const identifier = safeIdentifier(entry.name, usedNames, isList ? 'list' : 'var');
+    // `@이름` 은 세이브 매니저가 맡는 자리다. Tess 이름은 `@` 를 뗀 쪽이고, 선언에
+    // `store` 가 붙으면 컴파일할 때 다시 `@` 가 붙는다.
+    const store = !entry.object && String(entry.name ?? '').startsWith(STORE_PREFIX);
+    const label = store ? String(entry.name).slice(STORE_PREFIX.length) : entry.name;
+    const identifier = safeIdentifier(label, usedNames, isList ? 'list' : 'var');
     // A local whose object is gone has nowhere to be declared. Writing it as a
     // global keeps it in the work instead of dropping it without a trace.
     const owned = entry.object && ctx.objectsById.has(entry.object);
     if (entry.object && !owned) {
       ctx.warnings.add(`'${entry.name}' 은(는) 작품에 없는 오브젝트의 지역 변수라 전역으로 옮겼습니다.`);
     }
-    const info = { identifier, isList, objectId: owned ? entry.object : null, source: entry };
+    const info = { identifier, isList, objectId: owned ? entry.object : null, source: entry, store };
     ctx.varsById.set(entry.id, info);
     if (owned) {
       if (!ctx.localVarsByObject.has(entry.object)) ctx.localVarsByObject.set(entry.object, []);
@@ -539,7 +548,13 @@ function buildContext(
       locals.push({ name, entryName: String(local.name ?? ''), value: local.value });
     }
 
-    ctx.functionsById.set(fn.id, { id: String(fn.id), name: identifier, params, locals, displayLabel: label });
+    // 세이브 매니저는 이 이름의 함수 호출을 가로챈다. 그 호출이 Tess 의 `save` 다.
+    const saveKind = label === STORE_SAVE_FUNCTION
+      ? 'save'
+      : label === STORE_SAVE_ASYNC_FUNCTION ? 'async' : undefined;
+    ctx.functionsById.set(fn.id, {
+      id: String(fn.id), name: identifier, params, locals, displayLabel: label, saveKind,
+    });
   }
 
   reviveDanglingVariables(project, ctx, usedNames);
@@ -691,9 +706,12 @@ function declarationLine(info: VarInfo, indentLevel = 0, positions = false): str
   const pad = '  '.repeat(indentLevel);
   const source = info.source;
   let scope = '';
-  if (source.isCloud) scope = 'shared ';
+  if (info.store) scope = 'store ';
+  else if (source.isCloud) scope = 'shared ';
   else if (source.isRealTime) scope = 'realtime ';
-  const named = displayNamePart(info.identifier, source.name);
+  // `store` 가 `@` 를 붙여 주므로, 이름이 남는지는 그것을 뗀 쪽으로 따진다.
+  const entryName = info.store ? String(source.name).slice(STORE_PREFIX.length) : source.name;
+  const named = displayNamePart(info.identifier, entryName);
   // 엔트리에서 '보이기'로 체크해 둔 변수·리스트는 무대에 상자를 띄운 채로 시작한다.
   const shown = source.visible ? ' visible' : '';
   // 상자가 놓인 자리. 적어 두지 않으면 실행기가 엔트리처럼 알아서 자리를 잡는다.

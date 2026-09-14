@@ -27,6 +27,7 @@ const VENDOR = path.join(DIST, 'vendor');
 const VM_OUT = path.join(VENDOR, 'tessvm');
 const PIXI_OUT = path.join(VENDOR, 'pixi.mjs');
 const CHEVROTAIN_OUT = path.join(VENDOR, 'chevrotain.mjs');
+const DEXIE_OUT = path.join(VENDOR, 'dexie.mjs');
 
 /**
  * The toolchain the extension carries: a work is decompiled to Tess and
@@ -59,6 +60,7 @@ const ICON_SIZES = [16, 32, 48, 128];
 const RELATIVE_IMPORT = /(['"])(\.\.?\/[^'"]*\.ts)\1/g;
 const PIXI_IMPORT = /(['"])pixi\.js\1/g;
 const CHEVROTAIN_IMPORT = /(['"])chevrotain\1/g;
+const DEXIE_IMPORT = /(['"])dexie\1/g;
 const WORKSPACE_IMPORT = /(['"])(@tess\/[a-z]+)\1/g;
 /** `import … from '…';`, and the side-effect form. */
 const IMPORT_STATEMENT = /^import\s[\s\S]*?from\s*['"][^'"]*['"];?[^\S\n]*$/gm;
@@ -130,7 +132,8 @@ function emitModule(file: string): string[] {
     .replace(
       CHEVROTAIN_IMPORT,
       (_match, quote: string) => `${quote}${link(out, CHEVROTAIN_OUT)}${quote}`,
-    );
+    )
+    .replace(DEXIE_IMPORT, (_match, quote: string) => `${quote}${link(out, DEXIE_OUT)}${quote}`);
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, code);
   return found;
@@ -312,6 +315,12 @@ copyVendor(
   'chevrotain',
   'lib/chevrotain.min.mjs',
   CHEVROTAIN_OUT,
+);
+copyVendor(
+  path.join(ROOT, '../tessvm/package.json'),
+  'dexie',
+  'dist/modern/dexie.min.mjs',
+  DEXIE_OUT,
 );
 copy(path.join(SRC, 'player.css'), path.join(DIST, 'player.css'));
 copy(path.join(SRC, 'popup', 'popup.html'), path.join(DIST, 'popup', 'popup.html'));

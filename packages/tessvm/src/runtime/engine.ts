@@ -28,6 +28,7 @@ import {
 } from './model.ts';
 import { Table } from './table.ts';
 import { ThreadStop, createOps, type Ops } from './ops.ts';
+import { SaveStore } from './save.ts';
 import { Extras } from './extras.ts';
 
 /**
@@ -204,6 +205,8 @@ export class Vm implements Project {
   readonly cast = cast;
   /** `$TESSVM` and the names beside it — what this runner has and entry has not. */
   readonly extras = new Extras(this);
+  /** `store` names the work keeps between runs (`save.ts`). */
+  readonly save = new SaveStore(this);
   readonly masks: MaskStore;
   readonly collision: CollisionSystem;
   ops!: Ops;
@@ -383,6 +386,7 @@ export class Vm implements Project {
 
     this.compile(project);
     this.extras.bind();
+    this.save.bind();
     this.snapshot();
     this.renderer?.attach?.(this.targets, this.scenes);
     for (const target of this.targets) {
@@ -649,6 +653,9 @@ export class Vm implements Project {
     this.accumulator = 0;
     this.clearTimer();
     this.extras.started();
+    // What was kept goes back in before the first block runs, the way the save
+    // manager puts it back every time the work is played.
+    this.save.started();
     this.fireEvent('start');
   }
 

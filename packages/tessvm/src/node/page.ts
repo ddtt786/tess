@@ -124,7 +124,7 @@ export function playerPage(options: PageOptions): string {
 ${fonts}
 <style>${STYLE}</style>
 <script type="importmap">
-{"imports": {"pixi.js": "/vm/pixi.mjs"}}
+{"imports": {"pixi.js": "/vm/pixi.mjs", "dexie": "/vm/dexie.mjs"}}
 </script>
 </head>
 <body>

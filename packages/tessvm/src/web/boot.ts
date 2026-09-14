@@ -13,6 +13,8 @@ import { mountChartWindow } from './chart-view.ts';
 import { LIST_MIN_SIZE } from '../render/overlay.ts';
 import { setStageSize, stage, type Entity } from '../runtime/model.ts';
 import { localVariableStore } from './store.ts';
+import { dexieSaveStore } from './save-store.ts';
+import type { SaveHost } from '../runtime/save.ts';
 import { bindExtras } from './extras.ts';
 
 export interface BootOptions {
@@ -48,6 +50,11 @@ export interface BootOptions {
    * storage holds them; `null` keeps them for the life of the runner only.
    */
   store?: VariableStore | null;
+  /**
+   * Where the `store` names are kept. Left unset, IndexedDB holds them through
+   * Dexie; `null` turns saving off altogether and `can_save` then says no.
+   */
+  saveStore?: SaveHost | null;
   /**
    * Hold the work until every costume and sound is in. On by default. Turned
    * off, the runner is ready as soon as it is built and the files stream in
@@ -254,6 +261,10 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   });
 
   vm.load(project);
+  // `store` names are put back before the work is started, the way the save
+  // manager puts them back each time a work is played (`runtime/save.ts`).
+  vm.save.host = options.saveStore === null ? null : (options.saveStore ?? dexieSaveStore(storeKey(project)));
+  await vm.save.load();
   renderer.overlayView?.bind({
     variables: vm.variables,
     ownerName: (objectId) => vm.targetOf(objectId)?.name ?? null,

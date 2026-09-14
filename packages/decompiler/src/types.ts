@@ -58,6 +58,8 @@ export interface VarInfo {
   isList: boolean;
   objectId: string | null;
   source: RawEntity;
+  /** `@이름` — the save manager keeps it, and Tess declares it with `store`. */
+  store?: boolean;
 }
 
 /**
@@ -130,6 +132,8 @@ export interface FunctionInfo {
   params: string[];
   locals: FunctionLocal[];
   displayLabel: string;
+  /** Set on the save manager's own functions: `save` and `save async`. */
+  saveKind?: 'save' | 'async';
 }
 
 /**

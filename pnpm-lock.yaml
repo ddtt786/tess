@@ -369,6 +369,9 @@ importers:
       '@tess/player':
         specifier: workspace:*
         version: link:../player
+      dexie:
+        specifier: ^4.4.6
+        version: 4.4.6
       es-toolkit:
         specifier: ^1.40.0
         version: 1.52.0
@@ -1724,6 +1727,9 @@ packages:
   detect-newline@2.1.0:
     resolution: {integrity: sha512-CwffZFvlJffUg9zZA0uqrjQayUTC8ob94pnr5sFwaVv3IOmkfUHcWH+jXaQK3askE51Cqe8/9Ql/0uXNwqZ8Zg==}
     engines: {node: '>=0.10.0'}
+
+  dexie@4.4.6:
+    resolution: {integrity: sha512-hJP/BO6mjB+tX6hToIO1kmxYLNmun90wYbfcoAoLpKEyDYal/k33dg0TAfoUe2TDsbbLoVIzljJ3BN2UbR5EOg==}
 
   diff-sequences@24.9.0:
     resolution: {integrity: sha512-Dj6Wk3tWyTE+Fo1rW8v0Xhwk80um6yFYKbuAxc9c3EZxIHFDYwbi34Uk42u1CdnIiVorvt4RmlSDjIPyzGC2ew==}
@@ -5592,6 +5598,8 @@ snapshots:
   detect-libc@2.1.2: {}
 
   detect-newline@2.1.0: {}
+
+  dexie@4.4.6: {}
 
   diff-sequences@24.9.0: {}
 
