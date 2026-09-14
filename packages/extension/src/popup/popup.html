@@ -27,7 +27,7 @@
     </button>
 
     <p id="state" class="state">작품 실행기 바꾸기</p>
-    <p id="note" class="note">작품 페이지에서 tessvm 실행기가 켜집니다.</p>
+    <p id="note" class="note">작품 페이지의 실행 화면을 tessvm 이 대신합니다.<br>눌러서 끌 수 있습니다.</p>
 
     <section class="card">
       <label class="row">
@@ -54,6 +54,21 @@
         <input id="notice" type="checkbox">
         <span class="switch" aria-hidden="true"></span>
       </label>
+    </section>
+
+    <section class="saves">
+      <header class="saves-head">
+        <span class="saves-title">저장된 데이터</span>
+        <button id="clear" class="link" type="button" hidden>전체 삭제</button>
+      </header>
+      <p id="saves-empty" class="saves-empty">작품이 저장한 값이 아직 없습니다.</p>
+      <ul id="saves" class="saves-list"></ul>
+      <div class="saves-files">
+        <button id="export" class="file-button" type="button">파일로 내보내기</button>
+        <button id="import" class="file-button" type="button">파일에서 가져오기</button>
+        <input id="file" type="file" accept="application/json,.json" hidden>
+      </div>
+      <p id="saves-note" class="saves-note" hidden></p>
     </section>
   </main>
   <script type="module" src="popup.js"></script>

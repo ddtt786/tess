@@ -1170,10 +1170,12 @@ entryjs 가 아니라 playentry 쪽이 `setServerInfo` 로 넘겨 주는 값이�
 - 저장 함수는 작품 안에서 본문이 비어 있습니다. JIT 은 그 함수의 이름표를 보고
   **함수 자체를** 저장 동작으로 컴파일하므로(`codegen.compileFunction`), 어디서 부르든
   같은 일이 일어납니다.
-- 브라우저 쪽은 `web/save-store.ts` — Dexie(IndexedDB) 의 `tessvm-store` 데이터베이스에
-  작품마다 한 줄로 이름 전체를 담습니다. 저장은 한 번의 쓰기이고, 실행이 시작할 때 읽는
-  값은 마지막 저장이 남긴 그대로입니다. IndexedDB 를 막아 둔 곳에서는 `null` 이라
-  `can_save` 가 거짓이 됩니다.
+- 브라우저 쪽 기본값은 `web/save-store.ts` — Dexie(IndexedDB) 의 `tessvm-store`
+  데이터베이스에 작품마다 한 줄로 이름 전체를 담습니다. 저장은 한 번의 쓰기이고, 실행이
+  시작할 때 읽는 값은 마지막 저장이 남긴 그대로입니다. IndexedDB 를 막아 둔 곳에서는
+  `null` 이라 `can_save` 가 거짓이 됩니다.
+- `boot` 의 `saveStore` 로 다른 자리를 넘길 수 있습니다. 확장은 그렇게 해서 값을 확장
+  자신의 저장소에 담고, 설정 창에서 보여 주고 지웁니다(AI_EXTENSION.md).
 
 공유·실시간 변수(`store.ts`, 위)와는 다른 자리입니다. 그쪽은 엔트리 서버의 값을 대신하는
 것이고, 이쪽은 작품이 직접 저장하라고 시킨 값입니다.

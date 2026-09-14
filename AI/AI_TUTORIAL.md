@@ -358,7 +358,11 @@ end
 
 키 이름: 알파벳(`"a"`~`"z"`), 숫자(`"0"`~`"9"`), `"space"`, `"enter"`, `"esc"`,
 `"tab"`, `"shift"`, `"ctrl"`, `"alt"`, `"backspace"`, 방향키(`"left"` `"right"`
-`"up"` `"down"`).
+`"up"` `"down"`), 기호 키(`";"` `"="` `","` `"-"` `"."` `"/"` `"~"` `"["`
+`"backslash"` `"]"` `"'"`), 그리고 엔트리 목록에는 없지만 브라우저가 보내 주는
+`"insert"` `"delete"` `"home"` `"end"` `"pageup"` `"pagedown"` `"capslock"`
+`"f1"`~`"f12"` `"numpad0"`~`"numpad9"`. 이름이 없는 키는 코드 번호를 그대로
+적을 수 있습니다(`when key "145"`).
 
 ## 8. 신호 · 복제 · 장면 전환
 

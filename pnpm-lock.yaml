@@ -323,6 +323,12 @@ importers:
       '@tess/vm':
         specifier: workspace:*
         version: link:../tessvm
+      dexie:
+        specifier: ^4.4.6
+        version: 4.4.6
+      dexie-export-import:
+        specifier: ^4.4.1
+        version: 4.4.1(dexie@4.4.6)
       pixi.js:
         specifier: ^8.20.1
         version: 8.20.1
@@ -1727,6 +1733,11 @@ packages:
   detect-newline@2.1.0:
     resolution: {integrity: sha512-CwffZFvlJffUg9zZA0uqrjQayUTC8ob94pnr5sFwaVv3IOmkfUHcWH+jXaQK3askE51Cqe8/9Ql/0uXNwqZ8Zg==}
     engines: {node: '>=0.10.0'}
+
+  dexie-export-import@4.4.1:
+    resolution: {integrity: sha512-B84UhmfGaImK47OKRW+uw8EleHtlUk8WbaeqAvPX/bwv3pl2W+l3/v8jJNpPUjwS8Dn/U/5kHAyXda9T6NofOQ==}
+    peerDependencies:
+      dexie: ^4.4.5
 
   dexie@4.4.6:
     resolution: {integrity: sha512-hJP/BO6mjB+tX6hToIO1kmxYLNmun90wYbfcoAoLpKEyDYal/k33dg0TAfoUe2TDsbbLoVIzljJ3BN2UbR5EOg==}
@@ -5598,6 +5609,10 @@ snapshots:
   detect-libc@2.1.2: {}
 
   detect-newline@2.1.0: {}
+
+  dexie-export-import@4.4.1(dexie@4.4.6):
+    dependencies:
+      dexie: 4.4.6
 
   dexie@4.4.6: {}
 

@@ -28,6 +28,7 @@ const VM_OUT = path.join(VENDOR, 'tessvm');
 const PIXI_OUT = path.join(VENDOR, 'pixi.mjs');
 const CHEVROTAIN_OUT = path.join(VENDOR, 'chevrotain.mjs');
 const DEXIE_OUT = path.join(VENDOR, 'dexie.mjs');
+const DEXIE_IO_OUT = path.join(VENDOR, 'dexie-export-import.mjs');
 
 /**
  * The toolchain the extension carries: a work is decompiled to Tess and
@@ -51,7 +52,7 @@ const CRX = path.join(ROOT, 'tessvm-extension.crx');
 const CRX_KEY = path.join(ROOT, 'crx-key.pem');
 
 /** Loaded as modules, by a document that asks for them. */
-const MODULE_ENTRIES = ['page/main.ts', 'popup/popup.ts'];
+const MODULE_ENTRIES = ['page/main.ts', 'popup/popup.ts', 'background.ts'];
 /** Loaded as classic scripts by the browser itself. */
 const CLASSIC_ENTRIES = ['content.ts'];
 const ICON_SIZES = [16, 32, 48, 128];
@@ -61,6 +62,7 @@ const RELATIVE_IMPORT = /(['"])(\.\.?\/[^'"]*\.ts)\1/g;
 const PIXI_IMPORT = /(['"])pixi\.js\1/g;
 const CHEVROTAIN_IMPORT = /(['"])chevrotain\1/g;
 const DEXIE_IMPORT = /(['"])dexie\1/g;
+const DEXIE_IO_IMPORT = /(['"])dexie-export-import\1/g;
 const WORKSPACE_IMPORT = /(['"])(@tess\/[a-z]+)\1/g;
 /** `import … from '…';`, and the side-effect form. */
 const IMPORT_STATEMENT = /^import\s[\s\S]*?from\s*['"][^'"]*['"];?[^\S\n]*$/gm;
@@ -133,7 +135,11 @@ function emitModule(file: string): string[] {
       CHEVROTAIN_IMPORT,
       (_match, quote: string) => `${quote}${link(out, CHEVROTAIN_OUT)}${quote}`,
     )
-    .replace(DEXIE_IMPORT, (_match, quote: string) => `${quote}${link(out, DEXIE_OUT)}${quote}`);
+    .replace(DEXIE_IMPORT, (_match, quote: string) => `${quote}${link(out, DEXIE_OUT)}${quote}`)
+    .replace(
+      DEXIE_IO_IMPORT,
+      (_match, quote: string) => `${quote}${link(out, DEXIE_IO_OUT)}${quote}`,
+    );
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, code);
   return found;
@@ -232,6 +238,8 @@ function checkManifest(): void {
     ...Object.values(manifest.action?.default_icon ?? {}),
     manifest.action?.default_popup,
     ...(manifest.content_scripts ?? []).flatMap((script: { js?: string[] }) => script.js ?? []),
+    ...(manifest.background?.scripts ?? []),
+    manifest.background?.service_worker,
   ].filter((item): item is string => typeof item === 'string');
   for (const file of named) {
     if (!fs.existsSync(path.join(DIST, file))) {
@@ -270,7 +278,10 @@ function packageDir(from: string, name: string): string {
 /** One dependency's own esm build, with its source map comment dropped. */
 function copyVendor(from: string, name: string, inside: string, out: string): void {
   const source = path.join(packageDir(from, name), inside);
-  const code = fs.readFileSync(source, 'utf-8').replace(/\n?\/\/# sourceMappingURL=.*$/, '\n');
+  const code = fs.readFileSync(source, 'utf-8')
+    .replace(/\n?\/\/# sourceMappingURL=.*$/, '\n')
+    // An addon names the library it sits on; nothing resolves a bare name here.
+    .replace(DEXIE_IMPORT, (_match, quote: string) => `${quote}${link(out, DEXIE_OUT)}${quote}`);
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, code);
 }
@@ -286,6 +297,8 @@ function writeManifest(target: 'chrome' | 'firefox'): void {
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf-8'));
   if (target === 'chrome') {
     delete manifest.browser_specific_settings;
+    // Chrome runs the worker as a service worker; firefox as an event page.
+    manifest.background = { service_worker: 'background.js', type: 'module' };
   }
   fs.writeFileSync(path.join(DIST, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 }
@@ -321,6 +334,12 @@ copyVendor(
   'dexie',
   'dist/modern/dexie.min.mjs',
   DEXIE_OUT,
+);
+copyVendor(
+  path.join(ROOT, 'package.json'),
+  'dexie-export-import',
+  'dist/dexie-export-import.mjs',
+  DEXIE_IO_OUT,
 );
 copy(path.join(SRC, 'player.css'), path.join(DIST, 'player.css'));
 copy(path.join(SRC, 'popup', 'popup.html'), path.join(DIST, 'popup', 'popup.html'));

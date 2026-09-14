@@ -23,7 +23,20 @@ export interface ExtensionApi {
       ): void;
     };
   };
-  runtime: { getURL(path: string): string };
+  runtime: {
+    getURL(path: string): string;
+    /** Chrome MV3 and Firefox both answer with a promise. */
+    sendMessage?(message: unknown): Promise<unknown>;
+    onMessage?: {
+      addListener(
+        listener: (
+          message: unknown,
+          sender: unknown,
+          sendResponse: (response: unknown) => void,
+        ) => boolean | undefined,
+      ): void;
+    };
+  };
 }
 
 const globals = globalThis as unknown as { browser?: ExtensionApi; chrome?: ExtensionApi };

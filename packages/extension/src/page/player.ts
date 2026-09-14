@@ -12,6 +12,7 @@ import { ASK_FIELD_STYLE } from "../../../tessvm/src/web/ask-style.ts";
 import { CHART_WINDOW_STYLE } from "../../../tessvm/src/web/chart-view.ts";
 import { EXTRAS_DIALOG_STYLE } from "../../../tessvm/src/web/extras.ts";
 import { fetchWork, thumbUrl } from "./entry-project.ts";
+import { bridgeSaveStore } from "./save-bridge.ts";
 import { CloudClient } from "./cloud.ts";
 
 import { toTessProject } from "./tess-project.ts";
@@ -402,6 +403,9 @@ export function mountPlayer(
       handle = await boot({
         project: built.project,
         store: cloud,
+        // What the work saves belongs to the extension, so the settings panel
+        // can show it and throw it away (`src/store-db.ts`).
+        saveStore: bridgeSaveStore(projectId, String(work.name ?? projectId)),
         container: view,
         autoStart: false,
         keyTarget: root,

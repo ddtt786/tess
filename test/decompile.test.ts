@@ -2929,3 +2929,43 @@ test('여러 함수가 같은 매개변수·지역변수 id 를 가져도 각자
     compiled.errors[0]?.message ?? '',
   );
 });
+
+/**
+ * 엔트리의 키 목록에 없는 키도 작품에는 들어 있습니다(손으로 고친 작품, 다른 도구가
+ * 만든 작품). 이름을 모른다고 그 자리를 비우면 **이벤트 머리를 통째로 잃어** 그 아래
+ * 블록이 어디에도 붙지 않은 채로 남습니다 — 45(insert) 가 그랬습니다.
+ */
+test('엔트리 목록에 없는 키도 이름이나 번호로 되돌린다', () => {
+  const project = minimalProject();
+  const object = (project.objects as RawEntity[])[0]!;
+  const move = (type: string) => ({
+    type, params: [{ type: 'number', params: ['10'] }, null], statements: [],
+  });
+  object.script = JSON.stringify([
+    [{ type: 'when_some_key_pressed', params: [null, '45'], statements: [] }, move('move_x')],
+    [
+      { type: 'when_run_button_click', params: [null], statements: [] },
+      {
+        type: '_if',
+        params: [{ type: 'is_press_some_key', params: ['45', null] }, null],
+        statements: [[move('move_y')]],
+      },
+    ],
+    // 이름이 없는 코드는 번호 그대로 — 그래도 작품이 통째로 살아 있습니다.
+    [{ type: 'when_some_key_pressed', params: [null, '145'], statements: [] }, move('move_x')],
+  ]);
+
+  const back = decompileProject(project, [], { inline: true });
+  assert.deepEqual(back.warnings, [], back.warnings.join('\n'));
+  assert.match(back.source, /when key "insert" do/);
+  assert.match(back.source, /if key_down\("insert"\):/);
+  assert.match(back.source, /when key "145" do/);
+
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+  const script = JSON.parse(
+    String(((again.project as unknown as RawEntity).objects as RawEntity[])[0]!.script),
+  ) as RawEntity[][];
+  const codes = script.map((stack) => String((stack[0]!.params as unknown[])[1] ?? '')).sort();
+  assert.deepEqual(codes, ['', '145', '45'], '키 코드가 그대로 돌아옵니다');
+});

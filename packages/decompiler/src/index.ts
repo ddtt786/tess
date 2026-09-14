@@ -20,6 +20,16 @@ for (const [name, code] of Object.entries(KEY_CODES)) {
   if (!(String(code) in REVERSE_KEY_NAME)) REVERSE_KEY_NAME[String(code)] = name;
 }
 
+/**
+ * What the key of a block is called. A code with no name of its own is written
+ * as the number itself, which `keyCodeOf` reads back — without that, a work
+ * carrying such a key lost the whole script it started.
+ */
+function keyName(code: unknown): string | null {
+  const text = String(code ?? '').trim();
+  return REVERSE_KEY_NAME[text] ?? (/^[0-9]{1,3}$/.test(text) ? text : null);
+}
+
 // _1x1.png 는 모양 없는 "새 오브젝트"용 1×1 투명 그림이다. 파일에서 잰 1×1 이 실제
 // 크기가 아니라 project.json 의 dimension 이 실제 크기라, 이것만 `size` 를 적어 둔다.
 const BLANK_IMAGE = /(?:^|\/)images\/_1x1\.png$/;
@@ -1024,7 +1034,7 @@ function eventHeader(hat: RawBlock | undefined, ctx: DecompileContext): string |
     case 'when_clone_start': return 'when cloned';
     case 'when_message_cast': return `when signal ${tessString(ctx.messageName(p[1]))}`;
     case 'when_some_key_pressed': {
-      const name = REVERSE_KEY_NAME[String(p[1])];
+      const name = keyName(p[1]);
       return name ? `when key ${tessString(name)}` : null;
     }
     default: return null;
@@ -1047,6 +1057,6 @@ function matchKeyUpPattern(hat: RawBlock | undefined, rest: RawBlock[]) {
     ? negated.params?.[0]
     : null;
   if (!pressedCode || pressedCode !== releasedCode) return null;
-  const key = REVERSE_KEY_NAME[String(pressedCode)];
+  const key = keyName(pressedCode);
   return key ? { key, body: tail } : null;
 }

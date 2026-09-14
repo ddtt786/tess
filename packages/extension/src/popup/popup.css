@@ -285,3 +285,177 @@ body.is-off .chip {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* --- 저장된 데이터 ------------------------------------------------------- */
+.saves {
+  margin-top: 16px;
+  text-align: left;
+}
+
+.saves-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 2px 6px;
+}
+
+.saves-title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--ink);
+}
+
+.link[hidden] {
+  display: none;
+}
+
+.saves-empty {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+.saves-empty[hidden] {
+  display: none;
+}
+
+.saves-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--sunken);
+  overflow: hidden;
+}
+
+.saves-list:empty {
+  display: none;
+}
+
+.save {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.save + .save {
+  border-top: 1px solid var(--line);
+}
+
+.save-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.save-title {
+  display: block;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.save-meta {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.save-drop {
+  flex: none;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    background 0.12s ease-out,
+    color 0.12s ease-out,
+    border-color 0.12s ease-out;
+}
+
+.save-drop:hover {
+  border-color: #e0574f;
+  background: #e0574f;
+  color: #fff;
+}
+
+/* 한 번 더 누르면 지웁니다 — 눌린 사이에는 그 자리가 빨갛게 섭니다. */
+.save-drop.is-sure {
+  border-color: #e0574f;
+  background: #e0574f;
+  color: #fff;
+}
+
+.saves-files {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.file-button {
+  flex: 1;
+  padding: 8px 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease-out,
+    background 0.12s ease-out;
+}
+
+.file-button:hover {
+  border-color: var(--accent);
+  background: var(--sunken);
+}
+
+.file-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.saves-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.saves-note[hidden] {
+  display: none;
+}
+
+.saves-note.is-bad {
+  color: #e0574f;
+}

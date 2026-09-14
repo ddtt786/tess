@@ -324,7 +324,9 @@ export function exprOf(block: any, ctx: DecompileContext): string {
       return `block_count(${tessString(targetName(ctx, target))})`;
     }
     case 'is_press_some_key': {
-      const key = REVERSE_KEY_CODE[String(at(0))];
+      // A code with no name of its own is written as the number itself.
+      const code = String(at(0) ?? '').trim();
+      const key = REVERSE_KEY_CODE[code] ?? (/^[0-9]{1,3}$/.test(code) ? code : null);
       return key ? `key_down(${tessString(key)})` : placeholder(ctx, block);
     }
     case 'reach_something': return `touching(${tessString(targetName(ctx, at(1)))})`;

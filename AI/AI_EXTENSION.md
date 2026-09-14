@@ -29,7 +29,9 @@ pnpm build:extension        # dist 폴더와 tessvm-extension.zip 을 만든다
 | `src/page/tess-project.ts`  | 작품을 Tess 로 되돌렸다가 다시 컴파일한다               |
 | `src/page/player.ts`        | 실행기 화면 — 무대·조작줄·시작 화면·오류 줄             |
 | `src/player.css`            | 실행기 스타일 (무대·조작줄·시작 화면·오류 줄)           |
-| `src/popup/*`               | 툴바 설정 창 (실행기 단추 · 벡터 · 아이디 가리기 · 모르는 블록 알림) |
+| `src/popup/*`               | 툴바 설정 창 (실행기 단추 · 설정 · 저장된 데이터 관리)   |
+| `src/background.ts`         | 작업자 — 작품이 저장한 값을 받아 적는다                 |
+| `src/store-db.ts`           | 저장된 값의 자리 (Dexie · 확장 오리진의 IndexedDB) · 파일 내보내기·가져오기 |
 
 ## 1. 왜 페이지의 세계에서 도는가
 
@@ -165,16 +167,43 @@ graphql 응답 ──@tess/decompiler──▶ Tess 소스 ──@tess/compiler�
 지금은 엔트리가 그 소켓에 붙지 못했을 때와 같은 자리에 있습니다 — `connect_error`
 분기에서 엔트리도 작품이 들고 온 값으로 그 자리에서 돕니다.
 
-### 저장(`store`)은 실행기가 직접 한다
+### 저장(`store`)은 확장이 맡아 두고, 설정 창에서 관리한다
 
 `@` 로 시작하는 이름을 쓰는 작품은 Entry Save Manager 확장에 저장을 맡깁니다. 그 확장은
 엔트리 실행기 위에서 도는 것이라, 실행기를 tessvm 으로 바꾸면 그 자리가 비므로 tessvm 이
-같은 규약을 직접 지킵니다(AI_TESSVM.md 의 `store`). `boot` 에 `saveStore` 를 넘기지
-않으므로 playentry 에서도 기본값인 Dexie(IndexedDB) 저장소가 붙습니다.
+같은 규약을 직접 지킵니다(AI_TESSVM.md 의 `store`).
 
-**두 저장소는 서로 다른 자리입니다.** 세이브 매니저는 `localStorage` 에, tessvm 은
-IndexedDB 에 담으므로, 엔트리 실행기로 저장한 값이 tessvm 으로 이어지지는 않습니다.
-두 실행기를 오가며 쓰는 작품이라면 그만큼 값이 갈라집니다.
+값은 **페이지가 아니라 확장 쪽**에 둡니다. 페이지의 IndexedDB 는 playentry 의 것이라 그
+바깥에서는 아무도 읽을 수 없고, 그러면 설정 창이 무엇이 저장됐는지 보여 줄 수도 지울 수도
+없기 때문입니다. 그래서 확장 자신의 IndexedDB(`src/store-db.ts`, Dexie)에 작품마다 한 줄로
+담고, 설정 창과 작업자가 그 한 곳을 같이 봅니다.
+
+```
+작품(페이지 세계)  --postMessage-->  content.ts  --sendMessage-->  background.ts
+   save-bridge.ts      store-read/store-write        store-db.ts (Dexie · IndexedDB)
+```
+
+- `page/save-bridge.ts` 가 `SaveHost` 를 만들어 `boot` 의 `saveStore` 로 넘깁니다. 요청마다
+  번호를 달고 같은 번호로 돌아오는 답을 기다리며, 5초 안에 답이 없으면(확장을 도중에 끈
+  경우) 그 저장은 실패로 끝냅니다 — 작품이 영영 기다리지 않습니다.
+- `background.ts` 는 크롬에서 서비스 워커, 파이어폭스에서 이벤트 페이지입니다
+  (`build.ts` 의 `writeManifest` 가 각각의 키로 적습니다). 저장 요청 하나에 깨어나
+  쓰기가 끝난 뒤에 답합니다.
+- 설정 창은 그 데이터베이스를 **직접** 엽니다(같은 확장 오리진). 작품 이름·이름 개수·크기·
+  마지막 저장 시각을 보여 주고, 줄마다 삭제와 전체 삭제가 있습니다. 팝업에서 `confirm()`
+  을 띄우면 팝업이 닫히므로, 확인은 그 단추 자리에서 한 번 더 누르는 것으로 받습니다.
+- **파일로 내보내고 파일에서 가져옵니다** — `dexie-export-import` 의 `exportDB` 가 만든
+  json 을 `tessvm-save-<날짜>.json` 으로 내려받고, 같은 파일을 `importInto` 로 되읽습니다
+  (`overwriteValues: true` — 파일에 있는 작품은 덮어쓰고, 파일에 없는 작품은 그대로 둡니다.
+  그래서 다른 컴퓨터의 저장을 한 파일씩 합칠 수 있습니다). 읽기 전에 `peakImportFile` 로
+  `databaseName` 을 보고 `tessvm-store` 가 아니면 **반쯤 읽지 않고 거절**합니다.
+  내려받기는 팝업이 만든 `blob:` 주소를 `<a download>` 로 누르는 것이라 권한이 더 필요하지
+  않습니다. 애드온은 `dexie` 를 맨 이름으로 임포트하므로, 벤더링할 때 그 줄도 벤더 파일로
+  고쳐 씁니다(`build.ts` 의 `copyVendor`).
+
+**세이브 매니저와는 자리가 다릅니다.** 그쪽은 playentry 의 `localStorage` 이므로 엔트리
+실행기로 저장한 값이 tessvm 으로 이어지지는 않습니다. 로컬 실행기(`tessvm run`)는 확장이
+없으므로 tessvm 기본값인 페이지 쪽 Dexie 저장소를 씁니다 — 이것도 또 다른 자리입니다.
 
 ### 에셋 주소 — 하나 빠져 있다
 

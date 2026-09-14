@@ -227,3 +227,27 @@ void readSettings().then((settings) => {
   notice = settings.notice;
   applyAll();
 });
+
+/**
+ * The runner saves through here. What a work keeps belongs to the extension
+ * (`store-db.ts`), which the page's own world cannot reach, so a request is
+ * carried to the worker and its answer posted back under the same id.
+ */
+window.addEventListener('message', (event) => {
+  if (event.source !== window) {
+    return;
+  }
+  const data = event.data as { __tessvm?: string; id?: number } | null;
+  if (!data || typeof data !== 'object' || !String(data.__tessvm).startsWith('store-')) {
+    return;
+  }
+  const reply = (answer: unknown) => {
+    window.postMessage({ __tessvm: 'store-answer', id: data.id, answer }, location.origin);
+  };
+  const sent = api.runtime.sendMessage?.(data);
+  if (!sent) {
+    reply({ error: true });
+    return;
+  }
+  void sent.then(reply, () => reply({ error: true }));
+});
