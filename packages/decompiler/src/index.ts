@@ -374,6 +374,8 @@ function buildContext(
     objectsById: new Map(),
     scenesById: new Map(),
     functionsById: new Map(),
+    objectScale: null,
+    scaleById: new Map(),
     picturesById: new Map(),
     soundsById: new Map(),
     collectedAssets: [],
@@ -479,6 +481,10 @@ function buildContext(
       const sndId = safeIdentifier(sound.name?.replace(/\.[a-z0-9]+$/i, ''), localUsed, 'sound');
       ctx.soundsById.set(sound.id, { identifier: sndId, source: sound, owner: object });
     }
+  }
+
+  for (const object of project.objects ?? []) {
+    ctx.scaleById.set(String(object.id), savedScale(object));
   }
 
   // --- 변수 · 리스트 (초시계·대답은 Tess 가 내장 키워드로 이미 제공한다) -----------
@@ -844,6 +850,8 @@ function objectFragmentLines(object: RawEntity, ctx: DecompileContext, isText: b
   } catch (error) {
     ctx.warnings.add(`오브젝트 '${info.displayName}' 의 스크립트를 읽지 못했습니다: ${(error as Error).message}`);
   }
+  // 옛 크기 블록은 이 오브젝트가 저장된 배율에서 재므로 그 값을 들려 보낸다.
+  ctx.objectScale = ctx.scaleById.get(String(object.id)) ?? savedScale(object);
   for (const thread of threads) lines.push(...eventLines(thread, ctx, 0));
 
   // 이 오브젝트 것만 건드리는 함수는 여기, 조각 파일 맨 끝에 선언한다. 그 안에서는
@@ -852,8 +860,19 @@ function objectFragmentLines(object: RawEntity, ctx: DecompileContext, isText: b
     lines.push('');
     lines.push(...functionDeclarationLines(owned.entry, owned.createBlock, ctx, object.id));
   }
+  ctx.objectScale = null;
 
   return lines;
+}
+
+/** The scale an object was saved with, written the way a declaration does (%). */
+function savedScale(object: RawEntity): { x: number; y: number } {
+  const entity = (object.entity ?? {}) as { scaleX?: unknown; scaleY?: unknown };
+  const percent = (value: unknown) => {
+    const scale = Number(value);
+    return Number.isFinite(scale) ? scale * 100 : 100;
+  };
+  return { x: percent(entity.scaleX), y: percent(entity.scaleY) };
 }
 
 /**

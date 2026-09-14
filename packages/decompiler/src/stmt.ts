@@ -409,10 +409,17 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       return ["clear effects"];
 
     // --- 10여 년 전 이름 ------------------------------------------------------
-    // 크기를 원래 크기의 N% 로 정한다. 두 축을 같은 비율로 맞추는 자리가 `scale_x`·
-    // `scale_y` 다 (둘 다 원본 대비 %).
-    case "set_scale_percent":
-      return [`scale_x = ${e(0)}`, `scale_y = ${e(0)}`];
+    // 크기를 **저장된 배율의** N% 로 정한다. Tess 의 `scale_x` 는 모양 원본 대비 %
+    // 이므로, 저장된 배율(선언에 적힌 %)을 곱해 같은 자리로 맞춘다.
+    case "set_scale_percent": {
+      const saved = ctx.objectScale;
+      if (!saved) return unsupported(ctx, block);
+      const value = e(0);
+      return [
+        `scale_x = ${value} * ${tessNumber(saved.x)} / 100`,
+        `scale_y = ${value} * ${tessNumber(saved.y)} / 100`,
+      ];
+    }
     // 지금 크기에 (N+100)% 를 곱한다. 엔트리의 `크기` 값은 두 축에 비례하므로 곱하기
     // 하나로 같은 자리가 된다.
     case "change_scale_percent":

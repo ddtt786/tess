@@ -1221,13 +1221,19 @@ BigNumber 를 쓰므로 `(abs(x) - floor(abs(x)))` 가 엔트리와 같은 값�
 | --------------------------------------- | ------------------------------- | -------------------------------------- |
 | `get_x_coordinate` · `get_y_coordinate` | `x` · `y`                       | 자기 좌표                              |
 | `calc_mod` · `calc_share`               | `a % b` · `a // b`              | 나머지 · 몫                            |
-| `set_scale_percent`                     | `scale_x = N` · `scale_y = N`   | 원본 대비 %, 두 축을 같이 맞춘다       |
+| `set_scale_percent`                     | `scale_x = N * 저장배율 / 100`  | 옛 블록은 **저장된 배율**에서 잰다     |
 | `change_scale_percent`                  | `size = size * (N + 100) / 100` | 엔트리의 `크기` 는 두 축에 비례한다     |
 | `set_effect` · `set_entity_effect`      | `effect_색 = N`                 | `opacity` 는 투명도와 반대라 `100 - N` |
 | `set_effect_amount`                     | `effect_색 += N`                | 더하는 쪽                              |
 | `reset_project_timer`                   | `reset timer`                   |                                        |
 | `options_for_list`                      | `리스트["FIRST"]`               | 엔트리도 그 글자를 번호 자리에서 푼다  |
 | `stop_object` 의 `thisObject`           | `stop object`                   | 복제본까지 이 오브젝트의 모든 코드     |
+
+`set_scale_percent` 의 곱셈이 핵심입니다. 옛 블록은 작품이 저장된 배율(`snapshot_`)의
+N% 로 맞추는데 Tess 의 `scale_x` 는 **모양 원본**의 N% 라서, 곱해 두지 않으면 0.54 로
+저장된 꽃이 1.85배로 커집니다(`ladybug.ent` 에서 꽃이 커 보이던 자리입니다). 되돌리기는
+그 오브젝트가 저장된 배율을 알고 있으므로(`ctx.objectScale`) 그 값을 식에 넣습니다 —
+오브젝트를 알 수 없는 자리(전역 함수 안)는 옛 경고 그대로 둡니다.
 
 `stop object` 는 이번에 생긴 Tess 낱말입니다 — 엔트리의 지금 드롭다운에는 없지만 옛
 작품에는 남아 있는 값이고, `stop me`(이 개체)와는 복제본을 멈추느냐가 다릅니다.

@@ -235,6 +235,14 @@ export interface DecompileContext {
   functionsByOwner: Map<string, OwnedFunction[]>;
   inFunction: boolean;
   functionOwnerId: string | null;
+  /**
+   * Scale the object being written was saved with, as the percentages its
+   * declaration carries. `scale_x = N` is N% of the costume's own size, so a
+   * block that works from the saved scale needs this to be written at all.
+   */
+  objectScale: { x: number; y: number } | null;
+  /** Every object's saved scale, by object id. */
+  scaleById: Map<string, { x: number; y: number }>;
   /** How many loops the block being written sits inside. */
   loopDepth: number;
   /** Objects go into the one source rather than a fragment file each. */

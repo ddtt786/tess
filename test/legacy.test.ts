@@ -111,7 +111,8 @@ test('옛 블록은 되돌릴 때 지금 문법으로 옮겨지고 다시 컴파
   const back = decompileProject(legacyProject(), [], { inline: true });
   assert.deepEqual(back.warnings, [], back.warnings.join('\n'));
   for (const line of [
-    /scale_x = 50/, /scale_y = 50/,
+    // 저장된 배율(100%)을 곱한 자리 — Tess 의 `scale_x` 는 모양 원본 대비 % 다.
+    /scale_x = 50 \* 100 \/ 100/, /scale_y = 50 \* 100 \/ 100/,
     /size = size \* \(-20 \+ 100\) \/ 100/,
     /effect_alpha = 30/,
     /effect_alpha = 100 - 70/,
@@ -124,6 +125,45 @@ test('옛 블록은 되돌릴 때 지금 문법으로 옮겨지고 다시 컴파
   }
   const again = compileProject(back.source, { path: 'main.tess' });
   assert.deepEqual(again.errors.map((error) => error.message), []);
+});
+
+/**
+ * 옛 크기 블록은 **저장된 배율**에서 재고(`sprite.snapshot_`), Tess 의 `scale_x` 는
+ * 모양 원본에서 잽니다. 그 차이를 곱해 두지 않으면 0.54 로 저장된 꽃이 원본 크기의
+ * 10% 가 아니라 그대로 10% 로 커집니다 — ladybug 에서 꽃이 커 보이던 자리입니다.
+ */
+test('옛 크기 블록은 저장된 배율에서 잰다', () => {
+  const project = legacyProject();
+  const object = (project.objects as RawEntity[])[0]!;
+  (object.entity as RawEntity).scaleX = 0.54;
+  (object.entity as RawEntity).scaleY = 0.54;
+  object.script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    { type: 'set_scale_percent', params: [number('10'), null], statements: [] },
+  ]]);
+
+  const direct = new Vm({ renderer: null, audio: null });
+  direct.load(project as never);
+  direct.start();
+  direct.tick();
+  assert.ok(Math.abs(direct.targets[0]!.entity.getScaleX() - 0.054) < 1e-9, '저장된 배율의 10%');
+
+  const back = decompileProject(project, [], { inline: true });
+  assert.match(back.source, /scale_x = 10 \* 54 \/ 100/);
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors.map((error) => error.message), []);
+  const rebuilt = again.project as unknown as RawEntity;
+  const entity = ((rebuilt.objects as RawEntity[])[0]!.entity as RawEntity);
+  entity.width = 100;
+  entity.height = 100;
+  const round = new Vm({ renderer: null, audio: null });
+  round.load(rebuilt as never);
+  round.start();
+  for (let i = 0; i < 3; i += 1) round.tick();
+  // `scale_x` 는 지금 크기를 재서 비율을 되맞추므로(AI_SPEC-ADDENDUM 4.1) 소수점
+  // 아래로 아주 작은 오차가 남습니다. 엔트리에서도 같은 함수가 같은 자리를 잽니다.
+  const scaled = round.targets[0]!.entity.getScaleX();
+  assert.ok(Math.abs(scaled - 0.054) / 0.054 < 1e-5, `되돌린 뒤에도 같아야 합니다 (${scaled})`);
 });
 
 test('`stop object` 는 복제본까지 이 오브젝트의 코드를 멈춘다', () => {
