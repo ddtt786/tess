@@ -438,11 +438,10 @@ export class Codegen {
       case 'repeat_basic':
         return this.repeatBasic(block, ind);
       case 'repeat_inf':
-        return this.loop(`while (true) {`, block.statements?.[0] ?? [], ind);
-      // The maze lesson's loop. Entry does not mark its scope as a loop, so the
-      // body ending does not end the frame — it goes straight round again.
+      // The maze lesson's loop is drawn as a forever loop and runs as one: a
+      // round costs a frame, and `stop_repeat` inside it ends that loop.
       case 'ai_repeat_until_reach':
-        return this.loop(`while (true) {`, block.statements?.[0] ?? [], ind, true);
+        return this.loop(`while (true) {`, block.statements?.[0] ?? [], ind);
       case 'repeat_while_true':
         return this.repeatWhile(block, ind);
       case '_if':
@@ -714,19 +713,15 @@ export class Codegen {
     return this.loop(`while (${condition}) {`, block.statements?.[0] ?? [], ind);
   }
 
-  /**
-   * A loop and its body. `tight` is the maze lesson's loop, which entry steps
-   * straight back into: it spends no frame on a round, so the body's own waits
-   * are what pace it.
-   */
-  private loop(header: string, body: RawBlock[], ind: string, tight = false): string {
+  /** A loop and its body. A round costs a frame unless the body jumps past it. */
+  private loop(header: string, body: RawBlock[], ind: string): string {
     const depth = this.loopDepth;
     this.loopDepth += 1;
-    this.spinning.push(tight);
+    this.spinning.push(false);
     const inner = this.compileStack(body, `${ind}  `);
     const spins = this.spinning.pop() ?? false;
     this.loopDepth -= 1;
-    const tail = tight ? '' : `${ind}  yield 0;\n`;
+    const tail = `${ind}  yield 0;\n`;
     if (!spins) {
       return `${ind}${header}\n${inner}${tail}${ind}}\n`;
     }

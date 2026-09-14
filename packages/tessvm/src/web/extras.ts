@@ -17,7 +17,8 @@
  * | `$MOUSE_LOCK` | every time it is taken, once per run                |
  *
  * Pasting is not asked about: the viewer pasting *is* the answer, and nothing
- * is read from the clipboard until they do.
+ * is read from the clipboard until they do. It is told, though — a notice that
+ * goes away on its own says the work took what was on the clipboard.
  */
 import { stage } from '../runtime/model.ts';
 import type { PixiRenderer } from '../render/renderer.ts';
@@ -25,6 +26,8 @@ import type { Vm } from '../runtime/engine.ts';
 
 /** The shortest gap between two copies, in milliseconds. */
 const COPY_INTERVAL = 1000;
+/** How long the paste notice stands, in milliseconds. */
+const NOTICE_TIME = 1800;
 /** How much of the text to put in the dialog's own box. */
 const DETAIL_LIMIT = 20_000;
 /** Wheel units per notch, by `WheelEvent.deltaMode`: pixels, lines, pages. */
@@ -168,6 +171,39 @@ export const EXTRAS_DIALOG_STYLE = `
   outline: 2px solid #1b4bd8;
   outline-offset: 2px;
 }
+
+/* The line that says what the work took. It stands over the stage without
+   taking the pointer and fades out on its own. */
+.tessvm-notice {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  z-index: 4;
+  max-width: calc(100% - 24px);
+  padding: 8px 14px;
+  box-sizing: border-box;
+  background: rgba(23, 26, 33, 0.86);
+  color: #fff;
+  border-radius: 999px;
+  font-family: 'Nanum Gothic', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: tessvm-notice-fade ${NOTICE_TIME}ms ease-out forwards;
+}
+
+.tessvm-notice[hidden] { display: none !important; }
+
+@keyframes tessvm-notice-fade {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  10%, 75% { opacity: 1; transform: translate(-50%, 0); }
+  to { opacity: 0; transform: translate(-50%, 0); }
+}
 `;
 
 interface Request {
@@ -270,6 +306,41 @@ function makeDialog(parent: HTMLElement): Dialog {
   };
 }
 
+interface Notice {
+  /** Shows the line and starts its fade over again. */
+  show(text: string): void;
+  dispose(): void;
+}
+
+/** The notice itself. One element, reused for every line. */
+function makeNotice(parent: HTMLElement): Notice {
+  const root = document.createElement('div');
+  root.className = 'tessvm-notice';
+  root.hidden = true;
+  root.setAttribute('role', 'status');
+  parent.appendChild(root);
+
+  let timer = 0;
+
+  return {
+    show(text) {
+      root.textContent = text;
+      // Hiding it first restarts the fade on a notice that is still standing.
+      root.hidden = true;
+      void root.offsetWidth;
+      root.hidden = false;
+      clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        root.hidden = true;
+      }, NOTICE_TIME);
+    },
+    dispose() {
+      clearTimeout(timer);
+      root.remove();
+    },
+  };
+}
+
 export interface ExtrasBinding {
   /** Cursor the work asked for, `''` when it has asked for none. */
   cursor(): string;
@@ -291,6 +362,7 @@ export function bindExtras(
 ): ExtrasBinding {
   const extras = vm.extras;
   const dialog = makeDialog(frame);
+  const notice = makeNotice(frame);
   const on = <T extends EventTarget>(
     target: T,
     type: string,
@@ -408,14 +480,23 @@ export function bindExtras(
     return !active || active === document.body || view.contains(active);
   };
 
+  /** Whether the paste went into the answer field, which shows the text itself. */
+  const intoAnswer = (target: EventTarget | null): boolean =>
+    target instanceof Element && target.closest('.tessvm-ask') !== null;
+
   on(window, 'paste', (raw) => {
     const event = raw as ClipboardEvent;
-    if (!extras.uses.clipboard || dialog.open || !ours(event.target)) {
+    if (!extras.uses.clipboard || vm.state !== 'run' || dialog.open || !ours(event.target)) {
       return;
     }
     const text = event.clipboardData?.getData('text/plain');
     if (text) {
       extras.pasted(text);
+      // The answer field shows the pasted text itself; a paste at the stage
+      // leaves nothing to see, so that one is told.
+      if (!intoAnswer(event.target)) {
+        notice.show('작품이 클립보드를 읽었습니다.');
+      }
     }
   });
 
@@ -458,6 +539,7 @@ export function bindExtras(
     dispose: () => {
       extras.host = null;
       dialog.dispose();
+      notice.dispose();
     },
   };
 }

@@ -230,12 +230,9 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
     case "repeat_basic":
       return [`repeat ${e(0)}:`, ...loopBranch(block, 0, ctx), "end"];
     case "repeat_inf":
-      return ["forever:", ...loopBranch(block, 0, ctx), "end"];
-    // 미로 수업의 반복 블록. 엔트리는 이 블록의 스코프를 반복으로 세워 두지
-    // 않으므로(`isLooped`), 안쪽이 끝나면 프레임을 넘기지 않고 곧바로 다시
-    // 들어간다. 끝에 붙인 `skip` 이 바로 그 "프레임 없이 다음 바퀴" 다.
+    // 미로 수업의 반복 블록도 같은 자리다 — 그림 그대로 계속 반복하기로 옮긴다.
     case "ai_repeat_until_reach":
-      return ["forever:", ...loopBranch(block, 0, ctx), "  skip", "end"];
+      return ["forever:", ...loopBranch(block, 0, ctx), "end"];
     case "repeat_while_true": {
       const kind = at(1) === "until" ? "until" : "while";
       return [`${kind} ${e(0)}:`, ...loopBranch(block, 0, ctx), "end"];
@@ -245,8 +242,9 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
     case "wait_until_true": {
       const trick = slotTrick(at(0));
       if (!trick) return [`wait ${e(0)}`];
-      // 반복 밖에서 `break` 는 엔트리에서 그 스크립트를 끝낸다(`breakLoop`).
-      if (trick === "break" && ctx.loopDepth === 0) return ["stop"];
+      // 반복 밖에는 되감을 스코프가 없어 기다리기가 제 스코프를 그대로 돌려주고,
+      // 엔트리는 그 자리에서 프레임마다 같은 블록을 다시 본다 — 영영 기다린다.
+      if (ctx.loopDepth === 0) return ["wait false"];
       return [trick];
     }
     case "stop_repeat":

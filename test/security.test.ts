@@ -208,22 +208,23 @@ test('값 자리에 놓인 흐름 블록은 그 자리에서 반복을 다시 �
   assert.match(loose, /return;/);
 });
 
-/** 미로 수업의 반복 블록. 엔트리는 안쪽이 끝나면 곧바로 다시 들어간다. */
-test('미로 수업의 반복 블록은 무한 반복으로 돈다', () => {
-  const program = new Codegen(work([
+/** 미로 수업의 반복 블록. 이름 없이 그려질 뿐 계속 반복하기와 같은 자리다. */
+test('미로 수업의 반복 블록은 계속 반복하기로 돈다', () => {
+  const maze = (inner: unknown) => new Codegen(work([
     HAT,
-    {
-      id: 'r', type: 'ai_repeat_until_reach', params: [null],
-      statements: [[{ id: 'm', type: 'move_y', params: [{ id: 'n', type: 'number', params: ['10'] }, null], statements: [] }]],
-    },
+    { id: 'r', type: 'ai_repeat_until_reach', params: [null], statements: [[inner]] },
   ]) as never).compile();
+  const program = maze({
+    id: 'm', type: 'move_y', params: [{ id: 'n', type: 'number', params: ['10'] }, null], statements: [],
+  });
   assert.deepEqual([...program.unknown.keys()], [], '모르는 블록이 아니다');
-  // 한 바퀴에 프레임을 넘기지 않는다 — 엔트리가 이 블록의 스코프를 반복으로 세우지
-  // 않기 때문이다. 대신 한 프레임 안에서만 도는 것을 막는 가드가 위에 선다.
-  const body = program.source.slice(program.source.indexOf('while (true) {'));
-  assert.match(body, /while \(true\) \{\n\s*if \(m0 !== O\.frame\(\)\)/);
-  assert.doesNotMatch(body.slice(0, body.indexOf('\n  }')), /O\.moveY\(e, 10\);\n\s*yield 0;/);
+  // 한 바퀴가 한 프레임이다 — 이것을 건너뛰면 한 프레임 안에서만 돌아 무대가 멈춘다.
+  assert.match(program.source, /while \(true\) \{\n\s*O\.moveY\(e, 10\);\n\s*yield 0;/);
   assert.doesNotThrow(() => new Function('R', program.source));
+
+  // 안에 놓인 `반복 중단하기` 는 이 반복을 끝낸다.
+  const ended = maze({ id: 's', type: 'stop_repeat', params: [null], statements: [] });
+  assert.match(ended.source, /while \(true\) \{\n\s*break;/);
 });
 
 /**
