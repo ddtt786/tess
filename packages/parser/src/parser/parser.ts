@@ -13,7 +13,7 @@ import {
   ALL_TOKENS, ASSIGN_OPERATORS, Assign, ColorLiteral, Colon, Comma, Eq, Ge, Gt,
   IdentLike, Identifier, IntDiv, LParen, LSquare, Le, Lt, Minus, Ne,
   NumberLiteral, Percent, Plus, Pow, Question, RParen, RSquare, Slash, Star,
-  STANDALONE_STATEMENTS, StringLiteral, kw,
+  STANDALONE_STATEMENTS, STATEMENT_KEYWORDS, StringLiteral, kw,
 } from './tokens.ts';
 
 const idx = (tokenType: TokenType) => tokenType.tokenTypeIdx!;
@@ -31,16 +31,8 @@ const PROPERTY_NAMES = new Set([
 
 const ASSIGN_OPERATOR_IDS = new Set(ASSIGN_OPERATORS.map(idx));
 
-/** Keywords that begin a statement form. */
-const STATEMENT_LEADERS = idxSet(
-  kw.if, kw.repeat, kw.while, kw.until, kw.forever, kw.wait, kw.return,
-  kw.break, kw.continue, kw.skip, kw.restart, kw.stop, kw.start, kw.reset, kw.clear,
-  kw.send, kw.call, kw.clone, kw.del, kw.kill, kw.jump, kw.forward, kw.bounce,
-  kw.move, kw.go, kw.turn, kw.steer, kw.look, kw.show, kw.hide, kw.next,
-  kw.prev, kw.say, kw.think, kw.flip, kw.order, kw.write, kw.append,
-  kw.prepend, kw.stamp, kw.play, kw.read, kw.tts, kw.in, kw.remove, kw.ask,
-  kw.var, kw.list, kw.save, kw.store,
-);
+/** Keywords that begin a statement form (`tokens.ts` holds the words). */
+const STATEMENT_LEADERS = idxSet(...[...STATEMENT_KEYWORDS].map((word) => kw[word]!));
 
 // Statements that are complete on their own. The grammar commits to these as
 // soon as it sees the keyword, so `stop = 5` is an error rather than an

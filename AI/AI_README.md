@@ -1026,6 +1026,13 @@ Tess 컴파일러가 함수 안의 `var` 를 그대로 엔트리 지역 변수�
 읽어 버려서(`parser.js` 의 `STANDALONE_LEADERS`) 변수 이름이 될 수 없습니다. 되돌리기는
 이런 이름과 예약어(`RESERVED`)를 만나면 뒤에 `_` 를 붙입니다(`skip` → `skip_`).
 
+**문장을 여는 낱말 전부가 그렇습니다**(`STATEMENT_KEYWORDS` — `move` `repeat` `play`
+`call` `read` `order` …). `move` 라는 함수를 그대로 두면 `move(a, b)` 가 호출이 아니라
+`move X Y` 로 읽혀 쉼표에서 깨지고, 그 작품은 **통째로 컴파일되지 않습니다**. 실제
+playentry 작품 세 개가 그 자리에서 멈췄습니다(`move()` 둘, `repeat()` 하나). 파서를
+느슨하게 푸는 길도 있지만 `move (a) (b)` 와 구분할 수 없으므로(둘 다 올바른 문법입니다),
+되돌리기가 이름을 `move_`·`repeat_` 로 비껴 둡니다.
+
 **색 자리**(`draw_color`/`fill_color`/`font_color`/`bg_color`)는 엔트리에서 색을 고르는
 칸이지만 값 블록을 끼워 넣을 수도 있고, 실제 작품이 그렇게 씁니다. 그래서 컴파일러는
 색상 리터럴·`transparent`·문자열뿐 아니라 **계산되는 값**도 받습니다.

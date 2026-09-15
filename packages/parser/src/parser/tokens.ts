@@ -75,11 +75,32 @@ export const STANDALONE_STATEMENTS = new Set([
   'clone', 'kill',
 ]);
 
+/**
+ * 문장을 시작할 수 있는 키워드 목록입니다.
+ *
+ * 파서는 이 낱말을 보면 그 문장으로 읽으므로, 같은 이름의 함수나 변수는 문장 자리에서
+ * 쓸 수 없습니다 — `move(a, b)` 는 호출이 아니라 `move X Y` 로 읽힙니다.
+ * @example STATEMENT_KEYWORDS.has('move'); // true
+ */
+export const STATEMENT_KEYWORDS = new Set([
+  'if', 'repeat', 'while', 'until', 'forever', 'wait', 'return',
+  'break', 'continue', 'skip', 'restart', 'stop', 'start', 'reset', 'clear',
+  'send', 'call', 'clone', 'del', 'kill', 'jump', 'forward', 'bounce',
+  'move', 'go', 'turn', 'steer', 'look', 'show', 'hide', 'next',
+  'prev', 'say', 'think', 'flip', 'order', 'write', 'append',
+  'prepend', 'stamp', 'play', 'read', 'tts', 'in', 'remove', 'ask',
+  'var', 'list', 'save', 'store',
+]);
+
 /** 
- * 변수 이름으로 사용할 수 없는 단어들의 목록입니다. 예약어와 단독 문장 키워드를 포함합니다.
+ * 변수 이름으로 사용할 수 없는 단어들의 목록입니다. 예약어와 문장을 여는 키워드를 포함합니다.
  * @example UNUSABLE_AS_NAME.has('if'); // true
  */
-export const UNUSABLE_AS_NAME = new Set([...RESERVED, ...STANDALONE_STATEMENTS]);
+export const UNUSABLE_AS_NAME = new Set([
+  ...RESERVED,
+  ...STANDALONE_STATEMENTS,
+  ...STATEMENT_KEYWORDS,
+]);
 
 /** 
  * 이름이 위치할 수 있는 곳에 허용되는 모든 토큰의 카테고리입니다.

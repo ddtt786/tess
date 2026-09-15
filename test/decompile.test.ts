@@ -2969,3 +2969,40 @@ test('엔트리 목록에 없는 키도 이름이나 번호로 되돌린다', ()
   const codes = script.map((stack) => String((stack[0]!.params as unknown[])[1] ?? '')).sort();
   assert.deepEqual(codes, ['', '145', '45'], '키 코드가 그대로 돌아옵니다');
 });
+
+/**
+ * 문장을 여는 낱말과 같은 이름은 그 자리에서 문장으로 읽힙니다 — `move(a, b)` 는 호출이
+ * 아니라 `move X Y` 로 읽혀 쉼표에서 깨집니다. 되돌리기가 그런 이름을 그대로 쓰면
+ * **작품 전체가 다시 컴파일되지 않으므로**(playentry 작품 여럿이 그랬습니다) 이름을
+ * 비껴 둡니다.
+ */
+test('문장을 여는 낱말과 같은 함수·변수 이름은 비껴 간다', () => {
+  const project = minimalProject();
+  const object = (project.objects as RawEntity[])[0]!;
+  project.functions = [{
+    id: 'fn1',
+    type: 'normal',
+    content: JSON.stringify([[{
+      type: 'function_create',
+      params: [{ type: 'function_field_label', params: ['move', null] }, null],
+      statements: [[]],
+    }]]),
+  }];
+  project.variables = [
+    { id: 'v1', name: 'repeat', variableType: 'variable', value: 0, visible: false, object: null },
+  ];
+  object.script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    { type: 'func_fn1', params: [null], statements: [] },
+    { type: 'set_variable', params: ['v1', { type: 'number', params: ['1'] }, null], statements: [] },
+  ]]);
+
+  const back = decompileProject(project, [], { inline: true });
+  assert.match(back.source, /function move_\(\)/);
+  assert.match(back.source, /^\s+move_\(\)$/m);
+  // 엔트리 이름은 `as` 로 남습니다 — 되돌린 이름만 비껴간 것입니다.
+  assert.match(back.source, /var repeat_ as "repeat" = 0/);
+  // 이름을 비껴 두지 않으면 여기서 컴파일이 깨집니다.
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+});

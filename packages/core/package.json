@@ -1,6 +1,6 @@
 {
   "name": "@tess/core",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "Tess 언어용 공용 정의",
   "license": "MIT",
   "type": "module",
