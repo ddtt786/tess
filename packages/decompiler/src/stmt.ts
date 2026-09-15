@@ -639,7 +639,8 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
 export function colorExpr(value: any, ctx?: DecompileContext): string {
   const literal = literalStringOf(value);
   if (literal !== null) {
-    if (/^#[0-9a-fA-F]{6}$/.test(literal)) return literal;
+    // `#RRGGBB` 와, 캔버스가 함께 읽는 `#RRGGBBAA` 둘 다 색 리터럴이다.
+    if (/^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(literal)) return literal;
     if (literal === "transparent") return "transparent";
     return tessString(literal);
   }

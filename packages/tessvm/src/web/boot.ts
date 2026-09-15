@@ -540,10 +540,11 @@ function bindInput(
   on(keyTarget, 'keydown', (raw) => {
     const event = raw as KeyboardEvent;
     const code = keyCodeOf(event);
-    if (!vm.pressedKeys.has(code)) {
-      vm.pressedKeys.add(code);
-      vm.fireEvent('keyPress', String(code));
-    }
+    vm.pressedKeys.add(code);
+    // Every keydown raises it, the repeats a held key sends included — entry
+    // does the same (`Entry.Utils.captureKeyEvent`), so holding a key runs the
+    // script again at whatever rate the browser repeats at.
+    vm.fireEvent('keyPress', String(code));
     claim(event, code);
   });
   on(keyTarget, 'keyup', (raw) => {

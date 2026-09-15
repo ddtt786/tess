@@ -3006,3 +3006,29 @@ test('문장을 여는 낱말과 같은 함수·변수 이름은 비껴 간다',
   const again = compileProject(back.source, { path: 'main.tess' });
   assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
 });
+
+/**
+ * 색은 엔트리가 캔버스에 그대로 넘기는 글자라, 캔버스가 함께 읽는 `#RRGGBBAA` 도
+ * 작품에 들어 있습니다(`글씨색을 #00000050 로 바꾸기`). 알파를 떼어 내면 작품이
+ * 의도한 반투명이 진한 색으로 바뀝니다.
+ */
+test('알파가 붙은 색도 알파째로 오간다', () => {
+  const project = minimalProject();
+  const object = (project.objects as RawEntity[])[1]!; // 글상자
+  object.script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    { type: 'text_change_font_color', params: ['#00000050', null], statements: [] },
+  ]]);
+
+  const back = decompileProject(project, [], { inline: true });
+  assert.match(back.source, /font_color = #00000050/);
+
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+  const script = JSON.parse(
+    String(((again.project as unknown as RawEntity).objects as RawEntity[])
+      .find((item) => item.objectType === 'textBox')!.script),
+  ) as RawEntity[][];
+  const color = (script[0]![1]!.params as unknown[])[0];
+  assert.equal(color, '#00000050', '알파가 그대로 남습니다');
+});

@@ -33,6 +33,13 @@ import {
   textSharpness,
 } from './sharpness.ts';
 
+/** A colour a work supplied: what to paint with, and how see-through it is. */
+interface Ink {
+  color: number;
+  /** 0–1. `#RRGGBBAA` carries it; everything else is 1. */
+  alpha: number;
+}
+
 /**
  * Colours a work supplies, remembered by the text they were written as.
  *
@@ -40,18 +47,22 @@ import {
  * cannot read and keeps the colour it had. Pixi throws instead, and a throw in
  * the middle of a frame takes the whole work down — so anything unreadable is
  * turned away here. Works really do carry `#검정` and hexes that lost a digit.
+ *
+ * The alpha comes back separately because the canvas reads `#RRGGBBAA` and
+ * works use it; a number alone would paint that colour solid.
  */
-const colorCache = new Map<string, number | null>();
+const colorCache = new Map<string, Ink | null>();
 
-function usableColor(value: unknown): number | null {
+function usableColor(value: unknown): Ink | null {
   const text = String(value ?? '');
   const known = colorCache.get(text);
   if (known !== undefined) {
     return known;
   }
-  let parsed: number | null = null;
+  let parsed: Ink | null = null;
   try {
-    parsed = new Color(text).toNumber();
+    const color = new Color(text);
+    parsed = { color: color.toNumber(), alpha: color.alpha };
   } catch {
     parsed = null;
   }
@@ -625,7 +636,7 @@ export class PixiRenderer implements Renderer {
         style: {
           fontFamily: entity.fontFamily,
           fontSize: entity.fontSize,
-          fill: usableColor(entity.colour) ?? 0x000000,
+          fill: usableColor(entity.colour) ?? { color: 0x000000, alpha: 1 },
           align: 'center',
         },
         resolution: this.textResolution(entity),
@@ -926,7 +937,7 @@ export class PixiRenderer implements Renderer {
     // does for entry.
     const fill = usableColor(entity.colour);
     if (fill !== null) {
-      style.fill = fill;
+      style.fill = { color: fill.color, alpha: fill.alpha };
     }
     style.fontWeight = entity.fontBold ? 'bold' : 'normal';
     style.fontStyle = entity.fontItalic ? 'italic' : 'normal';
@@ -974,7 +985,7 @@ export class PixiRenderer implements Renderer {
             : 0;
       background
         .rect(offset - entity.width / 2, -entity.height / 2, entity.width, entity.height)
-        .fill({ color: bg });
+        .fill({ color: bg.color, alpha: bg.alpha });
     }
 
     decoration.clear();
@@ -987,12 +998,12 @@ export class PixiRenderer implements Renderer {
       if (entity.underLine) {
         decoration
           .rect(left, top + text.height - thickness, width, thickness)
-          .fill({ color: ink });
+          .fill({ color: ink.color, alpha: ink.alpha });
       }
       if (entity.strike) {
         decoration
           .rect(left, top + text.height / 2 - thickness / 2, width, thickness)
-          .fill({ color: ink });
+          .fill({ color: ink.color, alpha: ink.alpha });
       }
     }
   }
@@ -1017,7 +1028,7 @@ export class PixiRenderer implements Renderer {
     style.fontSize = entity.fontSize;
     // Only the metrics are read from this style, but an unreadable colour would
     // still throw on the way in.
-    style.fill = usableColor(entity.colour) ?? 0x000000;
+    style.fill = usableColor(entity.colour)?.color ?? 0x000000;
     style.fontWeight = entity.fontBold ? 'bold' : 'normal';
     style.fontStyle = entity.fontItalic ? 'italic' : 'normal';
     style.align = entity.textAlign === 1 ? 'left' : entity.textAlign === 2 ? 'right' : 'center';
@@ -1205,15 +1216,18 @@ export class PixiRenderer implements Renderer {
         graphics.lineTo(points[at]!, -points[at + 1]!);
       }
     }
-    const ink = usableColor(style.color) ?? 0x000000;
+    const ink = usableColor(style.color) ?? { color: 0x000000, alpha: 1 };
     if (style.fill) {
-      graphics.fill({ color: ink });
+      graphics.fill({ color: ink.color, alpha: ink.alpha });
     } else {
       // `setStrokeStyle(thickness)` — entry leaves createjs at its defaults,
       // which are butt caps and miter joins, so pen ends and corners are square.
       graphics.stroke({
         width: style.thickness,
-        color: ink,
+        color: ink.color,
+        // The pen's own alpha is the group's; a colour that carries one of its
+        // own multiplies with it, the way the canvas does.
+        alpha: ink.alpha,
         cap: 'butt',
         join: 'miter',
       });

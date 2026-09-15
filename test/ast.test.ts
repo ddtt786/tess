@@ -83,13 +83,14 @@ test('색상 리터럴은 소문자로 정규화한다', () => {
 });
 
 test('여섯 자리가 아닌 색과 색 이름도 #rrggbb 로 정규화한다', () => {
-  // CSS 줄임꼴과 알파: 세 자리는 늘리고, 알파는 버린다
+  // CSS 줄임꼴: 세 자리는 늘리고, 네 자리는 알파까지 늘린다
   assert.equal(expr('#abc').value, '#aabbcc');
-  assert.equal(expr('#abcd').value, '#aabbcc');
-  assert.equal(expr('#ff0000cc').value, '#ff0000');
-  // 자리 수가 어중간하면 여섯 자리에 맞춰 자르거나 채운다
+  assert.equal(expr('#abcd').value, '#aabbccdd');
+  // 알파는 캔버스가 읽는 자리라 그대로 남는다 (`#RRGGBBAA`)
+  assert.equal(expr('#ff0000cc').value, '#ff0000cc');
+  // 자리 수가 어중간하면 여섯 자리(여섯을 넘으면 여덟)에 맞춰 자르거나 채운다
   assert.equal(expr('#efeff').value, '#efeff0');
-  assert.equal(expr('#ffffff100').value, '#ffffff');
+  assert.equal(expr('#ffffff100').value, '#ffffff10');
   // 이름도 색이다
   assert.equal(expr('#검정').value, '#000000');
   assert.equal(expr('#하늘색').value, '#00bfff');

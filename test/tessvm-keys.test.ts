@@ -51,6 +51,7 @@ function mountInput(t: any) {
     sandbox,
   );
 
+  const fired: Array<[string, string | undefined]> = [];
   const stage = {
     state: 'run',
     pressedKeys: new Set<number>(),
@@ -59,7 +60,10 @@ function mountInput(t: any) {
     mouseY: 0,
     mouseDown: false,
     clickedEntityId: null,
-    fireEvent: () => [],
+    fireEvent: (event: string, filter?: string) => {
+      fired.push([event, filter]);
+      return [];
+    },
     fireEventOn: () => [],
   };
   const document_ = dom.window.document;
@@ -77,7 +81,7 @@ function mountInput(t: any) {
     document_.removeEventListener(type, watch);
     return { prevented: event.defaultPrevented, reachedPage: sawIt };
   };
-  return { press, stage };
+  return { press, stage, fired };
 }
 
 test('작품 안에서 누른 키는 페이지로 가지 않는다', (t) => {
@@ -120,4 +124,29 @@ test('작품이 돌지 않는 동안에는 페이지가 키를 그대로 쓴다'
     stage.state = state;
     assert.deepEqual(press('root', { code: 'Space' }), { prevented: false, reachedPage: true }, state);
   }
+});
+
+/**
+ * 키를 꾹 누르고 있으면 브라우저가 keydown 을 되풀이해 보내고, 엔트리는 그것을 하나하나
+ * 이벤트로 올립니다(`Entry.Utils.captureKeyEvent` 는 눌린 키를 따로 세지 않습니다).
+ * 첫 번째만 올리면 `키를 눌렀을 때 -> 이동하기` 가 한 칸만 움직이고 멈춥니다.
+ */
+test('키를 누르고 있으면 되풀이되는 keydown 도 그대로 올라간다', (t) => {
+  const { press, fired, stage } = mountInput(t);
+
+  press('root', { code: 'ArrowRight' });
+  press('root', { code: 'ArrowRight', repeat: true });
+  press('root', { code: 'ArrowRight', repeat: true });
+  assert.deepEqual(fired, [
+    ['keyPress', '39'],
+    ['keyPress', '39'],
+    ['keyPress', '39'],
+  ]);
+  assert.deepEqual([...stage.pressedKeys], [39], '눌린 키는 한 번만 담깁니다');
+
+  // 떼면 그 자리는 비고, 다시 누르면 또 올라갑니다.
+  press('root', { code: 'ArrowRight' }, 'keyup');
+  assert.deepEqual([...stage.pressedKeys], []);
+  press('root', { code: 'ArrowRight' });
+  assert.equal(fired.length, 4);
 });

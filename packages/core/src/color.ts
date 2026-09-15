@@ -2,9 +2,10 @@
  * @fileoverview Color literal recognition, shared by the lexer, the comment
  * scanner and the editor grammar.
  *
- * Entry stores every colour as `#RRGGBB`, so anything written after `#` is
- * normalised to that form. A `#` that names no colour is a comment, which is
- * what keeps `# 주석` and `#ff0000` apart.
+ * Entry stores a colour as the text it will hand the canvas, so `#RRGGBB` and
+ * the `#RRGGBBAA` the canvas also reads both stand; anything written after `#`
+ * is normalised to one of those. A `#` that names no colour is a comment, which
+ * is what keeps `# 주석` and `#ff0000` apart.
  */
 
 /** Colour names Tess accepts after `#`, Korean and CSS, as `#RRGGBB`. */
@@ -43,18 +44,20 @@ export const NAMED_COLORS: Record<string, string> = {
 const COLOR_BODY = /^[\p{L}0-9_]+$/u;
 
 /**
- * Expands a run of hex digits to the six Entry wants.
+ * Expands a run of hex digits to the six or eight a colour is written with.
  *
- * Three and four digits are the CSS shorthands, with the alpha of a four
- * dropped; anything longer is cut to six, anything shorter padded out. Alpha is
- * dropped throughout — Entry has no place to put it.
+ * Three and four digits are the css shorthands and each digit is doubled, so a
+ * four keeps its alpha. Anything else is padded out to six, or to eight where
+ * there are more than six — the canvas reads `#RRGGBBAA`, so the alpha a work
+ * carries is kept rather than thrown away.
  */
 function hexToRgb(hex: string): string {
   const lower = hex.toLowerCase();
   if (lower.length === 3 || lower.length === 4) {
-    return `#${lower.slice(0, 3).replace(/./g, (digit) => digit + digit)}`;
+    return `#${lower.replace(/./g, (digit) => digit + digit)}`;
   }
-  return `#${lower.padEnd(6, '0').slice(0, 6)}`;
+  const width = lower.length > 6 ? 8 : 6;
+  return `#${lower.padEnd(width, '0').slice(0, width)}`;
 }
 
 /**
