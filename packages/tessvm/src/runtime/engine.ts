@@ -98,6 +98,8 @@ export interface Renderer extends RendererLike, Partial<TextMeasurer> {
   maskFor?(pictureId: string, width: number, height: number): AlphaMask | null;
   reset?(): void;
   setScene?(sceneId: string): void;
+  /** 부스트 모드가 바뀌었다 — 그리는 방식이 달라지므로 다시 그려야 한다. */
+  setBoost?(on: boolean): void;
 }
 
 export interface AudioEngine {
@@ -213,7 +215,7 @@ export class Vm implements Project {
 
   /** `Entry.FPS` — drives the tick step and every `초` → 프레임 conversion. */
   frameRate: number;
-  boost: boolean;
+  private boostOn: boolean;
   deviceType: 'desktop' | 'tablet' | 'mobile';
   touch: boolean;
   user: EntryUser | null;
@@ -278,7 +280,7 @@ export class Vm implements Project {
     if (options.stageWidth && options.stageHeight) {
       setStageSize(options.stageWidth, options.stageHeight);
     }
-    this.boost = options.boost ?? true;
+    this.boostOn = options.boost ?? true;
     this.deviceType = options.deviceType ?? 'desktop';
     this.touch = options.touch ?? false;
     this.user = options.user ?? null;
@@ -390,7 +392,8 @@ export class Vm implements Project {
     this.snapshot();
     this.renderer?.attach?.(this.targets, this.scenes);
     for (const target of this.targets) {
-      target.entity.measure();
+      // 작품이 담고 있던 높이는 그대로 씁니다 — 엔트리도 `setText` 로 폭만 다시 잽니다.
+      target.entity.measure(false);
       this.renderer?.addEntity(target.entity);
     }
     this.renderer?.setScene?.(this.currentSceneId);
@@ -826,6 +829,23 @@ export class Vm implements Project {
   //  Events
   // -------------------------------------------------------------------------
   /** Starts every matching script on every entity of the current scene. */
+  /**
+   * `부스트 모드인가?` 가 돌려주는 값이자, 엔트리에서는 **어느 렌더러로 그릴지를 고르는
+   * 스위치**입니다(`Entry.setBasicPaint` 의 `GEHelper.isWebGL`). 값만 바꾸고 그리는 쪽을
+   * 그대로 두면 켜고 꺼도 같은 그림이 나오므로, 바뀔 때 렌더러에게도 알립니다.
+   */
+  get boost(): boolean {
+    return this.boostOn;
+  }
+
+  set boost(on: boolean) {
+    if (this.boostOn === on) {
+      return;
+    }
+    this.boostOn = on;
+    this.renderer?.setBoost?.(on);
+  }
+
   fireEvent(event: string, filter?: string): Thread[] {
     if (this.state !== 'run' && event !== 'start') {
       return [];
@@ -1116,7 +1136,8 @@ function loadEntitySnapshot(entity: Entity): void {
     return;
   }
   Object.assign(entity, saved);
-  entity.measure();
+  // 되돌린 글은 그대로이므로 폭만 다시 잽니다 — 높이는 작품이 담고 있던 값입니다.
+  entity.measure(false);
   entity.scaleOriginX = saved.scaleX;
   entity.scaleOriginY = saved.scaleY;
   entity.effect = initialEffects();

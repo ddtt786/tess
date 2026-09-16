@@ -18,6 +18,7 @@ import {
   svgSharpness,
   textSharpness,
 } from '../packages/tessvm/src/render/sharpness.ts';
+import { fillParts, nonzeroParts } from '../packages/tessvm/src/render/fill.ts';
 import {
   CollisionSystem,
   MaskStore,
@@ -1186,7 +1187,11 @@ test('붓의 투명도 바꾸기도 선과 채우기를 함께 옮긴다', () =>
   assert.equal(entity.paint!.opacity, 50);
 });
 
-test('글상자 크기는 글을 쓰는 그 순간 다시 재어진다', () => {
+/**
+ * `updateTextbox` 는 `setWidth` 만 부릅니다 — 글을 써도 상자가 높아지지는 않고, 작품이
+ * 담고 있던 높이가 그대로 남습니다. 높이가 따라가는 것은 글꼴이 바뀔 때뿐입니다.
+ */
+test('글상자 폭은 글을 쓰는 그 순간 다시 재어지고, 높이는 그대로다', () => {
   const result = compileProject(
     `scene "s":
   text "t":
@@ -1208,7 +1213,7 @@ end`,
     flush() {},
     measureTextBox(entity) {
       measured.push(entity.text);
-      return { width: entity.text.length * 10, height: 22 };
+      return { width: entity.text.length * 10, height: 999 };
     },
   };
   vm.load(result.project as unknown as never);
@@ -1217,6 +1222,7 @@ end`,
   const entity = vm.targets[0]!.entity;
   assert.equal(entity.text, '아주 아주 긴 글자입니다');
   assert.equal(entity.width, '아주 아주 긴 글자입니다'.length * 10);
+  assert.notEqual(entity.height, 999, '재어진 높이를 가져가지 않습니다');
   assert.ok(measured.includes('아주 아주 긴 글자입니다'));
 });
 
@@ -2225,4 +2231,215 @@ test('허용 창 크기는 무대 폭을 따라가지 않는다', () => {
   );
   assert.equal(block.includes('--tessvm-stage-width'), false, '무대 폭을 읽지 않습니다');
   assert.match(block, /padding: 9px 16px;/, '단추는 고정 픽셀입니다');
+});
+
+/**
+ * `skip` 으로 끝나는 반복은 한 바퀴에 프레임을 쓰지 않습니다 — 되돌리기가 미로 수업의
+ * 반복 블록(`ai_repeat_until_reach`)을 적는 형태입니다. 안쪽이 바퀴마다 프레임을 쓰면
+ * 그것을 부르는 바깥 반복의 한 바퀴에 안쪽 바퀴 수만큼 프레임이 들어, 매 프레임 움직여야
+ * 할 값이 그 배수로 끊깁니다.
+ */
+test('프레임을 쓰지 않는 반복은 바깥 반복의 한 바퀴를 늦추지 않는다', () => {
+  const vm = runVm(`
+var 높이 = 0
+var 남은 = 0
+
+function 한번에_다_그리기():
+  남은 = 16
+  forever:
+    남은 -= 1
+    if (남은 < 1):
+      break
+    end
+    skip
+  end
+end
+
+scene "s":
+  object "o":
+    when start do
+      forever:
+        한번에_다_그리기()
+        높이 += 1
+      end
+    end
+  end
+end`);
+  for (let frame = 1; frame <= 5; frame += 1) {
+    vm.tick();
+    assert.equal(valueOf(vm, '높이'), frame, `${frame} 프레임이면 ${frame} 바퀴입니다`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+//  붓 채우기의 감김 규칙
+// ---------------------------------------------------------------------------
+
+/** 사다리꼴 목록 안에 그 점이 들어 있는가. 사다리꼴은 볼록하므로 외적 부호로 봅니다. */
+function fillCovers(parts: number[][], x: number, y: number): boolean {
+  for (const quad of parts) {
+    let negative = false;
+    let positive = false;
+    for (let at = 0; at < 4; at += 1) {
+      const ax = quad[at * 2]!;
+      const ay = quad[at * 2 + 1]!;
+      const bx = quad[((at + 1) % 4) * 2]!;
+      const by = quad[((at + 1) % 4) * 2 + 1]!;
+      const cross = (bx - ax) * (y - ay) - (by - ay) * (x - ax);
+      if (cross < -1e-9) negative = true;
+      if (cross > 1e-9) positive = true;
+    }
+    if (!(negative && positive)) return true;
+  }
+  return false;
+}
+
+/**
+ * 엔트리의 채우기는 캔버스의 `ctx.fill()` 이라 nonzero 감김 규칙을 따릅니다. 가로
+ * 왕복과 세로 왕복을 한 경로에 이어 붙이면 겹친 칸의 감김 수가 0 이 되어 체커보드가
+ * 나오고, `3dcheese.ent` 의 바닥판이 그 위에 서 있습니다. PIXI 는 폴리곤을 단순
+ * 외곽선으로 보므로(earcut) 이 경로를 계단 모양으로 뭉갭니다.
+ */
+test('스스로 가로지르는 채우기 경로는 nonzero 로 풀린다', () => {
+  const cell = 24;
+  const size = 8;
+  const points: number[] = [];
+  let x = 0;
+  let y = 0;
+  const mark = () => points.push(x, y);
+  mark();
+  for (let round = 0; round < size / 2; round += 1) {
+    x += cell * size; mark();
+    y -= cell; mark();
+    x -= cell * size; mark();
+    y -= cell; mark();
+  }
+  for (let round = 0; round < size / 2; round += 1) {
+    y += cell * size; mark();
+    x += cell; mark();
+    y -= cell * size; mark();
+    x += cell; mark();
+  }
+  y += cell * size; mark();
+
+  const parts = nonzeroParts(points);
+  assert.ok(parts, '사다리꼴로 풀려야 합니다');
+  for (let row = 0; row < size; row += 1) {
+    for (let col = 0; col < size; col += 1) {
+      const covered = fillCovers(parts, (col + 0.5) * cell, -(row + 0.5) * cell);
+      assert.equal(covered, (row + col) % 2 === 0, `${row}행 ${col}열`);
+    }
+  }
+});
+
+/** 가로지르지 않는 경로는 어느 쪽으로 칠해도 같으므로 모양이 그대로 나옵니다. */
+test('가로지르지 않는 채우기 경로는 모양이 그대로다', () => {
+  const parts = nonzeroParts([0, 0, 10, 0, 10, 10, 0, 10]);
+  assert.ok(parts);
+  assert.equal(parts.length, 1);
+  for (const [x, y] of [[5, 5], [1, 9], [9, 1]] as const) {
+    assert.equal(fillCovers(parts, x, y), true, `(${x},${y}) 는 안입니다`);
+  }
+  for (const [x, y] of [[-1, 5], [11, 5], [5, 12]] as const) {
+    assert.equal(fillCovers(parts, x, y), false, `(${x},${y}) 는 바깥입니다`);
+  }
+});
+
+/** 나비 넥타이는 두 날개의 감김 수가 각각 ±1 이라 둘 다 칠해집니다. */
+test('꼬인 사각형은 두 날개가 모두 칠해진다', () => {
+  const parts = nonzeroParts([0, 0, 20, 20, 20, 0, 0, 20]);
+  assert.ok(parts);
+  assert.equal(fillCovers(parts, 4, 10), true, '왼쪽 날개');
+  assert.equal(fillCovers(parts, 16, 10), true, '오른쪽 날개');
+  assert.equal(fillCovers(parts, 10, 3), false, '가운데 위아래는 바깥');
+  assert.equal(fillCovers(parts, 10, 17), false, '가운데 위아래는 바깥');
+});
+
+/**
+ * 엔트리에서 부스트 모드는 **WebGL 렌더러를 고르는 스위치**입니다. 켜면 채우기가 PIXI 로
+ * 가서 자기교차 경로를 단순 외곽선으로 뭉개고, 끄면 캔버스로 가서 nonzero 로 칠합니다 —
+ * 값을 돌려주기만 하고 그리는 방식이 그대로면 두 모드가 같은 그림을 냅니다.
+ */
+test('부스트 모드는 채우기를 칠하는 방식까지 고른다', () => {
+  // 가로 왕복과 세로 왕복을 이어 붙인, 체커보드가 되는 경로.
+  const cell = 24;
+  const size = 4;
+  const points: number[] = [];
+  let x = 0;
+  let y = 0;
+  const mark = () => points.push(x, y);
+  mark();
+  for (let round = 0; round < size / 2; round += 1) {
+    x += cell * size; mark();
+    y -= cell; mark();
+    x -= cell * size; mark();
+    y -= cell; mark();
+  }
+  for (let round = 0; round < size / 2; round += 1) {
+    y += cell * size; mark();
+    x += cell; mark();
+    y -= cell * size; mark();
+    x += cell; mark();
+  }
+  y += cell * size; mark();
+
+  assert.equal(fillParts(points, true), null, '부스트 모드는 PIXI 에 그대로 넘깁니다');
+  const canvas = fillParts(points, false);
+  assert.ok(canvas, '부스트를 끄면 nonzero 로 풀어서 넘깁니다');
+  assert.deepEqual(canvas, nonzeroParts(points));
+});
+
+/**
+ * 부스트를 끈 엔트리는 글상자를 `textBaseline: middle` 로 `y = 0` 에 놓아 첫 줄이 상자
+ * 가운데에 오고, 폭은 줄을 쪼개지 않고 글 전체를 잰 값입니다. 켠 엔트리는 `anchor.y`
+ * 가 0.5 라 글 덩어리 전체가 가운데에 옵니다.
+ */
+test('글상자의 세로 정렬과 폭도 부스트 모드를 따라간다', () => {
+  const source = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/renderer.ts'),
+    'utf-8',
+  );
+  const block = source.slice(
+    source.indexOf('private syncTextBox'),
+    source.indexOf('private textResolution'),
+  );
+  assert.match(block, /this\.options\.boost === false/, '세로 정렬이 부스트를 봅니다');
+  assert.match(block, /text\.anchor\.set\(anchorX, 0\.5\)/, '부스트 모드는 가운데 정렬입니다');
+  const measure = source.slice(
+    source.indexOf('measureTextBox(entity: Entity)'),
+    source.indexOf('private measureWhole'),
+  );
+  assert.match(measure, /this\.options\.boost === false/, '폭도 부스트를 봅니다');
+});
+
+/**
+ * 부스트 모드는 값이자 렌더러를 고르는 스위치이므로, 돌아가는 중에 바뀌면 렌더러도
+ * 알아야 합니다 — 확장의 부스트 토글은 `vm.boost` 하나만 건드립니다
+ * (`packages/extension/src/page/player.ts`). 알리지 않으면 값만 바뀌고 그림은 그대로라
+ * 켜고 꺼도 아무 일이 없습니다.
+ */
+test('돌아가는 중에 부스트를 바꾸면 렌더러도 다시 그린다', () => {
+  const told: boolean[] = [];
+  const vm = new Vm({
+    renderer: {
+      addEntity() {},
+      removeEntity() {},
+      flush() {},
+      setBoost(on: boolean) {
+        told.push(on);
+      },
+    } as never,
+    audio: null,
+  });
+
+  assert.equal(vm.boost, true, '기본은 켬입니다');
+  vm.boost = false;
+  assert.equal(vm.boost, false);
+  assert.deepEqual(told, [false], '렌더러에게 한 번 알립니다');
+
+  vm.boost = false;
+  assert.deepEqual(told, [false], '같은 값이면 다시 그리지 않습니다');
+
+  vm.boost = true;
+  assert.deepEqual(told, [false, true]);
 });

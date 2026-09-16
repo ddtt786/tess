@@ -235,15 +235,17 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   frame.className = 'tessvm-frame';
   view.appendChild(frame);
 
+  // 엔트리에서 부스트 모드는 그리는 방식까지 바꾸므로 렌더러도 같이 받습니다.
+  const boost = options.boost ?? true;
   const renderer = new PixiRenderer({
     parent: frame,
     quality: options.quality ?? 1,
     svg: options.svg ?? true,
+    boost,
   });
   await renderer.init();
 
   const audio = new WebAudioEngine();
-  const boost = options.boost ?? true;
   const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   const deviceType = /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
   const vm = new Vm({

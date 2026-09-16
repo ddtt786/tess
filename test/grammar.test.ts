@@ -266,6 +266,21 @@ look "mouse"
 look "enemy"
 `);
 
+// `in` 은 같은 줄에서만 지속 시간을 잇습니다. 다음 줄에서 시작하면 `in <리스트> add` 문입니다.
+ok('8.1 · 8.2 다음 줄의 in 은 지속 시간이 아니다', `
+list 기록 = []
+move 20 20
+in 기록 add 1
+go 0 0
+in 기록 add 2
+go "mouse"
+in 기록 add 3
+turn 45
+in 기록 add 4
+steer 30
+in 기록 add 5
+`);
+
 ok('8.3 모양과 크기', `
 show
 hide

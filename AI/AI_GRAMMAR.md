@@ -282,16 +282,16 @@ MoveStatement
   = forward E at E                   -- forwardAt
   | forward E                        -- forward
   | bounce                           -- bounce
-  | move PosExpr #sameLine PosExpr in E -- moveIn
+  | move PosExpr #sameLine PosExpr #sameLine in E -- moveIn
   | move PosExpr #sameLine PosExpr      -- move
-  | go PosExpr #sameLine PosExpr in E   -- goPointIn
+  | go PosExpr #sameLine PosExpr #sameLine in E   -- goPointIn
   | go PosExpr #sameLine PosExpr        -- goPoint
-  | go E in E                        -- goTargetIn
+  | go E #sameLine in E              -- goTargetIn
   | go E                             -- goTarget
 
 RotateStatement
-  = turn E in E   -- turnIn  | turn E   -- turn
-  | steer E in E  -- steerIn | steer E  -- steer
+  = turn E #sameLine in E   -- turnIn  | turn E   -- turn
+  | steer E #sameLine in E  -- steerIn | steer E  -- steer
   | look E        -- look
 ```
 

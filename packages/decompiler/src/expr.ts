@@ -261,6 +261,16 @@ export function exprOf(block: any, ctx: DecompileContext): string {
     case 'get_y_coordinate': return 'y';
     case 'calc_mod': return `(${exprOf(at(0), ctx)} % ${exprOf(at(2), ctx)})`;
     case 'calc_share': return `(${exprOf(at(0), ctx)} // ${exprOf(at(2), ctx)})`;
+    // The pre-`calc_basic` operator blocks: one block per operator, operands at 0 and 2.
+    // Entry reads both sides as numbers here, so `+` never concatenates in these.
+    case 'calc_plus': return `(${exprOf(at(0), ctx)} + ${exprOf(at(2), ctx)})`;
+    case 'calc_minus': return `(${exprOf(at(0), ctx)} - ${exprOf(at(2), ctx)})`;
+    case 'calc_times': return `(${exprOf(at(0), ctx)} * ${exprOf(at(2), ctx)})`;
+    case 'calc_divide': return `(${exprOf(at(0), ctx)} / ${exprOf(at(2), ctx)})`;
+    // The pre-`boolean_basic_operator` comparisons, same operand slots.
+    case 'boolean_equal': return `(${exprOf(at(0), ctx)} == ${exprOf(at(2), ctx)})`;
+    case 'boolean_bigger': return `(${exprOf(at(0), ctx)} > ${exprOf(at(2), ctx)})`;
+    case 'boolean_smaller': return `(${exprOf(at(0), ctx)} < ${exprOf(at(2), ctx)})`;
     // 리스트 자리의 `첫번째`·`마지막`·`무작위`. 엔트리는 그 글자를 그대로 번호 자리에서
     // 풀고(`Entry.getListRealIndex`), tessvm 도 같은 자리에서 같게 읽습니다.
     case 'options_for_list': return tessString(String(at(0) ?? 'FIRST'));

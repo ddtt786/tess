@@ -179,6 +179,24 @@ function slotTrick(param: unknown): string | null {
  * slots before the block itself, so the loop restarts or ends there and the
  * block is never reached.
  */
+/**
+ * A statement block parked in a value slot. `Entry.Scope.run` evaluates
+ * `getParams()` before it looks at the block's own `func`, so such a statement
+ * runs even when the block around it does nothing — the carrier idiom old works
+ * use with hardware blocks. Returns the block inside the `function_field_*`
+ * wrapper the slot stores it in.
+ */
+function parkedStatement(param: unknown): RawBlock | null {
+  const field = param as RawBlock | undefined;
+  if (
+    field?.type !== "function_field_string" &&
+    field?.type !== "function_field_boolean"
+  )
+    return null;
+  const inner = field.params?.[0] as RawBlock | undefined;
+  return inner && typeof inner === "object" ? inner : null;
+}
+
 export function carriedTrick(block: RawBlock | undefined): string | null {
   if (!block || (block.statements?.length ?? 0) > 0) return null;
   let carried: string | null = null;
@@ -232,9 +250,21 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
     case "repeat_basic":
       return [`repeat ${e(0)}:`, ...loopBranch(block, 0, ctx), "end"];
     case "repeat_inf":
-    // 미로 수업의 반복 블록도 같은 자리다 — 그림 그대로 계속 반복하기로 옮긴다.
-    case "ai_repeat_until_reach":
       return ["forever:", ...loopBranch(block, 0, ctx), "end"];
+    /**
+     * 미로 수업의 반복 블록. `func` 가 `script.isLooped` 를 세우지 않아 한 바퀴가
+     * 프레임을 쓰지 않으므로, 같은 뜻의 `skip` 을 몸통 끝에 붙여 옮긴다. 몸통이 비면
+     * 엔트리도 아무것도 하지 않고 지나간다(`getBlocks().length === 0`).
+     */
+    case "ai_repeat_until_reach": {
+      if (!block.statements?.[0]?.length) return [];
+      return [
+        "forever:",
+        ...loopBranch(block, 0, ctx),
+        ...indent(["skip"]),
+        "end",
+      ];
+    }
     case "repeat_while_true": {
       const kind = at(1) === "until" ? "until" : "while";
       return [`${kind} ${e(0)}:`, ...loopBranch(block, 0, ctx), "end"];
@@ -622,7 +652,12 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       // never reaches the block either, so nothing is written. Both are quiet.
       const carried = carriedTrick(block);
       if (carried) return ctx.loopDepth > 0 ? [carried] : [];
-      return unsupported(ctx, block);
+      // Statements parked in the value slots run first, then the block itself.
+      const parked = (block.params ?? [])
+        .map(parkedStatement)
+        .filter((inner: RawBlock | null): inner is RawBlock => inner !== null)
+        .flatMap((inner: RawBlock) => statementLines(inner, ctx));
+      return [...parked, ...unsupported(ctx, block)];
     }
   }
 }

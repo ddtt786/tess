@@ -26,6 +26,7 @@ import type { Renderer } from '../runtime/engine.ts';
 import { buildMask } from '../collision/mask-image.ts';
 import type { AlphaMask } from '../collision/mask.ts';
 import { Overlay, type TableLike } from './overlay.ts';
+import { fillParts } from './fill.ts';
 import {
   MAX_SHARPNESS,
   svgBudgetScale,
@@ -158,6 +159,12 @@ export interface RendererOptions {
   antialias?: boolean;
   /** Take the vector costume where one exists. On unless turned off. */
   svg?: boolean;
+  /**
+   * 부스트 모드 — 엔트리에서 이것은 **WebGL 렌더러를 고르는 스위치**입니다
+   * (`Entry.setBasicPaint` 의 `GEHelper.isWebGL`). 켜면 채우기가 PIXI 로 가고,
+   * 끄면 캔버스로 가는데 둘은 자기교차 경로를 다르게 칠합니다. VM 과 같이 기본은 켬입니다.
+   */
+  boost?: boolean;
 }
 
 /**
@@ -203,6 +210,8 @@ export class PixiRenderer implements Renderer {
   private fontsWait: Promise<void> | null = null;
   private readonly svgPicks = new Map<string, boolean>();
   private readonly measureStyle = new TextStyle();
+  /** `measureWhole` 이 쓰는 2D 컨텍스트. 처음 필요할 때 만듭니다. */
+  private measureCanvas: CanvasRenderingContext2D | null | undefined;
 
   constructor(options: RendererOptions = {}) {
     this.quality = options.quality ?? 1;
@@ -568,6 +577,33 @@ export class PixiRenderer implements Renderer {
     this.svgBaked.clear();
     this.pictures.clear();
     this.app.destroy({ removeView: true }, { children: true });
+  }
+
+  /**
+   * 부스트 모드를 켜고 끕니다. 엔트리에서 이 스위치는 렌더러를 고르는 것이라, 이미 그려
+   * 둔 채우기(감김 규칙)와 글상자(세로 정렬 · 폭)를 다시 그려야 달라집니다.
+   */
+  setBoost(on: boolean): void {
+    if (this.options.boost === on) {
+      return;
+    }
+    this.options.boost = on;
+    for (const [entity, view] of this.views) {
+      for (const which of PAINT_FIRST) {
+        // 무리가 들고 있는 "이미 이렇게 그렸다" 표시를 지워 다시 그리게 합니다.
+        for (const group of view[which]?.groups ?? []) {
+          group.drawn = "";
+        }
+      }
+      if (entity.paint || entity.brush) {
+        this.penDirty.add(entity);
+      }
+      if (entity.type === "textBox") {
+        entity.measure(false);
+        entity.dirty = true;
+      }
+    }
+    this.flush();
   }
 
   setScene(sceneId: string): void {
@@ -968,7 +1004,14 @@ export class PixiRenderer implements Renderer {
         align === 'left' ? -entity.width / 2 : align === 'right' ? entity.width / 2 : 0,
         -entity.height / 2 + TEXT_BOX_TOP_OFFSET,
       );
+    } else if (this.options.boost === false) {
+      // 캔버스로 그리는 엔트리는 글상자를 `textBaseline: middle` 로 `y = 0` 에 놓으므로
+      // **첫 줄**이 상자 가운데에 오고 나머지가 아래로 흐릅니다. 줄이 하나면 가운데
+      // 정렬과 같은 자리라 보통 글상자는 달라지지 않습니다.
+      text.anchor.set(anchorX, 0);
+      text.position.set(0, -(entity.fontSize + 2) / 2);
     } else {
+      // 부스트 모드(PIXI)는 `anchor.y = 0.5` — 글 덩어리 전체가 가운데에 옵니다.
       text.anchor.set(anchorX, 0.5);
       text.position.set(0, 0);
     }
@@ -1055,7 +1098,36 @@ export class PixiRenderer implements Renderer {
       entity.text,
       this.styleFor(entity, this.measureStyle),
     );
-    return { width: metrics.width, height: metrics.height };
+    // 부스트 모드를 끈 엔트리는 createjs 로 재고, 그 `getMeasuredWidth` 는 줄을 쪼개지
+    // 않고 글 전체를 한 번에 `measureText` 합니다 — 줄바꿈이 든 한 줄짜리 글상자의 폭이
+    // 가장 긴 줄이 아니라 글 전체 폭으로 남는 자리입니다. 부스트 모드(PIXI)는 줄을
+    // 쪼개고 가장 긴 줄을 가져갑니다(엔트리가 갈아 끼운 `TextMetrics.measureText`).
+    const whole =
+      this.options.boost === false && !entity.lineBreak ? this.measureWhole(entity) : null;
+    return { width: whole ?? metrics.width, height: metrics.height };
+  }
+
+  /**
+   * 글 전체를 한 줄로 보고 잰 폭 — 캔버스의 `measureText` 는 줄바꿈을 글자 하나로
+   * 셉니다. 잴 곳이 없으면 `null` 이라 부르는 쪽이 PIXI 쪽 값을 씁니다.
+   */
+  private measureWhole(entity: Entity): number | null {
+    const context = (this.measureCanvas ??= document
+      .createElement('canvas')
+      .getContext('2d'));
+    if (!context) {
+      return null;
+    }
+    // 엔트리가 캔버스에 넘기는 그 글꼴 문자열입니다(굵기 · 기울임 · 크기 · 이름).
+    context.font = [
+      entity.fontBold && 'bold',
+      entity.fontItalic && 'italic',
+      `${entity.fontSize}px`,
+      entity.fontFamily,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    return context.measureText(entity.text).width;
   }
 
   /**
@@ -1079,7 +1151,8 @@ export class PixiRenderer implements Renderer {
         // Nudge the family so the style really changes; `syncTextBox` puts the
         // right one back and PIXI measures again from scratch.
         view.text.style.fontFamily = 'sans-serif';
-        entity.measure();
+        // 글꼴이 바뀐 것이 아니라 같은 글을 다시 재는 자리이므로 폭만 고칩니다.
+        entity.measure(false);
         entity.dirty = true;
       }
     }
@@ -1209,11 +1282,23 @@ export class PixiRenderer implements Renderer {
 
     const graphics = group.graphics;
     graphics.clear();
-    for (const piece of pieces) {
-      const points = piece.points;
-      graphics.moveTo(points[0]!, -points[1]!);
+    const trace = (points: number[]): void => {
+      graphics.moveTo(points[0]!, points[1]!);
       for (let at = 2; at < points.length; at += 2) {
-        graphics.lineTo(points[at]!, -points[at + 1]!);
+        graphics.lineTo(points[at]!, points[at + 1]!);
+      }
+    };
+    for (const piece of pieces) {
+      // 무대는 y 가 위로 자라고 PIXI 는 아래로 자랍니다.
+      const points = piece.points.map((value, at) => (at % 2 === 1 ? -value : value));
+      // 부스트 모드를 끈 엔트리는 채우기를 캔버스로 칠하므로 nonzero 감김 규칙을
+      // 따릅니다(fill.ts). 켠 엔트리는 PIXI 로 칠하고, PIXI 는 폴리곤을 단순 외곽선으로
+      // 보므로 여기서도 경로를 그대로 넘깁니다.
+      const parts = style.fill ? fillParts(points, this.options.boost !== false) : null;
+      if (parts) {
+        for (const part of parts) trace(part);
+      } else {
+        trace(points);
       }
     }
     const ink = usableColor(style.color) ?? { color: 0x000000, alpha: 1 };

@@ -179,3 +179,83 @@ test('`stop object` 는 복제본까지 이 오브젝트의 코드를 멈춘다'
   const back = decompileProject(result.project as unknown as RawEntity, [], { inline: true });
   assert.match(back.source, /stop object/);
 });
+
+/**
+ * `calc_basic` · `boolean_basic_operator` 이전의 연산 블록들입니다. 연산자가 블록
+ * 이름 자체에 들어 있고, 피연산자는 지금과 같은 0 · 2 번 칸입니다.
+ *
+ * | 옛 이름                                                  | Tess          |
+ * | -------------------------------------------------------- | ------------- |
+ * | `calc_plus` · `calc_minus` · `calc_times` · `calc_divide` | `+ - * /`     |
+ * | `boolean_equal` · `boolean_bigger` · `boolean_smaller`    | `== > <`      |
+ */
+test('옛 연산 블록은 지금 연산자와 같은 값을 낸다', () => {
+  const project = legacyProject();
+  const object = (project.objects as RawEntity[])[0]!;
+  object.script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    {
+      type: 'set_variable',
+      params: ['v1', {
+        type: 'calc_plus',
+        params: [
+          { type: 'calc_times', params: [number('3'), null, number('4')] },
+          null,
+          {
+            type: 'calc_divide',
+            params: [{ type: 'calc_minus', params: [number('10'), null, number('4')] }, null, number('2')],
+          },
+        ],
+      }, null],
+      statements: [],
+    },
+    {
+      type: '_if',
+      params: [{ type: 'boolean_bigger', params: [number('5'), null, number('3')] }],
+      statements: [[
+        { type: 'add_value_to_list', params: [number('1'), 'l1', null], statements: [] },
+      ]],
+    },
+    {
+      type: '_if',
+      params: [{ type: 'boolean_smaller', params: [number('5'), null, number('3')] }],
+      statements: [[
+        { type: 'add_value_to_list', params: [number('2'), 'l1', null], statements: [] },
+      ]],
+    },
+    {
+      type: '_if',
+      params: [{ type: 'boolean_equal', params: [number('3'), null, number('3')] }],
+      statements: [[
+        { type: 'add_value_to_list', params: [number('3'), 'l1', null], statements: [] },
+      ]],
+    },
+  ]]);
+
+  const program = new Codegen(project as never).compile();
+  assert.deepEqual([...program.unknown.keys()], [], '모르는 블록이 없습니다');
+
+  const vm = new Vm({ renderer: null, audio: null });
+  vm.load(project as never);
+  vm.start();
+  vm.tick();
+  // 3 * 4 + (10 - 4) / 2 = 15
+  assert.equal(Number(vm.variables.find((variable) => variable.name === '값')!.getValue()), 15);
+  const list = vm.variables.find((variable) => variable.name === '기록')!;
+  assert.deepEqual(
+    list.getArray().map((item: { data: unknown }) => String(item.data)),
+    ['a', 'b', '1', '3'],
+    '5 > 3 과 3 == 3 만 참입니다',
+  );
+
+  const back = decompileProject(project, [], { inline: true });
+  assert.deepEqual(back.warnings, [], back.warnings.join('\n'));
+  for (const line of [
+    /값 = \(\(3 \* 4\) \+ \(\(10 - 4\) \/ 2\)\)/,
+    /if \(5 > 3\):/, /if \(5 < 3\):/, /if \(3 == 3\):/,
+  ]) {
+    assert.match(back.source, line, String(line));
+  }
+  const again = compileProject(back.source, { path: 'main.tess' });
+  assert.deepEqual(again.errors.map((error) => error.message), []);
+});

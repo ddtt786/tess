@@ -1854,7 +1854,7 @@ test('반복 밖에 놓인 값 자리 흐름 블록은 끝나지 않는 기다�
  * 미로 수업의 반복 블록이 일반 작품에 섞여 들어오기도 합니다. 그림 그대로 계속
  * 반복하기와 같은 자리이고, 옮기지 못하면 그 안의 움직임이 통째로 사라집니다.
  */
-test('미로 수업의 반복 블록도 무한 반복으로 옮긴다', () => {
+test('미로 수업의 반복 블록은 프레임을 쓰지 않는 무한 반복으로 옮긴다', () => {
   const project = minimalProject();
   const object = (project.objects as RawEntity[])[0]!;
   object.script = JSON.stringify([[
@@ -1868,9 +1868,18 @@ test('미로 수업의 반복 블록도 무한 반복으로 옮긴다', () => {
 
   const back = decompileProject(project, [], { inline: true });
   assert.deepEqual(back.warnings, [], back.warnings.join('\n'));
-  assert.match(back.source, /forever:\n\s+y \+= 10\n\s+end/);
+  // 몸통 끝의 `skip` 이 "이 바퀴는 프레임을 쓰지 않는다" 를 적은 자리입니다.
+  assert.match(back.source, /forever:\n\s+y \+= 10\n\s+skip\n\s+end/);
   const again = compileProject(back.source, { path: 'main.tess' });
   assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+
+  // 몸통이 비면 엔트리도 그냥 지나가므로 반복을 적지 않습니다.
+  object.script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    { type: 'ai_repeat_until_reach', params: [null], statements: [[]] },
+  ]]);
+  const bare = decompileProject(project, [], { inline: true });
+  assert.doesNotMatch(bare.source, /forever:/);
 });
 
 /**
@@ -2603,6 +2612,64 @@ test('반복문 밖의 같은 치트는 아무것도 남기지 않는다', () =>
   assert.doesNotMatch(fragment, /skip/);
   assert.doesNotMatch(fragment, /Talebot_Move/);
   assert.deepEqual(result.warnings, []);
+});
+
+/**
+ * 같은 치트의 다른 갈래 — 하드웨어 블록의 값 자리에 \`function_field_string\` 으로
+ * 문장 블록을 끼워 둔 작품입니다. \`Entry.Scope.run\` 이 \`schema.func\` 를 보기 전에
+ * \`getParams()\` 로 값 자리를 먼저 실행하므로, 바깥 블록이 아무것도 하지 않아도
+ * 그 문장은 돕니다.
+ */
+function parkedStatementProject(): RawEntity {
+  return {
+    name: "값 자리에 끼운 문장",
+    speed: 60,
+    scenes: [{ id: "scene1", name: "장면 1" }],
+    variables: [
+      { id: "l1", name: "기록", variableType: "list", array: [], visible: false, object: null, x: 0, y: 0 },
+    ],
+    messages: [],
+    functions: [],
+    aiUtilizeBlocks: [],
+    objects: [{
+      id: "obj1",
+      name: "주인공",
+      objectType: "sprite",
+      scene: "scene1",
+      rotateMethod: "free",
+      selectedPictureId: null,
+      entity: { x: 0, y: 0, scaleX: 1, scaleY: 1, visible: true },
+      sprite: { pictures: [], sounds: [] },
+      script: JSON.stringify([[
+        { type: "when_run_button_click", params: [null], statements: [] },
+        {
+          type: "whalesbot_eagle_1001_rise",
+          params: [{
+            type: "function_field_string",
+            params: [
+              { type: "add_value_to_list", params: [{ type: "number", params: ["1"] }, "l1", null], statements: [] },
+              null,
+            ],
+            statements: [],
+          }],
+          statements: [],
+        },
+      ]]),
+    }],
+  } as RawEntity;
+}
+
+test("값 자리에 끼워 둔 문장은 바깥 블록을 못 옮겨도 살아남는다", () => {
+  const result = decompileProject(parkedStatementProject(), []);
+  const fragment = utf8(result.assets.find((a) => a.path === "objects/주인공.tess")!.data);
+
+  assert.match(fragment, /in 기록 add 1/);
+  // 바깥 하드웨어 블록은 그대로 옮기지 못하므로 주석과 경고로 남깁니다.
+  assert.match(fragment, /whalesbot_eagle_1001_rise/);
+  assert.ok(
+    result.warnings.some((warning) => warning.includes("whalesbot_eagle_1001_rise")),
+    result.warnings.join("\n"),
+  );
 });
 
 /** 어느 이벤트에도 붙어 있지 않아 실행되지 않는 블록 뭉치를 가진 작품입니다. */

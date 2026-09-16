@@ -1064,6 +1064,13 @@ Tess 이름으로 바꿔 둡니다. 숫자를 직접 적어 넣는 "n번째 모�
 것이 지금 스코프와 같아 프레임이 끝납니다. 다음 프레임에도 같은 블록이라 **영영
 기다리므로** `wait false` 로 옮깁니다(`skip` 은 반복 안에서만 쓸 수 있기도 합니다).
 
+같은 자리에 **문장 블록**을 끼운 갈래도 있습니다. `Entry.Scope.run` 이 `schema.func` 를
+보기 전에 `getParams()` 로 값 칸을 먼저 돌리므로, `function_field_string` 에 싸서 하드웨어
+블록의 값 칸에 넣어 둔 문장은 바깥 블록이 아무것도 하지 않아도 실행됩니다. 되돌리기는 그
+문장을 꺼내 바깥 블록보다 앞에 적습니다 — 바깥 블록 자체는 옮기지 못하므로 주석과 경고로
+남습니다. `3dcheese.ent` 의 `whalesbot_eagle_1001_rise` 가 이 형태이고, 그 안의 "행 추가하기"
+가 빠지면 표가 비어 렌더링이 아무것도 그리지 못합니다.
+
 **`@` 로 시작하는 전역 이름**은 저장 매니저가 맡는 자리라 `store` 선언으로 돌아옵니다
 (`store var 골드` ← `@골드`). Tess 이름은 `@` 를 뗀 쪽이고, 그 이름을 Tess 식별자로 쓸 수
 없으면 `as "게임 머니"` 가 붙습니다 — 컴파일할 때 `store` 가 `@` 를 도로 붙입니다.
@@ -1228,6 +1235,8 @@ BigNumber 를 쓰므로 `(abs(x) - floor(abs(x)))` 가 엔트리와 같은 값�
 | --------------------------------------- | ------------------------------- | -------------------------------------- |
 | `get_x_coordinate` · `get_y_coordinate` | `x` · `y`                       | 자기 좌표                              |
 | `calc_mod` · `calc_share`               | `a % b` · `a // b`              | 나머지 · 몫                            |
+| `calc_plus` · `calc_minus` · `calc_times` · `calc_divide` | `a + b` · `a - b` · `a * b` · `a / b` | 연산자가 블록 이름에 있던 시절 |
+| `boolean_equal` · `boolean_bigger` · `boolean_smaller` | `a == b` · `a > b` · `a < b` | 같은 시절의 비교, 피연산자는 0 · 2 번 칸 |
 | `set_scale_percent`                     | `scale_x = N * 저장배율 / 100`  | 옛 블록은 **저장된 배율**에서 잰다     |
 | `change_scale_percent`                  | `size = size * (N + 100) / 100` | 엔트리의 `크기` 는 두 축에 비례한다     |
 | `set_effect` · `set_entity_effect`      | `effect_색 = N`                 | `opacity` 는 투명도와 반대라 `100 - N` |

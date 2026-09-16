@@ -407,24 +407,30 @@ export class Entity {
 
   setText(text: string): void {
     this.text = text;
-    this.measure();
+    this.measure(false);
     this.touch();
   }
 
   /**
    * `Entry.EntityObject.updateTextbox` — a text box that does not wrap keeps
-   * its width and height in step with the text it holds, and other blocks read
-   * those (`크기`, 충돌). Entry measures inside `setText`, so this has to be
-   * immediate rather than something the renderer fixes up next frame.
+   * its width in step with the text it holds, and other blocks read that
+   * (`크기`, 충돌). Entry measures inside `setText`, so this has to be immediate
+   * rather than something the renderer fixes up next frame.
+   *
+   * The height is not part of that: `updateTextbox` only calls `setWidth`, so a
+   * box keeps the height it was saved with however much text is written into it.
+   * Only a font change re-measures both (`syncFont`), and `withHeight` says so.
    */
-  measure(): void {
+  measure(withHeight = true): void {
     if (this.type !== 'textBox' || this.lineBreak) {
       return;
     }
     const size = this.target.project.measureTextBox?.(this);
     if (size) {
       this.width = size.width;
-      this.height = size.height;
+      if (withHeight) {
+        this.height = size.height;
+      }
     }
   }
 

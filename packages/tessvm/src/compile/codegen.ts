@@ -467,10 +467,14 @@ export class Codegen {
       case 'repeat_basic':
         return this.repeatBasic(block, ind);
       case 'repeat_inf':
-      // The maze lesson's loop is drawn as a forever loop and runs as one: a
-      // round costs a frame, and `stop_repeat` inside it ends that loop.
-      case 'ai_repeat_until_reach':
         return this.loop(`while (true) {`, block.statements?.[0] ?? [], ind);
+      // The maze lesson's loop never sets entry's `isLooped`, so a round of it costs
+      // no frame; the spin guard keeps a body that never breaks from holding the
+      // frame for good. An empty body is skipped, as entry's own func skips it.
+      case 'ai_repeat_until_reach':
+        return block.statements?.[0]?.length
+          ? this.loop(`while (true) {`, block.statements[0], ind, true)
+          : '';
       case 'repeat_while_true':
         return this.repeatWhile(block, ind);
       case '_if':
@@ -743,14 +747,15 @@ export class Codegen {
   }
 
   /** A loop and its body. A round costs a frame unless the body jumps past it. */
-  private loop(header: string, body: RawBlock[], ind: string): string {
+  /** `frameless` rounds cost no frame, so the spin guard is what yields. */
+  private loop(header: string, body: RawBlock[], ind: string, frameless = false): string {
     const depth = this.loopDepth;
     this.loopDepth += 1;
     this.spinning.push(false);
     const inner = this.compileStack(body, `${ind}  `);
-    const spins = this.spinning.pop() ?? false;
+    const spins = (this.spinning.pop() ?? false) || frameless;
     this.loopDepth -= 1;
-    const tail = `${ind}  yield 0;\n`;
+    const tail = frameless ? '' : `${ind}  yield 0;\n`;
     if (!spins) {
       return `${ind}${header}\n${inner}${tail}${ind}}\n`;
     }
@@ -924,6 +929,15 @@ export class Codegen {
         return { code: `(${this.num(p[0])} % ${this.num(p[2])})`, kind: 'num' };
       case 'calc_share':
         return { code: `Math.floor(${this.num(p[0])} / ${this.num(p[2])})`, kind: 'num' };
+      // The pre-`calc_basic` operator blocks: one block per operator, operands at 0 and 2.
+      case 'calc_plus':
+        return { code: `C.calcPlus(${this.raw(p[0])}, ${this.raw(p[2])})`, kind: 'any' };
+      case 'calc_minus':
+        return { code: `C.subNum(${this.num(p[0])}, ${this.num(p[2])})`, kind: 'num' };
+      case 'calc_times':
+        return { code: `C.mulNum(${this.num(p[0])}, ${this.num(p[2])})`, kind: 'num' };
+      case 'calc_divide':
+        return { code: `C.divNum(${this.num(p[0])}, ${this.num(p[2])})`, kind: 'num' };
       // 리스트 자리의 `첫번째`·`마지막`·`무작위`. 그 글자 그대로 번호 자리에서 풀립니다.
       case 'options_for_list':
         return { code: this.field(p[0]), kind: 'str' };
@@ -1012,6 +1026,13 @@ export class Codegen {
         return { code: `C.andOf(${this.raw(p[0])}, ${this.raw(p[2])})`, kind: 'bool' };
       case 'boolean_or':
         return { code: `C.orOf(${this.raw(p[0])}, ${this.raw(p[2])})`, kind: 'bool' };
+      // The pre-`boolean_basic_operator` comparisons, same operand slots.
+      case 'boolean_equal':
+        return { code: `C.cmpEqual(${this.raw(p[0])}, ${this.raw(p[2])})`, kind: 'bool' };
+      case 'boolean_bigger':
+        return { code: `C.cmpGreater(${this.raw(p[0])}, ${this.raw(p[2])})`, kind: 'bool' };
+      case 'boolean_smaller':
+        return { code: `C.cmpLess(${this.raw(p[0])}, ${this.raw(p[2])})`, kind: 'bool' };
       case 'boolean_not':
         return { code: `(!${this.bool(p[1])})`, kind: 'bool' };
       case 'is_boost_mode':

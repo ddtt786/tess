@@ -155,8 +155,9 @@ export function makeVmRuntime(handle: TessVmHandle) {
     requestUpdate: redraw,
 
     /**
-     * Boost mode picks no renderer here — tessvm has the WebGL one and nothing
-     * else — so there is no "this is the current value" to show.
+     * 부스트 모드는 여기서도 그리는 방식을 고릅니다(채우기의 감김 규칙, 글상자의 세로
+     * 정렬 · 폭). 다만 엔트리의 `realBoost` 는 "이 브라우저가 실제로 켤 수 있는가" 를
+     * 뜻하는데 tessvm 은 언제나 켤 수 있으므로, 보여 줄 "지금 값" 이 따로 없습니다.
      */
     realBoost: () => null,
     /**

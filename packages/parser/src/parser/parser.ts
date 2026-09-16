@@ -829,9 +829,14 @@ export class TessParser extends CstParser {
       $.OR([
         { GATE: () => $.sameLine(), ALT: () => $.SUBRULE2($.posExpr, { LABEL: 'y' }) },
       ]);
-      $.OPTION(() => {
-        $.CONSUME(kw.in);
-        $.SUBRULE($.expr, { LABEL: 'duration' });
+      // `in` only continues the statement on the same line; on the next one it
+      // opens an `in <list> add ...` statement of its own.
+      $.OPTION({
+        GATE: () => $.sameLine(),
+        DEF: () => {
+          $.CONSUME(kw.in);
+          $.SUBRULE($.expr, { LABEL: 'duration' });
+        },
       });
     });
 
@@ -849,9 +854,12 @@ export class TessParser extends CstParser {
           {
             ALT: () => {
               $.SUBRULE($.expr, { LABEL: 'target' });
-              $.OPTION(() => {
-                $.CONSUME(kw.in);
-                $.SUBRULE2($.expr, { LABEL: 'duration' });
+              $.OPTION({
+                GATE: () => $.sameLine(),
+                DEF: () => {
+                  $.CONSUME(kw.in);
+                  $.SUBRULE2($.expr, { LABEL: 'duration' });
+                },
               });
             },
           },
@@ -865,9 +873,12 @@ export class TessParser extends CstParser {
         { ALT: () => $.CONSUME(kw.steer, { LABEL: 'kind' }) },
       ]);
       $.SUBRULE($.expr, { LABEL: 'angle' });
-      $.OPTION(() => {
-        $.CONSUME(kw.in);
-        $.SUBRULE2($.expr, { LABEL: 'duration' });
+      $.OPTION({
+        GATE: () => $.sameLine(),
+        DEF: () => {
+          $.CONSUME(kw.in);
+          $.SUBRULE2($.expr, { LABEL: 'duration' });
+        },
       });
     });
 
