@@ -2546,3 +2546,51 @@ test('효과 필터는 캔버스 배율을 그대로 따라간다', () => {
   assert.match(block, /new ColorMatrixFilter\(\{[^}]*resolution: 'inherit'/, '배율을 물려받습니다');
   assert.match(block, /antialias: 'inherit'/, '앤티에일리어싱도 물려받습니다');
 });
+
+/**
+ * 붓 무리는 획 하나가 자랄 때마다 통째로 다시 그려집니다. 끝난 획을 프레임마다 다시
+ * 자르면 그림이 길어질수록 한 프레임의 값이 같이 늘어나(획 수에 비례) 결국 제곱이
+ * 됩니다 — 400 프레임을 도는 작품에서 자르기 호출이 80,200번이었습니다. 한 번 `strokes`
+ * 에 들어간 획은 `startStroke` 가 새 배열로 갈아 끼우므로 다시 바뀌지 않아, 잘라 둔 것을
+ * 그대로 쓸 수 있습니다(400번으로 줄었습니다).
+ */
+test('끝난 획은 프레임마다 다시 자르지 않는다', () => {
+  const source = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/renderer.ts'),
+    'utf-8',
+  );
+  const block = source.slice(
+    source.indexOf('private drawPenGroup'),
+    source.indexOf('private stopObject'),
+  );
+  assert.match(block, /this\.fillCache\.get\(piece\)/, '잘라 둔 것을 먼저 찾습니다');
+  assert.match(block, /this\.fillCache\.set\(piece,/, '새로 자른 것은 붙들어 둡니다');
+  assert.match(block, /known\.boost === boost/, '부스트가 바뀌면 다시 자릅니다');
+  // 선만 긋는 획은 점 배열을 새로 만들지 않고 그 자리에서 뒤집습니다.
+  assert.match(block, /traceFlipped\(piece\.points\)/);
+
+  const boostBlock = source.slice(source.indexOf('setBoost(on: boolean)'), source.indexOf('setScene(sceneId'));
+  assert.match(boostBlock, /this\.fillCache = new WeakMap\(\)/, '부스트가 바뀌면 버립니다');
+});
+
+/**
+ * PIXI 의 `TextStyle` 은 값이 같으면 그냥 넘어가지만 `fill` 만은 **객체 동일성**으로
+ * 거릅니다(`value === this._originalFill`). 그래서 같은 색이라도 새 객체를 넣으면 글을
+ * 통째로 다시 재고 다시 그립니다 — 글이 길수록 그 값이 커져서, 2만 자짜리 글상자를 여러
+ * 벌 복제하는 작품(`dizzy.ent` 의 장면 2)은 프레임이 평균 64ms·최대 691ms 까지 갔습니다
+ * (색이 달라질 때만 넣으면 7ms 로 평평해집니다).
+ */
+test('글상자 색은 달라질 때만 PIXI 에 넣는다', () => {
+  const source = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/renderer.ts'),
+    'utf-8',
+  );
+  const block = source.slice(
+    source.indexOf('private syncTextBox'),
+    source.indexOf('private textResolution'),
+  );
+  assert.match(block, /if \(view\.colour !== entity\.colour\) \{/, '색이 달라질 때만 넣습니다');
+  const fills = block.match(/style\.fill = \{/g) ?? [];
+  assert.equal(fills.length, 1, '넣는 자리는 그 안 한 군데뿐입니다');
+  assert.match(block, /view\.colour = entity\.colour;/, '넣은 색을 적어 둡니다');
+});

@@ -85,6 +85,8 @@ interface EntityView {
   decoration: Graphics | null;
   filter: ColorMatrixFilter | null;
   pictureId: string | null;
+  /** 글상자에 마지막으로 넣은 글자색. 같은 색을 다시 넣지 않으려고 들고 있습니다. */
+  colour: string | null;
   /** Pen strokes and fills, each drawn just under the entity that made them. */
   brush: PenView | null;
   paint: PenView | null;
@@ -266,6 +268,13 @@ export class PixiRenderer implements Renderer {
   /** 그 배율이 커져서 다시 구울 것이 있는가 — `flush` 끝에서 한 번만 봅니다. */
   private svgScaleGrew = false;
   private readonly measureStyle = new TextStyle();
+  /**
+   * 이미 그어 끝난 획을 잘라 둔 결과. 한 번 `strokes` 에 들어간 획은 다시 바뀌지 않으므로
+   * 프레임마다 다시 자를 이유가 없습니다 — 그리는 중인 획만 매번 새로 잽니다(그 획은
+   * `redrawPen` 이 프레임마다 새 객체로 만들므로 여기에 걸리지 않습니다).
+   */
+  private fillCache = new WeakMap<Stroke, { boost: boolean; parts: number[][] | null }>();
+
   /** `measureWhole` 이 쓰는 2D 컨텍스트. 처음 필요할 때 만듭니다. */
   private measureCanvas: CanvasRenderingContext2D | null | undefined;
 
@@ -670,6 +679,8 @@ export class PixiRenderer implements Renderer {
       return;
     }
     this.options.boost = on;
+    // 자르는 규칙 자체가 달라지므로 붙들어 둔 결과는 버립니다.
+    this.fillCache = new WeakMap();
     for (const [entity, view] of this.views) {
       for (const which of PAINT_FIRST) {
         // 무리가 들고 있는 "이미 이렇게 그렸다" 표시를 지워 다시 그리게 합니다.
@@ -771,6 +782,7 @@ export class PixiRenderer implements Renderer {
         decoration,
         filter: null,
         pictureId: null,
+        colour: null,
         brush: null,
         paint: null,
         stamps: [],
@@ -787,6 +799,7 @@ export class PixiRenderer implements Renderer {
       decoration: null,
       filter: null,
       pictureId: null,
+      colour: null,
       brush: null,
       paint: null,
       stamps: [],
@@ -1119,9 +1132,17 @@ export class PixiRenderer implements Renderer {
     style.fontSize = entity.fontSize;
     // An unreadable colour leaves the letters as they were, the way the canvas
     // does for entry.
-    const fill = usableColor(entity.colour);
-    if (fill !== null) {
-      style.fill = { color: fill.color, alpha: fill.alpha };
+    // `style.fill` 은 PIXI 가 **객체 동일성**으로만 거릅니다(`value === this._originalFill`).
+    // 다른 속성은 값이 같으면 그냥 넘어가는데 이것만 새 객체를 넣을 때마다 글을 통째로
+    // 다시 재고 다시 그립니다 — 글이 길수록 그 값이 커져서, 2만 자짜리 글상자를 여러 벌
+    // 복제하는 작품(`dizzy.ent` 의 장면 2)은 프레임마다 그 일을 복제본 수만큼 합니다.
+    // 색이 실제로 달라질 때만 넣습니다.
+    if (view.colour !== entity.colour) {
+      const fill = usableColor(entity.colour);
+      if (fill !== null) {
+        style.fill = { color: fill.color, alpha: fill.alpha };
+      }
+      view.colour = entity.colour;
     }
     style.fontWeight = entity.fontBold ? 'bold' : 'normal';
     style.fontStyle = entity.fontItalic ? 'italic' : 'normal';
@@ -1430,23 +1451,43 @@ export class PixiRenderer implements Renderer {
 
     const graphics = group.graphics;
     graphics.clear();
+    const boost = this.options.boost !== false;
     const trace = (points: number[]): void => {
       graphics.moveTo(points[0]!, points[1]!);
       for (let at = 2; at < points.length; at += 2) {
         graphics.lineTo(points[at]!, points[at + 1]!);
       }
     };
+    // 무대는 y 가 위로 자라고 PIXI 는 아래로 자라므로 y 를 뒤집어 긋습니다. 선만 긋는
+    // 획은 옮겨 담지 않고 그 자리에서 뒤집습니다 — 프레임마다 점 수만큼 배열을 새로
+    // 만들던 자리입니다.
+    const traceFlipped = (points: number[]): void => {
+      graphics.moveTo(points[0]!, -points[1]!);
+      for (let at = 2; at < points.length; at += 2) {
+        graphics.lineTo(points[at]!, -points[at + 1]!);
+      }
+    };
     for (const piece of pieces) {
-      // 무대는 y 가 위로 자라고 PIXI 는 아래로 자랍니다.
-      const points = piece.points.map((value, at) => (at % 2 === 1 ? -value : value));
+      if (!style.fill) {
+        traceFlipped(piece.points);
+        continue;
+      }
       // 부스트 모드를 끈 엔트리는 채우기를 캔버스로 칠하므로 nonzero 감김 규칙을
       // 따릅니다(fill.ts). 켠 엔트리는 PIXI 로 칠하고, PIXI 는 폴리곤을 단순 외곽선으로
       // 보므로 여기서도 경로를 그대로 넘깁니다.
-      const parts = style.fill ? fillParts(points, this.options.boost !== false) : null;
+      const known = this.fillCache.get(piece);
+      let parts: number[][] | null;
+      if (known && known.boost === boost) {
+        parts = known.parts;
+      } else {
+        const points = piece.points.map((value, at) => (at % 2 === 1 ? -value : value));
+        parts = fillParts(points, boost);
+        this.fillCache.set(piece, { boost, parts });
+      }
       if (parts) {
         for (const part of parts) trace(part);
       } else {
-        trace(points);
+        traceFlipped(piece.points);
       }
     }
     const ink = usableColor(style.color) ?? { color: 0x000000, alpha: 1 };
