@@ -138,6 +138,19 @@ function svgSize(head: string): { width: number; height: number } | null {
   return box ? { width: Number(box[1]), height: Number(box[2]) } : null;
 }
 
+/**
+ * 벡터 모양을 구울 때 PIXI 에 넘기는 값. `loadSvg` 는 `data` 의 나머지를 그대로
+ * `ImageSource` 로 흘려보내므로 여기서 밉맵을 켤 수 있습니다.
+ *
+ * 벡터는 이름 크기의 2~4배로 구워지므로 **언제나 축소되어 그려집니다.** 밉맵이 없으면
+ * 축소는 원본 픽셀을 띄엄띄엄 집는 일이라 가장자리가 어긋나고, 작게 그리거나 회전하는
+ * 동안에는 프레임마다 다른 픽셀을 집어 지글거립니다. png 모양은 제 크기로 그려지므로
+ * 이 문제가 없습니다.
+ */
+function vectorTextureData(resolution: number): Record<string, unknown> {
+  return { resolution, autoGenerateMipmaps: true };
+}
+
 /** Pieces entry would have drawn into one canvas path. */
 const sameStyle = (a: Stroke, b: Stroke) =>
   a.color === b.color &&
@@ -181,6 +194,13 @@ const SVG_REBAKE_RATIO = 1.25;
 const BUDGET_PASSES = 8;
 /** Only the head of the file is read to decide what is in it. */
 const SVG_PEEK = 4096;
+/**
+ * 벡터의 제 크기와 작품이 그리는 크기가 이만큼까지 어긋나도 같은 그림으로 봅니다.
+ * 편집기가 화면을 다시 잡은 그림은 수십~수백 픽셀이 어긋나지만(실제 작품 59개), 한 픽셀
+ * 차이는 저장할 때의 반올림입니다(8개) — 그걸 막으면 멀쩡한 벡터가 png 로 떨어집니다
+ * (`play.ent` 의 단추는 svg 가 278×109, 작품이 278×110 입니다).
+ */
+const SIZE_SLACK = 1;
 
 export class PixiRenderer implements Renderer {
   readonly app = new Application();
@@ -204,11 +224,15 @@ export class PixiRenderer implements Renderer {
   /** How far vector sharpness is scaled so the work's textures fit together. */
   private svgBudget = 1;
   /** Nominal size of every vector costume the work carries, for that budget. */
-  private svgSizes: Array<{ width: number; height: number }> = [];
+  private svgSizes: Array<{ id: string; width: number; height: number }> = [];
   /** Objects whose draw already failed once; the console is told only then. */
   private readonly syncFailed = new WeakSet<Entity>();
   private fontsWait: Promise<void> | null = null;
   private readonly svgPicks = new Map<string, boolean>();
+  /** 작품이 각 벡터 모양을 그리는 가장 큰 배율. 한 번 오른 값은 내리지 않습니다. */
+  private readonly svgScales = new Map<string, number>();
+  /** 그 배율이 커져서 다시 구울 것이 있는가 — `flush` 끝에서 한 번만 봅니다. */
+  private svgScaleGrew = false;
   private readonly measureStyle = new TextStyle();
   /** `measureWhole` 이 쓰는 2D 컨텍스트. 처음 필요할 때 만듭니다. */
   private measureCanvas: CanvasRenderingContext2D | null | undefined;
@@ -266,7 +290,26 @@ export class PixiRenderer implements Renderer {
       picture.dimension.width,
       picture.dimension.height,
       this.svgBudget,
+      this.svgScales.get(picture.id) ?? 1,
     );
+  }
+
+  /**
+   * 이 모양이 이만큼 크게 그려진다고 적어 둡니다. 텍스처는 모양의 이름 크기에서 구워지므로
+   * 키워서 그리는 모양은 그만큼 더 촘촘히 구워야 합니다. 0.5 단위로 올려 두어, 크기가
+   * 변하는 오브젝트가 프레임마다 다시 굽게 하지 않습니다.
+   */
+  private noteSvgScale(entity: Entity): void {
+    const id = entity.picture?.id;
+    if (!id || !this.svgBaked.has(id)) {
+      return;
+    }
+    const drawn = Math.ceil(Math.max(Math.abs(entity.scaleX), Math.abs(entity.scaleY)) * 2) / 2;
+    if (drawn <= (this.svgScales.get(id) ?? 1)) {
+      return;
+    }
+    this.svgScales.set(id, drawn);
+    this.svgScaleGrew = true;
   }
 
   /**
@@ -284,7 +327,7 @@ export class PixiRenderer implements Renderer {
       for (const picture of target.pictures) {
         if (picture.imageType === 'svg' && !counted.has(picture.id)) {
           counted.add(picture.id);
-          this.svgSizes.push(picture.dimension);
+          this.svgSizes.push({ id: picture.id, ...picture.dimension });
         }
       }
     }
@@ -301,8 +344,8 @@ export class PixiRenderer implements Renderer {
     let budget = 1;
     for (let pass = 0; pass < BUDGET_PASSES; pass += 1) {
       let pixels = 0;
-      for (const { width, height } of this.svgSizes) {
-        const one = svgSharpness(display, width, height, budget);
+      for (const { id, width, height } of this.svgSizes) {
+        const one = svgSharpness(display, width, height, budget, this.svgScales.get(id) ?? 1);
         pixels += width * height * one * one;
       }
       const tighter = svgBudgetScale(pixels);
@@ -399,7 +442,7 @@ export class PixiRenderer implements Renderer {
     try {
       const texture = (await Assets.load({
         src: `${url}?sharpness=${resolution.toFixed(2)}`,
-        data: { resolution },
+        data: vectorTextureData(resolution),
       })) as Texture;
       this.textures.set(id, texture);
       // The alpha mask keeps the image it was first built from: collisions must
@@ -575,6 +618,7 @@ export class PixiRenderer implements Renderer {
     this.images.clear();
     this.loading.clear();
     this.svgBaked.clear();
+    this.svgScales.clear();
     this.pictures.clear();
     this.app.destroy({ removeView: true }, { children: true });
   }
@@ -791,16 +835,20 @@ export class PixiRenderer implements Renderer {
     }
     let better = false;
     try {
-      const head = (await (await fetch(url)).text()).slice(0, SVG_PEEK);
-      const size = svgSize(head);
+      const svg = await (await fetch(url)).text();
+      // 크기는 `<svg>` 여는 태그에 있으니 앞머리로 족하지만, `<image>`·`<text>` 는
+      // 파일 어디에나 있을 수 있어 전체를 봅니다 — `ovenpark.ent` 의 무대 크기 모양은
+      // `<image>` 가 29955 바이트에서 시작해서, 앞머리만 보면 png 사본을 두고 521KB
+      // 껍데기를 골라 버립니다.
+      const size = svgSize(svg.slice(0, SVG_PEEK));
       better =
         size !== null &&
-        Math.round(size.width) === Math.round(picture.dimension.width) &&
-        Math.round(size.height) === Math.round(picture.dimension.height) &&
+        Math.abs(size.width - picture.dimension.width) <= SIZE_SLACK &&
+        Math.abs(size.height - picture.dimension.height) <= SIZE_SLACK &&
         size.width <= PAINT_CANVAS.width &&
         size.height <= PAINT_CANVAS.height &&
-        !/<image[\s>]/i.test(head) &&
-        !/<text[\s>]/i.test(head);
+        !/<image[\s>]/i.test(svg) &&
+        !/<text[\s>]/i.test(svg);
     } catch {
       // Unreadable: the raster twin is the safe one.
     }
@@ -837,7 +885,7 @@ export class PixiRenderer implements Renderer {
         const resolution = this.svgResolution(picture);
         const vector = url.endsWith('.svg');
         const texture = (await Assets.load(
-          vector ? { src: url, data: { resolution } } : url,
+          vector ? { src: url, data: vectorTextureData(resolution) } : url,
         )) as Texture;
         if (vector) {
           this.svgBaked.set(picture.id, { url, resolution });
@@ -889,6 +937,11 @@ export class PixiRenderer implements Renderer {
       }
       this.penDirty.clear();
     }
+    if (this.svgScaleGrew) {
+      this.svgScaleGrew = false;
+      this.fitSvgBudget();
+      void this.rebakeVectors();
+    }
     this.overlay?.flush();
     this.app.renderer.render(this.app.stage);
   }
@@ -923,6 +976,7 @@ export class PixiRenderer implements Renderer {
           });
         }
       }
+      this.noteSvgScale(entity);
       view.sprite.width = entity.width;
       view.sprite.height = entity.height;
       root.pivot.set(entity.regX, entity.regY);

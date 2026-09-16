@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 import { compileProject } from '@tess/compiler';
 import type { EntryProject } from '@tess/compiler';
 import {
+  MAX_TEXTURE_SIDE,
+  MIN_SVG_SIDE,
   SVG_PIXEL_BUDGET,
   svgBudgetScale,
   svgSharpness,
@@ -864,13 +866,30 @@ test('벡터가 많은 작품은 텍스처 예산에 맞춰 함께 낮춰 굽는
 test('화질은 화면이 요구하는 만큼 따라 올라가고, 하한 아래로는 내려가지 않는다', () => {
   // 4/3 (stage) × 1 (resolution): a plain window at the default size.
   assert.equal(textSharpness(4 / 3, 1, 100), 2, '작게 그려도 하한 2배');
-  assert.equal(svgSharpness(4 / 3, 100, 100), 2);
+  // 긴 변이 하한(`MIN_SVG_SIDE`)을 이미 채우는 그림이라야 배율만 보입니다.
+  assert.equal(svgSharpness(4 / 3, 480, 480), 2);
   // A retina window, then the same text box scaled to twice its size.
   assert.equal(textSharpness(3, 1, 100), 3);
   assert.equal(textSharpness(3, 2, 100), 6);
   // The vector cap is lower: a work holds far more costumes than text boxes.
-  assert.equal(svgSharpness(6, 100, 100), 4);
+  assert.equal(svgSharpness(6, 480, 480), 4);
   assert.equal(textSharpness(6, 1, 100), 6);
+});
+
+/**
+ * 배율만으로 정하면 작게 저장된 그림은 4배를 줘도 성깁니다 — 20×20 아이콘은 80px 이라
+ * 작품이 조금만 키워도 뭉갭니다. 긴 변이 `MIN_SVG_SIDE` 는 되게 끌어올립니다.
+ */
+test('작게 저장된 벡터는 긴 변이 하한을 채울 만큼 촘촘히 굽는다', () => {
+  for (const [width, height] of [[20, 20], [100, 100], [60, 30]] as const) {
+    const sharp = svgSharpness(4 / 3, width, height);
+    const longest = Math.max(width, height) * sharp;
+    assert.ok(longest >= MIN_SVG_SIDE, `${width}x${height} → ${longest}px`);
+  }
+  // 이미 큰 그림은 하한이 건드리지 않습니다.
+  assert.equal(svgSharpness(4 / 3, 480, 270), 2);
+  // 하한도 작품 전체 예산에 함께 걸립니다.
+  assert.ok(svgSharpness(4 / 3, 20, 20, 0.1) < svgSharpness(4 / 3, 20, 20));
 });
 
 /**
@@ -2442,4 +2461,23 @@ test('돌아가는 중에 부스트를 바꾸면 렌더러도 다시 그린다',
 
   vm.boost = true;
   assert.deepEqual(told, [false, true]);
+});
+
+/**
+ * 벡터 모양은 이름 크기에서 구워지므로, 키워서 그리는 모양은 그만큼 더 촘촘히 구워야
+ * 화면에서 같은 선명도가 납니다. 이 배율을 보지 않으면 150% 로 키운 모양이 텍스처를
+ * 늘려 쓰게 되어 흐려집니다.
+ */
+test('벡터 모양의 굽는 배율은 실제로 그리는 크기를 따라간다', () => {
+  const plain = svgSharpness(3, 144, 246);
+  const bigger = svgSharpness(3, 144, 246, 1, 1.5);
+  assert.ok(bigger > plain, `${bigger} > ${plain}`);
+  assert.equal(bigger, plain * 1.5);
+
+  // 줄여 그리는 모양은 이름 크기 아래로 내려가지 않습니다 — 하한이 그대로 걸립니다.
+  assert.equal(svgSharpness(3, 144, 246, 1, 0.25), plain);
+
+  // 픽셀 상한은 배율보다 뒤에 걸립니다.
+  const huge = svgSharpness(3, 2048, 2048, 1, 4);
+  assert.ok(huge <= MAX_TEXTURE_SIDE / 2048, String(huge));
 });

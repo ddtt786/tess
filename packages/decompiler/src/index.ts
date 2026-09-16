@@ -64,13 +64,45 @@ function vectorIsBetter(
   const size = svgSize(svg);
   if (!size || !svg) return false;
   if (size.width > PAINT_CANVAS.width || size.height > PAINT_CANVAS.height) return false;
-  if (Math.round(size.width) !== Math.round(dimension?.width ?? -1)) return false;
-  if (Math.round(size.height) !== Math.round(dimension?.height ?? -1)) return false;
-  const head = headText(svg, 4096);
-  return !/<image[\s>]/i.test(head) && !/<text[\s>]/i.test(head);
+  // 한 픽셀 차이는 저장할 때의 반올림입니다. 편집기가 화면을 다시 잡은 그림은 그보다
+  // 훨씬 크게 어긋나므로, 이만큼은 같은 그림으로 봅니다.
+  if (!(Math.abs(size.width - (dimension?.width ?? NaN)) <= SIZE_SLACK)) return false;
+  if (!(Math.abs(size.height - (dimension?.height ?? NaN)) <= SIZE_SLACK)) return false;
+  // 파일 **전체**를 봅니다. 앞머리만 보면 뒤쪽에 붙은 껍데기를 놓칩니다 —
+  // `ovenpark.ent` 의 무대 크기 모양은 521KB 짜리 svg 인데 `<image>` 가 29955 바이트에서
+  // 시작해서, 앞머리만 보면 167KB png 사본을 두고 그 껍데기를 골라 버립니다. 글자로
+  // 디코딩하지 않고 바이트에서 찾으므로 몇 MB 짜리 svg 도 훑는 값이 싸게 끝납니다.
+  return !hasTag(svg, "image") && !hasTag(svg, "text");
+}
+
+/**
+ * `<이름` 이 이 파일 어딘가에 있는가. 바이트에서 대소문자 없이 찾고, 이름 뒤가 공백이나
+ * `>` 인 것만 셉니다 — `<textPath>` 같은 다른 태그에 걸리지 않게.
+ */
+function hasTag(bytes: Uint8Array, name: string): boolean {
+  const lower = name.toLowerCase();
+  const upper = name.toUpperCase();
+  for (let at = 0; at < bytes.length; at += 1) {
+    if (bytes[at] !== 0x3c) continue; // "<"
+    let match = true;
+    for (let i = 0; i < lower.length; i += 1) {
+      const byte = bytes[at + 1 + i];
+      if (byte !== lower.charCodeAt(i) && byte !== upper.charCodeAt(i)) {
+        match = false;
+        break;
+      }
+    }
+    if (!match) continue;
+    const after = bytes[at + 1 + lower.length];
+    if (after === undefined) continue;
+    if (after === 0x3e || after <= 0x20) return true; // ">" 또는 공백
+  }
+  return false;
 }
 
 const PAINT_CANVAS = { width: 960, height: 540 };
+/** 벡터의 제 크기가 작품이 그리는 크기와 이만큼까지 어긋나도 같은 그림으로 본다. */
+const SIZE_SLACK = 1;
 
 const decoder = new TextDecoder('utf-8');
 const encoder = new TextEncoder();

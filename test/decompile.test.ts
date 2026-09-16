@@ -3099,3 +3099,62 @@ test('알파가 붙은 색도 알파째로 오간다', () => {
   const color = (script[0]![1]!.params as unknown[])[0];
   assert.equal(color, '#00000050', '알파가 그대로 남습니다');
 });
+
+/**
+ * `<image>`·`<text>` 는 파일 어디에나 있을 수 있습니다. 앞머리만 훑으면 뒤쪽에 붙은
+ * `<text>` 를 놓치고 벡터를 고르는데, 이미지로 불러온 svg 는 페이지의 웹폰트에 닿지
+ * 못하므로 글자가 대체 글꼴로 나옵니다 — `gomok.ent` 의 6KB 짜리 모양이 4785 바이트에서
+ * `<text>` 가 시작하는 실제 사례입니다.
+ */
+test('앞머리 밖에 있는 <text> 도 찾아서 PNG 를 고른다', () => {
+  const filler = '<path d="M0 0"></path>'.repeat(300); // 4096 바이트를 넘긴다
+  const late = `<svg viewBox="0 0 960 540">${filler}<text font-family="yg-jalnan">안녕</text></svg>`;
+  assert.ok(late.indexOf('<text') > 4096, '<text> 가 앞머리 밖에 있어야 합니다');
+
+  const result = decompileProject(svgPictureProject(), [
+    { name: 'temp/aa/aa/image/aaaa.svg', data: Buffer.from(late) },
+    { name: 'temp/aa/aa/image/aaaa.png', data: Buffer.from('글자가 그대로 담긴 그림') },
+  ] as never);
+
+  const images = result.assets.filter((a) => a.path.startsWith('assets/image/'));
+  assert.deepEqual(images.map((a) => a.path), ['assets/image/주인공_배경.png']);
+});
+
+/** `<textPath>` 는 글자 태그가 아니므로 벡터를 막지 않습니다. */
+test('<textPath> 는 <text> 로 치지 않는다', () => {
+  const drawing = '<svg viewBox="0 0 960 540"><textPath href="#p">x</textPath></svg>';
+  const result = decompileProject(svgPictureProject(), [
+    { name: 'temp/aa/aa/image/aaaa.svg', data: Buffer.from(drawing) },
+    { name: 'temp/aa/aa/image/aaaa.png', data: Buffer.from('png') },
+  ] as never);
+
+  // 벡터를 고른 모양은 png 사본도 옆에 함께 남습니다(실행기가 고를 수 있게).
+  const fragment = utf8(result.assets.find((a) => a.path === 'objects/주인공.tess')!.data);
+  assert.match(fragment, /default costume 배경 "assets\/image\/주인공_배경\.svg"/);
+});
+
+/**
+ * 벡터의 제 크기와 작품이 그리는 크기가 한 픽셀 어긋나는 것은 저장할 때의 반올림입니다.
+ * 편집기가 화면을 다시 잡은 그림은 수십~수백 픽셀이 어긋나므로, 한 픽셀을 막으면 멀쩡한
+ * 벡터가 png 로 떨어집니다 — `play.ent` 의 단추는 svg 가 278×109, 작품이 278×110 입니다.
+ */
+test('한 픽셀 어긋난 벡터는 같은 그림으로 보고 그대로 쓴다', () => {
+  const project = svgPictureProject();
+  project.objects[0].sprite.pictures[0].dimension = { width: 960, height: 540 };
+  const near = [
+    { name: 'temp/aa/aa/image/aaaa.svg', data: Buffer.from('<svg viewBox="0 0 960 539"></svg>') },
+    { name: 'temp/aa/aa/image/aaaa.png', data: Buffer.from('png') },
+  ] as never;
+  const result = decompileProject(project, near);
+  const fragment = utf8(result.assets.find((a) => a.path === 'objects/주인공.tess')!.data);
+  assert.match(fragment, /default costume 배경 "assets\/image\/주인공_배경\.svg"/);
+
+  // 편집기가 다시 잡은 그림은 그대로 png 입니다.
+  const reframed = [
+    { name: 'temp/aa/aa/image/aaaa.svg', data: Buffer.from('<svg viewBox="0 0 1100 670"></svg>') },
+    { name: 'temp/aa/aa/image/aaaa.png', data: Buffer.from('png') },
+  ] as never;
+  const far = decompileProject(svgPictureProject(), reframed);
+  const other = utf8(far.assets.find((a) => a.path === 'objects/주인공.tess')!.data);
+  assert.match(other, /default costume 배경 "assets\/image\/주인공_배경\.png"/);
+});

@@ -27,6 +27,18 @@ export const MIN_SVG_SHARPNESS = 2;
  */
 export const MAX_SVG_SHARPNESS = 4;
 /**
+ * 한 모양이 제 크기의 몇 배로 그려지는 것까지 따라가 줄지. 400% 로 키운 모양은 같은
+ * 선명도를 내려면 텍스처도 네 배가 필요한데, 그 위로는 픽셀 상한이 어차피 잡습니다.
+ */
+export const MAX_SVG_SCALE = 4;
+/**
+ * 벡터 텍스처의 긴 변이 못해도 이만큼은 되게 합니다. 배율만으로 정하면 작게 저장된
+ * 그림(20×20 아이콘 같은)은 4배를 줘도 80px 이라, 작품이 그것을 조금만 키워도 바로
+ * 뭉갭니다. 무대가 480 이므로 그 폭만큼은 담고 있게 두는 것입니다 — 이 하한도 작품
+ * 전체 예산에 함께 걸리므로, 작은 그림이 많은 작품에서는 예산이 도로 끌어내립니다.
+ */
+export const MIN_SVG_SIDE = 480;
+/**
  * No texture may go past this on a side. It is the size every webgl
  * implementation is required to allow; asking for more fails the upload, and a
  * failed upload takes the whole renderer down rather than one costume.
@@ -61,17 +73,27 @@ export function textSharpness(displayScale: number, scale: number, longest: numb
  *
  * `budget` scales the wanted sharpness down where the work has more vectors
  * than the card should hold at once — see `svgBudgetScale`.
+ *
+ * `scale` 은 작품이 이 모양을 실제로 그리는 가장 큰 배율입니다(1 이면 제 크기). 텍스처는
+ * 이름 크기에서 구워지므로, 키워서 그리는 모양은 그만큼 더 촘촘히 구워야 화면에서 같은
+ * 선명도가 납니다. 아래의 픽셀 상한이 그 위를 잡습니다.
  */
 export function svgSharpness(
   displayScale: number,
   width: number,
   height: number,
   budget = 1,
+  scale = 1,
 ): number {
   const w = Math.max(width, 1);
   const h = Math.max(height, 1);
   const asked = Math.min(MAX_SVG_SHARPNESS, Math.max(MIN_SVG_SHARPNESS, stepped(displayScale)));
-  const wanted = stepped(asked * Math.min(1, budget));
+  const drawn = Math.min(MAX_SVG_SCALE, Math.max(1, scale));
+  const share = Math.min(1, budget);
+  // 긴 변이 `MIN_SVG_SIDE` 에 못 미치면 거기까지 끌어올립니다 — 배율이 몇이든 그보다
+  // 성기게는 굽지 않습니다.
+  const byFloor = MIN_SVG_SIDE / Math.max(w, h);
+  const wanted = Math.max(stepped(asked * share * drawn), stepped(byFloor * share));
   const bySide = MAX_TEXTURE_SIDE / Math.max(w, h);
   const byArea = Math.sqrt(MAX_SVG_PIXELS / (w * h));
   // The caps come last: a drawing already past the texture limit is rasterised
