@@ -147,8 +147,38 @@ function svgSize(head: string): { width: number; height: number } | null {
  * 동안에는 프레임마다 다른 픽셀을 집어 지글거립니다. png 모양은 제 크기로 그려지므로
  * 이 문제가 없습니다.
  */
-function vectorTextureData(resolution: number): Record<string, unknown> {
-  return { resolution, autoGenerateMipmaps: true };
+function vectorTextureData(
+  width: number,
+  height: number,
+  resolution: number,
+): Record<string, unknown> {
+  // `width`·`height` 를 함께 주면 `loadSvg` 가 그림 자신의 크기가 아니라 이 크기로
+  // 캔버스를 잡습니다 — `sizedVector` 가 마크업에 박아 둔 크기와 짝이 맞아 1:1 이 됩니다.
+  return { width, height, resolution, autoGenerateMipmaps: true };
+}
+
+/**
+ * 뿌리 `<svg>` 에 목표 픽셀 크기를 박은 사본의 주소.
+ *
+ * PIXI 의 `loadSvg` 는 svg 를 `<img>` 로 불러와 `drawImage` 로 옮겨 그립니다. 그런데
+ * `<img>` 는 **그림이 말하는 자기 크기**로 먼저 래스터화되고, 엔트리 벡터에는
+ * `width`·`height` 가 없고 `viewBox` 만 있어서 그 크기가 그림의 원래 크기입니다. 그래서
+ * 3배로 구우라고 해도 실제로는 원래 크기로 그린 그림을 3배로 늘린 것이 나오고, 가장자리가
+ * 계단처럼 남습니다(`play.ent` 의 단추). 크기를 박아 두면 브라우저가 처음부터 그 크기로
+ * 그리므로 진짜 벡터 화질이 나옵니다 — `viewBox` 는 그대로라 그림은 달라지지 않습니다.
+ */
+export function sizedVector(text: string, width: number, height: number): string {
+  const open = /<svg\b[^>]*>/i.exec(text);
+  if (!open) return '';
+  const head = open[0]
+    .replace(/\s(width|height)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/\/?>$/, '');
+  const sized = `${head} width="${Math.round(width)}" height="${Math.round(height)}">`;
+  const body = text.slice(open.index + open[0].length);
+  const whole = `${text.slice(0, open.index)}${sized}${body}`;
+  // 데이터 URL 이어야 합니다 — PIXI 는 확장자나 `data:image/svg+xml` 로만 svg 로더를
+  // 고르므로(`loadSvg.test`), blob 주소로 주면 다른 로더로 새서 빈 텍스처가 됩니다.
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(whole)}`;
 }
 
 /** Pieces entry would have drawn into one canvas path. */
@@ -214,7 +244,9 @@ export class PixiRenderer implements Renderer {
   private readonly images = new Map<string, CanvasImageSource>();
   private readonly loading = new Map<string, Promise<void>>();
   /** Vector costumes that were rasterised, and the sharpness each was given. */
-  private readonly svgBaked = new Map<string, { url: string; resolution: number }>();
+  private readonly svgBaked = new Map<string, { url: string; src: string; resolution: number }>();
+  /** 한 번 받은 svg 마크업. 크기를 박은 사본을 만들 때마다 다시 받지 않습니다. */
+  private readonly svgTexts = new Map<string, string>();
   /** Every costume a texture was asked for, so one can be baked again. */
   private readonly pictures = new Map<string, Picture>();
   private overlay: Overlay | null = null;
@@ -438,12 +470,16 @@ export class PixiRenderer implements Renderer {
 
   private async bakeVector(id: string, url: string, resolution: number): Promise<void> {
     const previous = this.svgBaked.get(id);
-    this.svgBaked.set(id, { url, resolution });
+    const picture = this.pictures.get(id);
+    if (!picture) {
+      return;
+    }
+    let src = url;
     try {
-      const texture = (await Assets.load({
-        src: `${url}?sharpness=${resolution.toFixed(2)}`,
-        data: vectorTextureData(resolution),
-      })) as Texture;
+      const loaded = await this.loadVector(picture, url, resolution);
+      src = loaded.src;
+      this.svgBaked.set(id, { url, src, resolution });
+      const texture = loaded.texture;
       this.textures.set(id, texture);
       // The alpha mask keeps the image it was first built from: collisions must
       // not shift because the window changed size.
@@ -458,17 +494,19 @@ export class PixiRenderer implements Renderer {
       this.dropBaked(previous, url);
     } catch {
       // Keep the texture that is already on screen.
-      this.svgBaked.set(id, previous ?? { url, resolution });
+      this.svgBaked.set(id, previous ?? { url, src, resolution });
     }
   }
 
   /** Releases a rasterisation nothing points at any more. */
-  private dropBaked(baked: { url: string; resolution: number } | undefined, url: string): void {
-    if (!baked || baked.url !== url) {
+  private dropBaked(
+    baked: { url: string; src: string; resolution: number } | undefined,
+    url: string,
+  ): void {
+    if (!baked || baked.url !== url || baked.src === url) {
       return;
     }
-    const src = `${url}?sharpness=${baked.resolution.toFixed(2)}`;
-    void Assets.unload(src).catch(() => undefined);
+    void Assets.unload(baked.src).catch(() => undefined);
   }
 
   /** Stage rectangle in page coordinates, for turning pointer events into stage x/y. */
@@ -835,7 +873,7 @@ export class PixiRenderer implements Renderer {
     }
     let better = false;
     try {
-      const svg = await (await fetch(url)).text();
+      const svg = await this.svgText(url);
       // 크기는 `<svg>` 여는 태그에 있으니 앞머리로 족하지만, `<image>`·`<text>` 는
       // 파일 어디에나 있을 수 있어 전체를 봅니다 — `ovenpark.ent` 의 무대 크기 모양은
       // `<image>` 가 29955 바이트에서 시작해서, 앞머리만 보면 png 사본을 두고 521KB
@@ -854,6 +892,56 @@ export class PixiRenderer implements Renderer {
     }
     this.svgPicks.set(url, better);
     return better;
+  }
+
+  /** 이 주소의 svg 마크업. 한 번만 받아 둡니다. */
+  private async svgText(url: string): Promise<string> {
+    const known = this.svgTexts.get(url);
+    if (known !== undefined) {
+      return known;
+    }
+    const text = await (await fetch(url)).text();
+    this.svgTexts.set(url, text);
+    return text;
+  }
+
+  /**
+   * 크기를 박은 사본으로 먼저 굽고, 그것이 안 되면 원래 주소로 굽습니다 — 사본 쪽이
+   * 어긋나도 모양이 사라지지는 않게.
+   */
+  private async loadVector(
+    picture: Picture,
+    url: string,
+    resolution: number,
+  ): Promise<{ texture: Texture; src: string }> {
+    const sized = await this.vectorSource(url, picture, resolution);
+    const data = vectorTextureData(picture.dimension.width, picture.dimension.height, resolution);
+    if (sized !== url) {
+      try {
+        return { texture: (await Assets.load({ src: sized, data })) as Texture, src: sized };
+      } catch {
+        // 아래에서 원래 주소로 다시 해 봅니다.
+      }
+    }
+    return { texture: (await Assets.load({ src: url, data })) as Texture, src: url };
+  }
+
+  /** 목표 배율로 크기를 박은 사본의 주소. 못 만들면 원래 주소를 그대로 씁니다. */
+  private async vectorSource(
+    url: string,
+    picture: Picture,
+    resolution: number,
+  ): Promise<string> {
+    try {
+      const sized = sizedVector(
+        await this.svgText(url),
+        picture.dimension.width * resolution,
+        picture.dimension.height * resolution,
+      );
+      return sized || url;
+    } catch {
+      return url;
+    }
   }
 
   /**
@@ -884,11 +972,12 @@ export class PixiRenderer implements Renderer {
         const url = await this.pickUrl(picture);
         const resolution = this.svgResolution(picture);
         const vector = url.endsWith('.svg');
-        const texture = (await Assets.load(
-          vector ? { src: url, data: vectorTextureData(resolution) } : url,
-        )) as Texture;
+        const loaded = vector
+          ? await this.loadVector(picture, url, resolution)
+          : { texture: (await Assets.load(url)) as Texture, src: url };
+        const texture = loaded.texture;
         if (vector) {
-          this.svgBaked.set(picture.id, { url, resolution });
+          this.svgBaked.set(picture.id, { url, src: loaded.src, resolution });
         }
         this.textures.set(picture.id, texture);
         const resource = texture.source?.resource as CanvasImageSource | undefined;
@@ -998,7 +1087,12 @@ export class PixiRenderer implements Renderer {
     }
     let filter = view.filter;
     if (!filter) {
-      filter = new ColorMatrixFilter();
+      // PIXI 필터는 대상을 중간 텍스처에 한 번 그린 뒤 거기에 행렬을 씁니다. 그 텍스처의
+      // 배율 기본값이 **1** 이라, 캔버스가 3배로 그리고 있어도 효과가 걸린 오브젝트만
+      // 1배로 그려져 확대됩니다 — 효과가 켜지는 순간 가장자리가 계단이 되던 자리입니다
+      // (`play.ent` 의 단추는 마우스를 대면 밝기 효과가 붙습니다).
+      // `'inherit'` 는 캔버스 배율을 그대로 따라가라는 뜻입니다.
+      filter = new ColorMatrixFilter({ resolution: 'inherit', antialias: 'inherit' });
       view.filter = filter;
       view.root.filters = [filter];
     }

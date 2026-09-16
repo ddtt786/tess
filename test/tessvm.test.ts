@@ -20,6 +20,7 @@ import {
   svgSharpness,
   textSharpness,
 } from '../packages/tessvm/src/render/sharpness.ts';
+import { sizedVector } from '../packages/tessvm/src/render/renderer.ts';
 import { fillParts, nonzeroParts } from '../packages/tessvm/src/render/fill.ts';
 import {
   CollisionSystem,
@@ -867,12 +868,12 @@ test('화질은 화면이 요구하는 만큼 따라 올라가고, 하한 아래
   // 4/3 (stage) × 1 (resolution): a plain window at the default size.
   assert.equal(textSharpness(4 / 3, 1, 100), 2, '작게 그려도 하한 2배');
   // 긴 변이 하한(`MIN_SVG_SIDE`)을 이미 채우는 그림이라야 배율만 보입니다.
-  assert.equal(svgSharpness(4 / 3, 480, 480), 2);
+  assert.equal(svgSharpness(4 / 3, 200, 200), 2.5);
   // A retina window, then the same text box scaled to twice its size.
   assert.equal(textSharpness(3, 1, 100), 3);
   assert.equal(textSharpness(3, 2, 100), 6);
-  // The vector cap is lower: a work holds far more costumes than text boxes.
-  assert.equal(svgSharpness(6, 480, 480), 4);
+  // 벡터에는 고정 상한이 없습니다 — 화면이 요구하는 만큼 따라가고 픽셀 상한이 잡습니다.
+  assert.equal(svgSharpness(6, 200, 200), 6);
   assert.equal(textSharpness(6, 1, 100), 6);
 });
 
@@ -2480,4 +2481,68 @@ test('벡터 모양의 굽는 배율은 실제로 그리는 크기를 따라간�
   // 픽셀 상한은 배율보다 뒤에 걸립니다.
   const huge = svgSharpness(3, 2048, 2048, 1, 4);
   assert.ok(huge <= MAX_TEXTURE_SIDE / 2048, String(huge));
+});
+
+/**
+ * 벡터에 "몇 배까지" 라는 고정 상한을 두면, 화면이 그보다 촘촘할 때 텍스처가 화면보다
+ * 성겨집니다 — 전체 화면에서는 무대 배율만 8배에 가까운데 4배로 잘라 두면 화면 픽셀의
+ * 절반만 담게 되어 옆의 png 와 다를 바 없이 보입니다(`play.ent` 의 단추).
+ */
+test('벡터 화질은 화면이 요구하는 만큼 따라 올라간다', () => {
+  for (const display of [4, 6, 8]) {
+    // 278×109 는 픽셀 상한에 한참 못 미치므로 화면을 그대로 따라갑니다.
+    assert.equal(svgSharpness(display, 278, 109), display, `displayScale ${display}`);
+  }
+  // 픽셀 상한은 그 위에 그대로 걸립니다.
+  const huge = svgSharpness(8, 960, 540);
+  assert.ok(960 * huge <= MAX_TEXTURE_SIDE && 960 * huge * 540 * huge <= 2048 * 2048 * 1.01, String(huge));
+  // 화면이 성겨도 하한 2배 아래로는 내려가지 않습니다.
+  assert.equal(svgSharpness(1, 480, 480), 2);
+});
+
+/**
+ * PIXI 의 `loadSvg` 는 svg 를 `<img>` 로 불러와 `drawImage` 로 옮겨 그립니다. `<img>` 는
+ * **그림이 말하는 자기 크기**로 먼저 래스터화되는데, 엔트리 벡터에는 `width`·`height` 가
+ * 없고 `viewBox` 만 있어서 브라우저 기본값(300px 폭)으로 그려집니다. 그것을 목표 크기로
+ * 늘리니 몇 배로 구우라고 해도 가장자리가 계단으로 남았습니다(`play.ent` 의 단추는
+ * 278×109 인데 `<img>` 고유 크기가 300×118 이었습니다). 뿌리 `<svg>` 에 목표 픽셀 크기를
+ * 박아 브라우저가 처음부터 그 크기로 그리게 합니다.
+ */
+test('벡터는 목표 픽셀 크기를 박은 사본으로 굽는다', () => {
+  const plain = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 278 109"><path d="M0 0"/></svg>';
+  const sized = sizedVector(plain, 834, 327);
+  assert.match(sized, /^data:image\/svg\+xml;charset=utf-8,/, 'PIXI 가 svg 로 알아보는 주소');
+  const markup = decodeURIComponent(sized.slice(sized.indexOf(',') + 1));
+  assert.match(markup, /<svg[^>]*\swidth="834"/);
+  assert.match(markup, /<svg[^>]*\sheight="327"/);
+  assert.match(markup, /viewBox="0 0 278 109"/, 'viewBox 는 그대로 — 그림은 달라지지 않습니다');
+  assert.match(markup, /<path d="M0 0"\/>/, '본문도 그대로입니다');
+
+  // 이미 크기가 박혀 있으면 갈아 끼웁니다.
+  const had = sizedVector('<svg width="10" height="4" viewBox="0 0 10 4"></svg>', 100, 40);
+  const second = decodeURIComponent(had.slice(had.indexOf(',') + 1));
+  assert.match(second, /width="100"/);
+  assert.doesNotMatch(second, /width="10"(?!0)/);
+
+  // `<svg>` 가 없으면 빈 문자열 — 부르는 쪽이 원래 주소를 씁니다.
+  assert.equal(sizedVector('그림이 아님', 10, 10), '');
+});
+
+/**
+ * PIXI 필터는 대상을 중간 텍스처에 한 번 그린 뒤 거기에 행렬을 씁니다. 그 텍스처의 배율
+ * 기본값이 **1** 이라(`Filter.defaultOptions.resolution`), 캔버스가 3배로 그리고 있어도
+ * 효과가 걸린 오브젝트만 1배로 그려져 확대됩니다 — 마우스를 한 번 대면 밝기 효과가 붙고
+ * 그때부터 가장자리가 계단이 되던 자리입니다(`play.ent` 의 단추).
+ */
+test('효과 필터는 캔버스 배율을 그대로 따라간다', () => {
+  const source = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/renderer.ts'),
+    'utf-8',
+  );
+  const block = source.slice(
+    source.indexOf('private applyEffects'),
+    source.indexOf('private syncTextBox'),
+  );
+  assert.match(block, /new ColorMatrixFilter\(\{[^}]*resolution: 'inherit'/, '배율을 물려받습니다');
+  assert.match(block, /antialias: 'inherit'/, '앤티에일리어싱도 물려받습니다');
 });
