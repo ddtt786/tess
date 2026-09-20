@@ -183,18 +183,41 @@ function slotTrick(param: unknown): 'continue' | 'break' | null {
 }
 
 /**
+ * Whether reading a slot can be felt. Entry reads every slot before it runs the
+ * block, so a slot beside the flow block is read for real — a plain value is
+ * nothing, but a function call or a statement parked in a `function_field_*`
+ * wrapper does something, and a block carrying one of those is left alone.
+ */
+function inertValue(param: unknown): boolean {
+  if (!isBlock(param)) return true;
+  if ((param.statements?.length ?? 0) > 0) return false;
+  if (param.type.startsWith('func_') || param.type === 'calc_rand') return false;
+  if (param.type === 'function_field_string' || param.type === 'function_field_boolean') {
+    return false;
+  }
+  return (param.params ?? []).every(inertValue);
+}
+
+/**
  * The other carrier: a flow block dropped into the value slots of a block that
- * is never meant to run — usually a hardware one. It runs as the flow block,
- * and the block it rode in on is neither run nor reported.
+ * is never meant to run. It runs as the flow block, and the block it rode in on
+ * is neither run nor reported.
+ *
+ * The block around it is whatever the work picked — a hardware block with
+ * nothing to drive, but just as often a sound, a dialogue or a move, since any
+ * block with a slot carries one. The slots beside it hold whatever the editor
+ * put there, usually a number the work never meant.
  */
 function carriedTrick(block: RawBlock): 'continue' | 'break' | null {
   if ((block.statements?.length ?? 0) > 0) return null;
   let carried: 'continue' | 'break' | null = null;
   for (const param of block.params ?? []) {
-    if (!isBlock(param)) continue;
-    const trick = pick(LOOP_TRICKS, param.type);
-    if (!trick) return null;
-    carried = trick;
+    const trick = isBlock(param) ? pick(LOOP_TRICKS, param.type) : undefined;
+    if (trick) {
+      carried = trick;
+      continue;
+    }
+    if (!inertValue(param)) return null;
   }
   return carried;
 }
@@ -359,6 +382,14 @@ export class Codegen {
   private statement(block: RawBlock, ind: string): string {
     const p = block.params;
     const line = (code: string) => `${ind}${code}\n`;
+
+    // Asked before the block's own name, because the carrier is often a block
+    // this compiler knows — a sound to play, a move to make over a second. The
+    // flow block in its slot runs first and the block itself never does.
+    const carried = carriedTrick(block);
+    if (carried) {
+      return line(this.trickCode(carried));
+    }
 
     switch (block.type) {
       // ----- moving -----
@@ -680,12 +711,6 @@ export class Codegen {
       default:
         if (block.type.startsWith('func_')) {
           return this.callFunction(block, ind, false).code;
-        }
-        {
-          const carried = carriedTrick(block);
-          if (carried) {
-            return line(this.trickCode(carried));
-          }
         }
         this.note(block.type);
         return line(comment(block.type));

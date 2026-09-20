@@ -123,6 +123,10 @@ function marshal(
    * What each slot's variable stood at when the kernel last agreed with it.
    * A table the work only reads — a connectome, a lookup curve — then crosses
    * once instead of every frame.
+   *
+   * Keyed by the variable, not by where it sits: a list of no length takes no
+   * room, so the slot after it starts at the same place, and a key of the place
+   * would have one of them answer for the other.
    */
   const stamp = new Map<number, number>();
 
@@ -138,7 +142,7 @@ function marshal(
     if (!variable) {
       return 'stop';
     }
-    if (stamp.get(slot.base) === variable.revision) {
+    if (stamp.get(slot.variable) === variable.revision) {
       return 'ok';
     }
     stats.copied += slot.length;
@@ -158,7 +162,7 @@ function marshal(
           }
           cells[slot.base + at] = item === 'TRUE' ? 1 : 0;
         }
-        stamp.set(slot.base, variable.revision);
+        stamp.set(slot.variable, variable.revision);
         return 'ok';
       }
       for (let at = 0; at < slot.length; at += 1) {
@@ -175,7 +179,7 @@ function marshal(
           cells[slot.tails + at] = decimals(cells[slot.base + at]!);
         }
       }
-      stamp.set(slot.base, variable.revision);
+      stamp.set(slot.variable, variable.revision);
       return 'ok';
     }
     const raw = variable.value;
@@ -191,7 +195,7 @@ function marshal(
     cells[slot.places] = typeof raw === 'number' || dot === -1 && !/^-?\d+$/.test(source)
       ? -1
       : Math.min(dot === -1 ? 0 : source.length - dot - 1, 20);
-    stamp.set(slot.base, variable.revision);
+    stamp.set(slot.variable, variable.revision);
     return 'ok';
   }
 
@@ -217,7 +221,7 @@ function marshal(
     }
     // The kernel and the work now hold the same thing, so nothing crosses back
     // until something outside writes it.
-    stamp.set(slot.base, variable.revision);
+    stamp.set(slot.variable, variable.revision);
   }
 
   return {

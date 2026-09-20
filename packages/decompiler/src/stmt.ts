@@ -197,15 +197,39 @@ function parkedStatement(param: unknown): RawBlock | null {
   return inner && typeof inner === "object" ? inner : null;
 }
 
+/**
+ * Whether reading a slot can be felt. Entry reads every slot before it runs the
+ * block, so a slot beside the flow block is read for real — a plain value is
+ * nothing, but a function call or a statement parked in a `function_field_*`
+ * wrapper does something, and a block carrying one of those is left alone.
+ */
+function inertValue(param: unknown): boolean {
+  if (param === null || param === undefined || typeof param !== "object")
+    return true;
+  const block = param as RawBlock;
+  if ((block.statements?.length ?? 0) > 0) return false;
+  if (block.type?.startsWith("func_") || block.type === "calc_rand") return false;
+  if (
+    block.type === "function_field_string" ||
+    block.type === "function_field_boolean"
+  )
+    return false;
+  return (block.params ?? []).every(inertValue);
+}
+
 export function carriedTrick(block: RawBlock | undefined): string | null {
   if (!block || (block.statements?.length ?? 0) > 0) return null;
   let carried: string | null = null;
   for (const param of block.params ?? []) {
-    if (param === null || param === undefined || typeof param !== "object")
+    const trick =
+      param !== null && param !== undefined && typeof param === "object"
+        ? LOOP_TRICK[(param as RawBlock).type ?? ""]
+        : undefined;
+    if (trick) {
+      carried = trick;
       continue;
-    const trick = LOOP_TRICK[(param as RawBlock).type ?? ""];
-    if (!trick) return null;
-    carried = trick;
+    }
+    if (!inertValue(param)) return null;
   }
   return carried;
 }
@@ -224,6 +248,15 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
   const p = block.params ?? [];
   const at = (i: number) => p[i];
   const e = (i: number) => exprOf(at(i), ctx);
+
+  // Asked before the block's own name, because the carrier is often a block the
+  // decompiler knows — a sound to play, a move to make over a second. Written
+  // as the flow block inside a loop; outside one it never reaches the block
+  // either, so nothing is written. Both are quiet.
+  {
+    const carried = carriedTrick(block);
+    if (carried) return ctx.loopDepth > 0 ? [carried] : [];
+  }
 
   switch (block.type) {
     // --- 이벤트 hat 블록은 흐름을 만드는 쪽(events.js)이 처리한다.
@@ -647,11 +680,6 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
     default: {
       if (block.type.startsWith("func_"))
         return functionCallStatement(block, ctx);
-      // A block carrying a flow block in its slots is that flow block, whatever
-      // it says on the outside. Written as one inside a loop; outside one it
-      // never reaches the block either, so nothing is written. Both are quiet.
-      const carried = carriedTrick(block);
-      if (carried) return ctx.loopDepth > 0 ? [carried] : [];
       // Statements parked in the value slots run first, then the block itself.
       const parked = (block.params ?? [])
         .map(parkedStatement)

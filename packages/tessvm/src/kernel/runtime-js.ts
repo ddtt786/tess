@@ -25,6 +25,7 @@ export interface KernelOps {
   div_num(a: number, b: number): number;
   math_op(value: number, op: number): number;
   quotient(left: number, right: number, remainder: boolean): number;
+  to_num(value: number): number;
   truthy(value: number): boolean;
   js_bool(value: number): boolean;
   both(a: boolean, b: boolean, isAnd: boolean): boolean;
@@ -126,6 +127,7 @@ export function kernelOps(cells: Float64Array): KernelOps {
       const share = Math.floor(left / right);
       return remainder ? left - right * share : share;
     },
+    to_num: (value) => value || 0,
     truthy: (value) => cast.bool(value),
     js_bool: (value) => Boolean(value),
     both: (a, b, isAnd) => (isAnd ? a && b : a || b),

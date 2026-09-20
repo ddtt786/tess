@@ -694,7 +694,13 @@ function compileCall(node: CallNode, ctx: Context): EntryBlock | null {
   const fn = ctx.functionByName.get(callee);
   if (fn) {
     if (!fn.isValue) {
-      return ctx.error(node, `함수 '${callee}' 는 값을 돌려주지 않습니다. return 이 있는 함수만 값으로 쓸 수 있습니다.`);
+      // 엔트리는 블록을 돌리기 전에 값 자리부터 읽으므로, return 이 없는 함수도 값
+      // 자리에서 돕니다 — 한 프레임을 값 자리 안에서 쓰는 치트가 이 모양입니다.
+      // 자리에 남는 값은 없고, 엔트리도 그 자리에 아무것도 넘기지 않습니다.
+      ctx.notice(
+        node,
+        `함수 '${callee}' 는 값을 돌려주지 않습니다. 값 자리에서도 돌기는 하지만 자리에는 아무 값도 남지 않습니다.`,
+      );
     }
     if (args.length !== fn.params.length) {
       ctx.error(node, `함수 '${callee}' 는 인자가 ${fn.params.length}개여야 합니다.`);

@@ -280,6 +280,17 @@ pub fn mod_num(value : Double, divisor : Double, tv : Int, td : Int) -> Double {
   snap(r, max_tail(r, value, divisor, tv, td))
 }
 
+///| `Entry.Scope.getNumberValue` — `parseFloat` and then 0 for anything that is
+///| not a number. A double is already parsed, so what is left is that `NaN` and
+///| `-0` both fall to 0, which every number slot of a block relies on.
+pub fn to_num(x : Double) -> Double {
+  if x != x || x == 0.0 {
+    0.0
+  } else {
+    x
+  }
+}
+
 ///| `Entry.Scope.getBooleanValue` — `NaN` does not parse, so it reads as true.
 pub fn truthy(x : Double) -> Bool {
   if x != x {

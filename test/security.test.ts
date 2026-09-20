@@ -209,6 +209,65 @@ test('값 자리에 놓인 흐름 블록은 그 자리에서 반복을 다시 �
 });
 
 /**
+ * 껍데기는 하드웨어 블록만이 아닙니다 — 값 자리를 가진 블록이면 무엇이든 실을 수
+ * 있어서, 소리·말하기·시간을 두고 움직이기·기다리기가 다 쓰입니다. 그런 블록은
+ * 컴파일러가 이미 아는 것이므로, 치트 판정이 블록 이름을 보기 **전에** 서야 합니다.
+ * 옆 자리에 편집기가 넣어 둔 숫자가 같이 들어 있는 것도 같은 치트입니다.
+ */
+test('컴파일러가 아는 블록에 실린 흐름 블록도 같은 치트다', () => {
+  const carriers: Array<[string, unknown[]]> = [
+    ['sound_something_wait_with_block', []],
+    ['sound_something_second_wait_with_block', [{ id: 'n', type: 'number', params: ['0'] }]],
+    ['dialog_time', [{ id: 'n', type: 'number', params: ['0'] }, 'speak']],
+    ['move_xy_time', [{ id: 'n', type: 'number', params: ['0'] }, { id: 'm', type: 'number', params: ['0'] }]],
+    ['rotate_by_time', [{ id: 'a', type: 'angle', params: ['0'] }]],
+    ['wait_second', []],
+  ];
+  for (const [type, rest] of carriers) {
+    const carrier = (flow: string) => ({
+      id: 'c', type,
+      params: [{ id: 'f', type: flow, params: [null] }, ...rest, null],
+      statements: [],
+    });
+    const body = (flow: string) => [
+      HAT,
+      { id: 'r', type: 'repeat_inf', params: [null], statements: [[carrier(flow)]] },
+    ];
+    const ended = new Codegen(work(body('stop_repeat')) as never).compile();
+    assert.match(ended.source, /while \(true\) \{\n\s*break;/, `${type}: 반복 중단`);
+    const again = new Codegen(work(body('continue_repeat')) as never).compile();
+    assert.match(again.source, /continue;/, `${type}: 이어 하기`);
+    for (const built of [ended, again]) {
+      // 껍데기는 실행되지도, 모르는 블록으로 세어지지도 않는다.
+      assert.doesNotMatch(built.source, new RegExp(type.replace(/_/g, '[_]')), type);
+      assert.equal(built.unknown.size, 0, type);
+      assert.doesNotThrow(() => new Function('R', built.source));
+    }
+  }
+});
+
+/**
+ * 값 자리를 읽는 것이 느껴지는 블록 — 함수 호출 — 이 같이 들어 있으면 그 호출은
+ * 실제로 돕니다. 그런 블록은 치트로 삼키지 않고 그대로 둡니다.
+ */
+test('값 자리에 함수 호출이 같이 있으면 치트로 삼키지 않는다', () => {
+  const carrier = {
+    id: 'c', type: 'wait_second',
+    params: [
+      { id: 'k', type: 'func_zz', params: [] },
+      { id: 'f', type: 'continue_repeat', params: [null] },
+      null,
+    ],
+    statements: [],
+  };
+  const built = new Codegen(work([
+    HAT,
+    { id: 'r', type: 'repeat_inf', params: [null], statements: [[carrier]] },
+  ]) as never).compile();
+  assert.match(built.source, /waitSecond/);
+});
+
+/**
  * 미로 수업의 반복 블록. `func` 가 `script.isLooped` 를 세우지 않아 엔트리에서 한
  * 바퀴가 프레임을 쓰지 않으므로, 여기서도 바퀴마다 `yield` 하지 않는다. 대신 스핀
  * 가드가 한 프레임을 영영 붙잡지 못하게 막는다.

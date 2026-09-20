@@ -479,3 +479,46 @@ test('판단 리스트는 엔트리처럼 TRUE·FALSE 글자로 남는다', { sk
   const inside = vm.variables.find((variable) => variable.name === 'inside')!;
   assert.deepEqual(inside.array.map((item) => item.data), ['TRUE', 'TRUE', 'FALSE', 'FALSE']);
 });
+
+/**
+ * 길이가 0인 리스트는 자리를 차지하지 않으므로 다음 리스트가 같은 번지에서
+ * 시작합니다. 넘길 것이 없는지 보는 표시를 번지로 걸어 두면 빈 리스트가 뒤에 오는
+ * 표를 대신 답해 버려, 그 표가 영영 건너오지 않고 0 으로 읽힙니다 — `3D portal.ent`
+ * 의 화면이 검게만 나오던 까닭입니다.
+ */
+test('빈 리스트 뒤에 오는 표도 제대로 건너온다', { skip: !hasMoon }, () => {
+  const source = `
+var ret = 0
+var i = 0
+var total = 0
+list empty = []
+list table = [2, 4, 8]
+
+function step():
+  total = ((total + table[i]) + empty[1])
+  i += 1
+  return 0
+end
+
+function three():
+  ret = step()
+  ret = step()
+  ret = step()
+  return 0
+end
+
+scene "s":
+  object "o":
+    when start do
+      forever:
+        i = 1
+        total = 0
+        ret = three()
+      end
+    end
+  end
+end`;
+  const vm = assertSameAsJavascript(source, 4);
+  // 표가 건너오지 않았다면 0 + 0 + 0 이 된다.
+  assert.equal(Number(vm.variables.find((v) => v.name === 'total')!.getValue()), 14);
+});

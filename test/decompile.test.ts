@@ -2615,6 +2615,45 @@ test('반복문 밖의 같은 치트는 아무것도 남기지 않는다', () =>
 });
 
 /**
+ * 껍데기는 하드웨어 블록만이 아닙니다 — 값 자리를 가진 블록이면 무엇이든 실을 수
+ * 있어서, 소리·말하기·시간을 두고 움직이기가 다 쓰입니다. 옆 자리에 편집기가 넣어 둔
+ * 숫자가 같이 들어 있어도 같은 치트이므로, 그 숫자 때문에 껍데기가 그대로 남아서는
+ * 안 됩니다.
+ */
+test('되돌리기도 아는 블록에 실린 치트를 같이 읽는다', () => {
+  const carriers: Array<[string, unknown[]]> = [
+    ['sound_something_wait_with_block', []],
+    ['sound_something_second_wait_with_block', [{ type: 'number', params: ['0'] }]],
+    ['dialog_time', [{ type: 'number', params: ['0'] }, 'speak']],
+    ['locate_xy_time', [{ type: 'number', params: ['0'] }, { type: 'number', params: ['0'] }]],
+    ['wait_second', []],
+  ];
+  for (const [type, rest] of carriers) {
+    const project = minimalProject();
+    const object = (project.objects as RawEntity[])[0]!;
+    object.script = JSON.stringify([[
+      { type: 'when_run_button_click', params: [null], statements: [] },
+      {
+        type: 'repeat_inf',
+        params: [null],
+        statements: [[{
+          type,
+          params: [{ type: 'continue_repeat', params: [null] }, ...rest, null],
+          statements: [],
+        }]],
+      },
+    ]]);
+
+    const back = decompileProject(project, [], { inline: true });
+    assert.deepEqual(back.warnings, [], `${type}: ${back.warnings.join('\n')}`);
+    assert.match(back.source, /forever:\n\s+skip\n\s+end/, type);
+    assert.doesNotMatch(back.source, new RegExp(type.replace(/_/g, '[_]')), type);
+    const again = compileProject(back.source, { path: 'main.tess' });
+    assert.deepEqual(again.errors, [], again.errors.map((e) => e.message).join('\n'));
+  }
+});
+
+/**
  * 같은 치트의 다른 갈래 — 하드웨어 블록의 값 자리에 \`function_field_string\` 으로
  * 문장 블록을 끼워 둔 작품입니다. \`Entry.Scope.run\` 이 \`schema.func\` 를 보기 전에
  * \`getParams()\` 로 값 자리를 먼저 실행하므로, 바깥 블록이 아무것도 하지 않아도

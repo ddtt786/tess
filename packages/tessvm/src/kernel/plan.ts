@@ -95,7 +95,7 @@ const JAVASCRIPT: Dialect = {
   },
   module: (bodies, roots) =>
     `"use strict";\nconst { ld, st, ld_item, st_item, ld_tail, add_num, sub_num, mul_num,\n` +
-    `  div_num, math_op, quotient, truthy, js_bool, both, bail, float_point } = R;\n` +
+    `  div_num, math_op, quotient, to_num, truthy, js_bool, both, bail, float_point } = R;\n` +
     `${bodies.join('\n')}\nreturn { ${roots.join(', ')} };\n`,
 };
 
@@ -167,6 +167,14 @@ interface KValue {
   kind: Kind;
   /** Moonbit expression giving the value's tail, when one is at hand. */
   tailCode?: string;
+  /**
+   * Whether the value is already what `Entry.Scope.getNumberValue` would make
+   * of it — no `NaN`, no `-0`. A literal is, and so is anything read straight
+   * out of the shared region, which only ever holds numbers the work checked
+   * on the way in. Everything else goes through `to_num`, the way every number
+   * slot of a block does.
+   */
+  clean?: boolean;
   /**
    * Digits after the point in the value's shortest form, when the compiler
    * already knows them — a literal's. The kernel would otherwise search for
@@ -416,7 +424,7 @@ export function planKernel(
     switch (slot) {
       case 'num': {
         const parsed = parseFloat(raw) || 0;
-        return { code: double(parsed), kind: 'num', tail: tailOf(parsed) };
+        return { code: double(parsed), kind: 'num', tail: tailOf(parsed), clean: true };
       }
       case 'bool': {
         const n = Number(raw);
@@ -432,26 +440,39 @@ export function planKernel(
         if (!Number.isFinite(n)) {
           fail(`literal ${JSON.stringify(raw)}`);
         }
-        return { code: double(n), kind: 'num', tail: tailOf(n) };
+        return { code: double(n), kind: 'num', tail: tailOf(n), clean: true };
       }
       case 'plus': {
         // A side that is not a number makes PLUS join the two as text.
         if (!numeric(raw)) {
           fail(`literal ${JSON.stringify(raw)}`);
         }
-        return { code: double(Number(raw)), kind: 'num', tail: tailOf(Number(raw)) };
+        return { code: double(Number(raw)), kind: 'num', tail: tailOf(Number(raw)), clean: true };
       }
       default: {
         // Kept as it is, so the number has to print back as the same text.
         if (!numeric(raw) || String(Number(raw)) !== raw) {
           fail(`literal ${JSON.stringify(raw)}`);
         }
-        return { code: double(Number(raw)), kind: 'num', tail: tailOf(Number(raw)) };
+        return { code: double(Number(raw)), kind: 'num', tail: tailOf(Number(raw)), clean: true };
       }
     }
   }
 
+  /**
+   * A value slot, read the way the block holding it reads it. A number slot is
+   * `parseFloat(…) || 0`, which is where `NaN` and `-0` fall to zero — without
+   * that a `0 / 0` spreads through the work instead of stopping at the slot.
+   */
   function value(param: unknown, slot: Slot = 'num'): KValue {
+    const read = readValue(param, slot);
+    if (slot !== 'num' || read.clean || read.kind === 'bool') {
+      return read;
+    }
+    return { ...read, code: `to_num(${read.code})`, clean: true };
+  }
+
+  function readValue(param: unknown, slot: Slot): KValue {
     if (!isBlock(param)) {
       return constant(text(param), slot);
     }
@@ -463,7 +484,7 @@ export function planKernel(
         return constant(text(p[0] ?? ''), slot);
       case 'angle': {
         const angle = Number(p[0] ?? 0) || 0;
-        return { code: double(angle), kind: 'num', tail: tailOf(angle) };
+        return { code: double(angle), kind: 'num', tail: tailOf(angle), clean: true };
       }
       case 'True':
         return { code: 'true', kind: 'bool' };
@@ -531,7 +552,8 @@ export function planKernel(
           fail(`variable ${text(p[0])}`);
         }
         reads.add(index);
-        return { code: `ld(${slotOf(index)?.base ?? 0})`, kind: 'num' };
+        // The shared region only ever holds numbers the bridge checked.
+        return { code: `ld(${slotOf(index)?.base ?? 0})`, kind: 'num', clean: true };
       }
       case 'value_of_index_from_list': {
         const index = refer(p[1]);
@@ -549,13 +571,13 @@ export function planKernel(
           const tailCode = at && at.tails >= 0 && !CALLS.test(where)
             ? `ld_tail(${at.tails}, ${at.length}, ${where})`
             : undefined;
-          return { code: item, kind: 'num', tailCode };
+          return { code: item, kind: 'num', tailCode, clean: true };
         }
         // A judgement only reads back as one. Anywhere else entry would have
         // `parseFloat(true)`, which is not 1, so the list stays behind instead.
         if (slot === 'word') {
           // Measured against one of the two words, where they do tell apart.
-          return { code: item, kind: 'num' };
+          return { code: item, kind: 'num', clean: true };
         }
         if (slot !== 'bool') {
           fail(`list ${text(p[1])} holds judgements`);
@@ -574,6 +596,7 @@ export function planKernel(
           code: double(slotOf(index)?.length ?? variables[index]!.array.length),
           kind: 'num',
           tail: 0,
+          clean: true,
         };
       }
       case 'get_func_variable': {
@@ -587,9 +610,10 @@ export function planKernel(
         if (block.type.startsWith('func_')) {
           return { code: call(block, true), kind: 'num' };
         }
-        const slot = params.get(block.type);
-        if (slot !== undefined) {
-          return { code: `a${slot}`, kind: 'num' };
+        const at = params.get(block.type);
+        if (at !== undefined) {
+          // The bridge only hands numbers over.
+          return { code: `a${at}`, kind: 'num', clean: true };
         }
         return fail(block.type);
       }
