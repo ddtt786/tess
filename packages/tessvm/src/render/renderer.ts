@@ -1429,7 +1429,20 @@ export class PixiRenderer implements Renderer {
       // flat colour where it crosses itself or picks up again after
       // `stop_drawing`. Each group is drawn on its own node here for the same
       // reason — pieces drawn one by one would blend every overlap twice.
+      //
+      // Groups that are not see-through have nothing to keep apart, though: one
+      // node can hold a run of them, a fill or a stroke each, and a work that
+      // changes colour every few points then builds one shape a frame instead
+      // of a hundred.
       let count = 0;
+      let runFrom = -1;
+      const closeRun = (to: number): void => {
+        if (runFrom >= 0) {
+          this.drawPenRun(this.penGroup(pen, count), pieces, runFrom, to);
+          count += 1;
+          runFrom = -1;
+        }
+      };
       for (let i = 0; i < pieces.length; ) {
         const style = pieces[i]!;
         let end = i;
@@ -1441,23 +1454,129 @@ export class PixiRenderer implements Renderer {
         // A work that lifts the pen and puts it down again leaves a stroke with
         // one point in it, which draws nothing.
         let drawable = 0;
+        let straight = 0;
         for (let at = from; at < end; at += 1) {
           if (pieces[at]!.points.length >= 4) {
             drawable += 1;
+            if (isSegment(pieces[at]!)) {
+              straight += 1;
+            }
           }
         }
         if (drawable === 0) {
           continue;
         }
-        this.drawPenGroup(this.penGroup(pen, count), style, pieces, from, end, drawable);
-        count += 1;
+        // A run of plain lines gets a mesh of its own, and a see-through group
+        // gets a node of its own; everything else joins the run being built.
+        const alone = style.opacity !== 0 ||
+          (!style.fill && straight === drawable && straight >= SEGMENT_FLOOR);
+        if (alone) {
+          closeRun(from);
+          this.drawPenGroup(this.penGroup(pen, count), style, pieces, from, end, drawable);
+          count += 1;
+        } else if (runFrom < 0) {
+          runFrom = from;
+        }
       }
+      closeRun(pieces.length);
       // Groups the pen no longer has are emptied rather than thrown away: a work
       // that clears and draws again every frame would otherwise build its nodes
       // and its gpu buffers from nothing each time.
       for (let at = count; at < pen.groups.length; at += 1) {
         this.clearGroup(pen.groups[at]!);
       }
+    }
+  }
+
+  /**
+   * Draws a run of settings groups into one node. Every group in it is opaque,
+   * so nothing it holds blends with anything else and the order alone decides
+   * what covers what — which one `Graphics` keeps, a fill or a stroke per
+   * group, in the order they were laid down.
+   */
+  private drawPenRun(group: PenGroup, pieces: Stroke[], from: number, to: number): void {
+    const drawn = `run/${from}/${to}/${pieces[to - 1]!.points.length}/${pieces[from]!.color}`;
+    if (group.drawn === drawn) {
+      return;
+    }
+    group.drawn = drawn;
+    group.segments?.hide();
+    const graphics = group.graphics;
+    graphics.clear();
+    const boost = this.options.boost !== false;
+    for (let at = from; at < to; ) {
+      const style = pieces[at]!;
+      let end = at;
+      while (end < to && sameStyle(style, pieces[end]!)) {
+        end += 1;
+      }
+      this.tracePenGroup(graphics, style, pieces, at, end, boost);
+      at = end;
+    }
+    this.finishPenGroup(group, 1);
+  }
+
+  /** Lays one settings group into a path and closes it with its own paint. */
+  private tracePenGroup(
+    graphics: Graphics,
+    style: Stroke,
+    pieces: Stroke[],
+    from: number,
+    to: number,
+    boost: boolean,
+  ): void {
+    const trace = (points: number[]): void => {
+      graphics.moveTo(points[0]!, points[1]!);
+      for (let at = 2; at < points.length; at += 2) {
+        graphics.lineTo(points[at]!, points[at + 1]!);
+      }
+    };
+    const traceFlipped = (points: number[]): void => {
+      graphics.moveTo(points[0]!, -points[1]!);
+      for (let at = 2; at < points.length; at += 2) {
+        graphics.lineTo(points[at]!, -points[at + 1]!);
+      }
+    };
+    let drew = false;
+    for (let at = from; at < to; at += 1) {
+      const piece = pieces[at]!;
+      if (piece.points.length < 4) {
+        continue;
+      }
+      drew = true;
+      if (!style.fill) {
+        traceFlipped(piece.points);
+        continue;
+      }
+      const known = this.fillCache.get(piece);
+      let parts: number[][] | null;
+      if (known && known.boost === boost) {
+        parts = known.parts;
+      } else {
+        const points = piece.points.map((value, at2) => (at2 % 2 === 1 ? -value : value));
+        parts = fillParts(points, boost);
+        this.fillCache.set(piece, { boost, parts });
+      }
+      if (parts) {
+        for (const part of parts) trace(part);
+      } else {
+        traceFlipped(piece.points);
+      }
+    }
+    if (!drew) {
+      return;
+    }
+    const ink = usableColor(style.color) ?? { color: 0x000000, alpha: 1 };
+    if (style.fill) {
+      graphics.fill({ color: ink.color, alpha: ink.alpha });
+    } else {
+      graphics.stroke({
+        width: style.thickness,
+        color: ink.color,
+        alpha: ink.alpha,
+        cap: 'butt',
+        join: 'miter',
+      });
     }
   }
 
@@ -1508,65 +1627,7 @@ export class PixiRenderer implements Renderer {
       this.finishPenGroup(group, alpha);
       return;
     }
-    const boost = this.options.boost !== false;
-    const trace = (points: number[]): void => {
-      graphics.moveTo(points[0]!, points[1]!);
-      for (let at = 2; at < points.length; at += 2) {
-        graphics.lineTo(points[at]!, points[at + 1]!);
-      }
-    };
-    // 무대는 y 가 위로 자라고 PIXI 는 아래로 자라므로 y 를 뒤집어 긋습니다. 선만 긋는
-    // 획은 옮겨 담지 않고 그 자리에서 뒤집습니다 — 프레임마다 점 수만큼 배열을 새로
-    // 만들던 자리입니다.
-    const traceFlipped = (points: number[]): void => {
-      graphics.moveTo(points[0]!, -points[1]!);
-      for (let at = 2; at < points.length; at += 2) {
-        graphics.lineTo(points[at]!, -points[at + 1]!);
-      }
-    };
-    for (let at = from; at < to; at += 1) {
-      const piece = pieces[at]!;
-      if (piece.points.length < 4) {
-        continue;
-      }
-      if (!style.fill) {
-        traceFlipped(piece.points);
-        continue;
-      }
-      // 부스트 모드를 끈 엔트리는 채우기를 캔버스로 칠하므로 nonzero 감김 규칙을
-      // 따릅니다(fill.ts). 켠 엔트리는 PIXI 로 칠하고, PIXI 는 폴리곤을 단순 외곽선으로
-      // 보므로 여기서도 경로를 그대로 넘깁니다.
-      const known = this.fillCache.get(piece);
-      let parts: number[][] | null;
-      if (known && known.boost === boost) {
-        parts = known.parts;
-      } else {
-        const points = piece.points.map((value, at) => (at % 2 === 1 ? -value : value));
-        parts = fillParts(points, boost);
-        this.fillCache.set(piece, { boost, parts });
-      }
-      if (parts) {
-        for (const part of parts) trace(part);
-      } else {
-        traceFlipped(piece.points);
-      }
-    }
-    if (style.fill) {
-      graphics.fill({ color: ink.color, alpha: ink.alpha });
-    } else {
-      // `setStrokeStyle(thickness)` — entry leaves createjs at its defaults,
-      // which are butt caps and miter joins, so pen ends and corners are square.
-      graphics.stroke({
-        width: style.thickness,
-        color: ink.color,
-        // The pen's own alpha is the group's; a colour that carries one of its
-        // own multiplies with it, the way the canvas does.
-        alpha: ink.alpha,
-        cap: 'butt',
-        join: 'miter',
-      });
-    }
-
+    this.tracePenGroup(graphics, style, pieces, from, to, this.options.boost !== false);
     this.finishPenGroup(group, alpha);
   }
 

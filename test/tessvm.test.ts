@@ -2559,8 +2559,10 @@ test('끝난 획은 프레임마다 다시 자르지 않는다', () => {
     path.join(root, 'packages/tessvm/src/render/renderer.ts'),
     'utf-8',
   );
+  // 자르기는 무리 하나를 긋는 `tracePenGroup` 이 하고, 한 무리짜리와 여러 무리를
+  // 한 마디에 담는 쪽이 그것을 같이 씁니다.
   const block = source.slice(
-    source.indexOf('private drawPenGroup'),
+    source.indexOf('private drawPenRun'),
     source.indexOf('private stopObject'),
   );
   assert.match(block, /this\.fillCache\.get\(piece\)/, '잘라 둔 것을 먼저 찾습니다');

@@ -18,6 +18,9 @@ const DATA_BASE = 1024;
 /** Entry unwinds a call chain this deep; the kernel needs room for its own. */
 const CALL_DEPTH_LIMIT = 1000;
 
+/** Calls timed before deciding whether an entry point is worth its crossing. */
+const TRIAL_CALLS = 24;
+
 /** The maths the wasm library rounds differently from the page's `Math`. */
 const HOST_MATHS = { ln: Math.log, acos: Math.acos };
 
@@ -31,9 +34,12 @@ export interface KernelHandle {
   /** Roots the kernel can take, by function table index. */
   roots: Map<number, { name: string; arity: number }>;
   depth: number;
-  /** How many times a root ran in wasm, how often it fell back, and how many
-   * numbers crossed between the work and the kernel. */
-  readonly stats: { runs: number; fallbacks: number; copied: number };
+  /**
+   * How many times a root ran in the kernel, how often it fell back, how many
+   * numbers crossed, and how many entry points were given back to the block
+   * runner because the crossing cost more than it saved.
+   */
+  readonly stats: { runs: number; fallbacks: number; copied: number; dropped: number };
 }
 
 /**
@@ -117,7 +123,19 @@ function marshal(
 
   const reading = plan.slots.filter((slot) => slot.read || slot.written);
   const writing = plan.slots.filter((slot) => slot.written);
-  const stats = { runs: 0, fallbacks: 0, copied: 0 };
+  /**
+   * The first calls of each entry point are timed, because moving the numbers
+   * across is not always worth what it buys. A function the work calls once a
+   * frame around a few thousand turns of a loop pays nothing for the crossing;
+   * one it calls a hundred times a frame pays it a hundred times, and the
+   * kernel then costs more than the blocks it stands in for.
+   */
+  const trial = new Map<number, { calls: number; cross: number; inside: number }>(
+    [...plan.roots.keys()].map((index) => [index, { calls: 0, cross: 0, inside: 0 }]),
+  );
+  /** Entry points the crossing was not worth; the block runner keeps those. */
+  const dropped = new Set<number>();
+  const stats = { runs: 0, fallbacks: 0, copied: 0, dropped: 0 };
   let live = true;
   /**
    * What each slot's variable stood at when the kernel last agreed with it.
@@ -230,10 +248,12 @@ function marshal(
     depth: plan.depth,
     stats,
     run(root: number, args: number[]): number | null {
-      const fn = live ? entries.get(root) : undefined;
+      const fn = live && !dropped.has(root) ? entries.get(root) : undefined;
       if (!fn) {
         return null;
       }
+      const watch = trial.get(root);
+      const started = watch ? performance.now() : 0;
       const cells = data();
       for (const slot of reading) {
         const state = copyIn(slot, cells);
@@ -244,7 +264,9 @@ function marshal(
         }
       }
       cells[BAIL_SLOT] = 0;
+      const entered = watch ? performance.now() : 0;
       const result = fn(...args);
+      const left = watch ? performance.now() : 0;
       if (cells[BAIL_SLOT] !== 0) {
         stats.fallbacks += 1;
         return null;
@@ -254,6 +276,21 @@ function marshal(
         copyOut(slot, written);
       }
       stats.runs += 1;
+      if (watch) {
+        watch.calls += 1;
+        watch.inside += left - entered;
+        watch.cross += entered - started + (performance.now() - left);
+        if (watch.calls >= TRIAL_CALLS) {
+          trial.delete(root);
+          // The blocks this stands in for cost a small multiple of what the
+          // kernel does, so a crossing that costs as much as the run itself
+          // has already eaten the difference.
+          if (watch.cross > watch.inside) {
+            dropped.add(root);
+            stats.dropped += 1;
+          }
+        }
+      }
       return result;
     },
   };
