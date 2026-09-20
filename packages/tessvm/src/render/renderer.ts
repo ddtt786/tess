@@ -27,6 +27,7 @@ import { buildMask } from '../collision/mask-image.ts';
 import type { AlphaMask } from '../collision/mask.ts';
 import { Overlay, type TableLike } from './overlay.ts';
 import { fillParts } from './fill.ts';
+import { isSegment, SegmentBatch, SEGMENT_FLOOR } from './segments.ts';
 import {
   MAX_SHARPNESS,
   svgBudgetScale,
@@ -112,6 +113,8 @@ interface PenGroup {
   /** Carries the group's alpha; caches itself while that alpha is below 1. */
   node: Container;
   graphics: Graphics;
+  /** Plain two-point lines of this group, drawn as quads instead of a path. */
+  segments: SegmentBatch | null;
   /** What was drawn last time, so an unchanged group is left alone. */
   drawn: string;
 }
@@ -1359,9 +1362,20 @@ export class PixiRenderer implements Renderer {
     const node = new Container();
     node.addChild(graphics);
     pen.root.addChild(node);
-    const group: PenGroup = { node, graphics, drawn: '' };
+    const group: PenGroup = { node, graphics, segments: null, drawn: '' };
     pen.groups[index] = group;
     return group;
+  }
+
+  /** Empties a group's drawing but keeps the nodes and buffers it drew with. */
+  private clearGroup(group: PenGroup): void {
+    group.graphics.clear();
+    group.segments?.hide();
+    group.drawn = '';
+    if (group.node.isCachedAsTexture) {
+      group.node.cacheAsTexture(false);
+    }
+    group.node.alpha = 1;
   }
 
   /**
@@ -1422,35 +1436,78 @@ export class PixiRenderer implements Renderer {
         while (end < pieces.length && sameStyle(style, pieces[end]!)) {
           end += 1;
         }
-        const group = pieces.slice(i, end).filter((piece) => piece.points.length >= 4);
+        const from = i;
         i = end;
-        if (group.length === 0) {
+        // A work that lifts the pen and puts it down again leaves a stroke with
+        // one point in it, which draws nothing.
+        let drawable = 0;
+        for (let at = from; at < end; at += 1) {
+          if (pieces[at]!.points.length >= 4) {
+            drawable += 1;
+          }
+        }
+        if (drawable === 0) {
           continue;
         }
-        this.drawPenGroup(this.penGroup(pen, count), style, group);
+        this.drawPenGroup(this.penGroup(pen, count), style, pieces, from, end, drawable);
         count += 1;
       }
-      // Groups the pen no longer has (erased, or a scene reset) go.
-      for (const extra of pen.groups.splice(count)) {
-        extra.node.destroy({ children: true });
+      // Groups the pen no longer has are emptied rather than thrown away: a work
+      // that clears and draws again every frame would otherwise build its nodes
+      // and its gpu buffers from nothing each time.
+      for (let at = count; at < pen.groups.length; at += 1) {
+        this.clearGroup(pen.groups[at]!);
       }
     }
   }
 
   /** Draws one settings group, and composites it as one shape when translucent. */
-  private drawPenGroup(group: PenGroup, style: Stroke, pieces: Stroke[]): void {
+  private drawPenGroup(
+    group: PenGroup,
+    style: Stroke,
+    pieces: Stroke[],
+    from: number,
+    to: number,
+    drawable: number,
+  ): void {
     const alpha = 1 - style.opacity / 100;
     // Redrawing costs a fresh cached texture, so leave a group that has not moved.
     const drawn = `${style.color}/${style.thickness}/${style.opacity}/${style.fill}/${
-      pieces.length
-    }/${pieces[pieces.length - 1]!.points.length}`;
+      to - from
+    }/${pieces[to - 1]!.points.length}`;
     if (group.drawn === drawn) {
       return;
     }
     group.drawn = drawn;
 
+    // A run of plain lines is a run of rectangles, which the mesh lays down
+    // without cutting a path into triangles. Anything with a corner to join,
+    // or a shape to fill, stays on the path below.
+    let straight = 0;
+    if (!style.fill) {
+      for (let at = from; at < to; at += 1) {
+        if (isSegment(pieces[at]!)) {
+          straight += 1;
+        }
+      }
+    }
+    const ink = usableColor(style.color) ?? { color: 0x000000, alpha: 1 };
+    const batched = straight === drawable && straight >= SEGMENT_FLOOR;
+    if (batched) {
+      if (!group.segments) {
+        group.segments = new SegmentBatch(group.node);
+      }
+      group.segments.set(pieces, from, to, style.thickness, ink.color, ink.alpha);
+    } else {
+      group.segments?.hide();
+    }
+
     const graphics = group.graphics;
     graphics.clear();
+    if (batched) {
+      this.finishPenGroup(group, alpha);
+      return;
+    }
     const boost = this.options.boost !== false;
     const trace = (points: number[]): void => {
       graphics.moveTo(points[0]!, points[1]!);
@@ -1467,7 +1524,11 @@ export class PixiRenderer implements Renderer {
         graphics.lineTo(points[at]!, -points[at + 1]!);
       }
     };
-    for (const piece of pieces) {
+    for (let at = from; at < to; at += 1) {
+      const piece = pieces[at]!;
+      if (piece.points.length < 4) {
+        continue;
+      }
       if (!style.fill) {
         traceFlipped(piece.points);
         continue;
@@ -1490,7 +1551,6 @@ export class PixiRenderer implements Renderer {
         traceFlipped(piece.points);
       }
     }
-    const ink = usableColor(style.color) ?? { color: 0x000000, alpha: 1 };
     if (style.fill) {
       graphics.fill({ color: ink.color, alpha: ink.alpha });
     } else {
@@ -1507,10 +1567,16 @@ export class PixiRenderer implements Renderer {
       });
     }
 
+    this.finishPenGroup(group, alpha);
+  }
+
+  /**
+   * A cached group is drawn once into a texture and then composited with the
+   * group's alpha, which is what keeps overlaps inside it from darkening. The
+   * cache holds the size it was made at, so a growing path is cached again.
+   */
+  private finishPenGroup(group: PenGroup, alpha: number): void {
     group.node.alpha = alpha;
-    // A cached group is drawn once into a texture and then composited with the
-    // group's alpha, which is what keeps overlaps inside it from darkening. The
-    // cache holds the size it was made at, so a growing path is cached again.
     if (group.node.isCachedAsTexture) {
       group.node.cacheAsTexture(false);
     }
@@ -1556,9 +1622,13 @@ export class PixiRenderer implements Renderer {
     if (!view) {
       return;
     }
+    // The nodes and their gpu buffers are kept and emptied. A work that clears
+    // its pen and draws it again every frame — a 3D scene redrawn from scratch —
+    // would otherwise build every node and buffer from nothing each frame; the
+    // entity's own removal takes the whole pen layer with it anyway.
     for (const pen of [view.brush, view.paint]) {
-      for (const group of pen?.groups.splice(0) ?? []) {
-        group.node.destroy({ children: true });
+      for (const group of pen?.groups ?? []) {
+        this.clearGroup(group);
       }
     }
     for (const stamp of view.stamps) {

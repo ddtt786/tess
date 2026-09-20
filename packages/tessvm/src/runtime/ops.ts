@@ -756,7 +756,9 @@ export function createOps(vm: Vm) {
     },
 
     listAppend(entity: Entity, index: number, value: unknown): void {
-      variable(entity, index)?.array.push({ data: value as string | number });
+      const list = variable(entity, index);
+      list?.array.push({ data: value as string | number });
+      list?.touch();
     },
 
     listRemove(entity: Entity, index: number, raw: unknown): void {
@@ -767,6 +769,7 @@ export function createOps(vm: Vm) {
       const at = listIndex(raw, list);
       if (at >= 1 && at <= list.array.length) {
         list.array.splice(at - 1, 1);
+        list.touch();
       }
     },
 
@@ -778,6 +781,7 @@ export function createOps(vm: Vm) {
       const at = listIndex(raw, list);
       if (at >= 1 && at <= list.array.length + 1) {
         list.array.splice(at - 1, 0, { data: value as string | number });
+        list.touch();
       }
     },
 
@@ -789,6 +793,7 @@ export function createOps(vm: Vm) {
       const at = listIndex(raw, list);
       if (at >= 1 && at <= list.array.length) {
         list.array[at - 1] = { data: value as string | number };
+        list.touch();
       }
     },
 

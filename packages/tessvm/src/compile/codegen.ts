@@ -1233,4 +1233,4 @@ function collectParams(field: unknown): string[] {
   return names;
 }
 
-export { parseScript, findFunctionDefine, collectParams };
+export { parseScript, findFunctionDefine, functionBody, collectParams };

@@ -20,6 +20,8 @@ export interface PageOptions {
   autoStart: boolean;
   boost: boolean;
   svg: boolean;
+  /** Off leaves every function on the block runner's own path. */
+  kernel: boolean;
   stageWidth: number;
   stageHeight: number;
 }
@@ -109,6 +111,7 @@ export function playerPage(options: PageOptions): string {
     autoStart: options.autoStart,
     boost: options.boost,
     svg: options.svg,
+    kernel: options.kernel,
     stageWidth: options.stageWidth,
     stageHeight: options.stageHeight,
   });
@@ -260,6 +263,9 @@ try {
     svg: config.svg,
     stageWidth: config.stageWidth,
     stageHeight: config.stageHeight,
+    // This server builds the wasm kernel and leaves it here; without one the
+    // page still runs the kernel, in javascript.
+    kernelUrl: config.kernel ? '/kernel.wasm' : null,
     // The run page serves the work off this machine, so there is nothing worth
     // holding it for: the start button is up as soon as the runner is built and
     // the files land while it waits to be pressed.

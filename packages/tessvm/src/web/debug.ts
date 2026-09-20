@@ -68,15 +68,18 @@ function variableView(variable: Variable, redraw: () => void) {
         const item = variable.array[index - 1];
         if (item) {
           item.data = data;
+          variable.touch();
         }
         redraw();
       },
       appendValue(data: string | number) {
         variable.array.push({ data });
+        variable.touch();
         redraw();
       },
       deleteValue(index: number) {
         variable.array.splice(index - 1, 1);
+        variable.touch();
         redraw();
       },
     };

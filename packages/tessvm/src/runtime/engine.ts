@@ -6,6 +6,8 @@
  * 스레드가 블록 트리를 해석하는 대신 미리 컴파일해 둔 제너레이터라는 것뿐입니다.
  */
 import { Codegen, type CompileInput, type RawBlock, type ScriptPlan } from '../compile/codegen.ts';
+import { attachJsKernel, attachKernel, CALL_DEPTH_LIMIT, type KernelHandle } from '../kernel/bridge.ts';
+import { planKernel, type KernelPlan } from '../kernel/plan.ts';
 import { CollisionSystem } from '../collision/detect.ts';
 import { MaskStore, type AlphaMask } from '../collision/mask.ts';
 import * as cast from './cast.ts';
@@ -19,6 +21,7 @@ import {
   setStageSize,
   type VariableKind,
   type VoiceProps,
+  type CompiledFunction,
   type CompiledScript,
   type Picture,
   type Project,
@@ -172,7 +175,18 @@ export interface VmOptions {
   maxCatchUp?: number;
   /** Where shared and real-time variables are kept between runs. */
   store?: VariableStore | null;
+  /**
+   * Hands back a wasm module for the numeric functions the work can run there,
+   * or null to take the javascript kernel instead. `run`·`bench` fill this in
+   * from the moonbit toolchain and the page from what the server built; a run
+   * with no module at all still gets the javascript one. Leave the whole option
+   * unset to keep every function on the block runner's own path.
+   */
+  kernel?: KernelSupply | null;
 }
+
+/** What turns a kernel plan into a module this run can instantiate. */
+export type KernelSupply = (plan: KernelPlan) => Uint8Array<ArrayBuffer> | WebAssembly.Module | null;
 
 /**
  * Standing storage for the work's shared (`isCloud`) and real-time variables.
@@ -254,6 +268,12 @@ export class Vm implements Project {
   private pendingMessages: string[] = [];
 
   private scripts: CompiledScript[] = [];
+  /** Builds the wasm kernel for a work, when the run was given one. */
+  private kernelSupply: KernelSupply | null;
+  /** What the last `load` found it could move to wasm, for `tessvm check`. */
+  kernelPlan: KernelPlan | null = null;
+  /** The running kernel, or null when the work stayed on javascript. */
+  kernel: KernelHandle | null = null;
   private plans: ScriptPlan[] = [];
   private targetById = new Map<string, Target>();
   private variableById = new Map<string, number>();
@@ -287,6 +307,7 @@ export class Vm implements Project {
     this.maskUserId = options.maskUserId ?? true;
     this.maxCatchUp = options.maxCatchUp ?? 4;
     this.store = options.store ?? null;
+    this.kernelSupply = options.kernel ?? null;
     this.masks = new MaskStore(
       (key, width, height) => this.renderer?.maskFor?.(key, width, height) ?? null,
     );
@@ -466,8 +487,9 @@ export class Vm implements Project {
     this.unknownBlocks = program.unknown;
     const factory = new Function('R', program.source) as (
       runtime: Vm,
-    ) => { scripts: CompiledScript['body'][] };
+    ) => { scripts: CompiledScript['body'][]; functions: CompiledFunction[] };
     const built = factory(this);
+    this.installKernel(input, built.functions);
     this.plans = program.plans;
     this.scripts = program.plans.map((plan) => ({
       event: plan.event,
@@ -481,6 +503,65 @@ export class Vm implements Project {
     program.plans.forEach((plan, index) => {
       this.targets[plan.targetIndex]?.scripts.push(this.scripts[index]!);
     });
+  }
+
+  /**
+   * Moves the numeric functions a work spends its frame in over to wasm.
+   *
+   * Nothing here changes what the work does: a call that the kernel cannot
+   * finish the same way entry would leaves its mark, and the javascript body
+   * runs instead on data the kernel never wrote to.
+   */
+  private installKernel(input: CompileInput, table: CompiledFunction[]): void {
+    this.kernelPlan = null;
+    this.kernel = null;
+    if (!this.kernelSupply) {
+      return;
+    }
+    const plan = planKernel(input.objects, input.functions, this.variables);
+    this.kernelPlan = plan;
+    if (!plan.roots.size) {
+      return;
+    }
+    // Wasm where the run was given one, and the same functions in javascript
+    // where it was not — a page on someone else's site has no toolchain behind
+    // it, and the boxing is worth losing either way.
+    const wasm = this.kernelSupply(plan);
+    const handle = (wasm && attachKernel(wasm, plan, this.variables)) ??
+      attachJsKernel(plan, this.variables);
+    if (!handle) {
+      return;
+    }
+    this.kernel = handle;
+    for (const [index, root] of handle.roots) {
+      const javascript = table[index];
+      if (!javascript) {
+        continue;
+      }
+      table[index] = function* (entity, thread, args) {
+        // Entry ends a call chain this deep, and the kernel's own chain has to
+        // fit inside what is left of it.
+        if (thread.depth + handle.depth < CALL_DEPTH_LIMIT) {
+          const numbers: number[] = [];
+          let numeric = true;
+          for (let at = 0; at < root.arity; at += 1) {
+            const raw = args?.[at];
+            if (typeof raw === 'number' ? !Number.isFinite(raw) : !cast.isNumber(raw)) {
+              numeric = false;
+              break;
+            }
+            numbers.push(cast.num(raw));
+          }
+          if (numeric) {
+            const result = handle.run(index, numbers);
+            if (result !== null) {
+              return result;
+            }
+          }
+        }
+        return yield* javascript(entity, thread, args);
+      };
+    }
   }
 
   /** Generated source, for `tessvm build --emit-js` and for debugging. */
@@ -594,6 +675,7 @@ export class Vm implements Project {
       }
       if (variable.isList && Array.isArray(saved)) {
         variable.array = saved.map((item) => ({ data: item.data }));
+        variable.touch();
       } else if (!variable.isList && !Array.isArray(saved)) {
         variable.value = saved;
       }

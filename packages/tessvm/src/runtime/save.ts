@@ -127,8 +127,10 @@ export class SaveStore {
       }
       if (variable.isList && Array.isArray(saved)) {
         variable.array = saved.map((item) => ({ data: item.data }));
+        variable.touch();
       } else if (!variable.isList && !Array.isArray(saved)) {
         variable.value = saved;
+        variable.touch();
       }
     }
     // The work reads this before it writes anything of its own, so it is set

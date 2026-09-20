@@ -639,6 +639,13 @@ export class Variable {
   isRealTime = false;
   value: string | number = 0;
   array: Array<{ data: string | number }> = [];
+  /**
+   * Counts writes, not changes. The wasm kernel keeps its own copy of the
+   * numbers it works on and only reads this one back when the count moved, so
+   * every place that writes a variable has to say so — `setValue` does it
+   * itself, and whatever reaches into `array` calls `touch`.
+   */
+  revision = 0;
   visible = false;
   x = 0;
   y = 0;
@@ -671,6 +678,7 @@ export class Variable {
   }
 
   setValue(value: string | number): void {
+    this.revision += 1;
     if (this.isSlide) {
       const n = num(value);
       this.value = clamp(n, this.minValue, this.maxValue);
@@ -679,6 +687,11 @@ export class Variable {
     }
     this.value = value;
     this.onWrite?.();
+  }
+
+  /** Says the list behind `array` was written to. */
+  touch(): void {
+    this.revision += 1;
   }
 
   /** `Entry.Variable.isNumber` — decides whether `change_variable` adds or joins. */
@@ -706,6 +719,7 @@ export class Variable {
     if (!this.isStored) {
       this.value = this.snapshotValue;
       this.array = this.snapshotArray.map((item) => ({ data: item.data }));
+      this.revision += 1;
     }
     this.visible = this.snapshotVisible;
   }
@@ -723,6 +737,13 @@ export interface CompiledScript {
 }
 
 export type ScriptBody = (entity: Entity, thread: Thread) => Generator<number, void, unknown>;
+
+/** One compiled `함수 정의하기`, as the generated module's `F` array holds it. */
+export type CompiledFunction = (
+  entity: Entity,
+  thread: Thread,
+  args: unknown[],
+) => Generator<number, unknown, unknown>;
 
 /** One running script — entry's `Entry.Executor`. */
 export class Thread {
