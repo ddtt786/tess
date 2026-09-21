@@ -15,6 +15,7 @@ import { loadProject } from './load.ts';
 import { prepareKernel } from '../kernel/prepare.ts';
 import { fingerprint } from '../kernel/plan.ts';
 import { serveVm, DEFAULT_PORT } from './server.ts';
+import { exportHtml, exportZip, type ExportResult } from './export.ts';
 
 /** Diagnostics shown per grade before the rest are summed up. */
 const MAX_DIAGNOSTICS = 8;
@@ -24,6 +25,7 @@ const USAGE = `사용법
   tessvm bench  <파일.tess|파일.ent>   화면 없이 돌려 속도를 잰다
   tessvm emit   <파일.tess|파일.ent>   JIT 가 만든 자바스크립트를 출력
   tessvm check  <파일.tess|파일.ent>   아직 지원하지 않는 블록을 보고한다
+  tessvm export <파일.tess|파일.ent>   혼자 도는 한 덩어리로 내보낸다
 
 옵션
   --port <번호>     run 이 쓸 포트 (기본 ${DEFAULT_PORT}, 사용 중이면 빈 포트)
@@ -35,7 +37,7 @@ const USAGE = `사용법
   --assets <폴더>   모양·소리를 찾을 폴더 (여러 번 지정 가능)
   --keep <폴더>     .ent 를 되돌린 Tess 소스를 남길 폴더
   --no-open         브라우저를 열지 않는다
-  --no-stats        무대 아래 프레임 표시를 끈다
+  --no-stats        무대 아래 프레임 표시를 끈다 (run 만 — 내보낸 페이지에는 없다)
   --start           페이지를 열자마자 작품을 시작한다 (기본은 시작 단추를 눌러야 돈다)
   --no-boost        부스트 모드를 끈다 (기본은 켬). 엔트리에서 이 값은 렌더러를 고르는
                     스위치이기도 하다 — 끄면 '부스트 모드인가?' 가 거짓이 되고, 채우기와
@@ -44,6 +46,10 @@ const USAGE = `사용법
                     않는 숫자 함수를 골라, moonbit 툴체인이 있으면 MoonBit 으로
                     옮겨 wasm 으로 빌드해 돌리고, 없으면 같은 함수를 전용
                     자바스크립트로 돌린다
+  --html            export 가 파일 하나로 낸다 — 모듈·작품·모양·소리·커널을 모두
+                    글 안에 담고 열릴 때 Blob 으로 되살린다
+  --zip             export 가 zip 하나로 낸다 (기본). 풀어서 정적 서버에 올리면 돈다
+  --out <경로>      export 가 쓸 파일 이름 (기본은 작품 이름)
   --no-svg          벡터 모양을 그림판으로 그린 사본으로 대신한다
                     (기본은 벡터 — 960x540 을 넘는 모양은 어차피 사본을 쓴다)
                     (그리기는 언제나 WebGL 이고, 이 값만 바뀝니다)`;
@@ -63,6 +69,9 @@ interface Options {
   boost: boolean;
   svg: boolean;
   kernel: boolean;
+  html: boolean;
+  zip: boolean;
+  out?: string;
 }
 
 function parseArgs(argv: string[]): { options: Options; rest: string[] } {
@@ -76,6 +85,8 @@ function parseArgs(argv: string[]): { options: Options; rest: string[] } {
     boost: true,
     svg: true,
     kernel: true,
+    html: false,
+    zip: false,
   };
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
@@ -99,6 +110,9 @@ function parseArgs(argv: string[]): { options: Options; rest: string[] } {
     else if (arg === '--no-boost') options.boost = false;
     else if (arg === '--kernel') options.kernel = true;
     else if (arg === '--no-kernel') options.kernel = false;
+    else if (arg === '--html') options.html = true;
+    else if (arg === '--zip') options.zip = true;
+    else if (arg === '--out') options.out = argv[++i];
     else if (arg === '--svg') options.svg = true;
     else if (arg === '--no-svg') options.svg = false;
     else rest.push(arg);
@@ -150,6 +164,8 @@ async function main(): Promise<number> {
       return emit(loaded);
     case 'check':
       return check(loaded, options);
+    case 'export':
+      return exportWork(loaded, options);
     default:
       console.log(USAGE);
       return 1;
@@ -240,6 +256,47 @@ function bench(loaded: Loaded, options: Options): number {
     console.log(`  오류 ${vm.errors.length}건 — 첫 번째: ${vm.errors[0]!.message}`);
   }
   return 0;
+}
+
+/** Writes the work out as one zip, one html, or both. */
+function exportWork(loaded: Loaded, options: Options): number {
+  const shapes: Array<{ suffix: string; make: () => ExportResult }> = [];
+  const settings = {
+    project: loaded.project,
+    assets: loaded.assets,
+    name: loaded.name,
+    quality: options.quality,
+    fps: options.fps,
+    stageWidth: options.stageWidth,
+    stageHeight: options.stageHeight,
+    autoStart: options.autoStart,
+    boost: options.boost,
+    svg: options.svg,
+    kernel: options.kernel,
+  };
+  if (options.html) shapes.push({ suffix: '.html', make: () => exportHtml(settings) });
+  if (options.zip || !options.html) shapes.push({ suffix: '.zip', make: () => exportZip(settings) });
+
+  for (const shape of shapes) {
+    const file = fileFor(options.out, loaded.name, shape.suffix, shapes.length > 1);
+    const made = shape.make();
+    fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
+    fs.writeFileSync(file, made.data);
+    console.log(`${loaded.name} → ${file} (${(made.data.length / 1024 / 1024).toFixed(2)} MB)`);
+    console.log(`  모듈 ${made.modules}개 · 에셋 ${made.assets}개 · 커널 ${made.kernel}`);
+  }
+  return 0;
+}
+
+/** `--out` as given; with both shapes asked for, its extension gives way. */
+function fileFor(out: string | undefined, name: string, suffix: string, both: boolean): string {
+  if (!out) {
+    return `${name}${suffix}`;
+  }
+  if (!both && path.extname(out)) {
+    return out;
+  }
+  return `${out.replace(/\.(zip|html)$/i, '')}${suffix}`;
 }
 
 function emit(loaded: Loaded): number {

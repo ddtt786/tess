@@ -51,6 +51,12 @@ export interface BootOptions {
    * every function to the block runner.
    */
   kernelUrl?: string | null;
+  /**
+   * The fingerprint of that kernel, for a page whose host cannot mark the file
+   * itself — an exported bundle on a plain static server, or a single file.
+   * Left unset, the mark comes from the `x-tessvm-kernel` response header.
+   */
+  kernelFingerprint?: string | null;
   /** Called while the work's files come in, before it is allowed to run. */
   onProgress?(loaded: number, total: number): void;
   /**
@@ -227,6 +233,7 @@ function storeKey(project: EntryProjectLike): string {
 /** The built module the run server left for the page, when there is a server. */
 async function fetchKernel(
   url: string | null | undefined,
+  given: string | null | undefined,
 ): Promise<{ module: WebAssembly.Module; fingerprint: string } | null> {
   if (!url) {
     return null;
@@ -236,7 +243,7 @@ async function fetchKernel(
     if (!response.ok) {
       return null;
     }
-    const mark = response.headers.get('x-tessvm-kernel');
+    const mark = response.headers.get('x-tessvm-kernel') ?? given;
     if (!mark) {
       return null;
     }
@@ -253,7 +260,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
     ((await (await fetch(options.projectUrl ?? '/project.json')).json()) as EntryProjectLike);
   // The page has no moonbit toolchain, so whoever served it builds the kernel
   // and the page takes it only for the plan it works out to be the same one.
-  const kernel = await fetchKernel(options.kernelUrl);
+  const kernel = await fetchKernel(options.kernelUrl, options.kernelFingerprint);
 
   if (options.stageWidth && options.stageHeight) {
     setStageSize(options.stageWidth, options.stageHeight);
