@@ -55,6 +55,40 @@ interface Ink {
  */
 const colorCache = new Map<string, Ink | null>();
 
+/** A stamp, with the rasterisation it is keeping alive. */
+type StampSprite = Sprite & { __baked?: string };
+
+/** A vector costume rasterised at one sharpness, and where it was loaded from. */
+interface Baked {
+  url: string;
+  src: string;
+  resolution: number;
+}
+
+/**
+ * How many renderers hold each rasterised vector.
+ *
+ * PIXI's asset cache is one per page, so two runners showing the same costume
+ * are handed the very same texture. A renderer that unloaded its own copy would
+ * empty the other's mid-frame, so a source is only let go when the last
+ * renderer holding it lets go.
+ */
+const bakedHolds = new Map<string, number>();
+
+function holdBaked(src: string): void {
+  bakedHolds.set(src, (bakedHolds.get(src) ?? 0) + 1);
+}
+
+function releaseBaked(src: string): void {
+  const held = bakedHolds.get(src) ?? 0;
+  if (held > 1) {
+    bakedHolds.set(src, held - 1);
+    return;
+  }
+  bakedHolds.delete(src);
+  void Assets.unload(src).catch(() => undefined);
+}
+
 function usableColor(value: unknown): Ink | null {
   const text = String(value ?? '');
   const known = colorCache.get(text);
@@ -91,7 +125,7 @@ interface EntityView {
   /** Pen strokes and fills, each drawn just under the entity that made them. */
   brush: PenView | null;
   paint: PenView | null;
-  stamps: Sprite[];
+  stamps: StampSprite[];
 }
 
 /**
@@ -249,7 +283,7 @@ export class PixiRenderer implements Renderer {
   private readonly images = new Map<string, CanvasImageSource>();
   private readonly loading = new Map<string, Promise<void>>();
   /** Vector costumes that were rasterised, and the sharpness each was given. */
-  private readonly svgBaked = new Map<string, { url: string; src: string; resolution: number }>();
+  private readonly svgBaked = new Map<string, Baked>();
   /** 한 번 받은 svg 마크업. 크기를 박은 사본을 만들 때마다 다시 받지 않습니다. */
   private readonly svgTexts = new Map<string, string>();
   /** Every costume a texture was asked for, so one can be baked again. */
@@ -490,7 +524,7 @@ export class PixiRenderer implements Renderer {
     try {
       const loaded = await this.loadVector(picture, url, resolution);
       src = loaded.src;
-      this.svgBaked.set(id, { url, src, resolution });
+      this.keepBaked(id, { url, src, resolution });
       const texture = loaded.texture;
       this.textures.set(id, texture);
       // The alpha mask keeps the image it was first built from: collisions must
@@ -503,22 +537,31 @@ export class PixiRenderer implements Renderer {
       }
       // Nothing draws the old one any more, and it is the size of the new one
       // again — left alone, every resize would add another to the card.
-      this.dropBaked(previous, url);
+      this.dropBaked(previous);
     } catch {
       // Keep the texture that is already on screen.
+      const failed = this.svgBaked.get(id);
+      if (failed && failed !== previous) {
+        this.svgBaked.delete(id);
+        this.dropBaked(failed);
+      }
       this.svgBaked.set(id, previous ?? { url, src, resolution });
     }
   }
 
-  /** Releases a rasterisation nothing points at any more. */
-  private dropBaked(
-    baked: { url: string; src: string; resolution: number } | undefined,
-    url: string,
-  ): void {
-    if (!baked || baked.url !== url || baked.src === url) {
-      return;
+  /** Records a rasterisation and takes a hold on the file it came from. */
+  private keepBaked(id: string, baked: Baked): void {
+    this.svgBaked.set(id, baked);
+    if (baked.src !== baked.url) {
+      holdBaked(baked.src);
     }
-    void Assets.unload(baked.src).catch(() => undefined);
+  }
+
+  /** Lets go of a rasterisation nothing here points at any more. */
+  private dropBaked(baked: Baked | undefined): void {
+    if (baked && baked.src !== baked.url) {
+      releaseBaked(baked.src);
+    }
   }
 
   /** Stage rectangle in page coordinates, for turning pointer events into stage x/y. */
@@ -583,7 +626,7 @@ export class PixiRenderer implements Renderer {
         continue;
       }
       for (const stamp of view.stamps) {
-        stamp.destroy();
+        this.dropStamp(stamp);
       }
       view.stamps = [];
       view.brush?.root.destroy({ children: true });
@@ -646,6 +689,12 @@ export class PixiRenderer implements Renderer {
 
   reset(): void {
     for (const view of this.views.values()) {
+      // The stamps go with the layer they sit in, but what they were holding is
+      // let go here — another runner may be showing the same costume.
+      for (const stamp of view.stamps) {
+        this.dropStamp(stamp);
+      }
+      view.stamps = [];
       view.root.destroy({ children: true });
     }
     this.views.clear();
@@ -667,6 +716,10 @@ export class PixiRenderer implements Renderer {
     this.textures.clear();
     this.images.clear();
     this.loading.clear();
+    // Another runner may be showing the same work; only the last hold unloads.
+    for (const baked of this.svgBaked.values()) {
+      this.dropBaked(baked);
+    }
     this.svgBaked.clear();
     this.svgScales.clear();
     this.pictures.clear();
@@ -750,7 +803,7 @@ export class PixiRenderer implements Renderer {
       return;
     }
     for (const stamp of view.stamps) {
-      stamp.destroy();
+      this.dropStamp(stamp);
     }
     view.brush?.root.destroy({ children: true });
     view.paint?.root.destroy({ children: true });
@@ -993,7 +1046,7 @@ export class PixiRenderer implements Renderer {
           : { texture: (await Assets.load(url)) as Texture, src: url };
         const texture = loaded.texture;
         if (vector) {
-          this.svgBaked.set(picture.id, { url, src: loaded.src, resolution });
+          this.keepBaked(picture.id, { url, src: loaded.src, resolution });
         }
         this.textures.set(picture.id, texture);
         const resource = texture.source?.resource as CanvasImageSource | undefined;
@@ -1657,7 +1710,15 @@ export class PixiRenderer implements Renderer {
     if (!texture) {
       return;
     }
-    const sprite = new Sprite(texture);
+    const sprite = new Sprite(texture) as StampSprite;
+    // A stamp outlives the costume it was made from: the same costume drawn
+    // bigger is rasterised again, and the copy this one holds must not go with
+    // the old one.
+    const baked = this.svgBaked.get(mark.picture.id);
+    if (baked && baked.src !== baked.url) {
+      holdBaked(baked.src);
+      sprite.__baked = baked.src;
+    }
     // A vector costume is baked into a texture of its own size, not the
     // costume's, so the texture is what says how much of a stage unit one of
     // its pixels is worth. `sync` lets `width` work that out; a stamp carries
@@ -1677,6 +1738,15 @@ export class PixiRenderer implements Renderer {
     view.stamps.push(sprite);
   }
 
+  /** Ends a stamp and lets go of the rasterisation it was holding. */
+  private dropStamp(sprite: StampSprite): void {
+    if (sprite.__baked) {
+      releaseBaked(sprite.__baked);
+      sprite.__baked = undefined;
+    }
+    sprite.destroy();
+  }
+
   eraseAll(entity: Entity): void {
     const view = this.views.get(entity);
     this.penDirty.delete(entity);
@@ -1693,7 +1763,7 @@ export class PixiRenderer implements Renderer {
       }
     }
     for (const stamp of view.stamps) {
-      stamp.destroy();
+      this.dropStamp(stamp);
     }
     view.stamps = [];
   }

@@ -2596,3 +2596,38 @@ test('글상자 색은 달라질 때만 PIXI 에 넣는다', () => {
   assert.equal(fills.length, 1, '넣는 자리는 그 안 한 군데뿐입니다');
   assert.match(block, /view\.colour = entity\.colour;/, '넣은 색을 적어 둡니다');
 });
+
+/**
+ * PIXI 의 에셋 칸은 페이지에 하나뿐이라, 실행기가 둘이면 같은 모양을 **같은 텍스처**로
+ * 받습니다. 벡터 모양은 화면이 커지면 더 진하게 다시 구워지고 그 전 것을 `Assets.unload`
+ * 로 놓아 주는데, 그것이 옆 실행기가 그리고 있는 바로 그 텍스처였습니다 — 한쪽이 화질을
+ * 올리자 두 실행기의 체스말이 함께 사라지고 `alphaMode of null` 로 멎었습니다. 도장도
+ * 같은 텍스처를 그대로 들고 있어서, 실행기가 하나여도 다시 굽는 순간 도장 84개가 빈
+ * 텍스처가 됐습니다. 그래서 구운 사본은 **쥔 수를 세어** 마지막 하나가 놓을 때만 내립니다.
+ */
+test('구운 벡터 모양은 마지막으로 쥔 쪽이 놓을 때만 내린다', () => {
+  const source = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/renderer.ts'),
+    'utf-8',
+  );
+  // 내리는 자리는 쥔 수를 세는 함수 안 한 군데뿐이다.
+  const unloads = source.match(/Assets\.unload\(/g) ?? [];
+  assert.equal(unloads.length, 1, '내리는 자리는 한 군데입니다');
+  const release = source.slice(
+    source.indexOf('function releaseBaked'),
+    source.indexOf('function usableColor'),
+  );
+  assert.match(release, /if \(held > 1\)/, '남이 쥐고 있으면 수만 줄입니다');
+  assert.match(release, /Assets\.unload\(src\)/, '마지막 하나일 때만 내립니다');
+
+  // 쥐는 자리는 셋 — 처음 구울 때, 다시 구울 때, 그리고 도장을 찍을 때.
+  const holds = source.match(/holdBaked\(/g) ?? [];
+  assert.equal(holds.length, 3, '쥐는 자리는 세 군데입니다');
+  assert.match(source, /private keepBaked\(id: string, baked: Baked\): void \{/);
+  assert.match(source, /sprite\.__baked = baked\.src;/, '도장은 쥔 것을 적어 둡니다');
+
+  // 도장은 언제나 `dropStamp` 를 지나야 쥔 것을 놓는다.
+  assert.doesNotMatch(source, /\bstamp\.destroy\(\)/, '도장을 바로 없애지 않습니다');
+  const drops = source.match(/this\.dropStamp\(stamp\)/g) ?? [];
+  assert.equal(drops.length, 4, '도장을 없애는 자리는 모두 그리로 갑니다');
+});
