@@ -1,0 +1,64 @@
+/** A label that turns into a field when it is double-clicked. */
+import { useSignal } from '@preact/signals';
+import { useEffect, useRef } from 'preact/hooks';
+
+interface Props {
+  value: string;
+  onCommit: (value: string) => void;
+  class?: string;
+  title?: string;
+}
+
+export function InlineName({ value, onCommit, class: className = '', title }: Props) {
+  const editing = useSignal(false);
+  const draft = useSignal(value);
+  const field = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing.value) field.current?.select();
+  }, [editing.value]);
+
+  function commit() {
+    editing.value = false;
+    const next = draft.value.trim();
+    if (next && next !== value) onCommit(next);
+  }
+
+  if (!editing.value) {
+    return (
+      <span
+        class={className}
+        title={title ?? '두 번 눌러 이름 바꾸기'}
+        onDblClick={(event) => {
+          event.stopPropagation();
+          draft.value = value;
+          editing.value = true;
+        }}
+      >
+        {value}
+      </span>
+    );
+  }
+
+  return (
+    <input
+      ref={field}
+      class={`inline-name ${className}`}
+      value={draft.value}
+      onClick={(event) => event.stopPropagation()}
+      onDblClick={(event) => event.stopPropagation()}
+      onInput={(event) => { draft.value = (event.target as HTMLInputElement).value; }}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          commit();
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          editing.value = false;
+        }
+      }}
+    />
+  );
+}

@@ -10,3 +10,5 @@ packages/extension/tessvm-extension-chrome.zip
 packages/extension/tessvm-extension.crx
 packages/extension/crx-key.pem
 editors/vscode/*.vsix
+packages/painter/dist
+packages/tessblock/dist

@@ -1,0 +1,33 @@
+{
+  "name": "@tess/tessblock",
+  "version": "0.3.5",
+  "description": "Blockly 기반 Tess 블록 에디터",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "src"
+  ],
+  "dependencies": {
+    "@blockly/field-colour": "^13.3.0",
+    "@preact/signals": "^2.11.2",
+    "@tess/compiler": "workspace:*",
+    "@tess/core": "workspace:*",
+    "@tess/parser": "workspace:*",
+    "@tess/vm": "workspace:*",
+    "blockly": "^13.3.0",
+    "pixi.js": "^8.20.1",
+    "preact": "^10.29.8"
+  },
+  "devDependencies": {
+    "vite": "^8.3.0"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "es2023",
+      "dom",
+      "dom.iterable"
+    ],
+    "types": [],
+    "moduleResolution": "bundler",
+    "module": "esnext",
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
+  },
+  "include": [
+    "index.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ]
+}

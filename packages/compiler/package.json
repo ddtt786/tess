@@ -1,6 +1,6 @@
 {
   "name": "@tess/compiler",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Tess AST 를 엔트리 작품(project.json · .ent) 으로 컴파일한다",
   "license": "ISC",
   "type": "module",
@@ -8,7 +8,10 @@
   "exports": {
     ".": "./index.ts"
   },
-  "files": ["index.ts", "src"],
+  "files": [
+    "index.ts",
+    "src"
+  ],
   "dependencies": {
     "@tess/core": "workspace:*",
     "@tess/parser": "workspace:*",

@@ -21,6 +21,8 @@
     "packages/tessvm/src/web/**/*.ts",
     "packages/tessvm/src/render/**/*.ts",
     "packages/tessvm/src/audio/**/*.ts",
-    "packages/extension/src/**/*.ts"
+    "packages/extension/src/**/*.ts",
+    "packages/painter/**",
+    "packages/tessblock/**"
   ]
 }

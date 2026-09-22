@@ -1,17 +1,19 @@
 {
   "name": "tess-monorepo",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Tess 언어(엔트리 블록 코드로 변환되는 텍스트 언어) 모노레포",
   "private": true,
   "license": "MIT",
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/player/tsconfig.browser.json && tsc --noEmit -p packages/tessvm/tsconfig.browser.json && tsc --noEmit -p packages/extension/tsconfig.browser.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/player/tsconfig.browser.json && tsc --noEmit -p packages/tessvm/tsconfig.browser.json && tsc --noEmit -p packages/extension/tsconfig.browser.json && tsc --noEmit -p packages/tessblock/tsconfig.browser.json",
     "tess": "node packages/cli/index.ts",
     "build:grammar": "node editors/vscode/build-grammar.ts",
     "tessvm": "node packages/tessvm/src/node/cli.ts",
-    "build:extension": "node packages/extension/build.ts"
+    "build:extension": "node packages/extension/build.ts",
+    "painter": "pnpm --filter painter dev",
+    "tessblock": "pnpm --filter @tess/tessblock dev"
   },
   "devEngines": {
     "packageManager": {
@@ -25,7 +27,10 @@
     "@tess/compiler": "workspace:*",
     "@tess/core": "workspace:*",
     "@tess/decompiler": "workspace:*",
+    "@tess/painter": "workspace:painter@*",
     "@tess/parser": "workspace:*",
+    "@tess/tessblock": "workspace:*",
+    "painter": "workspace:*",
     "@tess/player": "workspace:*",
     "@tess/vm": "workspace:*",
     "@types/babel__code-frame": "^7.27.0",

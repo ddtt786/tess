@@ -1,0 +1,157 @@
+/** Sound category: playback, volume, speed and text to speech. */
+import { define, menu, numIn, pick, textIn } from '../spec.ts';
+import { quote } from '../../codegen/quote.ts';
+
+const VOICES: Array<[string, string]> = [
+  ['여성', 'female'],
+  ['남성', 'male'],
+  ['친절한', 'kind'],
+  ['달콤한', 'sweet'],
+];
+
+const LEVELS: Array<[string, string]> = [
+  ['아주 느리게', 'veryslow'],
+  ['느리게', 'slow'],
+  ['보통', 'normal'],
+  ['빠르게', 'fast'],
+  ['아주 빠르게', 'veryfast'],
+];
+
+const PITCHES: Array<[string, string]> = [
+  ['아주 낮게', 'verylow'],
+  ['낮게', 'low'],
+  ['보통', 'normal'],
+  ['높게', 'high'],
+  ['아주 높게', 'veryhigh'],
+];
+
+define(
+  {
+    type: 'sound_play',
+    category: 'sound',
+    message: '소리 %1 재생하기',
+    args: [pick('SOUND', 'sound')],
+    shape: 'statement',
+    code: (a) => `play sound ${quote(a.SOUND)}`,
+  },
+  {
+    type: 'sound_play_wait',
+    category: 'sound',
+    message: '소리 %1 재생하고 기다리기',
+    args: [pick('SOUND', 'sound')],
+    shape: 'statement',
+    code: (a) => `play sound ${quote(a.SOUND)} and wait`,
+  },
+  {
+    type: 'sound_play_for',
+    category: 'sound',
+    message: '소리 %1 을(를) %2 초 재생하기',
+    args: [pick('SOUND', 'sound'), numIn('SECS', 1)],
+    shape: 'statement',
+    code: (a) => `play sound ${quote(a.SOUND)} for ${a.SECS}`,
+  },
+  {
+    type: 'sound_play_for_wait',
+    category: 'sound',
+    message: '소리 %1 을(를) %2 초 재생하고 기다리기',
+    args: [pick('SOUND', 'sound'), numIn('SECS', 1)],
+    shape: 'statement',
+    code: (a) => `play sound ${quote(a.SOUND)} for ${a.SECS} and wait`,
+  },
+  {
+    type: 'sound_play_range',
+    category: 'sound',
+    message: '소리 %1 을(를) %2 초부터 %3 초까지 재생하기',
+    args: [pick('SOUND', 'sound'), numIn('FROM', 0), numIn('TO', 1)],
+    shape: 'statement',
+    code: (a) => `play sound ${quote(a.SOUND)} from ${a.FROM} to ${a.TO}`,
+  },
+  {
+    type: 'sound_play_range_wait',
+    category: 'sound',
+    message: '소리 %1 을(를) %2 초부터 %3 초까지 재생하고 기다리기',
+    args: [pick('SOUND', 'sound'), numIn('FROM', 0), numIn('TO', 1)],
+    shape: 'statement',
+    code: (a) => `play sound ${quote(a.SOUND)} from ${a.FROM} to ${a.TO} and wait`,
+  },
+  {
+    type: 'sound_play_bgm',
+    category: 'sound',
+    message: '배경음악 %1 재생하기',
+    args: [pick('SOUND', 'sound')],
+    shape: 'statement',
+    code: (a) => `play bgm ${quote(a.SOUND)}`,
+  },
+  {
+    type: 'sound_stop_bgm',
+    category: 'sound',
+    message: '배경음악 멈추기',
+    args: [],
+    shape: 'statement',
+    code: () => 'stop bgm',
+  },
+  {
+    type: 'sound_stop',
+    category: 'sound',
+    message: '%1 소리 멈추기',
+    args: [menu('TARGET', [['이 오브젝트의', 'this'], ['모든', 'all']])],
+    shape: 'statement',
+    code: (a) => `stop sound ${a.TARGET}`,
+  },
+  {
+    type: 'sound_set_volume',
+    category: 'sound',
+    message: '소리 크기를 %1 (으)로 정하기',
+    args: [numIn('VALUE', 100)],
+    shape: 'statement',
+    code: (a) => `sound_volume = ${a.VALUE}`,
+  },
+  {
+    type: 'sound_change_volume',
+    category: 'sound',
+    message: '소리 크기를 %1 만큼 바꾸기',
+    args: [numIn('VALUE', 10)],
+    shape: 'statement',
+    code: (a) => `sound_volume += ${a.VALUE}`,
+  },
+  {
+    type: 'sound_set_speed',
+    category: 'sound',
+    message: '소리 빠르기를 %1 (으)로 정하기',
+    args: [numIn('VALUE', 1)],
+    shape: 'statement',
+    code: (a) => `sound_speed = ${a.VALUE}`,
+  },
+  {
+    type: 'sound_change_speed',
+    category: 'sound',
+    message: '소리 빠르기를 %1 만큼 바꾸기',
+    args: [numIn('VALUE', 0.1)],
+    shape: 'statement',
+    code: (a) => `sound_speed += ${a.VALUE}`,
+  },
+  {
+    type: 'sound_read',
+    category: 'sound',
+    message: '%1 읽어주기',
+    args: [textIn('TEXT', '안녕!')],
+    shape: 'statement',
+    code: (a) => `read ${a.TEXT}`,
+  },
+  {
+    type: 'sound_read_wait',
+    category: 'sound',
+    message: '%1 읽어주고 기다리기',
+    args: [textIn('TEXT', '안녕!')],
+    shape: 'statement',
+    code: (a) => `read ${a.TEXT} and wait`,
+  },
+  {
+    type: 'sound_tts_setting',
+    category: 'sound',
+    message: '목소리를 %1 %2 %3 (으)로 정하기',
+    args: [menu('VOICE', VOICES), menu('SPEED', LEVELS), menu('PITCH', PITCHES)],
+    shape: 'statement',
+    code: (a) => `tts voice ${quote(a.VOICE)} speed ${quote(a.SPEED)} pitch ${quote(a.PITCH)}`,
+  },
+);
