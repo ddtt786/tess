@@ -7,6 +7,7 @@
  */
 import { signal } from '@preact/signals';
 import { Painter } from '../../../painter/dist/index.js';
+import { resolveAsset, saveAsset } from '../model/assets.ts';
 import { project, selectedObjectId, setObjectProps, updateCostume } from '../model/store.ts';
 import { imageSize } from '../model/files.ts';
 import type { Costume } from '../model/types.ts';
@@ -87,14 +88,14 @@ export async function loadCostume(nextObjectId: string, next: Costume): Promise<
   objectId = nextObjectId;
   costume = next;
   try {
-    const markup = await svgMarkup(next.url);
+    const markup = await svgMarkup(resolveAsset(next.url));
     if (markup) {
       if (ui.mode !== 'vector') await ui.setMode('vector');
       ui.clear();
       ui.vector?.loadSVG(centred(markup, next), { resize: false });
     } else {
       if (ui.mode !== 'bitmap') await ui.setMode('bitmap');
-      await ui.bitmap?.loadImage(next.url, { fit: true, clear: true });
+      await ui.bitmap?.loadImage(resolveAsset(next.url), { fit: true, clear: true });
     }
     ui.zoomToFit();
   } finally {
@@ -120,10 +121,17 @@ export function flushPainter(): void {
   const exported = ui.export();
   const cropped = exported.startsWith('data:') ? cropRaster(exported) : cropVector(exported);
   if (!cropped) return;
-  if (cropped.url === costume.url && cropped.width === costume.width && cropped.height === costume.height) return;
+  if (cropped.width === costume.width && cropped.height === costume.height
+    && cropped.url === resolveAsset(costume.url)) return;
   keepCentre(costume, cropped);
-  costume = { ...costume, ...cropped };
-  updateCostume(objectId, costume.id, cropped);
+  const target = costume.id;
+  const owner = objectId;
+  costume = { ...costume, width: cropped.width, height: cropped.height };
+  // The picture goes to the asset store; the project keeps the reference.
+  void saveAsset(cropped.url).then((reference) => {
+    updateCostume(owner, target, { url: reference, width: cropped.width, height: cropped.height });
+    if (costume?.id === target) costume = { ...costume, url: reference };
+  });
 }
 
 /**

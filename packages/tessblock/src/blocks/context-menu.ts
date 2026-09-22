@@ -46,13 +46,14 @@ export function installContextMenu(): void {
     weight: 1,
     displayText: WORDS.DUPLICATE_BLOCK!,
     preconditionFn: (scope) => (copyable(scope.block) ? 'enabled' : 'hidden'),
-    callback: (scope, _open, _select, location) => {
+    callback: (scope, open, _select, location) => {
       const block = scope.block;
       if (!block) return;
       // The copy goes where the pointer is, by its own top left, however long
       // the stack under it happens to be.
+      const workspace = block.workspace as Blockly.WorkspaceSvg;
       const data = Blockly.clipboard.copy(block as Blockly.BlockSvg);
-      if (data) Blockly.clipboard.paste(data, block.workspace as Blockly.WorkspaceSvg, location);
+      if (data) Blockly.clipboard.paste(data, workspace, pointerPoint(workspace, open) ?? location);
     },
   });
 
@@ -62,9 +63,11 @@ export function installContextMenu(): void {
     weight: 1.2,
     displayText: '복사하기',
     preconditionFn: (scope) => (copyable(scope.block) ? 'enabled' : 'hidden'),
-    callback: (scope, _open, _select, location) => {
+    callback: (scope, open, _select, location) => {
       const block = scope.block;
-      if (block) Blockly.clipboard.copy(block as Blockly.BlockSvg, location);
+      if (!block) return;
+      const workspace = block.workspace as Blockly.WorkspaceSvg;
+      Blockly.clipboard.copy(block as Blockly.BlockSvg, pointerPoint(workspace, open) ?? location);
     },
   });
 
@@ -74,9 +77,9 @@ export function installContextMenu(): void {
     weight: 1.4,
     displayText: '붙여넣기',
     preconditionFn: (scope) => (Blockly.clipboard.getLastCopiedData() && scope.block ? 'enabled' : 'hidden'),
-    callback: (scope, _open, _select, location) => {
+    callback: (scope, open, _select, location) => {
       const workspace = scope.block?.workspace as Blockly.WorkspaceSvg | undefined;
-      pasteInto(workspace, location);
+      pasteInto(workspace, open, location);
     },
   });
 
@@ -86,15 +89,35 @@ export function installContextMenu(): void {
     weight: 3,
     displayText: '붙여넣기',
     preconditionFn: () => (Blockly.clipboard.getLastCopiedData() ? 'enabled' : 'disabled'),
-    callback: (scope, _open, _select, location) => {
-      pasteInto(scope.workspace as Blockly.WorkspaceSvg | undefined, location);
+    callback: (scope, open, _select, location) => {
+      pasteInto(scope.workspace as Blockly.WorkspaceSvg | undefined, open, location);
     },
   });
 }
 
-function pasteInto(workspace: Blockly.WorkspaceSvg | undefined, location?: Blockly.utils.Coordinate): void {
+function pasteInto(
+  workspace: Blockly.WorkspaceSvg | undefined,
+  menuEvent: Event,
+  location?: Blockly.utils.Coordinate,
+): void {
   const data = Blockly.clipboard.getLastCopiedData();
-  if (data && workspace) Blockly.clipboard.paste(data, workspace, location);
+  if (data && workspace) Blockly.clipboard.paste(data, workspace, pointerPoint(workspace, menuEvent) ?? location);
+}
+
+/**
+ * Where the menu was opened, in workspace units.
+ *
+ * The pointer's own coordinates are read and converted, so zooming the page or
+ * the workspace, or scrolling it, still drops the copy under the pointer. A
+ * menu opened from the keyboard has no pointer, and the caller falls back.
+ */
+function pointerPoint(
+  workspace: Blockly.WorkspaceSvg | undefined,
+  menuEvent: Event,
+): Blockly.utils.Coordinate | undefined {
+  if (!workspace || !(menuEvent instanceof MouseEvent)) return undefined;
+  const screen = new Blockly.utils.Coordinate(menuEvent.clientX, menuEvent.clientY);
+  return Blockly.utils.svgMath.screenToWsCoordinates(workspace, screen);
 }
 
 function copyable(block: Blockly.BlockSvg | undefined): boolean {

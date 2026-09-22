@@ -7,13 +7,17 @@
  */
 import * as Blockly from 'blockly/core';
 import { CATEGORY_ORDER } from '../blocks/theme.ts';
-import { flyoutFor, installBlocks, TOOLBOX, tessTheme } from '../blocks/registry.ts';
+import { flyoutFor, installBlocks, searchFlyout, TOOLBOX, tessTheme } from '../blocks/registry.ts';
 import { project, selectedObjectId, setObjectBlocks } from '../model/store.ts';
-import { dialog, functionDraft } from './state.ts';
+import { blockQuery, dialog, functionDraft } from './state.ts';
 import { newId } from '../model/ids.ts';
 import type { BlocklyState } from '../model/types.ts';
 
+/** A gap at the top of every palette, so the search strip covers no blocks. */
+const PALETTE_TOP = { kind: 'sep', gap: 44 };
+
 let workspace: Blockly.WorkspaceSvg | null = null;
+let palette: ResizeObserver | null = null;
 let shown = '';
 let saveTimer: number | undefined;
 /** Signal subscriptions the mounted workspace owns. */
@@ -34,7 +38,10 @@ export function mount(host: HTMLElement): void {
   installBlocks();
   workspace = Blockly.inject(host, { ...WORKSPACE_OPTIONS, toolbox: TOOLBOX });
   for (const category of CATEGORY_ORDER) {
-    workspace.registerToolboxCategoryCallback(`TESS_${category}`, () => flyoutFor(category) as never);
+    workspace.registerToolboxCategoryCallback(
+      `TESS_${category}`,
+      () => [PALETTE_TOP, ...flyoutFor(category)] as never,
+    );
   }
   workspace.registerButtonCallback('NEW_VARIABLE', () => {
     dialog.value = 'variable';
@@ -57,6 +64,11 @@ export function mount(host: HTMLElement): void {
   const flyout = workspace.getFlyout();
   if (flyout) flyout.autoClose = false;
   workspace.getToolbox()?.selectItemByPosition(0);
+  // Picking a category is how you leave a search.
+  host.querySelector('.blocklyToolbox')?.addEventListener('pointerdown', () => {
+    blockQuery.value = '';
+  });
+  watchPalette(host);
   shown = '';
   showObject(selectedObjectId.value);
   // Subscribed here rather than from a component: the swap has to happen with
@@ -64,11 +76,15 @@ export function mount(host: HTMLElement): void {
   watches = [
     selectedObjectId.subscribe((id) => showObject(id)),
     project.subscribe(() => refreshPalette()),
+    blockQuery.subscribe((query) => showSearch(query)),
   ];
 }
 
 export function unmount(): void {
   flush();
+  blockQuery.value = '';
+  palette?.disconnect();
+  palette = null;
   for (const stop of watches) stop();
   watches = [];
   workspace?.dispose();
@@ -101,8 +117,38 @@ export function showObject(id: string): void {
   } finally {
     Blockly.Events.enable();
   }
-  workspace.cleanUp?.();
   workspace.scrollCenter();
+}
+
+/** Fills the palette with search hits, or puts the open category back. */
+function showSearch(query: string): void {
+  const toolbox = workspace?.getToolbox();
+  const flyout = workspace?.getFlyout();
+  if (!toolbox || !flyout) return;
+  if (!query.trim()) {
+    toolbox.refreshSelection();
+    return;
+  }
+  flyout.show([PALETTE_TOP, ...searchFlyout(query)] as never);
+}
+
+/**
+ * Keeps the search strip exactly as wide as the palette — the categories and
+ * the open flyout — so it never runs over the work area.
+ */
+function watchPalette(host: HTMLElement): void {
+  const pane = host.parentElement;
+  const toolbox = host.querySelector('.blocklyToolbox');
+  const flyout = host.querySelector('.blocklyFlyout');
+  if (!pane || !toolbox || !flyout) return;
+  const measure = () => {
+    const width = toolbox.getBoundingClientRect().width + flyout.getBoundingClientRect().width;
+    pane.style.setProperty('--palette-w', `${Math.round(width)}px`);
+  };
+  measure();
+  palette = new ResizeObserver(measure);
+  palette.observe(toolbox);
+  palette.observe(flyout);
 }
 
 let paletteTimer: number | undefined;
@@ -150,6 +196,7 @@ const EDITS = new Set<string>([
 ]);
 
 function onChange(event: Blockly.Events.Abstract): void {
+  if (event.type === Blockly.Events.TOOLBOX_ITEM_SELECT) blockQuery.value = '';
   if (event.isUiEvent || !workspace || !shown) return;
   if (!EDITS.has(event.type)) return;
   if (saveTimer !== undefined) clearTimeout(saveTimer);

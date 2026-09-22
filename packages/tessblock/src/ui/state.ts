@@ -7,7 +7,15 @@ export type PropertyTab = 'variable' | 'list' | 'signal' | 'table' | 'function';
 
 export const editorTab = signal<EditorTab>('blocks');
 export const propertyTab = signal<PropertyTab>('variable');
+/** The list the property pane has open, so a new one shows itself. */
+export const pickedList = signal('');
+
+/** What the palette is being searched for; empty shows the chosen category. */
+export const blockQuery = signal('');
+
 export const codeOpen = signal(false);
+/** While on, the stage shows the handle that moves an object's centre point. */
+export const centerMode = signal(false);
 export const functionDraft = signal<FunctionDef | null>(null);
 export const toast = signal<string>('');
 

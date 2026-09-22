@@ -237,6 +237,8 @@ export class Vm implements Project {
 
   state: 'stop' | 'run' | 'pause' = 'stop';
   currentSceneId = '';
+  /** Scene a run begins on; empty means the first one, the way entry starts. */
+  private startSceneId = '';
   /** Milliseconds of running time; frozen while paused or stopped. */
   clock = 0;
   frame = 0;
@@ -332,7 +334,7 @@ export class Vm implements Project {
     this.frameRate = this.requestedFps ?? (Number(project.speed) || DEFAULT_FPS);
     this.scenes = project.scenes.map((scene) => ({ id: scene.id, name: scene.name }));
     this.sceneById = new Map(this.scenes.map((scene) => [scene.id, scene]));
-    this.currentSceneId = this.scenes[0]?.id ?? '';
+    this.currentSceneId = this.firstSceneId();
     this.messages = project.messages.map((message) => ({ id: message.id, name: message.name }));
     this.tables = (project.tables ?? []).map((raw) => Table.from(raw as never));
 
@@ -793,7 +795,7 @@ export class Vm implements Project {
     this.errors = [];
     this.pendingMessages = [];
     this.openTable(null);
-    this.currentSceneId = this.scenes[0]?.id ?? '';
+    this.currentSceneId = this.firstSceneId();
     this.audio?.setVolume(1);
     this.audio?.setSpeed(1);
     this.clearTimer();
@@ -1009,6 +1011,23 @@ export class Vm implements Project {
   // -------------------------------------------------------------------------
   //  Scenes and clones
   // -------------------------------------------------------------------------
+  /**
+   * Picks the scene a run starts on, by id or by name. An editor runs the
+   * scene being worked on; a player leaves this alone and starts at the first.
+   */
+  setStartScene(scene: string | null | undefined): void {
+    const wanted = String(scene ?? '');
+    const found = this.sceneById.has(wanted)
+      ? wanted
+      : this.scenes.find((candidate) => candidate.name === wanted)?.id ?? '';
+    this.startSceneId = found;
+    if (this.state === 'stop') this.currentSceneId = this.firstSceneId();
+  }
+
+  private firstSceneId(): string {
+    return this.sceneById.has(this.startSceneId) ? this.startSceneId : this.scenes[0]?.id ?? '';
+  }
+
   selectScene(id: string): void {
     const scene = this.sceneById.get(id);
     if (!scene || scene.id === this.currentSceneId) {

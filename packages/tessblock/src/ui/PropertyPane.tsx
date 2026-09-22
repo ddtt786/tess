@@ -1,13 +1,13 @@
 /** Properties: variables, lists, signals, tables and functions of the project. */
 import { useSignal } from '@preact/signals';
 import {
-  addSignal, addTable, addVariable, project, removeFunction, removeSignal, removeTable,
+  addSignal, addTable, project, removeFunction, removeSignal, removeTable,
   removeVariable, updateTable, updateVariable,
 } from '../model/store.ts';
 import { newId } from '../model/ids.ts';
-import type { StorageScope, TableDef, VariableDef } from '../model/types.ts';
+import type { StorageScope, TableDef, TessObject, VariableDef } from '../model/types.ts';
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, TrashIcon } from './icons.tsx';
-import { functionDraft, propertyTab, type PropertyTab } from './state.ts';
+import { dialog, functionDraft, pickedList, propertyTab, type PropertyTab } from './state.ts';
 
 const TABS: Array<[PropertyTab, string]> = [
   ['variable', '변수'],
@@ -37,6 +37,12 @@ export function PropertyPane() {
   );
 }
 
+/** Who a variable belongs to, for the read-only scope cell. */
+function ownerName(variable: VariableDef, objects: TessObject[]): string {
+  if (!variable.owner) return '모든 오브젝트';
+  return objects.find((object) => object.id === variable.owner)?.name ?? '사라진 오브젝트';
+}
+
 // --- variables --------------------------------------------------------------
 
 function VariableTable() {
@@ -47,10 +53,10 @@ function VariableTable() {
       <div class="sheet-head">
         <div>
           <h3>변수</h3>
-          <p class="sub">범위를 오브젝트로 두면 그 오브젝트 안에서만 보입니다.</p>
+          <p class="sub">쓸 수 있는 범위는 만들 때 정해집니다.</p>
         </div>
         <span class="spacer" />
-        <button class="btn primary" onClick={() => addVariable(`변수${rows.length + 1}`, 'variable', null)}>
+        <button class="btn primary" onClick={() => { dialog.value = 'variable'; }}>
           <PlusIcon /> 변수 추가
         </button>
       </div>
@@ -85,17 +91,7 @@ function VariableRow({ variable }: { variable: VariableDef }) {
           onInput={(event) => updateVariable(variable.id, { name: (event.target as HTMLInputElement).value })}
         />
       </td>
-      <td>
-        <select
-          class="select"
-          value={variable.owner ?? ''}
-          aria-label="변수 범위"
-          onChange={(event) => updateVariable(variable.id, { owner: (event.target as HTMLSelectElement).value || null })}
-        >
-          <option value="">모든 오브젝트</option>
-          {objects.map((object) => <option key={object.id} value={object.id}>{object.name}</option>)}
-        </select>
-      </td>
+      <td class="muted">{ownerName(variable, objects)}</td>
       <td>
         <input
           class="input"
@@ -135,8 +131,7 @@ function VariableRow({ variable }: { variable: VariableDef }) {
 
 function ListEditor() {
   const lists = project.value.variables.filter((variable) => variable.kind === 'list');
-  const picked = useSignal(lists[0]?.id ?? '');
-  const current = lists.find((list) => list.id === picked.value) ?? lists[0];
+  const current = lists.find((list) => list.id === pickedList.value) ?? lists[lists.length - 1];
 
   function setItems(items: Array<string | number>) {
     if (current) updateVariable(current.id, { array: items });
@@ -150,13 +145,7 @@ function ListEditor() {
           <p class="sub">항목을 한 줄씩 더하고, 순서를 바꾸고, 지울 수 있습니다.</p>
         </div>
         <span class="spacer" />
-        <button
-          class="btn primary"
-          onClick={() => {
-            const made = addVariable(`리스트${lists.length + 1}`, 'list', null);
-            picked.value = made.id;
-          }}
-        >
+        <button class="btn primary" onClick={() => { dialog.value = 'list'; }}>
           <PlusIcon /> 리스트 추가
         </button>
       </div>
@@ -167,7 +156,7 @@ function ListEditor() {
             <li key={list.id}>
               <button
                 class={`pick ${list.id === current?.id ? 'on' : ''}`}
-                onClick={() => { picked.value = list.id; }}
+                onClick={() => { pickedList.value = list.id; }}
               >
                 <span class="pick-name">{list.name}</span>
                 <span class="pick-count">{list.array.length}</span>
@@ -190,16 +179,7 @@ function ListEditor() {
               </label>
               <label class="f" style="width:150px">
                 <span>범위</span>
-                <select
-                  class="select"
-                  value={current.owner ?? ''}
-                  onChange={(event) => updateVariable(current.id, { owner: (event.target as HTMLSelectElement).value || null })}
-                >
-                  <option value="">모든 오브젝트</option>
-                  {project.value.objects.map((object) => (
-                    <option key={object.id} value={object.id}>{object.name}</option>
-                  ))}
-                </select>
+                <output class="readout">{ownerName(current, project.value.objects)}</output>
               </label>
               <button class="btn ghost danger" title="리스트 삭제" onClick={() => removeVariable(current.id)}>
                 <TrashIcon size={14} />

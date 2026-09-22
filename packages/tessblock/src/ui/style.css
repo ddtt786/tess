@@ -119,7 +119,10 @@ h1, h2, h3, p { margin: 0; }
 .scene:hover { background: var(--bg-hover); color: var(--text); }
 .scene.on { background: var(--accent-weak); color: var(--accent); }
 .scene .x { font-size: 11px; opacity: 0.55; }
-.scene .x:hover { opacity: 1; }
+.scene .dup { display: inline-grid; place-items: center; opacity: 0; transition: opacity 0.12s var(--ease); }
+.scene .dup svg { width: 13px; height: 13px; }
+.scene:hover .dup, .scene.on .dup { opacity: 0.55; }
+.scene .x:hover, .scene .dup:hover { opacity: 1; }
 .scene { position: relative; cursor: pointer; user-select: none; }
 .scene.dragging { opacity: 0.45; }
 .scene.drop-before::before, .scene.drop-after::before {
@@ -346,9 +349,19 @@ h1, h2, h3, p { margin: 0; }
   background-repeat: no-repeat;
 }
 
-.detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.detail-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px 10px; }
 .f { display: grid; gap: 4px; min-width: 0; }
 .f > span, .f > label { color: var(--text-2); font-size: 11px; font-weight: 600; padding-left: 1px; }
+
+/* The object's numbers read as label-then-box on one line; stacking them ate
+   a third of a panel that is already narrow. */
+.detail-grid .f { grid-column: span 2; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; }
+.detail-grid .f.wide { grid-column: span 3; }
+.detail-grid .f > span { padding-left: 0; white-space: nowrap; }
+.detail-grid .input, .detail-grid .select { height: 28px; padding: 0 6px; }
+.detail-grid .input[type="number"] { appearance: textfield; }
+.detail-grid .input[type="number"]::-webkit-outer-spin-button,
+.detail-grid .input[type="number"]::-webkit-inner-spin-button { appearance: none; margin: 0; }
 
 /* One line per object, no numbers: the card above owns those. */
 .obj-list { overflow-y: auto; padding: 8px 10px 12px; display: grid; gap: 1px; align-content: start; min-height: 0; }
@@ -457,6 +470,45 @@ button:focus-visible, .scene:focus-visible, .tabbtn:focus-visible { outline: 2px
   z-index: 90;
 }
 .blockly-host { position: absolute; inset: 0; }
+
+/* The search strip belongs to the palette: it is as wide as the categories
+   and the open flyout, and the work area keeps its full height. */
+.block-pane { position: absolute; inset: 0; }
+.block-pane .blocklyToolbox { padding-top: 36px; }
+
+.block-search {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  width: var(--palette-w, 260px);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.block-search svg { width: 14px; height: 14px; flex: none; }
+.block-search.on { color: var(--accent); }
+.block-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.block-search input::placeholder { color: var(--muted); }
+.block-search input:focus { outline: none; }
+.block-search .clear { color: var(--muted); font-size: 11px; padding: 2px 4px; border-radius: var(--r-xs); }
+.block-search .clear:hover { background: var(--bg-hover); color: var(--text); }
 
 /* tessvm stage boxes. */
 .tessvm-stage { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
@@ -605,7 +657,24 @@ button:focus-visible, .scene:focus-visible, .tabbtn:focus-visible { outline: 2px
 
 .dialog h3 { font-size: 13.5px; font-weight: 700; }
 .dialog .check { display: flex; align-items: center; gap: 7px; color: var(--text-2); font-size: 12px; }
+.dialog .seg { align-self: stretch; }
+.dialog .seg button { flex: 1; }
+.dialog-note { margin: -4px 0 0; color: var(--muted); font-size: 11.5px; }
+
+/* A setting that is fixed once made, shown the size of the field it replaces. */
+.readout {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-size: 12px;
+}
 .dialog .actions { display: flex; justify-content: flex-end; gap: 7px; }
+
+.toast.warn { background: #b42318; bottom: 70px; }
 
 .toast {
   position: fixed;
@@ -657,6 +726,11 @@ button:focus-visible, .scene:focus-visible, .tabbtn:focus-visible { outline: 2px
 }
 .blocklyFlyoutBackground { fill: #f3f4f7; }
 .blocklyText { font-family: Pretendard, Inter, "Noto Sans KR", system-ui, sans-serif !important; }
+
+/* A function parameter reads as one coloured chip until it is opened for
+   renaming: no white box, white letters on the block's own colour. */
+.tess-param-field .blocklyFieldRect { fill: transparent !important; stroke: none !important; }
+.tess-param-field text.blocklyText { fill: #ffffff !important; }
 .blocklyFlyoutButton .blocklyText { fill: #2c3140 !important; }
 .blocklyFlyoutButtonBackground { fill: #ffffff; stroke: #d7dae2; }
 .blocklyWidgetDiv .blocklyMenu { border-radius: var(--r-md) !important; padding: 5px !important; border: 1px solid var(--line) !important; box-shadow: 0 12px 32px rgba(22, 24, 29, 0.14) !important; }
@@ -853,7 +927,10 @@ button:focus-visible, .scene:focus-visible, .tabbtn:focus-visible { outline: 2px
 
 /* --- transform box -------------------------------------------------------- */
 
-.transform-box { position: absolute; inset: 0; }
+/* The box only draws; its handles are the parts that take the pointer, so
+   dragging the object underneath still works. */
+.transform-box { position: absolute; inset: 0; pointer-events: none; }
+.transform-box.locked .tb-handle { display: none; }
 
 .tb-outline { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .tb-outline polygon { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; }
@@ -870,6 +947,7 @@ button:focus-visible, .scene:focus-visible, .tabbtn:focus-visible { outline: 2px
   background: #fff;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.25);
   touch-action: none;
+  pointer-events: auto;
 }
 
 .tb-handle:hover { background: var(--accent-weak); }

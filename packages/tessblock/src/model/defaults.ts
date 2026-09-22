@@ -3,6 +3,7 @@
  * ships so a new object has something to draw.
  */
 import { newId } from './ids.ts';
+import { measureTextBox } from './text-metrics.ts';
 import type { Costume, ObjectProps, Scene, TessObject, TessProject, TextProps } from './types.ts';
 
 export interface CostumeTemplate {
@@ -40,7 +41,7 @@ export function defaultProps(): ObjectProps {
 }
 
 export function defaultTextProps(content: string): TextProps {
-  return {
+  const text: TextProps = {
     content,
     font: '나눔고딕',
     fontSize: 20,
@@ -52,9 +53,10 @@ export function defaultTextProps(content: string): TextProps {
     italic: false,
     underline: false,
     strike: false,
-    boxWidth: Math.max(30, content.length * 20 * 0.85),
-    boxHeight: 24,
+    boxWidth: 0,
+    boxHeight: 0,
   };
+  return { ...text, ...measureTextBox(text) };
 }
 
 /** A sprite with the given costume, ready to drop into a scene. */

@@ -10,14 +10,14 @@ import { Order, type OrderValue } from '../codegen/order.ts';
 
 export type Category =
   | 'start' | 'flow' | 'moving' | 'looks' | 'brush' | 'sound'
-  | 'judge' | 'calc' | 'data' | 'analysis' | 'text' | 'func';
+  | 'judge' | 'calc' | 'data' | 'analysis' | 'text' | 'expansion' | 'func';
 
 export type Shape = 'hat' | 'statement' | 'value' | 'boolean';
 
 /** Where a dropdown's entries come from when the project decides them. */
 export type DynamicSource =
   | 'object' | 'target' | 'lookTarget' | 'cloneTarget' | 'signal' | 'scene'
-  | 'costume' | 'sound' | 'variable' | 'list' | 'table' | 'tableColumn' | 'key' | 'param';
+  | 'costume' | 'sound' | 'variable' | 'list' | 'table' | 'tableColumn' | 'key';
 
 export type Arg =
   | { type: 'value'; name: string; fallback: string; order: OrderValue; shadow: ShadowSpec }

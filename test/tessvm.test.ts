@@ -2631,3 +2631,55 @@ test('구운 벡터 모양은 마지막으로 쥔 쪽이 놓을 때만 내린다
   const drops = source.match(/this\.dropStamp\(stamp\)/g) ?? [];
   assert.equal(drops.length, 4, '도장을 없애는 자리는 모두 그리로 갑니다');
 });
+
+test('tessvm - 시작 장면을 정하면 그 장면에서 실행을 시작한다', () => {
+  const source = [
+    'project:',
+    '  title "장면"',
+    'end',
+    '',
+    'scene "무대":',
+    '  object "하나":',
+    '    when start do',
+    '      x = 10',
+    '    end',
+    '  end',
+    'end',
+    '',
+    'scene "무대2":',
+    '  object "둘":',
+    '    when start do',
+    '      x = 20',
+    '    end',
+    '  end',
+    'end',
+    '',
+  ].join('\n');
+  const result = compileProject(source, { path: 'test.tess' });
+  assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+  const project = result.project as unknown as EntryProject;
+  const second = project.scenes[1]!;
+
+  // 정하지 않으면 엔트리처럼 첫 장면에서 시작한다.
+  const first = new Vm({ renderer: null, audio: null });
+  first.load(project as unknown as never);
+  first.start();
+  assert.equal(first.currentSceneId, project.scenes[0]!.id);
+
+  // 이름으로도 id 로도 고를 수 있고, 다시 시작해도 그 장면을 지킨다.
+  const vm = new Vm({ renderer: null, audio: null });
+  vm.load(project as unknown as never);
+  vm.setStartScene(second.name);
+  assert.equal(vm.currentSceneId, second.id);
+  vm.start();
+  assert.equal(vm.currentSceneId, second.id);
+  vm.stop();
+  vm.start();
+  assert.equal(vm.currentSceneId, second.id);
+
+  // 없는 장면을 넣으면 첫 장면으로 돌아간다.
+  vm.stop();
+  vm.setStartScene('없는 장면');
+  vm.start();
+  assert.equal(vm.currentSceneId, project.scenes[0]!.id);
+});

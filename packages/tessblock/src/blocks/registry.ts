@@ -29,6 +29,7 @@ import './catalog/calc.ts';
 import './catalog/data.ts';
 import './catalog/analysis.ts';
 import './catalog/text.ts';
+import './catalog/expansion.ts';
 
 export { tessTheme };
 
@@ -189,10 +190,15 @@ interface FlyoutBlock {
   kind: 'block';
   type: string;
   fields?: Record<string, unknown>;
+  extraState?: Record<string, unknown>;
   inputs?: Record<string, unknown>;
 }
 
-type FlyoutItem = FlyoutBlock | { kind: 'button'; text: string; callbackkey: string } | { kind: 'sep'; gap: number };
+type FlyoutItem =
+  | FlyoutBlock
+  | { kind: 'button'; text: string; callbackkey: string }
+  | { kind: 'label'; text: string }
+  | { kind: 'sep'; gap: number };
 
 export const TOOLBOX = {
   kind: 'categoryToolbox',
@@ -216,11 +222,14 @@ export function flyoutFor(category: Category): FlyoutItem[] {
   if (category === 'func') {
     const editing = editingFunction.value;
     if (editing) {
+      // Only the parameters this function has. New ones come from the ＋ on the
+      // definition block, so the palette never offers a nameless one.
       for (const param of editing.params) {
         items.push({
           kind: 'block',
           type: param.kind === 'boolean' ? 'func_param_boolean' : 'func_param_value',
-          fields: { PARAM: param.id },
+          fields: { NAME: param.name },
+          extraState: { param: param.id },
         });
       }
       items.push({ kind: 'block', type: 'func_return' });
@@ -235,6 +244,39 @@ export function flyoutFor(category: Category): FlyoutItem[] {
   }
   for (const spec of specsOf(category)) items.push(blockEntry(spec));
   return items;
+}
+
+/** Palette entries matching a search, taken from every category at once. */
+export function searchFlyout(query: string): FlyoutItem[] {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return [];
+  const items: FlyoutItem[] = [];
+  for (const spec of allSpecs()) {
+    if (spec.hidden) continue;
+    if (terms.every((term) => searchText(spec).includes(term))) items.push(blockEntry(spec));
+  }
+  for (const definition of project.value.functions) {
+    const name = definition.name.toLowerCase();
+    if (!terms.every((term) => name.includes(term) || '함수'.includes(term))) continue;
+    items.push({ kind: 'block', type: callType(definition.id) });
+    if (returnsValue(definition)) items.push({ kind: 'block', type: valueCallType(definition.id) });
+  }
+  return items.length ? items : [{ kind: 'label', text: '찾는 블록이 없습니다' }];
+}
+
+const searchIndex = new Map<string, string>();
+
+/** What a block can be found by: its wording, its category and its menus. */
+function searchText(spec: BlockSpec): string {
+  const cached = searchIndex.get(spec.type);
+  if (cached !== undefined) return cached;
+  const words = [spec.message.replace(/%\d+/g, ' '), CATEGORY_LABELS[spec.category], spec.type];
+  for (const arg of spec.args) {
+    if (arg.type === 'dropdown') words.push(...arg.options.map(([label]) => label));
+  }
+  const text = words.join(' ').toLowerCase();
+  searchIndex.set(spec.type, text);
+  return text;
 }
 
 function blockEntry(spec: BlockSpec): FlyoutBlock {

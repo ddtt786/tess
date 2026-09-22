@@ -9,6 +9,7 @@ import {
   setTextProps, updateCostume,
 } from '../model/store.ts';
 import { COSTUME_LIBRARY } from '../model/defaults.ts';
+import { resolveAsset, saveAsset } from '../model/assets.ts';
 import { readDataUrl } from '../model/files.ts';
 import { flushPainter, measure, mountPainter, unmountPainter } from './painter-host.ts';
 import { InlineName } from './InlineName.tsx';
@@ -42,10 +43,11 @@ function PainterPane() {
     for (const file of Array.from(files)) {
       const url = await readDataUrl(file);
       const size = await measure(url);
+      const reference = await saveAsset(url);
       const id = addBlankCostume(object.id, size.width, size.height);
       updateCostume(object.id, id, {
         name: file.name.replace(/\.[^.]+$/, '') || '모양',
-        url,
+        url: reference,
         ...size,
       });
     }
@@ -67,7 +69,7 @@ function PainterPane() {
                 selectCostume(object.id, costume.id);
               }}
             >
-              <img src={costume.url} alt="" />
+              <img src={resolveAsset(costume.url)} alt="" />
               <InlineName
                 class="shot-name"
                 value={costume.name}

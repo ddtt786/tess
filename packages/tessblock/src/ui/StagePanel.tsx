@@ -1,12 +1,12 @@
 /** The stage: tessvm runs the compiled work right here. */
 import { useSignal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
-import { project } from '../model/store.ts';
+import { currentScene, project } from '../model/store.ts';
 import { start, stop } from '../runtime/run.ts';
 import { currentSource } from './source.ts';
-import { codeOpen, notify } from './state.ts';
+import { centerMode, codeOpen, notify } from './state.ts';
 import { StagePreview } from './StagePreview.tsx';
-import { PlayIcon, StopIcon } from './icons.tsx';
+import { CenterIcon, PlayIcon, StopIcon } from './icons.tsx';
 
 export function StagePanel() {
   const host = useRef<HTMLDivElement>(null);
@@ -19,7 +19,12 @@ export function StagePanel() {
     if (!host.current || busy.value) return;
     busy.value = true;
     try {
-      const built = await start(host.current, currentSource(), project.peek().name);
+      const built = await start(
+        host.current,
+        currentSource(),
+        project.peek().name,
+        currentScene.peek()?.name ?? '',
+      );
       if (!built.project) {
         const first = built.errors[0];
         notify(first ? `${first.line}:${first.column} ${first.message}` : '작품을 만들 수 없습니다.');
@@ -51,6 +56,16 @@ export function StagePanel() {
         {running.value
           ? <button class="play stop" onClick={halt}><StopIcon size={13} /> 정지하기</button>
           : <button class="play" onClick={run} disabled={busy.value}><PlayIcon size={13} /> 시작하기</button>}
+        <span class="spacer" style="flex:1" />
+        <button
+          class={`iconbtn ${centerMode.value ? 'on' : ''}`}
+          title="무게중심 옮기기"
+          aria-label="무게중심 옮기기"
+          aria-pressed={centerMode.value}
+          onClick={() => { centerMode.value = !centerMode.value; }}
+        >
+          <CenterIcon />
+        </button>
       </div>
     </section>
   );

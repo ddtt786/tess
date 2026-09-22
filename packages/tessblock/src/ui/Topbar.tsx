@@ -1,17 +1,47 @@
 /** Title bar: project name, scenes (draggable) and the code drawer toggle. */
 import { useSignal } from '@preact/signals';
+import { useRef } from 'preact/hooks';
 import {
-  addScene, currentScene, project, removeScene, renameScene, reorderScene, selectScene, setProjectName,
+  addScene, currentScene, duplicateScene, project, removeScene, renameScene, reorderScene, selectScene,
+  setProjectName,
 } from '../model/store.ts';
+import { downloadProject, loadProjectFile } from '../model/file-io.ts';
+import { buildEnt } from '../runtime/ent.ts';
+import { currentSource } from './source.ts';
 import { beginDrag } from './drag.ts';
-import { CodeIcon, PlusIcon } from './icons.tsx';
+import { CodeIcon, CopyIcon, PlusIcon, UploadIcon } from './icons.tsx';
 import { InlineName } from './InlineName.tsx';
-import { codeOpen } from './state.ts';
+import { codeOpen, notify } from './state.ts';
 
 export function Topbar() {
   const model = project.value;
+  const file = useRef<HTMLInputElement>(null);
   const scene = currentScene.value;
   const drag = useSignal<{ id: string; overId: string; before: boolean } | null>(null);
+  const packing = useSignal(false);
+
+  /** Packs the work the way entry stores it, files and all. */
+  async function exportEnt() {
+    packing.value = true;
+    try {
+      const built = await buildEnt(currentSource(), model.name);
+      if (!built.blob) {
+        const first = built.errors[0];
+        notify(first ? `${first.line}:${first.column} ${first.message}` : '작품을 만들 수 없습니다.');
+        return;
+      }
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(built.blob);
+      link.download = `${model.name || '작품'}.ent`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      notify('.ent 파일을 저장했습니다.');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '.ent 를 만들지 못했습니다.');
+    } finally {
+      packing.value = false;
+    }
+  }
 
   /** Which scene chip the pointer is over, and which half of it. */
   function chipAt(clientX: number): { id: string; before: boolean } | null {
@@ -82,6 +112,17 @@ export function Topbar() {
               }}
             >
               <InlineName value={candidate.name} onCommit={(name) => renameScene(candidate.id, name)} />
+              <span
+                class="dup"
+                title={`${candidate.name} 복제하기`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  duplicateScene(candidate.id);
+                }}
+              >
+                <CopyIcon />
+              </span>
               {model.scenes.length > 1 && (
                 <span
                   class="x"
@@ -103,6 +144,32 @@ export function Topbar() {
         </button>
       </nav>
       <span class="spacer" />
+      <button class="btn" title="작품 파일 불러오기" onClick={() => file.current?.click()}>
+        <UploadIcon /> 불러오기
+      </button>
+      <button class="btn" title="작품을 파일로 저장" onClick={downloadProject}>저장</button>
+      <button
+        class="btn"
+        title="엔트리에서 열 수 있는 .ent 파일로 내보내기"
+        disabled={packing.value}
+        onClick={() => void exportEnt()}
+      >
+        {packing.value ? '만드는 중…' : '.ent'}
+      </button>
+      <input
+        ref={file}
+        type="file"
+        accept=".tessproj,application/json"
+        hidden
+        onChange={(event) => {
+          const picked = (event.target as HTMLInputElement).files?.[0];
+          (event.target as HTMLInputElement).value = '';
+          if (!picked) return;
+          void loadProjectFile(picked)
+            .then(() => notify('작품을 불러왔습니다.'))
+            .catch((error: unknown) => notify(error instanceof Error ? error.message : '불러오지 못했습니다.'));
+        }}
+      />
       <button
         class={`btn ${codeOpen.value ? 'on' : ''}`}
         onClick={() => { codeOpen.value = !codeOpen.value; }}

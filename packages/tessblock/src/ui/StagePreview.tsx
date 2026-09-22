@@ -7,6 +7,8 @@
  */
 import { useEffect, useRef } from 'preact/hooks';
 import { sceneObjects, selectObject, selectedObjectId, setObjectProps } from '../model/store.ts';
+import { centerMode } from './state.ts';
+import { resolveAsset } from '../model/assets.ts';
 import { beginDrag } from './drag.ts';
 import {
   STAGE, angleFromStage, centerFromStage, geometryOf, handleLocal, localToStage, resizeFromHandle,
@@ -63,8 +65,6 @@ function PreviewObject({ object, toStage }: DragProps) {
   const costume = object.costumes.find((candidate) => candidate.id === object.selectedCostumeId)
     ?? object.costumes[0];
   const text = object.text;
-  const width = geometry.size.x * geometry.scale.x;
-  const height = geometry.size.y * geometry.scale.y;
 
   function drag(event: PointerEvent) {
     event.preventDefault();
@@ -88,12 +88,14 @@ function PreviewObject({ object, toStage }: DragProps) {
     <div
       class={`po ${object.props.lock ? 'locked' : ''}`}
       style={{
-        left: `${geometry.origin.x - geometry.reg.x * geometry.scale.x}px`,
-        top: `${geometry.origin.y - geometry.reg.y * geometry.scale.y}px`,
-        width: `${width}px`,
-        height: `${height}px`,
-        transformOrigin: `${geometry.reg.x * geometry.scale.x}px ${geometry.reg.y * geometry.scale.y}px`,
-        transform: `rotate(${geometry.angle}deg)`,
+        // Drawn at its own size and then scaled, so a text box stretches with
+        // the object instead of ignoring the ratio.
+        left: `${geometry.origin.x - geometry.reg.x}px`,
+        top: `${geometry.origin.y - geometry.reg.y}px`,
+        width: `${geometry.size.x}px`,
+        height: `${geometry.size.y}px`,
+        transformOrigin: `${geometry.reg.x}px ${geometry.reg.y}px`,
+        transform: `rotate(${geometry.angle}deg) scale(${geometry.scale.x}, ${geometry.scale.y})`,
         opacity: object.props.visible ? 1 : 0.35,
       }}
       onPointerDown={drag}
@@ -117,7 +119,7 @@ function PreviewObject({ object, toStage }: DragProps) {
           {text.content}
         </span>
       ) : (
-        costume && <img src={costume.url} alt="" draggable={false} />
+        costume && <img src={resolveAsset(costume.url)} alt="" draggable={false} />
       )}
     </div>
   );
@@ -168,7 +170,7 @@ function TransformBox({ object, toStage }: DragProps) {
   }
 
   return (
-    <div class="transform-box" style={{ pointerEvents: locked ? 'none' : 'auto' }}>
+    <div class={`transform-box ${locked ? 'locked' : ''}`}>
       <svg class="tb-outline" viewBox={`0 0 ${STAGE.width} ${STAGE.height}`} preserveAspectRatio="none">
         <polygon
           points={corners.map((point) => `${point.x},${point.y}`).join(' ')}
@@ -202,12 +204,17 @@ function TransformBox({ object, toStage }: DragProps) {
         title="회전하기"
         onPointerDown={startRotate}
       />
-      <button
-        class="tb-handle tb-center"
-        style={place(geometry.origin)}
-        title="무게중심 옮기기"
-        onPointerDown={startCenter}
-      />
+      {/* The centre handle sits over the middle of the picture, so it only
+          appears while that mode is on — otherwise it would swallow the drag
+          that moves the object. */}
+      {centerMode.value && (
+        <button
+          class="tb-handle tb-center"
+          style={place(geometry.origin)}
+          title="무게중심 옮기기"
+          onPointerDown={startCenter}
+        />
+      )}
       <span class="tb-readout" style={place({ x: geometry.origin.x, y: geometry.origin.y })}>
         {Math.round(object.props.scaleX)}% × {Math.round(object.props.scaleY)}%
       </span>

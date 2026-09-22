@@ -24,6 +24,11 @@ export interface BootOptions {
   container?: HTMLElement;
   /** Off by default — a work waits to be started, the way entry's player does. */
   autoStart?: boolean;
+  /**
+   * Scene a run starts on, by id or by name. Left unset, a work starts at its
+   * first scene; an editor passes the scene being worked on.
+   */
+  scene?: string;
   quality?: number;
   /** Overrides the project's own `speed`; leave unset to follow it. */
   fps?: number;
@@ -308,6 +313,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   });
 
   vm.load(project);
+  if (options.scene) vm.setStartScene(options.scene);
   // `store` names are put back before the work is started, the way the save
   // manager puts them back each time a work is played (`runtime/save.ts`).
   vm.save.host = options.saveStore === null ? null : (options.saveStore ?? dexieSaveStore(storeKey(project)));

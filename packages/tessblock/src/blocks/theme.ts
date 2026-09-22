@@ -19,6 +19,7 @@ export const CATEGORY_COLOURS: Record<Category, string> = {
   data: '#dc2626',
   analysis: '#475569',
   text: '#92400e',
+  expansion: '#0f766e',
   func: '#c026d3',
 };
 
@@ -34,12 +35,13 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   data: '자료',
   analysis: '자료분석',
   text: '글상자',
+  expansion: '확장',
   func: '함수',
 };
 
 export const CATEGORY_ORDER: Category[] = [
   'start', 'flow', 'moving', 'looks', 'brush', 'sound',
-  'judge', 'calc', 'data', 'analysis', 'text', 'func',
+  'judge', 'calc', 'data', 'analysis', 'text', 'expansion', 'func',
 ];
 
 function blockStyles(): Record<string, Blockly.Theme.BlockStyle> {

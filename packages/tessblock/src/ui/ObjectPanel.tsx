@@ -6,13 +6,16 @@
  * suggests a second card could appear next to it.
  */
 import { useSignal } from '@preact/signals';
+import { resolveAsset } from '../model/assets.ts';
 import { beginDrag } from './drag.ts';
 import {
-  addObject, removeObject, renameObject, reorderObject, sceneObjects, selectObject,
+  addObject, duplicateObject, removeObject, renameObject, reorderObject, sceneObjects, selectObject,
   selectedObject, selectedObjectId, setObjectProps,
 } from '../model/store.ts';
 import type { RotateMethod, TessObject } from '../model/types.ts';
-import { EyeIcon, EyeOffIcon, GripIcon, LockIcon, PlusIcon, TextIcon, TrashIcon, UnlockIcon } from './icons.tsx';
+import {
+  CopyIcon, EyeIcon, EyeOffIcon, GripIcon, LockIcon, PlusIcon, TextIcon, TrashIcon, UnlockIcon,
+} from './icons.tsx';
 
 export function ObjectPanel() {
   const objects = sceneObjects.value;
@@ -104,6 +107,18 @@ export function ObjectPanel() {
               {!object.props.visible && <span class="tag">숨김</span>}
               <button
                 class="del"
+                title={`${object.name} 복제`}
+                aria-label={`${object.name} 복제`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  duplicateObject(object.id);
+                }}
+              >
+                <CopyIcon size={14} />
+              </button>
+              <button
+                class="del"
                 title={`${object.name} 삭제`}
                 aria-label={`${object.name} 삭제`}
                 onPointerDown={(event) => event.stopPropagation()}
@@ -148,7 +163,7 @@ function ObjectDetail({ object }: { object: TessObject }) {
     <div class="obj-detail">
       <div class="detail-head">
         <span class="avatar" aria-hidden="true">
-          {costume ? <img src={costume.url} alt="" /> : 'T'}
+          {costume ? <img src={resolveAsset(costume.url)} alt="" /> : 'T'}
         </span>
         <input
           class="input title"
@@ -179,12 +194,12 @@ function ObjectDetail({ object }: { object: TessObject }) {
       <div class="detail-grid">
         <Field label="X" value={props.x} onChange={(value) => setNumber('x', value)} />
         <Field label="Y" value={props.y} onChange={(value) => setNumber('y', value)} />
-        <Field label="크기 %" value={size} onChange={setSize} />
-        <Field label="가로 %" value={round(props.scaleX)} onChange={(value) => setNumber('scaleX', value)} />
-        <Field label="세로 %" value={round(props.scaleY)} onChange={(value) => setNumber('scaleY', value)} />
+        <Field label="크기" value={size} onChange={setSize} />
+        <Field label="가로" value={round(props.scaleX)} onChange={(value) => setNumber('scaleX', value)} />
+        <Field label="세로" value={round(props.scaleY)} onChange={(value) => setNumber('scaleY', value)} />
         <Field label="방향" value={props.angle} onChange={(value) => setNumber('angle', value)} />
-        <Field label="이동 방향" value={props.way} onChange={(value) => setNumber('way', value)} />
-        <label class="f">
+        <Field label="이동 방향" value={props.way} wide onChange={(value) => setNumber('way', value)} />
+        <label class="f wide">
           <span>회전</span>
           <select
             class="select"
@@ -197,7 +212,7 @@ function ObjectDetail({ object }: { object: TessObject }) {
             <option value="none">없음</option>
           </select>
         </label>
-        <label class="f">
+        <label class="f wide">
           <span>무게중심</span>
           <button
             class="select as-button"
@@ -216,9 +231,12 @@ function round(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-function Field({ label, value, onChange }: { label: string; value: number; onChange: (value: string) => void }) {
+function Field(
+  { label, value, wide, onChange }:
+  { label: string; value: number; wide?: boolean; onChange: (value: string) => void },
+) {
   return (
-    <label class="f">
+    <label class={`f ${wide ? 'wide' : ''}`}>
       <span>{label}</span>
       <input
         class="input"

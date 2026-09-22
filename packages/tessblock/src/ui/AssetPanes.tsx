@@ -1,11 +1,10 @@
 /** 소리 tab: sounds uploaded from the computer. */
 import { useRef } from 'preact/hooks';
 import { addSound, removeSound, selectedObject } from '../model/store.ts';
-import { audioDuration, dataUrlBytes, readDataUrl } from '../model/files.ts';
+import { resolveAsset, saveAsset } from '../model/assets.ts';
+import { audioDuration, readDataUrl } from '../model/files.ts';
 import { PlayIcon, TrashIcon, UploadIcon } from './icons.tsx';
 import { notify } from './state.ts';
-
-const MAX_BYTES = 3 * 1024 * 1024;
 
 export function SoundPane() {
   const object = selectedObject.value;
@@ -15,12 +14,9 @@ export function SoundPane() {
     if (!object || !files?.length) return;
     for (const file of Array.from(files)) {
       const url = await readDataUrl(file);
-      if (dataUrlBytes(url) > MAX_BYTES) {
-        notify(`${file.name} 은(는) 3MB 보다 커서 담지 못했습니다.`);
-        continue;
-      }
       const duration = await audioDuration(url);
-      addSound(object.id, { name: file.name.replace(/\.[^.]+$/, '') || '소리', url, duration });
+      const reference = await saveAsset(url);
+      addSound(object.id, { name: file.name.replace(/\.[^.]+$/, '') || '소리', url: reference, duration });
     }
   }
 
@@ -31,7 +27,7 @@ export function SoundPane() {
       <div class="sheet-head">
         <div>
           <h3>소리</h3>
-          <p class="sub">올린 소리는 블록에서 이름으로 고릅니다. 한 파일에 3MB 까지.</p>
+          <p class="sub">올린 소리는 블록에서 이름으로 고릅니다.</p>
         </div>
         <span class="spacer" />
         <button class="btn primary" onClick={() => upload.current?.click()}>
@@ -53,7 +49,7 @@ export function SoundPane() {
       {object.sounds.length ? (
         <table class="tbl">
           <thead>
-            <tr><th style="width:44px" /><th>이름</th><th style="width:15%">길이</th><th style="width:90px" /></tr>
+            <tr><th style="width:44px" /><th>이름</th><th style="width:20%">길이</th><th style="width:90px" /></tr>
           </thead>
           <tbody>
             {object.sounds.map((sound) => (
@@ -63,7 +59,7 @@ export function SoundPane() {
                     class="iconbtn"
                     title="들어보기"
                     onClick={() => {
-                      void new Audio(sound.url).play().catch(() => notify('소리를 재생하지 못했습니다.'));
+                      void new Audio(resolveAsset(sound.url)).play().catch(() => notify('소리를 재생하지 못했습니다.'));
                     }}
                   >
                     <PlayIcon size={13} />

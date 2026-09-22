@@ -7,7 +7,6 @@
  */
 import * as Blockly from 'blockly/core';
 import { KEY_CODES } from '../../../core/src/keycodes.ts';
-import { editingFunction } from '../model/function-editing.ts';
 import { project, selectedObjectId } from '../model/store.ts';
 import type { DynamicSource } from './spec.ts';
 
@@ -101,8 +100,6 @@ function buildOptions(source: DynamicSource): Option[] {
       return model.tables[0]?.columns.map((column) => [column, column] as Option) ?? [];
     case 'key':
       return KEY_OPTIONS;
-    case 'param':
-      return (editingFunction.value?.params ?? []).map((param) => [param.name, param.id] as Option);
     default:
       return [];
   }

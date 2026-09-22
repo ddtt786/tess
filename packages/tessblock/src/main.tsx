@@ -1,9 +1,14 @@
 import { render } from 'preact';
 import './ui/style.css';
+import { openAssets } from './model/assets.ts';
 import { App } from './ui/App.tsx';
 
 const host = document.getElementById('app');
-if (host) render(<App />, host);
+// Costumes and sounds come out of IndexedDB before the first paint, so nothing
+// draws with a missing picture.
+void openAssets().then(() => {
+  if (host) render(<App />, host);
+});
 
 if (import.meta.env.DEV) {
   // Dev handle for driving the editor from the console.

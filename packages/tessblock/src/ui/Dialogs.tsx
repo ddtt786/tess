@@ -1,8 +1,8 @@
 /** Small prompts the palette buttons open. */
 import { useSignal } from '@preact/signals';
-import { addSignal, addTable, addVariable, selectedObjectId } from '../model/store.ts';
+import { addSignal, addTable, addVariable, selectedObject, selectedObjectId } from '../model/store.ts';
 import { refreshPalette } from './blockly-host.ts';
-import { dialog, notify, type DialogKind } from './state.ts';
+import { dialog, notify, pickedList, type DialogKind } from './state.ts';
 
 const TITLES: Record<DialogKind, string> = {
   variable: '변수 만들기',
@@ -31,7 +31,10 @@ export function Dialogs() {
     }
     if (kind === 'signal') addSignal(label);
     else if (kind === 'table') addTable(label);
-    else addVariable(label, kind === 'list' ? 'list' : 'variable', owned.value ? selectedObjectId.value : null);
+    else {
+      const made = addVariable(label, kind === 'list' ? 'list' : 'variable', owned.value ? selectedObjectId.value : null);
+      if (kind === 'list') pickedList.value = made.id;
+    }
     refreshPalette();
     close();
   }
@@ -51,14 +54,23 @@ export function Dialogs() {
           }}
         />
         {(kind === 'variable' || kind === 'list') && (
-          <label class="check">
-            <input
-              type="checkbox"
-              checked={owned.value}
-              onChange={(event) => { owned.value = (event.target as HTMLInputElement).checked; }}
-            />
-            이 오브젝트에서만 사용
-          </label>
+          <>
+            {/* Scope is settled here: a variable belongs to one object or to
+                the whole work for as long as it lives. */}
+            <div class="seg" role="group" aria-label="사용 범위">
+              <button class={owned.value ? '' : 'on'} onClick={() => { owned.value = false; }}>
+                모든 오브젝트
+              </button>
+              <button class={owned.value ? 'on' : ''} onClick={() => { owned.value = true; }}>
+                {`${selectedObject.value?.name ?? '이 오브젝트'}에서만`}
+              </button>
+            </div>
+            <p class="dialog-note">
+              {owned.value
+                ? '이 오브젝트의 블록에서만 보입니다.'
+                : '모든 오브젝트의 블록에서 쓸 수 있습니다.'}
+            </p>
+          </>
         )}
         <div class="actions">
           <button class="btn ghost" onClick={close}>취소</button>

@@ -5,10 +5,11 @@
  * is written from the same generator the live editor uses.
  */
 import * as Blockly from 'blockly/core';
-import { DEFINE_BLOCK, useParams } from '../blocks/functions.ts';
+import { DEFINE_BLOCK } from '../blocks/functions.ts';
 import { tess, workspaceScripts } from './generator.ts';
 import { safeIdent, uniqueIdent } from './ident.ts';
 import { num, quote } from './quote.ts';
+import { resolveAsset } from '../model/assets.ts';
 import { useIdents } from './refs.ts';
 import type { BlocklyState, FunctionDef, TessObject, TessProject, VariableDef } from '../model/types.ts';
 
@@ -101,11 +102,8 @@ function functionLines(definition: FunctionDef): string[] {
     .map((param) => `${safeIdent(param.name)}${param.kind === 'boolean' ? '?' : ''}`)
     .join(', ');
   const body = readWorkspace(definition.blocks, (workspace) => {
-    useParams(definition);
     const define = workspace.getTopBlocks(false).find((block) => block.type === DEFINE_BLOCK);
-    const code = define ? tess.statementToCode(define, 'BODY') : '';
-    useParams(null);
-    return code;
+    return define ? tess.statementToCode(define, 'BODY') : '';
   });
   const lines = [`function ${safeIdent(definition.name)}(${params}):`];
   if (body.trim()) lines.push(body.replace(/\n+$/, ''));
@@ -131,7 +129,7 @@ function objectLines(
     const isDefault = costume.id === object.selectedCostumeId;
     const display = ident === costume.name.trim() ? '' : ` as ${quote(costume.name)}`;
     body.push(
-      `${isDefault ? 'default ' : ''}costume ${ident} ${quote(costume.url)} `
+      `${isDefault ? 'default ' : ''}costume ${ident} ${quote(resolveAsset(costume.url))} `
       + `size ${num(costume.width)} ${num(costume.height)}${display}`,
     );
   }
@@ -139,7 +137,7 @@ function objectLines(
   for (const sound of object.sounds) {
     const ident = uniqueIdent(sound.name, soundNames);
     const display = ident === sound.name.trim() ? '' : ` as ${quote(sound.name)}`;
-    body.push(`sound ${ident} ${quote(sound.url)} for ${num(sound.duration)}${display}`);
+    body.push(`sound ${ident} ${quote(resolveAsset(sound.url))} for ${num(sound.duration)}${display}`);
   }
 
   const props = object.props;

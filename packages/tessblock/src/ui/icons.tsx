@@ -239,3 +239,24 @@ export const FitIcon = (props: IconProps) => (
     <path d="M2.8 6V3.6a.8.8 0 0 1 .8-.8H6M10 2.8h2.4a.8.8 0 0 1 .8.8V6M13.2 10v2.4a.8.8 0 0 1-.8.8H10M6 13.2H3.6a.8.8 0 0 1-.8-.8V10" />
   </Icon>
 );
+
+export const CenterIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="8" cy="8" r="3.2" />
+    <path d="M8 1.6v2.6M8 11.8v2.6M1.6 8h2.6M11.8 8h2.6" />
+  </Icon>
+);
+
+export const CopyIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="5.4" y="5.4" width="8.2" height="8.2" rx="1.4" />
+    <path d="M10.6 5.4V3.8a1.4 1.4 0 0 0-1.4-1.4H3.8a1.4 1.4 0 0 0-1.4 1.4v5.4a1.4 1.4 0 0 0 1.4 1.4h1.6" />
+  </Icon>
+);
+
+export const SearchIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="7.2" cy="7.2" r="4.4" />
+    <path d="m10.6 10.6 3 3" />
+  </Icon>
+);

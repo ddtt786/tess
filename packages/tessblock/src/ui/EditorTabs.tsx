@@ -6,7 +6,8 @@ import { SoundPane } from './AssetPanes.tsx';
 import { CostumePane } from './CostumePane.tsx';
 import { PropertyPane } from './PropertyPane.tsx';
 import { FunctionEditor } from './FunctionEditor.tsx';
-import { editorTab, functionDraft, type EditorTab } from './state.ts';
+import { SearchIcon } from './icons.tsx';
+import { blockQuery, editorTab, functionDraft, type EditorTab } from './state.ts';
 
 const TABS: Array<[EditorTab, string]> = [
   ['blocks', '블록'],
@@ -71,5 +72,32 @@ function BlockPane({ hidden }: { hidden: boolean }) {
 
   // `display: none` rather than hiding it: a hidden workspace must not take
   // clicks or keys while another tab is in front.
-  return <div class="blockly-host" ref={host} style={{ display: hidden ? 'none' : 'block' }} />;
+  return (
+    <div class="block-pane" style={{ display: hidden ? 'none' : 'block' }}>
+      <BlockSearch />
+      <div class="blockly-host" ref={host} />
+    </div>
+  );
+}
+
+/** Finds blocks across every category and puts the hits in the palette. */
+function BlockSearch() {
+  const query = blockQuery.value;
+  return (
+    <div class={`block-search ${query ? 'on' : ''}`}>
+      <SearchIcon />
+      <input
+        value={query}
+        placeholder="블록 찾기"
+        aria-label="블록 찾기"
+        onInput={(event) => { blockQuery.value = (event.target as HTMLInputElement).value; }}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') blockQuery.value = '';
+        }}
+      />
+      {query && (
+        <button class="clear" title="검색 지우기" onClick={() => { blockQuery.value = ''; }}>✕</button>
+      )}
+    </div>
+  );
 }

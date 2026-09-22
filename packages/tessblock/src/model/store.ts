@@ -5,6 +5,8 @@
 import { computed, signal } from '@preact/signals';
 import { newId } from './ids.ts';
 import { COSTUME_LIBRARY, costumeFrom, makeScene, makeSprite, makeTextBox, starterProject } from './defaults.ts';
+import { keepOnly } from './assets.ts';
+import { measureTextBox } from './text-metrics.ts';
 import type {
   BlocklyState, Costume, FunctionDef, ObjectProps, Sound, TableDef, TessObject, TessProject,
   TextProps, VariableDef, VariableKind,
@@ -51,13 +53,17 @@ function patchObject(id: string, change: (object: TessObject) => void): void {
 
 // --- scenes -----------------------------------------------------------------
 
-/** A name no object in the work is using yet. */
-function freeName(base: string): string {
-  const taken = new Set(project.value.objects.map((object) => object.name));
+/** `base`, or `base 2`, `base 3`… until it is free. */
+function untaken(base: string, taken: Set<string>): string {
   if (!taken.has(base)) return base;
   let index = 2;
   while (taken.has(`${base} ${index}`)) index += 1;
   return `${base} ${index}`;
+}
+
+/** A name no object in the work is using yet. */
+function freeName(base: string): string {
+  return untaken(base, new Set(project.value.objects.map((object) => object.name)));
 }
 
 export function addScene(): void {
@@ -83,6 +89,37 @@ export function removeScene(id: string): void {
   }
 }
 
+/** Copies a scene with its objects, their scripts and the variables they own. */
+export function duplicateScene(id: string): void {
+  const source = project.value.scenes.find((scene) => scene.id === id);
+  if (!source) return;
+  const scene = {
+    ...source,
+    id: newId('s'),
+    name: untaken(source.name, new Set(project.value.scenes.map((candidate) => candidate.name))),
+  };
+  const taken = new Set(project.value.objects.map((object) => object.name));
+  // Scripts that name this scene follow the copy.
+  const scenes = new Map([[source.id, scene.id]]);
+  const clones = project.value.objects
+    .filter((object) => object.sceneId === id)
+    .map((object) => {
+      const name = untaken(object.name, taken);
+      taken.add(name);
+      return cloneObject(object, name, scene.id, scenes);
+    });
+
+  update((draft) => {
+    const at = draft.scenes.findIndex((candidate) => candidate.id === id);
+    draft.scenes.splice(at < 0 ? draft.scenes.length : at + 1, 0, scene);
+    const last = draft.objects.map((object) => object.sceneId === id).lastIndexOf(true);
+    draft.objects.splice(last + 1, 0, ...clones.map((clone) => clone.object));
+    draft.variables.push(...clones.flatMap((clone) => clone.variables));
+  });
+  selectedSceneId.value = scene.id;
+  selectedObjectId.value = clones[0]?.object.id ?? '';
+}
+
 export function renameScene(id: string, name: string): void {
   update((draft) => {
     const scene = draft.scenes.find((candidate) => candidate.id === id);
@@ -105,6 +142,50 @@ export function addObject(kind: 'sprite' | 'text' = 'sprite', costumeIndex = 0):
   const object = kind === 'sprite' ? makeSprite(name, scene, template) : makeTextBox(name, scene);
   update((draft) => {
     draft.objects.unshift(object);
+  });
+  selectedObjectId.value = object.id;
+}
+
+/**
+ * A copy of one object: fresh ids for its costumes and sounds, copies of the
+ * variables it owns, and scripts pointed at those copies.
+ */
+function cloneObject(
+  source: TessObject,
+  name: string,
+  sceneId = source.sceneId,
+  swap = new Map<string, string>(),
+): { object: TessObject; variables: VariableDef[] } {
+  const copy = structuredClone(source) as TessObject;
+  copy.id = newId('o');
+  copy.name = name;
+  copy.sceneId = sceneId;
+  copy.costumes = copy.costumes.map((costume) => ({ ...costume, id: newId('c') }));
+  copy.selectedCostumeId = copy.costumes[source.costumes.findIndex(
+    (costume) => costume.id === source.selectedCostumeId,
+  )]?.id ?? copy.costumes[0]?.id ?? '';
+  copy.sounds = copy.sounds.map((sound) => ({ ...sound, id: newId('snd') }));
+
+  const locals = project.value.variables.filter((variable) => variable.owner === source.id);
+  const variables = locals.map((variable) => ({ ...variable, id: newId('v'), owner: copy.id }));
+  const ids = new Map(swap);
+  locals.forEach((variable, index) => ids.set(variable.id, variables[index]!.id));
+
+  let blocks = JSON.stringify(copy.blocks ?? null);
+  for (const [from, to] of ids) blocks = blocks.split(from).join(to);
+  copy.blocks = JSON.parse(blocks) as typeof copy.blocks;
+  return { object: copy, variables };
+}
+
+/** Copies an object, its costumes, its sounds, its scripts and its variables. */
+export function duplicateObject(id: string): void {
+  const source = project.value.objects.find((object) => object.id === id);
+  if (!source) return;
+  const { object, variables } = cloneObject(source, freeName(source.name));
+  update((draft) => {
+    const at = draft.objects.findIndex((candidate) => candidate.id === id);
+    draft.objects.splice(at < 0 ? draft.objects.length : at, 0, object);
+    draft.variables.push(...variables);
   });
   selectedObjectId.value = object.id;
 }
@@ -137,7 +218,11 @@ export function setObjectProps(id: string, patch: Partial<ObjectProps>): void {
 
 export function setTextProps(id: string, patch: Partial<TextProps>): void {
   patchObject(id, (object) => {
-    if (object.text) object.text = { ...object.text, ...patch };
+    if (!object.text) return;
+    // The box is measured, never typed in: the compiler needs a real size and
+    // the preview has to agree with what runs.
+    const text = { ...object.text, ...patch };
+    object.text = { ...text, ...measureTextBox(text) };
   });
 }
 
@@ -344,9 +429,10 @@ export function setFps(fps: number): void {
 }
 
 export function replaceProject(next: TessProject): void {
-  project.value = next;
-  selectedSceneId.value = next.scenes[0]?.id ?? '';
-  selectedObjectId.value = next.objects.find((object) => object.sceneId === selectedSceneId.value)?.id ?? '';
+  const model = migrateProject(next);
+  project.value = model;
+  selectedSceneId.value = model.scenes[0]?.id ?? '';
+  selectedObjectId.value = model.objects.find((object) => object.sceneId === selectedSceneId.value)?.id ?? '';
   saveSoon();
 }
 
@@ -358,18 +444,36 @@ export function resetProject(): void {
 
 let saveTimer: number | undefined;
 
+/** Set when the browser refused to keep the project — usually a full store. */
+export const saveFailed = signal(false);
+
 function saveSoon(): void {
   if (saveTimer !== undefined) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(project.value));
+      saveFailed.value = false;
+      void keepOnly(assetRefs(project.value));
     } catch {
-      // Storage is full or blocked; the project stays in memory.
+      // The work stays in memory; the editor says so rather than losing it
+      // quietly. Big sounds and costumes are the usual cause.
+      saveFailed.value = true;
     }
   }, 400) as unknown as number;
 }
 
-/** Fills in fields a project saved by an older editor does not have. */
+/** Fills in what a project saved by an older editor does not have. */
+function migrateProject(model: TessProject): TessProject {
+  return {
+    ...model,
+    variables: model.variables ?? [],
+    signals: model.signals ?? [],
+    tables: model.tables ?? [],
+    functions: (model.functions ?? []).map(migrateFunction),
+    objects: (model.objects ?? []).map(migrateObject),
+  };
+}
+
 function migrateObject(object: TessObject): TessObject {
   const props = object.props as ObjectProps & { size?: number };
   const size = props.size ?? 100;
@@ -384,20 +488,43 @@ function migrateObject(object: TessObject): TessObject {
   };
 }
 
+/**
+ * A function saved before the header recorded its slots. The parameter inputs
+ * are named in the saved block, so the slot list is read back from there.
+ */
+function migrateFunction(definition: FunctionDef): FunctionDef {
+  const blocks = definition.blocks as { blocks?: { blocks?: BlockState[] } } | null;
+  for (const block of blocks?.blocks?.blocks ?? []) {
+    if (block.type !== 'func_define' || block.extraState?.slots) continue;
+    const slots = Object.keys(block.inputs ?? {}).filter((name) => name.startsWith('ARG'));
+    if (slots.length) block.extraState = { ...block.extraState, slots };
+  }
+  return definition;
+}
+
+interface BlockState {
+  type?: string;
+  inputs?: Record<string, unknown>;
+  extraState?: { slots?: string[] } & Record<string, unknown>;
+}
+
+/** Every costume and sound the work still points at. */
+function assetRefs(model: TessProject): string[] {
+  const refs: string[] = [];
+  for (const object of model.objects) {
+    for (const costume of object.costumes) refs.push(costume.url);
+    for (const sound of object.sounds) refs.push(sound.url);
+  }
+  return refs;
+}
+
 function loadProject(): TessProject {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return starterProject();
     const parsed = JSON.parse(raw) as TessProject;
     if (!parsed.scenes?.length || !parsed.objects) return starterProject();
-    return {
-      ...parsed,
-      variables: parsed.variables ?? [],
-      signals: parsed.signals ?? [],
-      functions: parsed.functions ?? [],
-      tables: parsed.tables ?? [],
-      objects: parsed.objects.map(migrateObject),
-    };
+    return migrateProject(parsed);
   } catch {
     return starterProject();
   }
