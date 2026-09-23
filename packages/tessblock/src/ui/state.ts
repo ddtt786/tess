@@ -15,7 +15,10 @@ export const blockQuery = signal('');
 
 export const codeOpen = signal(false);
 /** While on, the stage shows the handle that moves an object's centre point. */
-export const centerMode = signal(false);
+export const centerMode = signal(true);
+
+export const stageFullscreen = signal(false);
+
 export const functionDraft = signal<FunctionDef | null>(null);
 export const toast = signal<string>('');
 

@@ -4,12 +4,15 @@
  * The editor never builds entry blocks itself: it writes Tess, the Tess
  * compiler builds the work, and tessvm runs exactly that work.
  */
-import { compileProject } from '../../../compiler/src/index.ts';
-import type { CompileDiagnostic, EntryProject } from '../../../compiler/src/types.ts';
-import { boot, type TessVmHandle } from '../../../tessvm/src/web/boot.ts';
-import { ASK_FIELD_STYLE } from '../../../tessvm/src/web/ask-style.ts';
-import { CHART_WINDOW_STYLE } from '../../../tessvm/src/web/chart-view.ts';
-import { EXTRAS_DIALOG_STYLE } from '../../../tessvm/src/web/extras.ts';
+import { compileProject } from "../../../compiler/src/index.ts";
+import type {
+  CompileDiagnostic,
+  EntryProject,
+} from "../../../compiler/src/types.ts";
+import { boot, type TessVmHandle } from "../../../tessvm/src/web/boot.ts";
+import { ASK_FIELD_STYLE } from "../../../tessvm/src/web/ask-style.ts";
+import { CHART_WINDOW_STYLE } from "../../../tessvm/src/web/chart-view.ts";
+import { EXTRAS_DIALOG_STYLE } from "../../../tessvm/src/web/extras.ts";
 
 export interface BuildResult {
   project: EntryProject | null;
@@ -18,8 +21,16 @@ export interface BuildResult {
 }
 
 export function build(source: string, name: string): BuildResult {
-  const result = compileProject(source, { path: 'main.tess', name, assetUrls: true });
-  return { project: result.project, errors: result.errors, warnings: result.warnings };
+  const result = compileProject(source, {
+    path: "main.tess",
+    name,
+    assetUrls: true,
+  });
+  return {
+    project: result.project,
+    errors: result.errors,
+    warnings: result.warnings,
+  };
 }
 
 let running: TessVmHandle | null = null;
@@ -30,11 +41,15 @@ export function isRunning(): boolean {
 
 /** The runner draws its own chrome — the answer field, charts, dialogs. */
 function installRuntimeStyles(): void {
-  const id = 'tessvm-runtime-style';
+  const id = "tessvm-runtime-style";
   if (document.getElementById(id)) return;
-  const style = document.createElement('style');
+  const style = document.createElement("style");
   style.id = id;
-  style.textContent = [ASK_FIELD_STYLE, CHART_WINDOW_STYLE, EXTRAS_DIALOG_STYLE].join('\n');
+  style.textContent = [
+    ASK_FIELD_STYLE,
+    CHART_WINDOW_STYLE,
+    EXTRAS_DIALOG_STYLE,
+  ].join("\n");
   document.head.appendChild(style);
 }
 

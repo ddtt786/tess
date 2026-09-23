@@ -7,7 +7,6 @@
  * around that point and then rotated about it.
  */
 import type { ObjectProps, TessObject } from '../model/types.ts';
-
 export const STAGE = { width: 480, height: 270 };
 
 export interface Point {
@@ -114,28 +113,34 @@ export function resizeFromHandle(
   proportional: boolean,
 ): Partial<ObjectProps> {
   const anchor = anchorLocal(geometry, kind);
-  const handle = handleLocal(geometry, kind);
   const anchorStage = localToStage(geometry, anchor);
-  const reach = rotate({ x: pointer.x - anchorStage.x, y: pointer.y - anchorStage.y }, -geometry.angle);
+  // Pointer position in unrotated costume space, measured from the anchor.
+  const local = rotate(
+    { x: pointer.x - anchorStage.x, y: pointer.y - anchorStage.y },
+    -geometry.angle,
+  );
 
-  const spanX = Math.abs(handle.x - anchor.x);
-  const spanY = Math.abs(handle.y - anchor.y);
+  const signX = kind.includes('w') ? -1 : 1;
+  const signY = kind.includes('n') ? -1 : 1;
+  const rawX = Math.max(MIN_SCALE, (signX * local.x) / (geometry.size.x || 1));
+  const rawY = Math.max(MIN_SCALE, (signY * local.y) / (geometry.size.y || 1));
+
   let scaleX = geometry.scale.x;
   let scaleY = geometry.scale.y;
-  if ((kind.includes('e') || kind.includes('w')) && spanX > 0.5) scaleX = Math.abs(reach.x) / spanX;
-  if ((kind.includes('n') || kind.includes('s')) && spanY > 0.5) scaleY = Math.abs(reach.y) / spanY;
-
-  if (proportional && kind.length === 2) {
-    // A corner keeps the shape: whichever axis moved more decides both.
-    const ratioX = scaleX / (geometry.scale.x || 1);
-    const ratioY = scaleY / (geometry.scale.y || 1);
-    const ratio = Math.abs(ratioX - 1) > Math.abs(ratioY - 1) ? ratioX : ratioY;
-    scaleX = geometry.scale.x * ratio;
-    scaleY = geometry.scale.y * ratio;
+  if (kind.length === 2) {
+    if (proportional) {
+      const scale = Math.max(rawX, rawY);
+      scaleX = scale;
+      scaleY = scale;
+    } else {
+      scaleX = rawX;
+      scaleY = rawY;
+    }
+  } else if (kind === 'e' || kind === 'w') {
+    scaleX = rawX;
+  } else {
+    scaleY = rawY;
   }
-
-  scaleX = Math.max(MIN_SCALE, scaleX);
-  scaleY = Math.max(MIN_SCALE, scaleY);
 
   // Put the registration point back where it belongs relative to the anchor.
   const offset = rotate(
@@ -153,7 +158,10 @@ export function resizeFromHandle(
 }
 
 /** Moves the registration point to a stage position, leaving the picture put. */
-export function centerFromStage(geometry: Geometry, target: Point): Partial<ObjectProps> {
+export function centerFromStage(
+  geometry: Geometry,
+  target: Point,
+): Partial<ObjectProps> {
   const delta = { x: target.x - geometry.origin.x, y: target.y - geometry.origin.y };
   const local = rotate(delta, -geometry.angle);
   const reg = {

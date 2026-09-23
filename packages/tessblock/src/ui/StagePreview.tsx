@@ -88,8 +88,6 @@ function PreviewObject({ object, toStage }: DragProps) {
     <div
       class={`po ${object.props.lock ? 'locked' : ''}`}
       style={{
-        // Drawn at its own size and then scaled, so a text box stretches with
-        // the object instead of ignoring the ratio.
         left: `${geometry.origin.x - geometry.reg.x}px`,
         top: `${geometry.origin.y - geometry.reg.y}px`,
         width: `${geometry.size.x}px`,
@@ -135,8 +133,7 @@ function TransformBox({ object, toStage }: DragProps) {
   const top = localToStage(geometry, handleLocal(geometry, 'n'));
   const arm = rotate({ x: 0, y: -ARM }, geometry.angle);
 
-  function startScale(event: PointerEvent, kind: HandleKind) {
-    event.preventDefault();
+  function startResize(event: PointerEvent, kind: HandleKind) {
     event.stopPropagation();
     if (locked) return;
     beginDrag(event, {
@@ -148,18 +145,17 @@ function TransformBox({ object, toStage }: DragProps) {
   }
 
   function startRotate(event: PointerEvent) {
-    event.preventDefault();
     event.stopPropagation();
     if (locked) return;
     beginDrag(event, {
       onMove(moved) {
-        setObjectProps(object.id, { angle: angleFromStage(geometry, toStage(moved), moved.shiftKey) });
+        const angle = angleFromStage(geometry, toStage(moved), moved.shiftKey);
+        setObjectProps(object.id, { angle });
       },
     });
   }
 
   function startCenter(event: PointerEvent) {
-    event.preventDefault();
     event.stopPropagation();
     if (locked) return;
     beginDrag(event, {
@@ -184,7 +180,6 @@ function TransformBox({ object, toStage }: DragProps) {
           vector-effect="non-scaling-stroke"
         />
       </svg>
-
       {HANDLES.map((kind) => {
         const point = localToStage(geometry, handleLocal(geometry, kind));
         return (
@@ -192,21 +187,17 @@ function TransformBox({ object, toStage }: DragProps) {
             key={kind}
             class={`tb-handle tb-${kind}`}
             style={place(point)}
-            title={kind.length === 2 ? '크기 바꾸기' : '가로·세로 늘이기'}
-            onPointerDown={(event) => startScale(event, kind)}
+            title="크기 조절"
+            onPointerDown={(event) => startResize(event, kind)}
           />
         );
       })}
-
       <button
-        class="tb-handle tb-rotate"
+        class="tb-handle tb-rot"
         style={place({ x: top.x + arm.x, y: top.y + arm.y })}
         title="회전하기"
         onPointerDown={startRotate}
       />
-      {/* The centre handle sits over the middle of the picture, so it only
-          appears while that mode is on — otherwise it would swallow the drag
-          that moves the object. */}
       {centerMode.value && (
         <button
           class="tb-handle tb-center"
@@ -218,7 +209,6 @@ function TransformBox({ object, toStage }: DragProps) {
       <span class="tb-readout" style={place({ x: geometry.origin.x, y: geometry.origin.y })}>
         {Math.round(object.props.scaleX)}% × {Math.round(object.props.scaleY)}%
       </span>
-      <span class="tb-outline-hint" hidden>{outline}</span>
     </div>
   );
 }

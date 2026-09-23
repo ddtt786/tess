@@ -10,7 +10,7 @@ import { resolveAsset } from '../model/assets.ts';
 import { beginDrag } from './drag.ts';
 import {
   addObject, duplicateObject, removeObject, renameObject, reorderObject, sceneObjects, selectObject,
-  selectedObject, selectedObjectId, setObjectProps,
+  selectedObject, selectedObjectId, setObjectProps, setTextProps,
 } from '../model/store.ts';
 import type { RotateMethod, TessObject } from '../model/types.ts';
 import {
@@ -79,6 +79,8 @@ export function ObjectPanel() {
         {objects.map((object) => {
           const isSelected = object.id === selectedObjectId.value;
           const drop = drag.value?.overId === object.id ? drag.value : null;
+          const costume = object.costumes.find((candidate) => candidate.id === object.selectedCostumeId)
+            ?? object.costumes[0];
           return (
             <div
               key={object.id}
@@ -102,33 +104,44 @@ export function ObjectPanel() {
               }}
             >
               <span class="grip" aria-hidden="true"><GripIcon size={14} /></span>
+              <span class="avatar row-avatar" aria-hidden="true">
+                {object.kind === 'text' ? (
+                  <TextIcon size={13} />
+                ) : costume ? (
+                  <img src={resolveAsset(costume.url)} alt="" />
+                ) : (
+                  'T'
+                )}
+              </span>
               <span class="name">{object.name}</span>
               {object.kind === 'text' && <span class="tag">글</span>}
               {!object.props.visible && <span class="tag">숨김</span>}
-              <button
-                class="del"
-                title={`${object.name} 복제`}
-                aria-label={`${object.name} 복제`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  duplicateObject(object.id);
-                }}
-              >
-                <CopyIcon size={14} />
-              </button>
-              <button
-                class="del"
-                title={`${object.name} 삭제`}
-                aria-label={`${object.name} 삭제`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  removeObject(object.id);
-                }}
-              >
-                <TrashIcon size={14} />
-              </button>
+              <div class="actions">
+                <button
+                  class="del"
+                  title={`${object.name} 복제`}
+                  aria-label={`${object.name} 복제`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    duplicateObject(object.id);
+                  }}
+                >
+                  <CopyIcon size={14} />
+                </button>
+                <button
+                  class="del"
+                  title={`${object.name} 삭제`}
+                  aria-label={`${object.name} 삭제`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    removeObject(object.id);
+                  }}
+                >
+                  <TrashIcon size={14} />
+                </button>
+              </div>
             </div>
           );
         })}
@@ -163,7 +176,13 @@ function ObjectDetail({ object }: { object: TessObject }) {
     <div class="obj-detail">
       <div class="detail-head">
         <span class="avatar" aria-hidden="true">
-          {costume ? <img src={resolveAsset(costume.url)} alt="" /> : 'T'}
+          {object.kind === 'text' ? (
+            <TextIcon size={16} />
+          ) : costume ? (
+            <img src={resolveAsset(costume.url)} alt="" />
+          ) : (
+            'T'
+          )}
         </span>
         <input
           class="input title"
@@ -191,6 +210,19 @@ function ObjectDetail({ object }: { object: TessObject }) {
         </button>
       </div>
 
+      {object.kind === 'text' && object.text && (
+        <div class="text-content-field">
+          <input
+            class="input text-content-input"
+            value={object.text.content}
+            placeholder="글상자 내용 입력"
+            aria-label="글상자 내용"
+            onInput={(event) =>
+              setTextProps(object.id, { content: (event.target as HTMLInputElement).value })}
+          />
+        </div>
+      )}
+
       <div class="detail-grid">
         <Field label="X" value={props.x} onChange={(value) => setNumber('x', value)} />
         <Field label="Y" value={props.y} onChange={(value) => setNumber('y', value)} />
@@ -211,16 +243,6 @@ function ObjectDetail({ object }: { object: TessObject }) {
             <option value="vertical">좌우</option>
             <option value="none">없음</option>
           </select>
-        </label>
-        <label class="f wide">
-          <span>무게중심</span>
-          <button
-            class="select as-button"
-            title="무게중심을 모양 한가운데로 되돌립니다"
-            onClick={() => setObjectProps(object.id, { center: null })}
-          >
-            {props.center ? `${props.center.x}, ${props.center.y}` : '가운데'}
-          </button>
         </label>
       </div>
     </div>

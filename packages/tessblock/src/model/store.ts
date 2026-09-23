@@ -8,7 +8,7 @@ import { COSTUME_LIBRARY, costumeFrom, makeScene, makeSprite, makeTextBox, start
 import { keepOnly } from './assets.ts';
 import { measureTextBox } from './text-metrics.ts';
 import type {
-  BlocklyState, Costume, FunctionDef, ObjectProps, Sound, TableDef, TessObject, TessProject,
+  BlocklyState, Costume, FunctionDef, ObjectProps, Signal, Sound, TableDef, TessObject, TessProject,
   TextProps, VariableDef, VariableKind,
 } from './types.ts';
 
@@ -205,22 +205,42 @@ export function selectObject(id: string): void {
 }
 
 export function renameObject(id: string, name: string): void {
+  const current = project.peek().objects.find((candidate) => candidate.id === id);
+  if (current && current.name === name) return;
   patchObject(id, (object) => {
     object.name = name;
   });
 }
 
 export function setObjectProps(id: string, patch: Partial<ObjectProps>): void {
+  const current = project.peek().objects.find((candidate) => candidate.id === id);
+  if (!current) return;
+  let changed = false;
+  for (const key of Object.keys(patch) as Array<keyof ObjectProps>) {
+    if (current.props[key] !== patch[key]) {
+      changed = true;
+      break;
+    }
+  }
+  if (!changed) return;
   patchObject(id, (object) => {
     object.props = { ...object.props, ...patch };
   });
 }
 
 export function setTextProps(id: string, patch: Partial<TextProps>): void {
+  const current = project.peek().objects.find((candidate) => candidate.id === id);
+  if (!current?.text) return;
+  let changed = false;
+  for (const key of Object.keys(patch) as Array<keyof TextProps>) {
+    if (current.text[key] !== patch[key]) {
+      changed = true;
+      break;
+    }
+  }
+  if (!changed) return;
   patchObject(id, (object) => {
     if (!object.text) return;
-    // The box is measured, never typed in: the compiler needs a real size and
-    // the preview has to agree with what runs.
     const text = { ...object.text, ...patch };
     object.text = { ...text, ...measureTextBox(text) };
   });
@@ -251,6 +271,10 @@ export function moveObject(id: string, delta: number): void {
 }
 
 export function setObjectBlocks(id: string, blocks: BlocklyState): void {
+  const current = project.peek().objects.find((candidate) => candidate.id === id);
+  if (current && JSON.stringify(current.blocks) === JSON.stringify(blocks)) {
+    return;
+  }
   patchObject(id, (object) => {
     object.blocks = blocks;
   });
@@ -354,6 +378,15 @@ export function addSignal(name: string): void {
   });
 }
 
+export function updateSignal(id: string, patch: Partial<Signal>): void {
+  const current = project.peek().signals.find((s) => s.id === id);
+  if (current && (patch.name === undefined || patch.name === current.name)) return;
+  update((draft) => {
+    const at = draft.signals.findIndex((signalDef) => signalDef.id === id);
+    if (at >= 0) draft.signals[at] = { ...draft.signals[at]!, ...patch };
+  });
+}
+
 export function removeSignal(id: string): void {
   update((draft) => {
     draft.signals = draft.signals.filter((signalDef) => signalDef.id !== id);
@@ -405,6 +438,17 @@ export function saveFunction(definition: FunctionDef): void {
     const index = draft.functions.findIndex((candidate) => candidate.id === definition.id);
     if (index >= 0) draft.functions[index] = definition;
     else draft.functions.push(definition);
+  });
+}
+
+export function updateFunction(id: string, patch: Partial<FunctionDef>): void {
+  const current = project.peek().functions.find((f) => f.id === id);
+  if (current && patch.name !== undefined && patch.name === current.name && patch.params === undefined && patch.blocks === undefined) {
+    return;
+  }
+  update((draft) => {
+    const at = draft.functions.findIndex((fn) => fn.id === id);
+    if (at >= 0) draft.functions[at] = { ...draft.functions[at]!, ...patch };
   });
 }
 

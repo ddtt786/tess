@@ -11,11 +11,11 @@ export function CodeDrawer() {
   const errors = useSignal<CompileDiagnostic[]>([]);
   const warnings = useSignal<CompileDiagnostic[]>([]);
 
-  useSignalEffect(() => {
+    useSignalEffect(() => {
     // Rebuild whenever anything in the project moves.
     project.value;
     const timer = setTimeout(() => {
-      const text = currentSource();
+      const text = currentSource(false);
       source.value = text;
       const built = build(text, project.peek().name);
       errors.value = built.errors;

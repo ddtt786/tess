@@ -5,58 +5,91 @@
  * mounts it, switching objects swaps the saved state in and out, and every
  * edit is written back to the project.
  */
-import * as Blockly from 'blockly/core';
-import { CATEGORY_ORDER } from '../blocks/theme.ts';
-import { flyoutFor, installBlocks, searchFlyout, TOOLBOX, tessTheme } from '../blocks/registry.ts';
-import { project, selectedObjectId, setObjectBlocks } from '../model/store.ts';
-import { blockQuery, dialog, functionDraft } from './state.ts';
-import { newId } from '../model/ids.ts';
-import type { BlocklyState } from '../model/types.ts';
+import * as Blockly from "blockly/core";
+import { CATEGORY_ORDER } from "../blocks/theme.ts";
+import {
+  flyoutFor,
+  installBlocks,
+  searchFlyout,
+  TOOLBOX,
+  tessTheme,
+} from "../blocks/registry.ts";
+import { project, selectedObjectId, setObjectBlocks } from "../model/store.ts";
+import { blockQuery, dialog, functionDraft } from "./state.ts";
+import { newId } from "../model/ids.ts";
+import type { BlocklyState } from "../model/types.ts";
 
 /** A gap at the top of every palette, so the search strip covers no blocks. */
-const PALETTE_TOP = { kind: 'sep', gap: 44 };
+const PALETTE_TOP = { kind: "sep", gap: 44 };
+/** A gap at the bottom so the last blocks scroll cleanly into view with comfortable margin. */
+const PALETTE_BOTTOM = { kind: "sep", gap: 140 };
 
 let workspace: Blockly.WorkspaceSvg | null = null;
 let palette: ResizeObserver | null = null;
-let shown = '';
+let shown = "";
 let saveTimer: number | undefined;
+let isLoadingWorkspace = false;
 /** Signal subscriptions the mounted workspace owns. */
 let watches: Array<() => void> = [];
 
 export const WORKSPACE_OPTIONS: Blockly.BlocklyOptions = {
   theme: tessTheme,
-  renderer: 'zelos',
-  media: '/blockly-media/',
+  renderer: "zelos",
+  media: "/blockly-media/",
   sounds: false,
   trashcan: true,
-  zoom: { controls: true, wheel: true, startScale: 0.75, minScale: 0.3, maxScale: 1.8, pinch: true },
-  grid: { spacing: 28, length: 3, colour: '#e2e7f1', snap: false },
+  zoom: {
+    controls: true,
+    wheel: true,
+    startScale: 0.75,
+    minScale: 0.3,
+    maxScale: 1.8,
+    pinch: true,
+  },
+  grid: { spacing: 28, length: 3, colour: "#e2e7f1", snap: false },
   move: { scrollbars: true, drag: true, wheel: true },
 };
 
 export function mount(host: HTMLElement): void {
   installBlocks();
+  if (!(Blockly.FlyoutMetricsManager.prototype as any).__scrollPatched) {
+    (Blockly.FlyoutMetricsManager.prototype as any).__scrollPatched = true;
+    const originalGetScrollMetrics = Blockly.FlyoutMetricsManager.prototype.getScrollMetrics;
+    Blockly.FlyoutMetricsManager.prototype.getScrollMetrics = function (getReal = false, viewMetrics, contentMetrics) {
+      const metrics = originalGetScrollMetrics.call(this, getReal, viewMetrics, contentMetrics);
+      if (metrics && typeof metrics.height === 'number') {
+        metrics.height += 90;
+      }
+      return metrics;
+    };
+  }
   workspace = Blockly.inject(host, { ...WORKSPACE_OPTIONS, toolbox: TOOLBOX });
+  (window as any).__tessWorkspace = workspace;
   for (const category of CATEGORY_ORDER) {
     workspace.registerToolboxCategoryCallback(
       `TESS_${category}`,
-      () => [PALETTE_TOP, ...flyoutFor(category)] as never,
+      () => [PALETTE_TOP, ...flyoutFor(category), PALETTE_BOTTOM] as never,
     );
   }
-  workspace.registerButtonCallback('NEW_VARIABLE', () => {
-    dialog.value = 'variable';
+  workspace.registerButtonCallback("NEW_VARIABLE", () => {
+    dialog.value = "variable";
   });
-  workspace.registerButtonCallback('NEW_LIST', () => {
-    dialog.value = 'list';
+  workspace.registerButtonCallback("NEW_LIST", () => {
+    dialog.value = "list";
   });
-  workspace.registerButtonCallback('NEW_SIGNAL', () => {
-    dialog.value = 'signal';
+  workspace.registerButtonCallback("NEW_SIGNAL", () => {
+    dialog.value = "signal";
   });
-  workspace.registerButtonCallback('NEW_TABLE', () => {
-    dialog.value = 'table';
+  workspace.registerButtonCallback("NEW_TABLE", () => {
+    dialog.value = "table";
   });
-  workspace.registerButtonCallback('NEW_FUNCTION', () => {
-    functionDraft.value = { id: newId('f'), name: '함수', params: [], blocks: null };
+  workspace.registerButtonCallback("NEW_FUNCTION", () => {
+    functionDraft.value = {
+      id: newId("f"),
+      name: "함수",
+      params: [],
+      blocks: null,
+    };
   });
   workspace.addChangeListener(onChange);
   // The palette stays open like entry's: a category swaps its contents instead
@@ -65,11 +98,11 @@ export function mount(host: HTMLElement): void {
   if (flyout) flyout.autoClose = false;
   workspace.getToolbox()?.selectItemByPosition(0);
   // Picking a category is how you leave a search.
-  host.querySelector('.blocklyToolbox')?.addEventListener('pointerdown', () => {
-    blockQuery.value = '';
+  host.querySelector(".blocklyToolbox")?.addEventListener("pointerdown", () => {
+    blockQuery.value = "";
   });
   watchPalette(host);
-  shown = '';
+  shown = "";
   showObject(selectedObjectId.value);
   // Subscribed here rather than from a component: the swap has to happen with
   // the change itself, not after the next render.
@@ -82,14 +115,15 @@ export function mount(host: HTMLElement): void {
 
 export function unmount(): void {
   flush();
-  blockQuery.value = '';
+  blockQuery.value = "";
   palette?.disconnect();
   palette = null;
   for (const stop of watches) stop();
   watches = [];
   workspace?.dispose();
   workspace = null;
-  shown = '';
+  (window as any).__tessWorkspace = null;
+  shown = "";
 }
 
 export function getWorkspace(): Blockly.WorkspaceSvg | null {
@@ -107,14 +141,20 @@ export function showObject(id: string): void {
   if (!workspace || id === shown) return;
   flush();
   shown = id;
-  const object = project.peek().objects.find((candidate) => candidate.id === id);
+  const object = project
+    .peek()
+    .objects.find((candidate) => candidate.id === id);
   Blockly.Events.disable();
+  isLoadingWorkspace = true;
   try {
     workspace.clear();
     if (object?.blocks) {
-      Blockly.serialization.workspaces.load(object.blocks as never, workspace, { recordUndo: false });
+      Blockly.serialization.workspaces.load(object.blocks as never, workspace, {
+        recordUndo: false,
+      });
     }
   } finally {
+    isLoadingWorkspace = false;
     Blockly.Events.enable();
   }
   workspace.scrollCenter();
@@ -138,12 +178,14 @@ function showSearch(query: string): void {
  */
 function watchPalette(host: HTMLElement): void {
   const pane = host.parentElement;
-  const toolbox = host.querySelector('.blocklyToolbox');
-  const flyout = host.querySelector('.blocklyFlyout');
+  const toolbox = host.querySelector(".blocklyToolbox");
+  const flyout = host.querySelector(".blocklyFlyout");
   if (!pane || !toolbox || !flyout) return;
   const measure = () => {
-    const width = toolbox.getBoundingClientRect().width + flyout.getBoundingClientRect().width;
-    pane.style.setProperty('--palette-w', `${Math.round(width)}px`);
+    const width =
+      toolbox.getBoundingClientRect().width +
+      flyout.getBoundingClientRect().width;
+    pane.style.setProperty("--palette-w", `${Math.round(width)}px`);
   };
   measure();
   palette = new ResizeObserver(measure);
@@ -177,8 +219,10 @@ export function flush(): void {
     clearTimeout(saveTimer);
     saveTimer = undefined;
   }
-  if (!workspace || !shown) return;
-  const state = Blockly.serialization.workspaces.save(workspace) as BlocklyState;
+  if (!workspace || !shown || isLoadingWorkspace) return;
+  const state = Blockly.serialization.workspaces.save(
+    workspace,
+  ) as BlocklyState;
   setObjectBlocks(shown, state);
 }
 
@@ -196,8 +240,10 @@ const EDITS = new Set<string>([
 ]);
 
 function onChange(event: Blockly.Events.Abstract): void {
-  if (event.type === Blockly.Events.TOOLBOX_ITEM_SELECT) blockQuery.value = '';
+  if (isLoadingWorkspace) return;
+  if (event.type === Blockly.Events.TOOLBOX_ITEM_SELECT) blockQuery.value = "";
   if (event.isUiEvent || !workspace || !shown) return;
+  if (event.workspaceId !== workspace.id) return;
   if (!EDITS.has(event.type)) return;
   if (saveTimer !== undefined) clearTimeout(saveTimer);
   saveTimer = setTimeout(flush, 350) as unknown as number;

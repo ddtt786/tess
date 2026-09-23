@@ -17,6 +17,7 @@ import { defineFunctionBlocks, callType, returnsValue, syncFunctionBlocks, value
 import { CATEGORY_LABELS, CATEGORY_ORDER, installCategoryStyles, tessTheme } from './theme.ts';
 import { allSpecs, specsOf, type Arg, type BlockSpec, type CodeArgs, type Category } from './spec.ts';
 import { resolveDynamic } from '../codegen/refs.ts';
+import type { FunctionDef } from '../model/types.ts';
 
 import './catalog/start.ts';
 import './catalog/flow.ts';
@@ -236,8 +237,8 @@ export function flyoutFor(category: Category): FlyoutItem[] {
     } else {
       items.push({ kind: 'button', text: '＋ 함수 만들기', callbackkey: 'NEW_FUNCTION' });
       for (const definition of project.value.functions) {
-        items.push({ kind: 'block', type: callType(definition.id) });
-        if (returnsValue(definition)) items.push({ kind: 'block', type: valueCallType(definition.id) });
+        items.push(functionCallEntry(definition, false));
+        if (returnsValue(definition)) items.push(functionCallEntry(definition, true));
       }
     }
     items.push({ kind: 'block', type: 'func_local_var' });
@@ -258,8 +259,8 @@ export function searchFlyout(query: string): FlyoutItem[] {
   for (const definition of project.value.functions) {
     const name = definition.name.toLowerCase();
     if (!terms.every((term) => name.includes(term) || '함수'.includes(term))) continue;
-    items.push({ kind: 'block', type: callType(definition.id) });
-    if (returnsValue(definition)) items.push({ kind: 'block', type: valueCallType(definition.id) });
+    items.push(functionCallEntry(definition, false));
+    if (returnsValue(definition)) items.push(functionCallEntry(definition, true));
   }
   return items.length ? items : [{ kind: 'label', text: '찾는 블록이 없습니다' }];
 }
@@ -288,6 +289,24 @@ function blockEntry(spec: BlockSpec): FlyoutBlock {
       ? { shadow: { type: 'calc_number', fields: { NUM: arg.shadow.value } } }
       : { shadow: { type: 'calc_text', fields: { TEXT: arg.shadow.value } } };
   }
+  if (Object.keys(inputs).length) entry.inputs = inputs;
+  return entry;
+}
+
+function functionCallEntry(definition: FunctionDef, asValue: boolean): FlyoutBlock {
+  const type = asValue ? valueCallType(definition.id) : callType(definition.id);
+  const entry: FlyoutBlock = { kind: 'block', type };
+  const inputs: Record<string, unknown> = {};
+  definition.params.forEach((param, index) => {
+    if (param.kind !== 'boolean') {
+      inputs[`ARG${index}`] = {
+        shadow: {
+          type: 'calc_text',
+          fields: { TEXT: '10' },
+        },
+      };
+    }
+  });
   if (Object.keys(inputs).length) entry.inputs = inputs;
   return entry;
 }

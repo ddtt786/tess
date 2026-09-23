@@ -59,19 +59,61 @@ async function pack(asset: Packable, kind: 'image' | 'sound', files: TarFile[], 
   const filename = assetFilename(`${kind}:${asset.id}:${asset.name}:${bytes.length}`);
   const target = fileUrlFor(kind, filename, ext);
   asset.filename = filename;
-  asset.ext = ext;
   asset.fileurl = target;
-  if (kind === 'image') asset.imageType = ext.slice(1);
+
+  if (kind === 'image') {
+    asset.imageType = ext.slice(1);
+    delete asset.ext;
+    if (ext === '.svg') {
+      const pngTarget = target.replace(/\.svg$/i, '.png');
+      asset.pngurl = pngTarget;
+      if (!packed.has(target)) {
+        packed.add(target);
+        files.push({ name: target, data: bytes });
+      }
+      const raster = await rasterizeSvg(bytes);
+      if (raster) {
+        if (!packed.has(pngTarget)) {
+          packed.add(pngTarget);
+          files.push({ name: pngTarget, data: raster.png });
+        }
+        const thumbTarget = target.replace('/image/', '/thumb/').replace(/\.svg$/i, '.png');
+        if (!packed.has(thumbTarget)) {
+          packed.add(thumbTarget);
+          files.push({ name: thumbTarget, data: raster.thumb });
+        }
+      }
+      return;
+    }
+  } else {
+    asset.ext = ext;
+  }
+
   if (packed.has(target)) return;
   packed.add(target);
   files.push({ name: target, data: bytes });
 
-  if (kind !== 'image' || ext === '.svg') return;
+  if (kind !== 'image') return;
   const thumb = await makeThumbnail(bytes, ext);
   if (thumb) files.push({ name: target.replace('/image/', '/thumb/'), data: thumb });
 }
 
 async function readBytes(url: string): Promise<Uint8Array<ArrayBuffer> | null> {
+  if (url.startsWith('data:')) {
+    const comma = url.indexOf(',');
+    if (comma === -1) return null;
+    const meta = url.slice(5, comma);
+    const data = url.slice(comma + 1);
+    if (meta.includes(';base64')) {
+      const bin = atob(data);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return bytes;
+    } else {
+      const decoded = decodeURIComponent(data);
+      return new TextEncoder().encode(decoded);
+    }
+  }
   try {
     const response = await fetch(url);
     if (!response.ok) return null;
@@ -92,6 +134,42 @@ function extensionOf(url: string, kind: 'image' | 'sound'): string {
   }
   const found = /\.([a-z0-9]+)(?:$|\?)/i.exec(url)?.[1]?.toLowerCase();
   return found ? `.${found}` : kind === 'image' ? '.png' : '.mp3';
+}
+
+async function rasterizeSvg(bytes: Uint8Array): Promise<{ png: Uint8Array; thumb: Uint8Array } | null> {
+  try {
+    const blob = new Blob([bytes], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.src = url;
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+    });
+    URL.revokeObjectURL(url);
+    const width = img.naturalWidth || 480;
+    const height = img.naturalHeight || 270;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
+    const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!pngBlob) return null;
+    const png = new Uint8Array(await pngBlob.arrayBuffer());
+
+    const scale = Math.min(THUMB_BOX / width, THUMB_BOX / height, 1);
+    const tCanvas = document.createElement('canvas');
+    tCanvas.width = Math.max(1, Math.round(width * scale));
+    tCanvas.height = Math.max(1, Math.round(height * scale));
+    tCanvas.getContext('2d')?.drawImage(img, 0, 0, tCanvas.width, tCanvas.height);
+    const thumbBlob = await new Promise<Blob | null>((resolve) => tCanvas.toBlob(resolve, 'image/png'));
+    const thumb = thumbBlob ? new Uint8Array(await thumbBlob.arrayBuffer()) : null;
+
+    return { png, thumb: thumb ?? png };
+  } catch {
+    return null;
+  }
 }
 
 /** Entry keeps a 96px preview beside every raster costume. */

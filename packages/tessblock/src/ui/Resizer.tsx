@@ -3,13 +3,15 @@ import { useEffect } from 'preact/hooks';
 import { beginDrag } from './drag.ts';
 
 const KEY = 'tessblock.sideWidth';
-const MIN = 260;
-const MAX = 560;
+const MIN = 300;
+const MAX = 700;
+const DEFAULT_WIDTH = 420;
 
 export function Resizer() {
   useEffect(() => {
     const saved = Number(localStorage.getItem(KEY));
     if (Number.isFinite(saved) && saved >= MIN) applyWidth(saved);
+    else applyWidth(DEFAULT_WIDTH);
   }, []);
 
   function start(event: PointerEvent) {
@@ -35,5 +37,5 @@ function applyWidth(width: number): void {
 
 function currentWidth(): number {
   const value = getComputedStyle(document.documentElement).getPropertyValue('--side-w');
-  return Number.parseInt(value, 10) || 320;
+  return Number.parseInt(value, 10) || DEFAULT_WIDTH;
 }

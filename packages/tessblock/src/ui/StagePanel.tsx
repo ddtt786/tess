@@ -2,11 +2,11 @@
 import { useSignal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import { currentScene, project } from '../model/store.ts';
-import { start, stop } from '../runtime/run.ts';
+import { relayout, start, stop } from '../runtime/run.ts';
 import { currentSource } from './source.ts';
-import { centerMode, codeOpen, notify } from './state.ts';
+import { codeOpen, notify, stageFullscreen } from './state.ts';
 import { StagePreview } from './StagePreview.tsx';
-import { CenterIcon, PlayIcon, StopIcon } from './icons.tsx';
+import { FlagIcon, MaximizeIcon, MinimizeIcon, StopIcon } from './icons.tsx';
 
 export function StagePanel() {
   const host = useRef<HTMLDivElement>(null);
@@ -14,6 +14,17 @@ export function StagePanel() {
   const busy = useSignal(false);
 
   useEffect(() => () => stop(), []);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && stageFullscreen.value) {
+        stageFullscreen.value = false;
+        if (running.value) setTimeout(() => relayout(), 50);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   async function run() {
     if (!host.current || busy.value) return;
@@ -27,7 +38,11 @@ export function StagePanel() {
       );
       if (!built.project) {
         const first = built.errors[0];
-        notify(first ? `${first.line}:${first.column} ${first.message}` : '작품을 만들 수 없습니다.');
+        notify(
+          first
+            ? `${first.line}:${first.column} ${first.message}`
+            : '작품을 만들 수 없습니다.',
+        );
         codeOpen.value = true;
         return;
       }
@@ -46,27 +61,66 @@ export function StagePanel() {
     host.current?.replaceChildren();
   }
 
+  function setFullscreen(on: boolean) {
+    stageFullscreen.value = on;
+    if (running.value) setTimeout(() => relayout(), 50);
+  }
+
+  const isFs = stageFullscreen.value;
+
   return (
-    <section class="stage-block">
+    <section class={`stage-block ${isFs ? 'is-fullscreen' : ''}`}>
+      {isFs && (
+        <div class="fs-topbar">
+          <div class="fs-controls">
+            {running.value ? (
+              <button class="play stop" onClick={halt}>
+                <StopIcon size={14} /> 정지하기
+              </button>
+            ) : (
+              <button class="play flag-btn" onClick={run} disabled={busy.value}>
+                <FlagIcon size={14} /> 시작하기
+              </button>
+            )}
+          </div>
+          <span class="spacer" />
+          <button
+            class="iconbtn fs-close"
+            title="전체화면 나가기 (ESC)"
+            onClick={() => setFullscreen(false)}
+          >
+            <MinimizeIcon size={15} />
+          </button>
+        </div>
+      )}
+
       <div class="stage-frame">
         {!running.value && <StagePreview />}
         <div class="stage-host" ref={host} tabIndex={0} />
       </div>
-      <div class="stage-controls">
-        {running.value
-          ? <button class="play stop" onClick={halt}><StopIcon size={13} /> 정지하기</button>
-          : <button class="play" onClick={run} disabled={busy.value}><PlayIcon size={13} /> 시작하기</button>}
-        <span class="spacer" style="flex:1" />
-        <button
-          class={`iconbtn ${centerMode.value ? 'on' : ''}`}
-          title="무게중심 옮기기"
-          aria-label="무게중심 옮기기"
-          aria-pressed={centerMode.value}
-          onClick={() => { centerMode.value = !centerMode.value; }}
-        >
-          <CenterIcon />
-        </button>
-      </div>
+
+      {!isFs && (
+        <div class="stage-controls">
+          {running.value ? (
+            <button class="play stop" onClick={halt}>
+              <StopIcon size={13} /> 정지하기
+            </button>
+          ) : (
+            <button class="play flag-btn" onClick={run} disabled={busy.value}>
+              <FlagIcon size={14} /> 시작하기
+            </button>
+          )}
+          <span class="spacer" style="flex:1" />
+          <button
+            class="iconbtn"
+            title="전체화면"
+            aria-label="전체화면"
+            onClick={() => setFullscreen(true)}
+          >
+            <MaximizeIcon size={14} />
+          </button>
+        </div>
+      )}
     </section>
   );
 }

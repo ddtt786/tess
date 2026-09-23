@@ -1,14 +1,68 @@
 /** 소리 tab: sounds uploaded from the computer. */
-import { useRef } from 'preact/hooks';
+import { useSignal } from '@preact/signals';
+import { useEffect, useRef } from 'preact/hooks';
 import { addSound, removeSound, selectedObject } from '../model/store.ts';
 import { resolveAsset, saveAsset } from '../model/assets.ts';
 import { audioDuration, readDataUrl } from '../model/files.ts';
-import { PlayIcon, TrashIcon, UploadIcon } from './icons.tsx';
+import { PlayIcon, StopIcon, TrashIcon, UploadIcon } from './icons.tsx';
 import { notify } from './state.ts';
 
 export function SoundPane() {
   const object = selectedObject.value;
   const upload = useRef<HTMLInputElement>(null);
+  const playingId = useSignal<string | null>(null);
+  const activeAudio = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (activeAudio.current) {
+        activeAudio.current.pause();
+        activeAudio.current = null;
+      }
+    };
+  }, []);
+
+  function togglePlay(soundId: string, url: string) {
+    if (playingId.value === soundId && activeAudio.current) {
+      activeAudio.current.pause();
+      activeAudio.current = null;
+      playingId.value = null;
+      return;
+    }
+    if (activeAudio.current) {
+      activeAudio.current.pause();
+      activeAudio.current = null;
+      playingId.value = null;
+    }
+    try {
+      const audio = new Audio(resolveAsset(url));
+      activeAudio.current = audio;
+      playingId.value = soundId;
+      audio.onended = () => {
+        if (playingId.value === soundId) {
+          playingId.value = null;
+          activeAudio.current = null;
+        }
+      };
+      audio.onerror = () => {
+        notify('소리를 재생하지 못했습니다.');
+        if (playingId.value === soundId) {
+          playingId.value = null;
+          activeAudio.current = null;
+        }
+      };
+      void audio.play().catch(() => {
+        notify('소리를 재생하지 못했습니다.');
+        if (playingId.value === soundId) {
+          playingId.value = null;
+          activeAudio.current = null;
+        }
+      });
+    } catch {
+      notify('소리를 재생하지 못했습니다.');
+      playingId.value = null;
+    }
+  }
 
   async function addFiles(files: FileList | null) {
     if (!object || !files?.length) return;
@@ -52,30 +106,32 @@ export function SoundPane() {
             <tr><th style="width:44px" /><th>이름</th><th style="width:20%">길이</th><th style="width:90px" /></tr>
           </thead>
           <tbody>
-            {object.sounds.map((sound) => (
-              <tr key={sound.id}>
-                <td>
-                  <button
-                    class="iconbtn"
-                    title="들어보기"
-                    onClick={() => {
-                      void new Audio(resolveAsset(sound.url)).play().catch(() => notify('소리를 재생하지 못했습니다.'));
-                    }}
-                  >
-                    <PlayIcon size={13} />
-                  </button>
-                </td>
-                <td>{sound.name}</td>
-                <td class="muted">{sound.duration} 초</td>
-                <td>
-                  <div class="actions">
-                    <button class="btn ghost danger" onClick={() => removeSound(object.id, sound.id)}>
-                      <TrashIcon size={14} />
+            {object.sounds.map((sound) => {
+              const isPlaying = playingId.value === sound.id;
+              return (
+                <tr key={sound.id}>
+                  <td>
+                    <button
+                      class={`iconbtn ${isPlaying ? 'on' : ''}`}
+                      title={isPlaying ? '멈추기' : '들어보기'}
+                      aria-label={isPlaying ? '멈추기' : '들어보기'}
+                      onClick={() => togglePlay(sound.id, sound.url)}
+                    >
+                      {isPlaying ? <StopIcon size={13} /> : <PlayIcon size={13} />}
                     </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td>{sound.name}</td>
+                  <td class="muted">{sound.duration} 초</td>
+                  <td>
+                    <div class="actions">
+                      <button class="btn ghost danger" onClick={() => removeSound(object.id, sound.id)}>
+                        <TrashIcon size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       ) : (

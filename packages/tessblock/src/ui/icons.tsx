@@ -260,3 +260,43 @@ export const SearchIcon = (props: IconProps) => (
     <path d="m10.6 10.6 3 3" />
   </Icon>
 );
+
+export const FlagIcon = (props: IconProps) => (
+  <Icon {...props} fill="currentColor">
+    <path d="M3.2 2.2a.6.6 0 0 1 .6.6v10.4a.6.6 0 1 1-1.2 0V2.8a.6.6 0 0 1 .6-.6Z" stroke="none" />
+    <path d="M3.5 2.8c2.2-1 4.5.8 7 .1 1.2-.3 2.3-.1 2.3.8v5.5c0 .6-.6 1.1-1.2 1.2-2.3.5-4.5-1.1-7.1-.1V2.8Z" stroke="none" />
+  </Icon>
+);
+
+export const MaximizeIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" />
+  </Icon>
+);
+
+export const MinimizeIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M6 2.5v3.5H2.5M10 2.5v3.5h3.5M10 13.5V10h3.5M6 13.5V10H2.5" />
+  </Icon>
+);
+
+export const RotateIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9L2 6M2 2v4h4" />
+  </Icon>
+);
+
+export const SignalIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M3.5 4.5a6.4 6.4 0 0 1 9 0M5.2 6.5a4 4 0 0 1 5.6 0" />
+    <circle cx="8" cy="10" r="1.5" fill="currentColor" stroke="none" />
+  </Icon>
+);
+
+export const PauseIcon = (props: IconProps) => (
+  <Icon {...props} fill="currentColor" stroke="none">
+    <rect x="4" y="3.5" width="2.8" height="9" rx="0.8" />
+    <rect x="9.2" y="3.5" width="2.8" height="9" rx="0.8" />
+  </Icon>
+);
+
