@@ -22,6 +22,9 @@ export const stageFullscreen = signal(false);
 export const functionDraft = signal<FunctionDef | null>(null);
 export const toast = signal<string>('');
 
+/** A long job the whole editor waits on, with its progress (0–1). Null when idle. */
+export const busy = signal<{ step: string; done: number } | null>(null);
+
 let toastTimer: number | undefined;
 
 export function notify(message: string): void {

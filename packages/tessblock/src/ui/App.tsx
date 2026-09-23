@@ -8,7 +8,7 @@ import { Resizer } from './Resizer.tsx';
 import { StagePanel } from './StagePanel.tsx';
 import { useEffect } from 'preact/hooks';
 import { redo, saveFailed, undo } from '../model/store.ts';
-import { codeOpen, toast } from './state.ts';
+import { busy, codeOpen, toast } from './state.ts';
 
 /** Places that keep their own undo: text fields, the block canvas, the painter, a running work. */
 const OWN_UNDO = 'input, textarea, select, [contenteditable="true"], .injectionDiv, .costume-pane, .stage-host';
@@ -50,6 +50,15 @@ export function App() {
       {codeOpen.value && <CodeDrawer />}
       <Dialogs />
       {toast.value && <div class="toast">{toast.value}</div>}
+      {busy.value && (
+        <div class="busy-overlay" role="status" aria-live="polite">
+          <div class="busy-card">
+            <div class="busy-spinner" aria-hidden="true" />
+            <div class="busy-step">{busy.value.step}</div>
+            <div class="busy-bar"><i style={{ width: `${Math.round(busy.value.done * 100)}%` }} /></div>
+          </div>
+        </div>
+      )}
       {saveFailed.value && (
         <div class="toast warn">작품이 너무 커서 자동 저장을 하지 못했습니다. 코드를 .tess 로 저장해 두세요.</div>
       )}

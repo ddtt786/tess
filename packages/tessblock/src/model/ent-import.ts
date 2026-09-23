@@ -9,7 +9,7 @@ import { decompileProject, restoreTableRows } from '../../../decompiler/src/inde
 import type { TarEntry } from '../../../decompiler/src/types.ts';
 import { compileProject } from '../../../compiler/src/index.ts';
 import {
-  convertStack, convertValue, helperFunctions, nameHelperCalls, stackHeight, type BlockJson, type ConvertContext, type EntryBlock,
+  convertStack, convertValue, helperFunctions, warmEntryPatterns, nameHelperCalls, stackHeight, type BlockJson, type ConvertContext, type EntryBlock,
 } from '../blocks/entry-blocks.ts';
 import { DEFINE_BLOCK, PARAM_BOOLEAN, PARAM_VALUE } from '../blocks/function-ids.ts';
 import { safeIdent } from '../codegen/ident.ts';
@@ -25,20 +25,35 @@ export interface EntImportResult {
   missed: Map<string, number>;
 }
 
-export async function loadEntFile(file: File): Promise<EntImportResult> {
-  const { model, missed } = await readEntFile(file);
+/** Reports how far an import has got: what it is doing and how much is done (0–1). */
+export type ImportProgress = (step: string, done: number) => void;
+
+export async function loadEntFile(file: File, onProgress?: ImportProgress): Promise<EntImportResult> {
+  const { model, missed } = await readEntFile(file, onProgress);
   replaceProject(model);
   return { missed };
 }
 
+/** Lets the page paint between the long steps, so the progress shows and the tab stays alive. */
+function breathe(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 /** Builds the editor project an `.ent` holds, without opening it. */
-export async function readEntFile(file: File): Promise<EntImportResult & { model: TessProject }> {
+export async function readEntFile(file: File, onProgress?: ImportProgress): Promise<EntImportResult & { model: TessProject }> {
+  const report = async (step: string, done: number) => {
+    onProgress?.(step, done);
+    await breathe();
+  };
+  await report('파일을 읽는 중', 0.02);
   const entries = await readTar(new Uint8Array(await file.arrayBuffer()));
   const json = entries.find((entry) => /(^|\/)project\.json$/.test(entry.name));
   if (!json) throw new Error('엔트리 작품 파일이 아닙니다.');
   const work = JSON.parse(new TextDecoder().decode(json.data)) as Record<string, unknown>;
 
+  await report('Tess 로 옮기는 중', 0.1);
   const decompiled = decompileProject(work, entries, { inline: true, sizes: true, tableRows: false });
+  await report('블록 구조를 만드는 중', 0.25);
   const compiled = compileProject(decompiled.source, {
     path: 'main.tess',
     name: String(work.name ?? ''),
@@ -52,7 +67,9 @@ export async function readEntFile(file: File): Promise<EntImportResult & { model
   }
   restoreTableRows(compiled.project as never, decompiled.tableRows);
   const assets = new Map(decompiled.assets.map((asset) => [asset.path, asset.data]));
-  return toModel(compiled.project as unknown as CompiledWork, decompiled.source, assets);
+  await report('블록 모양을 익히는 중', 0.4);
+  await warmEntryPatterns();
+  return toModel(compiled.project as unknown as CompiledWork, decompiled.source, assets, report);
 }
 
 // --- tar --------------------------------------------------------------------
@@ -154,6 +171,7 @@ async function toModel(
   work: CompiledWork,
   source: string,
   assets: Map<string, Uint8Array>,
+  report: (step: string, done: number) => Promise<void>,
 ): Promise<{ model: TessProject; missed: Map<string, number> }> {
   const paramNames = functionParamNames(source);
   // The compiler's own helpers come back from the statements that need them.
@@ -179,7 +197,11 @@ async function toModel(
   };
 
   const objects: TessObject[] = [];
-  for (const object of work.objects) objects.push(await toObject(object, keep, ctx));
+  for (const [index, object] of work.objects.entries()) {
+    if (index % 20 === 0) await report('블록으로 옮기는 중', 0.45 + 0.45 * (index / Math.max(1, work.objects.length)));
+    objects.push(await toObject(object, keep, ctx));
+  }
+  await report('함수를 옮기는 중', 0.92);
 
   const variables: VariableDef[] = work.variables
     .filter((variable) => variable.variableType !== 'timer' && variable.variableType !== 'answer')

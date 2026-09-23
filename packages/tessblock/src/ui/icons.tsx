@@ -36,6 +36,26 @@ export const EyeOffIcon = (props: IconProps) => (
   </Icon>
 );
 
+export const PencilIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M10.5 3.5l2 2L6 12H4v-2z" />
+    <path d="M9.5 4.5l2 2" />
+  </Icon>
+);
+
+export const FolderIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.8l1.4 1.6h4.8A1.5 1.5 0 0 1 14 6.1v5.4a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" />
+  </Icon>
+);
+
+export const FilePlusIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M9 2H4.5A1.5 1.5 0 0 0 3 3.5v9A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5V6z" />
+    <path d="M9 2v4h4M8 8v4M6 10h4" />
+  </Icon>
+);
+
 export const LockIcon = (props: IconProps) => (
   <Icon {...props}>
     <rect x="3.5" y="7" width="9" height="6.5" rx="1.6" />

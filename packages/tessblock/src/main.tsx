@@ -1,6 +1,7 @@
 import { render } from 'preact';
 import './ui/style.css';
 import { openAssets } from './model/assets.ts';
+import { restoreFolderState } from './model/folder.ts';
 import { App } from './ui/App.tsx';
 
 const host = document.getElementById('app');
@@ -8,6 +9,8 @@ const host = document.getElementById('app');
 // draws with a missing picture.
 void openAssets().then(() => {
   if (host) render(<App />, host);
+  // The folder used last time is shown, to be reconnected with one click.
+  void restoreFolderState();
 });
 
 if (import.meta.env.DEV) {

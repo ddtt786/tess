@@ -321,6 +321,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   renderer.overlayView?.bind({
     variables: vm.variables,
     ownerName: (objectId) => vm.targetOf(objectId)?.name ?? null,
+    ownerScene: (objectId) => vm.targetOf(objectId)?.sceneId ?? null,
     answer: () => vm.answer,
     answerVisible: () => vm.answerVisible,
     timer: () => vm.timerValue(),

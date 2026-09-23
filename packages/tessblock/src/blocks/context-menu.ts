@@ -52,13 +52,11 @@ export function installContextMenu(): void {
       // The copy goes where the pointer is, by its own top left, however long
       // the stack under it happens to be.
       const workspace = block.workspace as Blockly.WorkspaceSvg;
-      const data = Blockly.clipboard.copy(block as Blockly.BlockSvg);
-      if (data)
-        Blockly.clipboard.paste(
-          data,
-          workspace,
-          pointerPoint(workspace, open) ?? location,
-        );
+      Blockly.clipboard.paste(
+        stackCopyData(block as Blockly.BlockSvg),
+        workspace,
+        pointerPoint(workspace, open) ?? location,
+      );
     },
   });
 
@@ -72,10 +70,10 @@ export function installContextMenu(): void {
       const block = scope.block;
       if (!block) return;
       const workspace = block.workspace as Blockly.WorkspaceSvg;
-      Blockly.clipboard.copy(
-        block as Blockly.BlockSvg,
-        pointerPoint(workspace, open) ?? location,
-      );
+      Blockly.clipboard.setLastCopiedData(stackCopyData(block as Blockly.BlockSvg));
+      Blockly.clipboard.setLastCopiedWorkspace(workspace);
+      const at = pointerPoint(workspace, open) ?? location;
+      if (at) Blockly.clipboard.setLastCopiedLocation(at);
     },
   });
 
@@ -211,6 +209,8 @@ export function installContextMenu(): void {
     const originalCreateBubble = (Blockly.icons.CommentIcon.prototype as any)
       .createBubble;
     (Blockly.icons.CommentIcon.prototype as any).createBubble = function () {
+      // Showing waits for a render; the block may be gone by then.
+      if ((this as any).sourceBlock?.isDisposed?.()) return;
       originalCreateBubble.call(this);
       const bubble = (this as any).textInputBubble;
       if (bubble) {
@@ -449,6 +449,17 @@ function pointerPoint(
     menuEvent.clientY,
   );
   return Blockly.utils.svgMath.screenToWsCoordinates(workspace, screen);
+}
+
+/** Copy data for a block and every block stacked under it, the way entry copies. */
+function stackCopyData(block: Blockly.BlockSvg): Blockly.clipboard.BlockCopyData {
+  const blockState = Blockly.serialization.blocks.save(block, {
+    addCoordinates: true,
+    addNextBlocks: true,
+  }) as Blockly.serialization.blocks.State;
+  const typeCounts: Record<string, number> = {};
+  for (const each of block.getDescendants(false)) typeCounts[each.type] = (typeCounts[each.type] ?? 0) + 1;
+  return { paster: Blockly.clipboard.BlockPaster.TYPE, blockState, typeCounts };
 }
 
 function copyable(block: Blockly.BlockSvg | undefined): boolean {

@@ -13,6 +13,8 @@ export function StagePanel() {
   const running = useSignal(false);
   const paused = useSignal(false);
   const busy = useSignal(false);
+  /** Share of costumes and sounds in while a start is loading; null when idle. */
+  const progress = useSignal<number | null>(null);
 
   useEffect(() => () => stop(), []);
 
@@ -30,12 +32,16 @@ export function StagePanel() {
   async function run() {
     if (!host.current || busy.value) return;
     busy.value = true;
+    progress.value = 0;
+    // Let the loading bar paint before the compile holds the thread.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     try {
       const built = await start(
         host.current,
         currentSource(),
         project.peek().name,
         currentScene.peek()?.name ?? '',
+        (loaded, total) => { progress.value = total ? loaded / total : 1; },
       );
       if (!built.project) {
         const first = built.errors[0];
@@ -54,6 +60,7 @@ export function StagePanel() {
       notify(error instanceof Error ? error.message : '실행하지 못했습니다.');
     } finally {
       busy.value = false;
+      progress.value = null;
     }
   }
 
@@ -77,26 +84,32 @@ export function StagePanel() {
 
   const isFs = stageFullscreen.value;
 
+  const controls = running.value ? (
+    <>
+      <button
+        class="play pause"
+        onClick={togglePause}
+        title={paused.value ? '계속하기' : '일시정지'}
+        aria-label={paused.value ? '계속하기' : '일시정지'}
+      >
+        {paused.value ? <PlayIcon size={20} /> : <PauseIcon size={20} />}
+      </button>
+      <button class="play stop" onClick={halt} title="정지하기" aria-label="정지하기">
+        <StopIcon size={20} />
+      </button>
+    </>
+  ) : (
+    <button class="play flag-btn" onClick={run} disabled={busy.value} title="시작하기" aria-label="시작하기">
+      <FlagIcon size={22} />
+    </button>
+  );
+
   return (
     <section class={`stage-block ${isFs ? 'is-fullscreen' : ''}`}>
       {isFs && (
         <div class="fs-topbar">
           <div class="fs-controls">
-            {running.value ? (
-              <>
-                <button class="play pause" onClick={togglePause} title={paused.value ? '계속하기' : '일시정지'}>
-                  {paused.value ? <PlayIcon size={14} /> : <PauseIcon size={14} />}
-                  {paused.value ? '계속하기' : '일시정지'}
-                </button>
-                <button class="play stop" onClick={halt}>
-                  <StopIcon size={14} /> 정지하기
-                </button>
-              </>
-            ) : (
-              <button class="play flag-btn" onClick={run} disabled={busy.value}>
-                <FlagIcon size={14} /> 시작하기
-              </button>
-            )}
+            {controls}
           </div>
           <span class="spacer" />
           <button
@@ -112,25 +125,16 @@ export function StagePanel() {
       <div class="stage-frame">
         {!running.value && <StagePreview />}
         <div class="stage-host" ref={host} tabIndex={0} />
+        {progress.value !== null && (
+          <div class="stage-loading" aria-live="polite">
+            <div class="stage-loading-bar"><i style={{ width: `${Math.round(progress.value * 100)}%` }} /></div>
+          </div>
+        )}
       </div>
 
       {!isFs && (
         <div class="stage-controls">
-          {running.value ? (
-            <>
-              <button class="play pause" onClick={togglePause} title={paused.value ? '계속하기' : '일시정지'}>
-                {paused.value ? <PlayIcon size={13} /> : <PauseIcon size={13} />}
-                {paused.value ? '계속하기' : '일시정지'}
-              </button>
-              <button class="play stop" onClick={halt}>
-                <StopIcon size={13} /> 정지하기
-              </button>
-            </>
-          ) : (
-            <button class="play flag-btn" onClick={run} disabled={busy.value}>
-              <FlagIcon size={14} /> 시작하기
-            </button>
-          )}
+          {controls}
           <span class="spacer" style="flex:1" />
           <button
             class="iconbtn"

@@ -194,6 +194,7 @@ export class Overlay {
   private timerShown: () => boolean = () => false;
   private currentScene: () => string = () => '';
   private ownerName: (objectId: string) => string | null = () => null;
+  private ownerScene: (objectId: string) => string | null = () => null;
   /** The table window, while one is open. */
   private readonly tableLayer = new Container();
   private tableView: TableView | null = null;
@@ -215,6 +216,8 @@ export class Overlay {
     variables: Variable[];
     /** `Entry.container.getObject(...)` — 오브젝트 변수 이름 앞에 붙는 이름. */
     ownerName?: (objectId: string) => string | null;
+    /** The scene an object variable's owner is in; its box shows only there. */
+    ownerScene?: (objectId: string) => string | null;
     answer: () => string | number;
     answerVisible: () => boolean;
     timer: () => number;
@@ -223,6 +226,7 @@ export class Overlay {
   }): void {
     this.variables = options.variables;
     this.ownerName = options.ownerName ?? (() => null);
+    this.ownerScene = options.ownerScene ?? (() => null);
     this.answerValue = options.answer;
     this.answerShown = options.answerVisible;
     this.timerValue = options.timer;
@@ -965,6 +969,13 @@ export class Overlay {
     return text;
   }
 
+  /** entry shows an object's variable box only in the scene its object is in. */
+  private inCurrentScene(variable: Variable): boolean {
+    if (!variable.objectId) return true;
+    const scene = this.ownerScene(variable.objectId);
+    return scene === null || scene === this.currentScene();
+  }
+
   flush(): void {
     this.drawTable();
     for (const [entity, view] of this.dialogs) {
@@ -976,7 +987,7 @@ export class Overlay {
         continue;
       }
       let view = this.monitors.get(variable);
-      if (!variable.visible) {
+      if (!variable.visible || !this.inCurrentScene(variable)) {
         if (view) {
           view.root.visible = false;
         }

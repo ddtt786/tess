@@ -1,12 +1,15 @@
 /** Properties: variables, lists, signals, tables and functions of the project. */
 import { useSignal } from '@preact/signals';
+import { useRef } from 'preact/hooks';
+import { beginDrag } from './drag.ts';
 import {
   addSignal, addTable, project, removeFunction, removeSignal, removeTable,
   removeVariable, selectedObjectId, updateFunction, updateSignal, updateTable, updateVariable,
 } from '../model/store.ts';
 import { newId } from '../model/ids.ts';
 import type { StorageScope, VariableDef } from '../model/types.ts';
-import { ArrowDownIcon, ArrowUpIcon, PlusIcon, TrashIcon } from './icons.tsx';
+import { EyeIcon, EyeOffIcon, GripIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.tsx';
+import { InlineName } from './InlineName.tsx';
 import { dialog, functionDraft, pickedList, propertyTab, type PropertyTab } from './state.ts';
 
 const TABS: Array<[PropertyTab, string]> = [
@@ -45,13 +48,23 @@ function VariableTable() {
   const allVars = project.value.variables.filter((variable) => variable.kind === 'variable');
   const globalVars = allVars.filter((variable) => !variable.owner);
   const localVars = allVars.filter((variable) => variable.owner === currentObjId);
+  const picked = useSignal('');
+
+  const row = (variable: VariableDef) => (
+    <VariableRow
+      key={variable.id}
+      variable={variable}
+      open={picked.value === variable.id}
+      onPick={() => { picked.value = picked.value === variable.id ? '' : variable.id; }}
+    />
+  );
 
   return (
     <>
       <div class="sheet-head">
         <div>
           <h3>변수</h3>
-          <p class="sub">전역 변수와 현재 오브젝트의 지역 변수를 관리합니다.</p>
+          <p class="sub">눌러서 처음 값을 고치고, 두 번 눌러 이름을 바꿉니다.</p>
         </div>
         <span class="spacer" />
         <button class="btn primary" onClick={() => { dialog.value = 'variable'; }}>
@@ -59,129 +72,89 @@ function VariableTable() {
         </button>
       </div>
 
-      <div class="var-sections" style="display:flex; flex-direction:column; gap:24px;">
-        <div>
-          <div class="sub-head" style="margin-bottom:8px;">
-            <strong style="font-size:13px; color:var(--text);">전역 변수</strong>
-            <span class="muted" style="font-size:12px; margin-left:8px;">모든 오브젝트에서 사용 가능</span>
-          </div>
-          <table class="tbl">
-            <thead>
-              <tr>
-                <th style="width:34%">이름</th>
-                <th>처음 값</th>
-                <th style="width:20%">저장 방식</th>
-                <th style="width:130px" />
-              </tr>
-            </thead>
-            <tbody>
-              {globalVars.map((variable) => <GlobalVariableRow key={variable.id} variable={variable} />)}
-              {!globalVars.length && <tr><td colSpan={4} class="muted">전역 변수가 없습니다.</td></tr>}
-            </tbody>
-          </table>
-        </div>
+      <div class="rec-list">
+        <div class="rec-group">전역 변수 <span class="muted">모든 오브젝트</span></div>
+        {globalVars.map(row)}
+        {!globalVars.length && <div class="rec-empty">전역 변수가 없습니다.</div>}
 
-        <div>
-          <div class="sub-head" style="margin-bottom:8px;">
-            <strong style="font-size:13px; color:var(--text);">지역 변수</strong>
-            <span class="muted" style="font-size:12px; margin-left:8px;">
-              {currentObj ? `${currentObj.name} 오브젝트 전용` : '선택된 오브젝트 없음'}
-            </span>
-          </div>
-          <table class="tbl">
-            <thead>
-              <tr>
-                <th style="width:40%">이름</th>
-                <th>처음 값</th>
-                <th style="width:130px" />
-              </tr>
-            </thead>
-            <tbody>
-              {localVars.map((variable) => <LocalVariableRow key={variable.id} variable={variable} />)}
-              {!localVars.length && <tr><td colSpan={3} class="muted">지역 변수가 없습니다.</td></tr>}
-            </tbody>
-          </table>
-        </div>
+        <div class="rec-group">지역 변수 <span class="muted">{currentObj ? `${currentObj.name} 전용` : '선택된 오브젝트 없음'}</span></div>
+        {localVars.map(row)}
+        {!localVars.length && <div class="rec-empty">지역 변수가 없습니다.</div>}
       </div>
     </>
   );
 }
 
-function GlobalVariableRow({ variable }: { variable: VariableDef }) {
+function VariableRow({ variable, open, onPick }: { variable: VariableDef; open: boolean; onPick: () => void }) {
   return (
-    <tr>
-      <td>
-        <input
-          class="input"
+    <div class={`rec ${open ? 'on' : ''}`}>
+      <div class="rec-row" onClick={(event) => { if (event.detail < 2) onPick(); }}>
+        <InlineName
+          class="rec-name"
           value={variable.name}
-          aria-label="변수 이름"
-          onInput={(event) => updateVariable(variable.id, { name: (event.target as HTMLInputElement).value })}
+          onCommit={(name) => updateVariable(variable.id, { name })}
         />
-      </td>
-      <td>
-        <input
-          class="input"
-          value={String(variable.value)}
-          aria-label="처음 값"
-          onInput={(event) => updateVariable(variable.id, { value: (event.target as HTMLInputElement).value })}
-        />
-      </td>
-      <td>
-        <select
-          class="select"
-          value={variable.scope}
-          aria-label="저장 방식"
-          onChange={(event) => updateVariable(variable.id, { scope: (event.target as HTMLSelectElement).value as StorageScope })}
+        <span class="rec-meta">{String(variable.value)}</span>
+        {variable.scope !== 'local' && <span class="tag">{variable.scope === 'shared' ? '공유' : '실시간'}</span>}
+        <VisibilityButton variable={variable} />
+        <button
+          class="iconbtn plain danger"
+          title="삭제"
+          aria-label="삭제"
+          onClick={(event) => { event.stopPropagation(); removeVariable(variable.id); }}
         >
-          <option value="local">기본</option>
-          <option value="shared">공유</option>
-          <option value="realtime">실시간</option>
-        </select>
-      </td>
-      <td>
-        <div class="actions">
-          <button class="btn ghost" onClick={() => updateVariable(variable.id, { visible: !variable.visible })}>
-            {variable.visible ? '보임' : '숨김'}
-          </button>
-          <button class="btn ghost danger" title="삭제" onClick={() => removeVariable(variable.id)}>
-            <TrashIcon size={14} />
-          </button>
+          <TrashIcon size={14} />
+        </button>
+      </div>
+      {open && (
+        <div class="rec-editor">
+          <label class="f">
+            <span>처음 값</span>
+            <input
+              class="input"
+              value={String(variable.value)}
+              onInput={(event) => updateVariable(variable.id, { value: (event.target as HTMLInputElement).value })}
+            />
+          </label>
+          {!variable.owner && (
+            <label class="f">
+              <span>저장 방식</span>
+              <ScopeSelect variable={variable} />
+            </label>
+          )}
         </div>
-      </td>
-    </tr>
+      )}
+    </div>
   );
 }
 
-function LocalVariableRow({ variable }: { variable: VariableDef }) {
+/** Whether the variable or list box shows on the stage. */
+function VisibilityButton({ variable }: { variable: VariableDef }) {
   return (
-    <tr>
-      <td>
-        <input
-          class="input"
-          value={variable.name}
-          aria-label="변수 이름"
-          onInput={(event) => updateVariable(variable.id, { name: (event.target as HTMLInputElement).value })}
-        />
-      </td>
-      <td>
-        <input
-          class="input"
-          value={String(variable.value)}
-          aria-label="처음 값"
-          onInput={(event) => updateVariable(variable.id, { value: (event.target as HTMLInputElement).value })}
-        />
-      </td>
-      <td>
-        <div class="actions">
-          <button class="btn ghost" onClick={() => updateVariable(variable.id, { visible: !variable.visible })}>
-            {variable.visible ? '보임' : '숨김'}
-          </button>
-          <button class="btn ghost danger" title="삭제" onClick={() => removeVariable(variable.id)}>
-            <TrashIcon size={14} />
-          </button>
-        </div>
-      </td>
-    </tr>
+    <button
+      class={`iconbtn plain ${variable.visible ? 'on' : ''}`}
+      title={variable.visible ? '무대에 보임' : '무대에 숨김'}
+      aria-label={variable.visible ? '숨기기' : '보이기'}
+      aria-pressed={variable.visible}
+      onClick={(event) => { event.stopPropagation(); updateVariable(variable.id, { visible: !variable.visible }); }}
+    >
+      {variable.visible ? <EyeIcon size={15} /> : <EyeOffIcon size={15} />}
+    </button>
+  );
+}
+
+function ScopeSelect({ variable }: { variable: VariableDef }) {
+  return (
+    <select
+      class="select"
+      value={variable.scope}
+      aria-label="저장 방식"
+      onChange={(event) => updateVariable(variable.id, { scope: (event.target as HTMLSelectElement).value as StorageScope })}
+    >
+      <option value="local">기본</option>
+      <option value="shared">공유</option>
+      <option value="realtime">실시간</option>
+    </select>
   );
 }
 
@@ -199,6 +172,37 @@ function ListEditor() {
 
   function setItems(items: Array<string | number>) {
     if (current) updateVariable(current.id, { array: items });
+  }
+
+  const itemList = useRef<HTMLOListElement>(null);
+  const dragFrom = useSignal<number | null>(null);
+  const dragTo = useSignal<number | null>(null);
+
+  /** Drags an item by its grip; the row under the pointer is where it lands. */
+  function startItemDrag(event: PointerEvent, index: number) {
+    event.preventDefault();
+    beginDrag(event, {
+      onMove(moved) {
+        dragFrom.value = index;
+        const rows = [...(itemList.current?.children ?? [])] as HTMLElement[];
+        const target = rows.findIndex((row) => {
+          const box = row.getBoundingClientRect();
+          return moved.clientY < box.bottom;
+        });
+        dragTo.value = target < 0 ? rows.length - 1 : target;
+      },
+      onEnd() {
+        const from = dragFrom.value;
+        const to = dragTo.value;
+        dragFrom.value = null;
+        dragTo.value = null;
+        if (!current || from === null || to === null || from === to) return;
+        const next = [...current.array];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved!);
+        setItems(next);
+      },
+    });
   }
 
   return (
@@ -269,26 +273,33 @@ function ListEditor() {
               {!current.owner && (
                 <label class="f">
                   <span>저장 방식</span>
-                  <select
-                    class="select"
-                    value={current.scope}
-                    aria-label="저장 방식"
-                    onChange={(event) => updateVariable(current.id, { scope: (event.target as HTMLSelectElement).value as StorageScope })}
-                  >
-                    <option value="local">기본</option>
-                    <option value="shared">공유</option>
-                    <option value="realtime">실시간</option>
-                  </select>
+                  <ScopeSelect variable={current} />
                 </label>
               )}
-              <button class="btn ghost danger" title="리스트 삭제" onClick={() => removeVariable(current.id)}>
-                <TrashIcon size={14} /> 삭제
+              <VisibilityButton variable={current} />
+              <button class="iconbtn plain danger" title="리스트 삭제" aria-label="리스트 삭제" onClick={() => removeVariable(current.id)}>
+                <TrashIcon size={15} />
               </button>
             </div>
 
-            <ol class="item-list">
+            <ol class="item-list" ref={itemList}>
               {current.array.map((item, index) => (
-                <li key={index}>
+                <li
+                  key={index}
+                  class={[
+                    dragFrom.value === index ? 'dragging' : '',
+                    dragTo.value === index && dragFrom.value !== null && dragFrom.value !== index
+                      ? (dragTo.value > dragFrom.value ? 'drop-after' : 'drop-before')
+                      : '',
+                  ].join(' ')}
+                >
+                  <span
+                    class="item-grip"
+                    title="끌어서 순서 바꾸기"
+                    onPointerDown={(event) => startItemDrag(event, index)}
+                  >
+                    <GripIcon size={14} />
+                  </span>
                   <span class="item-no">{index + 1}</span>
                   <input
                     class="input"
@@ -300,22 +311,6 @@ function ListEditor() {
                       setItems(next);
                     }}
                   />
-                  <button
-                    class="iconbtn plain"
-                    title="위로"
-                    disabled={index === 0}
-                    onClick={() => setItems(swap(current.array, index, index - 1))}
-                  >
-                    <ArrowUpIcon size={14} />
-                  </button>
-                  <button
-                    class="iconbtn plain"
-                    title="아래로"
-                    disabled={index === current.array.length - 1}
-                    onClick={() => setItems(swap(current.array, index, index + 1))}
-                  >
-                    <ArrowDownIcon size={14} />
-                  </button>
                   <button
                     class="iconbtn plain"
                     title="이 항목 삭제"
@@ -340,13 +335,6 @@ function ListEditor() {
   );
 }
 
-function swap(items: Array<string | number>, from: number, to: number): Array<string | number> {
-  const next = [...items];
-  const moved = next[from]!;
-  next[from] = next[to]!;
-  next[to] = moved;
-  return next;
-}
 
 // --- signals ----------------------------------------------------------------
 
@@ -357,38 +345,26 @@ function SignalTable() {
       <div class="sheet-head">
         <div>
           <h3>신호</h3>
-          <p class="sub">신호를 보내고 받는 블록에서 고를 수 있습니다. 이름을 직접 수정할 수 있습니다.</p>
+          <p class="sub">신호를 보내고 받는 블록에서 고릅니다. 두 번 눌러 이름을 바꿉니다.</p>
         </div>
         <span class="spacer" />
         <button class="btn primary" onClick={() => addSignal(`신호${signals.length + 1}`)}>
           <PlusIcon /> 신호 추가
         </button>
       </div>
-      <table class="tbl">
-        <thead><tr><th>이름</th><th style="width:80px" /></tr></thead>
-        <tbody>
-          {signals.map((signal) => (
-            <tr key={signal.id}>
-              <td>
-                <input
-                  class="input"
-                  value={signal.name}
-                  aria-label="신호 이름"
-                  onInput={(event) => updateSignal(signal.id, { name: (event.target as HTMLInputElement).value })}
-                />
-              </td>
-              <td>
-                <div class="actions">
-                  <button class="btn ghost danger" title="삭제" onClick={() => removeSignal(signal.id)}>
-                    <TrashIcon size={14} />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-          {!signals.length && <tr><td colSpan={2} class="muted">아직 없습니다.</td></tr>}
-        </tbody>
-      </table>
+      <div class="rec-list">
+        {signals.map((signal) => (
+          <div class="rec" key={signal.id}>
+            <div class="rec-row">
+              <InlineName class="rec-name" value={signal.name} onCommit={(name) => updateSignal(signal.id, { name })} />
+              <button class="iconbtn plain danger" title="삭제" aria-label="삭제" onClick={() => removeSignal(signal.id)}>
+                <TrashIcon size={14} />
+              </button>
+            </div>
+          </div>
+        ))}
+        {!signals.length && <div class="rec-empty">아직 없습니다.</div>}
+      </div>
     </>
   );
 }
@@ -556,7 +532,7 @@ function FunctionTable() {
       <div class="sheet-head">
         <div>
           <h3>함수</h3>
-          <p class="sub">매개변수를 붙여 만들면 모든 오브젝트의 함수 꾸러미에 나타납니다. 이름을 직접 수정할 수 있습니다.</p>
+          <p class="sub">모든 오브젝트의 함수 꾸러미에 나타납니다. 두 번 눌러 이름을 바꿉니다.</p>
         </div>
         <span class="spacer" />
         <button
@@ -568,35 +544,34 @@ function FunctionTable() {
           <PlusIcon /> 함수 만들기
         </button>
       </div>
-      <table class="tbl">
-        <thead><tr><th style="width:32%">이름</th><th>매개변수</th><th style="width:130px" /></tr></thead>
-        <tbody>
-          {functions.map((definition) => (
-            <tr key={definition.id}>
-              <td>
-                <input
-                  class="input"
-                  value={definition.name}
-                  aria-label="함수 이름"
-                  onInput={(event) => updateFunction(definition.id, { name: (event.target as HTMLInputElement).value })}
-                />
-              </td>
-              <td class="muted">
-                {definition.params.map((param) => `${param.name}${param.kind === 'boolean' ? '?' : ''}`).join(', ') || '없음'}
-              </td>
-              <td>
-                <div class="actions">
-                  <button class="btn ghost" onClick={() => { functionDraft.value = structuredClone(definition); }}>블록 편집</button>
-                  <button class="btn ghost danger" title="삭제" onClick={() => removeFunction(definition.id)}>
-                    <TrashIcon size={14} />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-          {!functions.length && <tr><td colSpan={3} class="muted">아직 없습니다.</td></tr>}
-        </tbody>
-      </table>
+      <div class="rec-list">
+        {functions.map((definition) => (
+          <div class="rec" key={definition.id}>
+            <div class="rec-row">
+              <InlineName
+                class="rec-name"
+                value={definition.name}
+                onCommit={(name) => updateFunction(definition.id, { name })}
+              />
+              <span class="rec-meta">
+                {definition.params.map((param) => `${param.name}${param.kind === 'boolean' ? '?' : ''}`).join(', ') || '매개변수 없음'}
+              </span>
+              <button
+                class="iconbtn plain"
+                title="블록 편집"
+                aria-label="블록 편집"
+                onClick={() => { functionDraft.value = structuredClone(definition); }}
+              >
+                <PencilIcon size={15} />
+              </button>
+              <button class="iconbtn plain danger" title="삭제" aria-label="삭제" onClick={() => removeFunction(definition.id)}>
+                <TrashIcon size={14} />
+              </button>
+            </div>
+          </div>
+        ))}
+        {!functions.length && <div class="rec-empty">아직 없습니다.</div>}
+      </div>
     </>
   );
 }

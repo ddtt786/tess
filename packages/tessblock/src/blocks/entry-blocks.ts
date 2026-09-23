@@ -105,12 +105,42 @@ export function entryPatterns(): Map<string, Pattern[]> {
   return learned;
 }
 
+/** Variants compiled together; small enough that each batch is a short pause. */
+const BATCH = 250;
+
 function learnPatterns(): Map<string, Pattern[]> {
+  const { model, variants } = prepareLearning();
+  const patterns = new Map<string, Pattern[]>();
+  for (let at = 0; at < variants.length; at += BATCH) learnBatch(variants.slice(at, at + BATCH), model, patterns);
+  return finishLearning(patterns);
+}
+
+/** The same as `entryPatterns`, a batch at a time, giving the page room to paint in between. */
+export async function warmEntryPatterns(): Promise<void> {
+  if (learned) return;
+  const { model, variants } = prepareLearning();
+  const patterns = new Map<string, Pattern[]>();
+  for (let at = 0; at < variants.length; at += BATCH) {
+    learnBatch(variants.slice(at, at + BATCH), model, patterns);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (learned) return;
+  }
+  learned = finishLearning(patterns);
+}
+
+function prepareLearning(): { model: TessProject; variants: Variant[] } {
   installBlocks();
   const model = markerModel();
-  let variants = allSpecs().flatMap((spec) => variantsOf(spec, model));
-  const patterns = new Map<string, Pattern[]>();
+  return { model, variants: allSpecs().flatMap((spec) => variantsOf(spec, model)) };
+}
 
+function finishLearning(patterns: Map<string, Pattern[]>): Map<string, Pattern[]> {
+  for (const list of patterns.values()) list.sort((a, b) => b.weight - a.weight);
+  return patterns;
+}
+
+function learnBatch(batch: Variant[], model: TessProject, patterns: Map<string, Pattern[]>): void {
+  let variants = batch;
   // A variant that does not compile is dropped and the rest compiled again.
   for (let attempt = 0; attempt < 40 && variants.length; attempt += 1) {
     const host = model.objects[0]!;
@@ -126,15 +156,13 @@ function learnPatterns(): Map<string, Pattern[]> {
     if (!compiled.project) {
       const bad = new Set(compiled.errors.map((error) => variantAtLine(source, error.line)));
       bad.delete(-1);
-      if (!bad.size) break;
+      if (!bad.size) return;
       variants = variants.filter((_, index) => !bad.has(index));
       continue;
     }
     collectPatterns(compiled.project as never, variants, patterns);
-    break;
+    return;
   }
-  for (const list of patterns.values()) list.sort((a, b) => b.weight - a.weight);
-  return patterns;
 }
 
 /** The variant a source line belongs to: the next tag assignment below it. */

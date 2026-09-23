@@ -375,15 +375,6 @@ define(
     code: (a) => [a.INFO, Order.ATOMIC],
   },
   {
-    type: 'calc_device',
-    category: 'calc',
-    message: '기기 종류',
-    args: [],
-    shape: 'value',
-    order: Order.ATOMIC,
-    code: () => ['device', Order.ATOMIC],
-  },
-  {
     type: 'calc_block_count_all',
     category: 'calc',
     message: '전체 블록 수',

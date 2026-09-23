@@ -9,23 +9,23 @@ import type { Category } from './spec.ts';
 
 export const CATEGORY_COLOURS: Record<Category, string> = {
   start: '#22b45a',
-  flow: '#14b3a4',
+  flow: '#3b9cf6',
   moving: '#6366f1',
   looks: '#ec4899',
   brush: '#f97316',
   sound: '#a855f7',
-  judge: '#3b82f6',
+  judge: '#2556d6',
   calc: '#f2a007',
   data: '#f43f5e',
   analysis: '#64748b',
-  text: '#0cb2cf',
+  text: '#14b3a4',
   expansion: '#65b30f',
   func: '#d946ef',
 };
 
 /** Line icons for the palette, drawn in each category's colour through a mask. */
 const CATEGORY_ICONS: Record<Category, string> = {
-  start: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
+  start: '<path d="M6.5 21V4"/><path d="M6.5 4h11l-2 4 2 4h-11"/>',
   flow: '<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M6 8.5v1.5a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V8.5M12 13v2.5"/>',
   moving: '<path d="M4 8h14l-3-3M20 16H6l3 3"/>',
   looks: '<circle cx="8" cy="8" r="4"/><path d="M14 20h7l-3.5-6z"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M15 4h5v5h-5z"/>',

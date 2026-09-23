@@ -3,16 +3,17 @@ import { useSignal } from '@preact/signals';
 import { useRef } from 'preact/hooks';
 import {
   addScene, currentScene, duplicateScene, project, removeScene, renameScene, reorderScene, selectScene,
-  setProjectName,
+  newProject, setProjectName,
 } from '../model/store.ts';
+import { canUseFolders, detachFolder, folderState, openFolder, reconnectFolder, type FolderResult } from '../model/folder.ts';
 import { downloadProject, loadProjectFile } from '../model/file-io.ts';
 import { loadEntFile } from '../model/ent-import.ts';
 import { buildEnt } from '../runtime/ent.ts';
 import { currentSource } from './source.ts';
 import { beginDrag } from './drag.ts';
-import { CodeIcon, CopyIcon, PlusIcon, UploadIcon } from './icons.tsx';
+import { CodeIcon, CopyIcon, FilePlusIcon, FolderIcon, PlusIcon, UploadIcon } from './icons.tsx';
 import { InlineName } from './InlineName.tsx';
-import { codeOpen, notify } from './state.ts';
+import { busy, codeOpen, notify } from './state.ts';
 
 export function Topbar() {
   const model = project.value;
@@ -41,6 +42,49 @@ export function Topbar() {
       notify(error instanceof Error ? error.message : '.ent 를 만들지 못했습니다.');
     } finally {
       packing.value = false;
+    }
+  }
+
+  function startNew() {
+    detachFolder();
+    newProject();
+    notify('새 작품을 만들었습니다. Ctrl+Z 로 되돌릴 수 있습니다.');
+  }
+
+  /** An entry work, with the progress shown over the editor while it is turned into blocks. */
+  async function importEnt(picked: File) {
+    busy.value = { step: '엔트리 작품을 여는 중', done: 0 };
+    try {
+      const { missed } = await loadEntFile(picked, (step, done) => { busy.value = { step, done }; });
+      notify(entSummary(missed));
+    } finally {
+      busy.value = null;
+    }
+  }
+
+  async function pickFolder() {
+    try {
+      busy.value = { step: '폴더를 여는 중', done: 0.3 };
+      const result = await openFolder();
+      notify(FOLDER_MESSAGES[result]);
+    } catch (error) {
+      if ((error as DOMException)?.name !== 'AbortError') {
+        notify(error instanceof Error ? error.message : '폴더를 열지 못했습니다.');
+      }
+    } finally {
+      busy.value = null;
+    }
+  }
+
+  async function reconnect() {
+    try {
+      busy.value = { step: '폴더에 다시 연결하는 중', done: 0.3 };
+      const result = await reconnectFolder();
+      if (result) notify(FOLDER_MESSAGES[result]);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '폴더에 연결하지 못했습니다.');
+    } finally {
+      busy.value = null;
     }
   }
 
@@ -145,6 +189,25 @@ export function Topbar() {
         </button>
       </nav>
       <span class="spacer" />
+      <button class="btn" title="새 작품 만들기 (Ctrl+Z 로 되돌릴 수 있습니다)" onClick={startNew}>
+        <FilePlusIcon /> 새로 만들기
+      </button>
+      {canUseFolders && (
+        folderState.value ? (
+          <button
+            class={`btn folder-chip ${folderState.value.connected ? 'on' : 'off'}`}
+            title={folderState.value.connected ? '이 폴더에 바로 저장하고 있습니다. 누르면 다른 폴더를 엽니다.' : '다시 연결하기'}
+            onClick={() => void (folderState.value?.connected ? pickFolder() : reconnect())}
+          >
+            <FolderIcon /> {folderState.value.name}
+            {!folderState.value.connected && <span class="chip-note">다시 연결</span>}
+          </button>
+        ) : (
+          <button class="btn" title="폴더를 열어 그 안에서 바로 작업하기" onClick={() => void pickFolder()}>
+            <FolderIcon /> 폴더 열기
+          </button>
+        )
+      )}
       <button class="btn" title="작품 파일 불러오기" onClick={() => file.current?.click()}>
         <UploadIcon /> 불러오기
       </button>
@@ -167,9 +230,10 @@ export function Topbar() {
           (event.target as HTMLInputElement).value = '';
           if (!picked) return;
           const fail = (error: unknown) => notify(error instanceof Error ? error.message : '불러오지 못했습니다.');
+          // A file opened on its own is not the folder's work any more.
+          detachFolder();
           if (/\.ent$/i.test(picked.name)) {
-            notify('엔트리 작품을 옮기는 중…');
-            void loadEntFile(picked).then(({ missed }) => notify(entSummary(missed))).catch(fail);
+            void importEnt(picked).catch(fail);
             return;
           }
           void loadProjectFile(picked)
@@ -194,3 +258,9 @@ function entSummary(missed: Map<string, number>): string {
   const kinds = [...missed.keys()].slice(0, 3).join(', ');
   return `엔트리 작품을 불러왔습니다. 블록으로 옮기지 못한 ${total}개는 빠졌습니다 (${kinds}${missed.size > 3 ? ' …' : ''}).`;
 }
+
+const FOLDER_MESSAGES: Record<FolderResult, string> = {
+  loaded: '폴더의 작품을 열었습니다. 고치면 폴더에 바로 저장됩니다.',
+  imported: '폴더의 엔트리 작품을 옮겼습니다. 이제 이 폴더에 바로 저장됩니다.',
+  created: '지금 작품을 폴더에 저장했습니다. 고치면 폴더에 바로 저장됩니다.',
+};

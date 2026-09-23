@@ -58,6 +58,7 @@ export async function start(
   source: string,
   name: string,
   scene = '',
+  onProgress?: (loaded: number, total: number) => void,
 ): Promise<BuildResult> {
   const built = build(source, name);
   if (!built.project) return built;
@@ -72,6 +73,7 @@ export async function start(
     kernelUrl: null,
     // The scene being worked on is the one that runs, the way entry's editor does.
     scene,
+    onProgress,
   });
   return built;
 }

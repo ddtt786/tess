@@ -542,6 +542,14 @@ export function replaceProject(next: TessProject): void {
   saveSoon();
 }
 
+/** Starts a new work. It goes through `update`, so Ctrl+Z brings the old one back. */
+export function newProject(): void {
+  const fresh = starterProject();
+  update(() => fresh);
+  selectedSceneId.value = fresh.scenes[0]?.id ?? '';
+  selectedObjectId.value = fresh.objects[0]?.id ?? '';
+}
+
 export function resetProject(): void {
   replaceProject(starterProject());
 }

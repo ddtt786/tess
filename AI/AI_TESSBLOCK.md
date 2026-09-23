@@ -390,8 +390,9 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
   남기지 않는다.
 - 글상자 크기(`measureTextBox`)는 캔버스에 글꼴을 넣고 잰다. 한 줄 글상자는 불러올 때 다시 잰다.
 - 변수 식별자는 오브젝트·함수 이름을 피한다(`nameTable`). 같으면 Tess 가 다른 것으로 읽는다.
-- `calc_state`(아이디·닉네임·기기·저장 가능·전체 블록 수)는 `calc_user`·`calc_device`·
-  `calc_block_count_all`·`calc_can_save` 로 나뉘었고, 옛 파일을 위해 숨긴 채 남아 있다.
+- `calc_state`(아이디·닉네임·기기·저장 가능·전체 블록 수)는 `calc_user`·`calc_block_count_all`·
+  `calc_can_save` 로 나뉘었고, 옛 파일을 위해 숨긴 채 남아 있다. 기기 종류는 엔트리에 값 블록이 없어
+  (`device` 는 비교로만 컴파일됨) 판단의 `judge_device` 만 쓴다.
 - 자산 저장(`saveAsset`)은 메모리에 넣고 바로 참조를 돌려준다. IndexedDB 쓰기는 뒤에서 끝난다
   (다른 탭이 DB 를 쥐고 있어도 불러오기가 멈추지 않는다).
 
@@ -412,6 +413,30 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
 - 무대의 일시정지는 tessvm 의 `pause()`/`start()`(멈춘 곳에서 이어서)를 쓴다.
 - tessvm 렌더러는 초기화 직후 배경색으로 한 번 그린다. 불투명 WebGL 캔버스는 첫 프레임 전까지
   검게 보이고, 첫 프레임은 모든 모양·소리를 받은 뒤에야 오기 때문이다.
+
+- **폴더에서 작업**(`model/folder.ts`, File System Access API — 크롬·엣지): 폴더에
+  `project.tessproj` 와 `assets/<자산id>.<확장자>` 를 둔다. 폴더를 열면 `project.tessproj` 를
+  읽고, 없으면 폴더 안의 `.ent` 를 옮기고, 그것도 없으면 지금 작품을 써 넣는다. 붙어 있는 동안
+  작품이 바뀔 때마다 600ms 뒤 다시 쓴다(한 번에 하나씩). 자산 파일은 한 번만 쓰고, 폴더에서 읽은
+  참조는 원래 경로를 기억해(`pathOf`) 같은 파일로 되돌린다. 폴더 핸들은 IndexedDB
+  (`tessblock-folder`)에 두고, 다음 방문 때 "다시 연결"(권한 요청)로 붙인다. 새로 만들기와 파일
+  불러오기는 폴더를 떼어 폴더 내용을 덮어쓰지 않는다. 테스트는 같은 API 인 OPFS
+  (`navigator.storage.getDirectory()`)와 `attach()` 로 한다.
+- **새로 만들기**는 `update()` 를 거치므로 Ctrl+Z 로 되돌릴 수 있다.
+- `.ent` 불러오기는 단계마다(`ImportProgress`) 진행을 알리고 `setTimeout(0)` 으로 숨을 돌린다.
+  블록 대응표는 `warmEntryPatterns()` 가 250개씩 컴파일하며 사이사이 쉰다. 화면 전체에
+  `busy` 덮개(진행 막대)를 띄운다.
+- 시작하기는 부팅이 모양·소리를 모두 받을 때까지 기다리므로 무대 위에 진행 막대를 띄운다
+  (`boot` 의 `onProgress`). 측정(오브젝트 28개): 소스 5ms · Tess→엔트리 컴파일 27ms ·
+  tessvm 부팅 253ms. 큰 작품(inthedark 786KB)은 컴파일 약 0.5초 중 파싱이 75~90%.
+  즉 엔트리 형식으로 바꾸는 단계는 있지만(tessvm 은 엔트리 블록 JSON 을 JIT 한다) 병목은
+  자산 로딩이다.
+- 속성 창의 변수·신호·함수는 표 대신 폭 520px 의 행 목록(`.rec`)이다. 이름은 두 번 눌러
+  (`InlineName`), 변수의 처음 값·저장 방식은 행을 눌렀을 때만 편다. 보이기는 눈 아이콘, 함수
+  편집은 연필 아이콘. 리스트 항목은 손잡이를 끌어 옮긴다(`beginDrag`).
+- 복제·복사는 블록과 그 아래에 붙은 블록 전부를 옮긴다(`stackCopyData`, `addNextBlocks`).
+- 지역 변수 블록(`func_local_*`)은 함수를 편집할 때만 팔레트에 나온다.
+- 무대 버튼은 아이콘만(깃발·일시정지·정지), 색은 아이콘에만 있다.
 
 ## 11. 남은 일
 
