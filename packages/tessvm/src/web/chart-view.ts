@@ -427,10 +427,18 @@ export function mountChartWindow(parent: HTMLElement, onClose: () => void): Char
     const numbers = (index: number) =>
       source.rows.map((row) => Number(row[index] ?? 0) || 0);
     const columns = series.map((column) => numbers(column));
-    const values = columns.flat();
-    const step = tickStep(Math.max(...values, 0) - Math.min(0, ...values), TICKS);
-    const low = Math.floor(Math.min(0, ...values) / step) * step;
-    const high = Math.max(Math.ceil(Math.max(...values, 0) / step) * step, low + step);
+    // A loop, not `Math.max(...values)`: a long table passes the argument limit.
+    let most = 0;
+    let least = 0;
+    for (const column of columns) {
+      for (const value of column) {
+        if (value > most) most = value;
+        if (value < least) least = value;
+      }
+    }
+    const step = tickStep(most - least, TICKS);
+    const low = Math.floor(least / step) * step;
+    const high = Math.max(Math.ceil(most / step) * step, low + step);
 
     // 왼쪽은 눈금 글자가 들어갈 만큼만 비웁니다.
     const marks: number[] = [];
@@ -466,8 +474,8 @@ export function mountChartWindow(parent: HTMLElement, onClose: () => void): Char
     const scatter = spec.type === 'scatter';
     // 점 차트의 가로는 줄 번호가 아니라 값입니다.
     const xs = scatter ? numbers(spec.xIndex) : [];
-    const lowX = scatter ? Math.min(...xs, 0) : 0;
-    const highX = scatter ? Math.max(Math.max(...xs), lowX + 1) : 1;
+    const lowX = scatter ? xs.reduce((min, value) => Math.min(min, value), 0) : 0;
+    const highX = scatter ? Math.max(xs.reduce((max, value) => Math.max(max, value), -Infinity), lowX + 1) : 1;
     const slot = plotWidth / Math.max(rows, 1);
     const line = (row: number) => (rows > 1 ? pad.left + (plotWidth * row) / (rows - 1) : pad.left + plotWidth / 2);
 

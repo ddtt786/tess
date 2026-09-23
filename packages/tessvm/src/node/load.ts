@@ -72,9 +72,10 @@ function loadTess(file: string, options: LoadOptions): LoadedProject {
 }
 
 async function loadEnt(file: string, options: LoadOptions): Promise<LoadedProject> {
-  const { decompileEnt } = await import('@tess/decompiler');
+  const { decompileEnt, restoreTableRows } = await import('@tess/decompiler');
   const bytes = fs.readFileSync(file);
-  const decompiled = await decompileEnt(bytes, {});
+  // Table rows skip the source: a large table would be parsed back row by row.
+  const decompiled = await decompileEnt(bytes, { tableRows: false });
   const outDir =
     options.decompileTo ??
     fs.mkdtempSync(path.join(os.tmpdir(), `tessvm-${path.basename(file, '.ent')}-`));
@@ -97,6 +98,7 @@ async function loadEnt(file: string, options: LoadOptions): Promise<LoadedProjec
     name: options.name ?? decompiled.name,
     assetDirs: [...(options.assetDirs ?? []), path.join(outDir, 'assets'), outDir],
   });
+  if (loaded.project) restoreTableRows(loaded.project as never, decompiled.tableRows);
   loaded.decompiledTo = outDir;
   loaded.decompileWarnings = decompiled.warnings;
   return loaded;

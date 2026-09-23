@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { decompileProject } from '@tess/decompiler';
+import { decompileProject, restoreTableRows } from '@tess/decompiler';
 import { compileProject } from '@tess/compiler';
 import type { RawEntity } from '@tess/decompiler';
 
@@ -3205,4 +3205,45 @@ test('한 픽셀 어긋난 벡터는 같은 그림으로 보고 그대로 쓴다
   const far = decompileProject(svgPictureProject(), reframed);
   const other = utf8(far.assets.find((a) => a.path === 'objects/주인공.tess')!.data);
   assert.match(other, /default costume 배경 "assets\/image\/주인공_배경\.png"/);
+});
+
+// --- 큰 작품 ---------------------------------------------------------------------
+
+/** 한 열짜리 테이블 하나를 단 project (엔트리 LLM 작품처럼 행이 아주 많을 수 있다) */
+function tableProject(rows: number): RawEntity {
+  const project = minimalProject(1);
+  project.tables = [{
+    id: 't1',
+    name: '가중치',
+    fields: ['값'],
+    data: Array.from({ length: rows }, (_, index) => ({ key: `r${index}`, value: [String(index)] })),
+    chart: [],
+  }];
+  return project;
+}
+
+test('행이 아주 많은 테이블도 스택을 넘치지 않고 되돌린다', () => {
+  const result = decompileProject(tableProject(200_000), []);
+  assert.equal(result.source.split('\n').filter((line) => line.startsWith('  row ')).length, 200_000);
+});
+
+test('tableRows: false 면 행을 소스 밖에 두고 restoreTableRows 가 컴파일 결과에 되돌린다', () => {
+  const result = decompileProject(tableProject(3), [], { inline: true, tableRows: false });
+  assert.doesNotMatch(result.source, /^\s*row /m);
+  const compiled = compileProject(result.source, { path: 'main.tess' });
+  assert.ok(compiled.project, compiled.errors.map((error) => error.message).join('\n'));
+  restoreTableRows(compiled.project as never, result.tableRows);
+  assert.deepEqual((compiled.project as unknown as { tables: Array<{ data: string[][] }> }).tables[0]!.data, [['0'], ['1'], ['2']]);
+});
+
+test('그림 오브젝트의 글상자 블록은 주석으로 남겨 컴파일을 막지 않는다', () => {
+  const project = minimalProject(1);
+  project.objects[0].script = JSON.stringify([[
+    { type: 'when_run_button_click', params: [null], statements: [] },
+    { type: 'text_write', params: [{ type: 'text', params: ['안녕'] }, null], statements: [] },
+  ]]);
+  const result = decompileProject(project, [], { inline: true });
+  assert.doesNotMatch(result.source, /^\s*write /m);
+  const compiled = compileProject(result.source, { path: 'main.tess' });
+  assert.deepEqual(compiled.errors.map((error) => error.message), []);
 });

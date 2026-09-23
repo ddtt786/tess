@@ -16,8 +16,9 @@ function measurer(): CanvasRenderingContext2D | null {
 
 export function measureTextBox(text: TextProps): { boxWidth: number; boxHeight: number } {
   const lines = text.lineBreak ? text.content.split('\n') : [text.content.replace(/\n/g, ' ')];
-  const font = `${text.italic ? 'italic ' : ''}${text.bold ? '700 ' : ''}${text.fontSize}px ${text.font}`;
+  const font = `${text.italic ? 'italic ' : ''}${text.bold ? '700 ' : ''}${text.fontSize}px "${text.font}", sans-serif`;
   const ruler = measurer();
+  if (ruler) ruler.font = font;
   let width = 0;
   for (const line of lines) {
     const measured = ruler ? ruler.measureText(line || ' ').width : (line.length || 1) * text.fontSize * 0.85;

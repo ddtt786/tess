@@ -92,6 +92,17 @@ define(
     code: (a) => a.VALUE,
   },
   {
+    // A value in a judgement slot, as a compiled work may put there.
+    type: 'judge_value',
+    category: 'judge',
+    message: '%1',
+    args: [emptyIn('VALUE', 'false')],
+    shape: 'boolean',
+    order: Order.ATOMIC,
+    hidden: true,
+    code: (a, block, generator) => [generator.expr(block, 'VALUE', Order.ATOMIC, 'false'), Order.ATOMIC],
+  },
+  {
     type: 'judge_boost_mode',
     category: 'judge',
     message: '터보 모드인가?',

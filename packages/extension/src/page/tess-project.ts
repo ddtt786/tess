@@ -10,7 +10,7 @@
  * sounds keep the urls the site serves them from, and nothing is downloaded to
  * be packed.
  */
-import { decompileProject } from '../../../decompiler/src/index.ts';
+import { decompileProject, restoreTableRows } from '../../../decompiler/src/index.ts';
 import { compileProject } from '../../../compiler/src/index.ts';
 import type { EntryProjectLike } from '../../../tessvm/src/runtime/engine.ts';
 import type { EntryWork } from './entry-project.ts';
@@ -47,6 +47,8 @@ export function toTessProject(work: EntryWork): TessBuild {
     // 사이트에서 열던 그대로 놓고 싶으니 변수 상자 자리도 함께 옮긴다. 명령줄로
     // 되돌릴 때는 읽는 사람을 위해 생략하고, 실행기가 알아서 자리를 잡는다.
     positions: true,
+    // Rows go around the source; a large table would be parsed back row by row.
+    tableRows: false,
   });
   const compiled = compileProject(decompiled.source, {
     path: `${work.id}.tess`,
@@ -61,6 +63,7 @@ export function toTessProject(work: EntryWork): TessBuild {
       first ? `작품을 옮기지 못했습니다 (${first.line}:${first.column} ${first.message})` : '작품을 옮기지 못했습니다',
     );
   }
+  restoreTableRows(compiled.project as never, decompiled.tableRows);
   // The work's own id names it in storage, so shared variables stay with it.
   const project = { ...compiled.project, id: work.id } as unknown as EntryProjectLike;
   return { project, source: decompiled.source, dropped: droppedBlocks(decompiled.warnings) };

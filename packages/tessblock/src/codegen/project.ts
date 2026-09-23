@@ -62,7 +62,11 @@ export function buildSource(model: TessProject, options: WriteOptions = {}): str
 
 /** One identifier per record, kept apart even when names sanitise alike. */
 function nameTable(model: TessProject): Map<string, string> {
-  const taken = new Set<string>();
+  // A variable named like an object or a function would be read as that instead.
+  const taken = new Set<string>([
+    ...model.objects.map((object) => safeIdent(object.name)),
+    ...model.functions.map((definition) => safeIdent(definition.name)),
+  ]);
   const table = new Map<string, string>();
   for (const variable of model.variables) table.set(variable.id, uniqueIdent(variable.name, taken));
   for (const tableDef of model.tables) table.set(tableDef.id, uniqueIdent(tableDef.name, taken));

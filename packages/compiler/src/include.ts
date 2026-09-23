@@ -170,7 +170,7 @@ export function loadProgram({
         const body = context === 'top'
           ? (included as ProgramNode).body
           : (included as Member[]);
-        output.push(...expand(body, target, context));
+        for (const item of expand(body, target, context)) output.push(item);
       }
       visiting.delete(target);
     }

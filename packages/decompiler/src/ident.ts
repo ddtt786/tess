@@ -158,3 +158,8 @@ export function tessLiteral(value: unknown): string {
   if (PLAIN_DECIMAL.test(text)) return text;
   return tessString(text);
 }
+
+/** `target.push(...items)` without the engine's argument limit, which a large work passes. */
+export function append<T>(target: T[], items: Iterable<T>): void {
+  for (const item of items) target.push(item);
+}

@@ -521,8 +521,11 @@ function migrateProject(model: TessProject): TessProject {
 function migrateObject(object: TessObject): TessObject {
   const props = object.props as ObjectProps & { size?: number };
   const size = props.size ?? 100;
+  // A one-line box is as wide as its text; boxes saved while the measure ignored the font are fixed here.
+  const text = object.text && !object.text.lineBreak ? { ...object.text, ...measureTextBox(object.text) } : object.text;
   return {
     ...object,
+    text,
     props: {
       ...props,
       scaleX: props.scaleX ?? size,

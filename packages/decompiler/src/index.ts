@@ -2,7 +2,7 @@
  * 엔트리 작품(.ent) 파일을 Tess 소스 코드로 디컴파일합니다.
  * 블록 트리를 분석하여 해당되는 텍스트 코드를 생성합니다.
  */
-import { safeIdentifier, tessString, tessNumber, tessLiteral, tessComment, displayNamePart } from './ident.ts';
+import { append, safeIdentifier, tessString, tessNumber, tessLiteral, tessComment, displayNamePart } from './ident.ts';
 import { autoParamName } from '@tess/core';
 import { blocksToLines, commentLines, indent, functionDeclarationLines, colorExpr } from './stmt.ts';
 import {
@@ -165,10 +165,16 @@ export function decompileProject(
   const lines: string[] = [];
   // 선언 묶음과 그 뒤의 코드 사이는 두 줄을 띄운다. 선언은 파일 머리말에 가까워서,
   // 한 줄만 띄우면 바로 아래의 project/scene 블록과 한 덩어리처럼 보인다.
-  for (const varInfo of ctx.globalVars) lines.push(...declarationLine(varInfo, 0, ctx.positions));
+  for (const varInfo of ctx.globalVars) append(lines, declarationLine(varInfo, 0, ctx.positions));
   if (ctx.globalVars.length) lines.push('', '');
 
-  for (const [, info] of ctx.tablesById) lines.push(...tableLines(info), '');
+  const withRows = options.tableRows !== false;
+  const heldRows: string[][][] = [];
+  for (const [, info] of ctx.tablesById) {
+    append(lines, tableLines(info, withRows));
+    lines.push('');
+    if (!withRows) heldRows.push(tableRows(info.source).map((row) => row.map((cell) => String(cell ?? ''))));
+  }
 
   lines.push('project:');
   lines.push(`  title ${tessString(project.name ?? 'Tess 작품')}`);
@@ -177,7 +183,7 @@ export function decompileProject(
   lines.push('end');
   lines.push('');
 
-  for (const scene of project.scenes) lines.push(...sceneLines(scene, project, ctx));
+  for (const scene of project.scenes) append(lines, sceneLines(scene, project, ctx));
 
   for (const fn of project.functions ?? []) {
     const entry = ctx.functionsById.get(fn.id);
@@ -190,7 +196,7 @@ export function decompileProject(
       const content = JSON.parse(fn.content ?? '[]');
       const createBlock = functionCreateBlock(content);
       if (!createBlock) continue;
-      lines.push(...functionDeclarationLines(entry, createBlock, ctx));
+      append(lines, functionDeclarationLines(entry, createBlock, ctx));
       lines.push('');
     } catch (error) {
       ctx.warnings.add(`함수 '${entry.name}' 을(를) 읽지 못했습니다: ${(error as Error).message}`);
@@ -205,7 +211,16 @@ export function decompileProject(
     notices: strict ? [] : [...ctx.notices],
     assets: ctx.collectedAssets,
     name: project.name ?? 'project',
+    ...(withRows ? {} : { tableRows: heldRows }),
   };
+}
+
+/** Puts rows left out by `tableRows: false` back into the compiled tables, in order. */
+export function restoreTableRows(project: { tables?: Array<{ data?: unknown }> }, rows: string[][][] | undefined): void {
+  if (!rows) return;
+  (project.tables ?? []).forEach((table, index) => {
+    if (rows[index]) table.data = rows[index];
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +422,7 @@ function buildContext(
     scenesById: new Map(),
     functionsById: new Map(),
     objectScale: null,
+    spriteScripts: false,
     scaleById: new Map(),
     picturesById: new Map(),
     soundsById: new Map(),
@@ -735,13 +751,17 @@ function chartLine(chart: RawEntity): string {
 }
 
 /** `table 이름: columns ... row ... end` */
-function tableLines(info: TableInfo): string[] {
+function tableLines(info: TableInfo, withRows = true): string[] {
   const table = info.source;
   const cells = (row: unknown[]) => row.map((cell) => tessLiteral(cell)).join(', ');
   const lines = [`table ${info.identifier}${displayNamePart(info.identifier, table.name)}:`];
   lines.push(`  columns ${cells(tableRowCells(table.fields))}`);
-  for (const row of tableRows(table)) {
-    lines.push(`  row ${cells(row)}`);
+  if (withRows) {
+    for (const row of tableRows(table)) {
+      lines.push(`  row ${cells(row)}`);
+    }
+  } else {
+    lines.push(`  # [decompile] 행 ${tableRows(table).length}개는 소스 밖에서 실행기로 바로 넘깁니다`);
   }
   for (const chart of (table.chart ?? []) as RawEntity[]) {
     lines.push(chartLine(chart));
@@ -787,7 +807,7 @@ function sceneLines(scene: RawEntity, project: RawEntity, ctx: DecompileContext)
 
   for (const object of project.objects ?? []) {
     if (object.scene !== scene.id) continue;
-    lines.push(...useObjectLine(object, ctx, info.identifier));
+    append(lines, useObjectLine(object, ctx, info.identifier));
   }
   lines.push('end');
   lines.push('');
@@ -862,7 +882,7 @@ function objectFragmentLines(object: RawEntity, ctx: DecompileContext, isText: b
     lines.push(`sound ${sndInfo.identifier} ${tessString(filePart)}${durationPart}${namePart}${forcePart}`);
   }
 
-  lines.push(...objectPropertyLines(object, isText, 0));
+  append(lines, objectPropertyLines(object, isText, 0));
 
   if (object.rotateMethod && object.rotateMethod !== 'free') {
     lines.push(`rotation ${object.rotateMethod}`);
@@ -872,7 +892,7 @@ function objectFragmentLines(object: RawEntity, ctx: DecompileContext, isText: b
 
   // 속성과 변수 선언 묶음, 그리고 그 뒤의 when 블록 사이도 main.tess 와 똑같이 두 줄 띄운다
   for (const varInfo of ctx.localVarsByObject.get(object.id) ?? []) {
-    lines.push(...declarationLine(varInfo, 0, ctx.positions));
+    append(lines, declarationLine(varInfo, 0, ctx.positions));
   }
   if (lines.length) lines.push('', '');
 
@@ -884,13 +904,15 @@ function objectFragmentLines(object: RawEntity, ctx: DecompileContext, isText: b
   }
   // 옛 크기 블록은 이 오브젝트가 저장된 배율에서 재므로 그 값을 들려 보낸다.
   ctx.objectScale = ctx.scaleById.get(String(object.id)) ?? savedScale(object);
-  for (const thread of threads) lines.push(...eventLines(thread, ctx, 0));
+  ctx.spriteScripts = !isText;
+  for (const thread of threads) append(lines, eventLines(thread, ctx, 0));
+  ctx.spriteScripts = false;
 
   // 이 오브젝트 것만 건드리는 함수는 여기, 조각 파일 맨 끝에 선언한다. 그 안에서는
   // 모양·소리를 이름으로 적을 수 있어서 `force id` 가 필요 없다(buildContext 참고).
   for (const owned of ctx.functionsByOwner.get(object.id) ?? []) {
     lines.push('');
-    lines.push(...functionDeclarationLines(owned.entry, owned.createBlock, ctx, object.id));
+    append(lines, functionDeclarationLines(owned.entry, owned.createBlock, ctx, object.id));
   }
   ctx.objectScale = null;
 
@@ -952,7 +974,7 @@ function objectPropertyLines(object: RawEntity, isText: boolean, indentLevel: nu
   if (entity.direction !== undefined && entity.direction !== 90) lines.push(`${pad}way = ${tessNumber(entity.direction)}`);
   if (entity.scaleX !== undefined && entity.scaleX !== 1) lines.push(`${pad}scale_x = ${tessNumber(scalePercent(entity.scaleX))}`);
   if (entity.scaleY !== undefined && entity.scaleY !== 1) lines.push(`${pad}scale_y = ${tessNumber(scalePercent(entity.scaleY))}`);
-  if (!isText) lines.push(...centerLine(object, pad));
+  if (!isText) append(lines, centerLine(object, pad));
 
   if (isText) {
     if (object.text) lines.push(`${pad}text_content = ${tessString(object.text)}`);

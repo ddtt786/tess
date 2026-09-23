@@ -118,7 +118,7 @@ const blocksOf = (items: Array<EntryBlock | null>): EntryBlock[] => (
 export function compileStatements(statements: Stmt[], ctx: Context): EntryBlock[] {
   const blocks: EntryBlock[] = [];
   for (const statement of statements)
-    blocks.push(...compileStatement(statement, ctx));
+    for (const block of compileStatement(statement, ctx)) blocks.push(block);
   return blocks;
 }
 

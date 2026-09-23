@@ -51,6 +51,9 @@ const OBJECT_VALUES: Array<[string, string]> = [
   ['모양 이름', 'costume'],
 ];
 
+/** Blocks that write a bare name, which `name[i]` can index. */
+const NAMED_VALUES = new Set(['data_variable', 'func_param_value', 'func_local_get']);
+
 define(
   {
     type: 'calc_number',
@@ -214,7 +217,13 @@ define(
     args: [textIn('TEXT', '안녕!'), numIn('INDEX', 1)],
     shape: 'value',
     order: Order.ATOMIC,
-    code: (a) => [`slice(${a.TEXT}, ${a.INDEX}, ${a.INDEX})`, Order.ATOMIC],
+    // `name[i]` is entry's own letter block; any other text goes through slice.
+    code: (a, block) => [
+      NAMED_VALUES.has(block.getInputTargetBlock('TEXT')?.type ?? '')
+        ? `${a.TEXT}[${a.INDEX}]`
+        : `slice(${a.TEXT}, ${a.INDEX}, ${a.INDEX})`,
+      Order.ATOMIC,
+    ],
   },
   {
     type: 'calc_slice',
@@ -319,6 +328,17 @@ define(
     code: (a) => [`from_hex(${a.COLOUR}, ${a.CHANNEL})`, Order.ATOMIC],
   },
   {
+    // A colour given by a value, as entry works do.
+    type: 'calc_from_hex_value',
+    category: 'calc',
+    message: '%1 의 %2 값',
+    args: [emptyIn('VALUE', '"#ff5f5f"'), menu('CHANNEL', [['빨강', 'red'], ['초록', 'green'], ['파랑', 'blue']])],
+    shape: 'value',
+    order: Order.ATOMIC,
+    hidden: true,
+    code: (a) => [`from_hex(${a.VALUE}, ${a.CHANNEL})`, Order.ATOMIC],
+  },
+  {
     type: 'calc_sound_duration',
     category: 'calc',
     message: '소리 %1 의 길이',
@@ -346,8 +366,46 @@ define(
     code: (a) => [`block_count(${quote(a.TARGET)})`, Order.ATOMIC],
   },
   {
+    type: 'calc_user',
+    category: 'calc',
+    message: '사용자 %1',
+    args: [menu('INFO', [['아이디', 'user_id'], ['닉네임', 'nickname']])],
+    shape: 'value',
+    order: Order.ATOMIC,
+    code: (a) => [a.INFO, Order.ATOMIC],
+  },
+  {
+    type: 'calc_device',
+    category: 'calc',
+    message: '기기 종류',
+    args: [],
+    shape: 'value',
+    order: Order.ATOMIC,
+    code: () => ['device', Order.ATOMIC],
+  },
+  {
+    type: 'calc_block_count_all',
+    category: 'calc',
+    message: '전체 블록 수',
+    args: [],
+    shape: 'value',
+    order: Order.ATOMIC,
+    code: () => ['block_count', Order.ATOMIC],
+  },
+  {
+    type: 'calc_can_save',
+    category: 'calc',
+    message: '저장할 수 있는가',
+    args: [],
+    shape: 'value',
+    order: Order.ATOMIC,
+    code: () => ['can_save', Order.ATOMIC],
+  },
+  {
+    // Kept for projects saved before the blocks above were split out.
     type: 'calc_state',
     category: 'calc',
+    hidden: true,
     message: '%1',
     args: [
       menu('STATE', [

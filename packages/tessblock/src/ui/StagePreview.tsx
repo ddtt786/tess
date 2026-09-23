@@ -107,7 +107,7 @@ function PreviewObject({ object, toStage }: DragProps) {
             background: text.bgColor ?? 'transparent',
             fontSize: `${text.fontSize}px`,
             fontFamily: text.font,
-            fontWeight: text.bold ? 800 : 400,
+            fontWeight: text.bold ? 700 : 400,
             fontStyle: text.italic ? 'italic' : 'normal',
             textDecoration: [text.underline ? 'underline' : '', text.strike ? 'line-through' : ''].join(' ').trim(),
             textAlign: text.align,

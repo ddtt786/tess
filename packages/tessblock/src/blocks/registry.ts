@@ -242,6 +242,8 @@ export function flyoutFor(category: Category): FlyoutItem[] {
       }
     }
     items.push({ kind: 'block', type: 'func_local_var' });
+    items.push({ kind: 'block', type: 'func_local_set', inputs: { VALUE: { shadow: { type: 'calc_number', fields: { NUM: 0 } } } } });
+    items.push({ kind: 'block', type: 'func_local_get' });
   }
   for (const spec of specsOf(category)) items.push(blockEntry(spec));
   return items;

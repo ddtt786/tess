@@ -1,5 +1,5 @@
 /** Brush category: pen colour, thickness, drawing and stamping. */
-import { colourField, define, menu, numIn } from '../spec.ts';
+import { colourField, define, emptyIn, menu, numIn } from '../spec.ts';
 
 define(
   {
@@ -41,6 +41,16 @@ define(
     args: [colourField('COLOUR', '#ff0000')],
     shape: 'statement',
     code: (a) => `draw_color = ${a.COLOUR}`,
+  },
+  {
+    // A colour given by a value, as entry works do.
+    type: 'brush_set_colour_value',
+    category: 'brush',
+    message: '붓의 색을 %1 (으)로 정하기',
+    args: [emptyIn('VALUE', '"#ff0000"')],
+    shape: 'statement',
+    hidden: true,
+    code: (a) => `draw_color = ${a.VALUE}`,
   },
   {
     type: 'brush_random_colour',
@@ -89,6 +99,15 @@ define(
     args: [colourField('COLOUR', '#0000ff')],
     shape: 'statement',
     code: (a) => `fill_color = ${a.COLOUR}`,
+  },
+  {
+    type: 'brush_set_fill_value',
+    category: 'brush',
+    message: '채우기 색을 %1 (으)로 정하기',
+    args: [emptyIn('VALUE', '"#0000ff"')],
+    shape: 'statement',
+    hidden: true,
+    code: (a) => `fill_color = ${a.VALUE}`,
   },
   {
     type: 'brush_fill',

@@ -1,5 +1,5 @@
 /** Sound category: playback, volume, speed and text to speech. */
-import { define, menu, numIn, pick, textIn } from '../spec.ts';
+import { define, emptyIn, menu, numIn, pick, textIn } from '../spec.ts';
 import { quote } from '../../codegen/quote.ts';
 
 const VOICES: Array<[string, string]> = [
@@ -33,6 +33,16 @@ define(
     args: [pick('SOUND', 'sound')],
     shape: 'statement',
     code: (a) => `play sound ${quote(a.SOUND)}`,
+  },
+  {
+    // A sound named or numbered by a value, as entry works do.
+    type: 'sound_play_value',
+    category: 'sound',
+    message: '소리 %1 재생하기',
+    args: [emptyIn('VALUE', '1')],
+    shape: 'statement',
+    hidden: true,
+    code: (a) => `play sound ${a.VALUE}`,
   },
   {
     type: 'sound_play_wait',
@@ -81,6 +91,15 @@ define(
     args: [pick('SOUND', 'sound')],
     shape: 'statement',
     code: (a) => `play bgm ${quote(a.SOUND)}`,
+  },
+  {
+    type: 'sound_play_bgm_value',
+    category: 'sound',
+    message: '배경음악 %1 재생하기',
+    args: [emptyIn('VALUE', '1')],
+    shape: 'statement',
+    hidden: true,
+    code: (a) => `play bgm ${a.VALUE}`,
   },
   {
     type: 'sound_stop_bgm',

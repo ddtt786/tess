@@ -353,6 +353,24 @@ content = [[ function_create{ statements: [[ _if, _if, … ]] } ]]    ← .ent �
 들어 있는 모양이 흔합니다. 다만 그 자리를 읽는 것이 느껴지는 것 — 함수 호출, 값 칸에
 끼워 둔 문장 — 이 같이 있으면 그 호출은 실제로 도므로 치트로 삼키지 않고 그대로 둡니다.
 
+### 큰 테이블은 소스를 거치지 않는다
+
+`.ent` 를 여는 모든 실행 경로(`node/load.ts` 의 `loadEnt`, 확장의 `toTessProject`,
+tessblock 의 `readEntFile`)는 `decompileProject(…, { tableRows: false })` 로 되돌린다.
+테이블은 열과 `# [decompile] 행 N개는 …` 주석만 소스에 적히고, 행은 `DecompileResult.tableRows`
+로 따로 나온다. 컴파일한 뒤 `restoreTableRows(project, rows)` 가 선언 순서대로 `data` 에 넣는다.
+엔트리로 만든 LLM 작품(enLM: 13만 행 테이블 7개, project.json 145MB)은 행을 소스로 적으면
+90만 줄을 다시 파싱하다 4GB 에서 메모리가 바닥난다. 명령줄로 소스를 되돌릴 때는 지금처럼 행을
+모두 적는다.
+
+큰 배열을 `push(...배열)`·`Math.max(...배열)` 로 펼치면 엔진의 인자 한계(약 12만)에 걸려
+"Maximum call stack size exceeded" 가 난다. 디컴파일러는 `append()`(ident.ts), 컴파일러와
+차트는 반복문으로 넣는다.
+
+그림 오브젝트에 놓인 글상자 블록(`text_write` 등)은 엔트리에서 아무 일도 하지 않지만 Tess 는
+글상자 전용이라 거부한다. 디컴파일러는 그림 오브젝트의 스크립트를 쓰는 동안(`ctx.spriteScripts`)
+이 블록들을 주석으로 남긴다.
+
 ## 3. 값 — 엔트리의 산술은 2진수가 아니라 10진수다
 
 엔트리의 `calc_basic` 은 **BigNumber** 로 계산합니다. 그래서 엔트리에서 `0.1 + 0.2` 는

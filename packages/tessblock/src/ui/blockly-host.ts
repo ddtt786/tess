@@ -14,6 +14,7 @@ import {
   TOOLBOX,
   tessTheme,
 } from "../blocks/registry.ts";
+import { returnsValue } from "../blocks/functions.ts";
 import { project, selectedObjectId, setObjectBlocks } from "../model/store.ts";
 import { blockQuery, dialog, functionDraft } from "./state.ts";
 import { newId } from "../model/ids.ts";
@@ -109,6 +110,7 @@ export function mount(host: HTMLElement): void {
   watches = [
     selectedObjectId.subscribe((id) => showObject(id)),
     project.subscribe(() => refreshPalette()),
+    selectedObjectId.subscribe(() => refreshPalette()),
     blockQuery.subscribe((query) => showSearch(query)),
   ];
 }
@@ -205,8 +207,38 @@ export function refreshPalette(): void {
   if (paletteTimer !== undefined) return;
   paletteTimer = setTimeout(() => {
     paletteTimer = undefined;
+    // Rebuilding the flyout closes an open menu or dropdown; wait for it.
+    if (Blockly.WidgetDiv.isVisible() || Blockly.DropDownDiv.isVisible()) {
+      refreshPalette();
+      return;
+    }
+    const key = paletteKey();
+    if (key === shownPalette) return;
+    shownPalette = key;
     workspace?.getToolbox()?.refreshSelection();
   }, 80) as unknown as number;
+}
+
+let shownPalette = "";
+
+/** Everything the palette lists; a change elsewhere (block edits) leaves it as it is. */
+function paletteKey(): string {
+  const model = project.peek();
+  return JSON.stringify([
+    selectedObjectId.peek(),
+    model.scenes,
+    model.signals,
+    model.tables.map((table) => [table.id, table.name, table.columns]),
+    model.variables.map((variable) => [variable.id, variable.name, variable.kind, variable.owner]),
+    model.objects.map((object) => [
+      object.id,
+      object.name,
+      object.sceneId,
+      object.costumes.map((costume) => [costume.id, costume.name]),
+      object.sounds.map((sound) => [sound.id, sound.name]),
+    ]),
+    model.functions.map((definition) => [definition.id, definition.name, definition.params, returnsValue(definition)]),
+  ]);
 }
 
 export function resize(): void {

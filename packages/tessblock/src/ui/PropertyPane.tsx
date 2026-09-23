@@ -266,6 +266,21 @@ function ListEditor() {
                   onInput={(event) => updateVariable(current.id, { name: (event.target as HTMLInputElement).value })}
                 />
               </label>
+              {!current.owner && (
+                <label class="f">
+                  <span>저장 방식</span>
+                  <select
+                    class="select"
+                    value={current.scope}
+                    aria-label="저장 방식"
+                    onChange={(event) => updateVariable(current.id, { scope: (event.target as HTMLSelectElement).value as StorageScope })}
+                  >
+                    <option value="local">기본</option>
+                    <option value="shared">공유</option>
+                    <option value="realtime">실시간</option>
+                  </select>
+                </label>
+              )}
               <button class="btn ghost danger" title="리스트 삭제" onClick={() => removeVariable(current.id)}>
                 <TrashIcon size={14} /> 삭제
               </button>

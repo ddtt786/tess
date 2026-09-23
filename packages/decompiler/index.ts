@@ -22,5 +22,6 @@ export function decompileProject(
 }
 
 export { decompileEnt } from "./src/node.ts";
+export { restoreTableRows } from "./src/index.ts";
 export { readTar } from "./src/tar.ts";
 export type * from "./src/types.ts";

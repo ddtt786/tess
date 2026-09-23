@@ -4,6 +4,7 @@
  */
 import { exprOf, targetName } from "./expr.ts";
 import {
+  append,
   tessString,
   tessNumber,
   tessComment,
@@ -74,7 +75,8 @@ export function blocksToLines(
 ): string[] {
   const lines: string[] = [];
   for (const block of blocks ?? []) {
-    lines.push(...commentLines(block), ...statementLines(block, ctx));
+    append(lines, commentLines(block));
+    append(lines, statementLines(block, ctx));
   }
   return lines;
 }
@@ -243,6 +245,18 @@ function listValue(text: string): string {
   return /^(row|column)(?![\p{L}\p{N}_])/u.test(text) ? `(${text})` : text;
 }
 
+/** Text box statements, which do nothing on a sprite. */
+const TEXT_BOX_STATEMENTS = new Set([
+  "text_write",
+  "text_append",
+  "text_prepend",
+  "text_flush",
+  "text_change_font",
+  "text_change_font_color",
+  "text_change_bg_color",
+  "text_change_effect",
+]);
+
 function statementLines(block: any, ctx: DecompileContext): string[] {
   if (!block || typeof block !== "object" || !block.type) return [];
   const p = block.params ?? [];
@@ -256,6 +270,12 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
   {
     const carried = carriedTrick(block);
     if (carried) return ctx.loopDepth > 0 ? [carried] : [];
+  }
+
+  // entry runs a text box block on a sprite as nothing; Tess refuses it there.
+  if (ctx.spriteScripts && TEXT_BOX_STATEMENTS.has(block.type)) {
+    ctx.notices.add(`글상자 블록 '${block.type}' 이(가) 그림 오브젝트에 있어 주석으로 남겼습니다 (엔트리에서도 아무 일도 하지 않습니다).`);
+    return [tessComment(`[decompile] 그림 오브젝트의 글상자 블록 (실행되지 않음): ${block.type}`)];
   }
 
   switch (block.type) {

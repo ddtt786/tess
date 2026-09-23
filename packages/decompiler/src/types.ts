@@ -201,6 +201,11 @@ export interface DecompileOptions {
   builtinAssets?(fileurl: string): Uint8Array | null;
   /** Reports notices as warnings. Off by default. */
   strict?: boolean;
+  /**
+   * Writes every table row into the source. A runner turns it off: large tables
+   * are left out of the text and come back through `restoreTableRows`.
+   */
+  tableRows?: boolean;
 }
 
 /**
@@ -241,6 +246,8 @@ export interface DecompileContext {
    * block that works from the saved scale needs this to be written at all.
    */
   objectScale: { x: number; y: number } | null;
+  /** Set while a sprite's own scripts are written; text box statements are dropped there. */
+  spriteScripts: boolean;
   /** Every object's saved scale, by object id. */
   scaleById: Map<string, { x: number; y: number }>;
   /** How many loops the block being written sits inside. */
@@ -285,4 +292,6 @@ export interface DecompileResult {
   notices: string[];
   assets: CollectedAsset[];
   name: string;
+  /** Rows left out under `tableRows: false`, one list per table in source order. */
+  tableRows?: string[][][];
 }

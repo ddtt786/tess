@@ -46,6 +46,7 @@ interface Packable {
   fileurl: string;
   ext?: string;
   imageType?: string;
+  pngurl?: string;
 }
 
 /** Fetches one file, renames it the way entry does, and adds it to the tar. */
@@ -136,7 +137,7 @@ function extensionOf(url: string, kind: 'image' | 'sound'): string {
   return found ? `.${found}` : kind === 'image' ? '.png' : '.mp3';
 }
 
-async function rasterizeSvg(bytes: Uint8Array): Promise<{ png: Uint8Array; thumb: Uint8Array } | null> {
+async function rasterizeSvg(bytes: Uint8Array<ArrayBuffer>): Promise<{ png: Uint8Array<ArrayBuffer>; thumb: Uint8Array<ArrayBuffer> } | null> {
   try {
     const blob = new Blob([bytes], { type: 'image/svg+xml' });
     const url = URL.createObjectURL(blob);

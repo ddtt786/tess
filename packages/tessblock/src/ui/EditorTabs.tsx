@@ -7,7 +7,7 @@ import { CostumePane } from './CostumePane.tsx';
 import { PropertyPane } from './PropertyPane.tsx';
 import { FunctionEditor } from './FunctionEditor.tsx';
 import { SearchIcon } from './icons.tsx';
-import { blockQuery, editorTab, functionDraft, type EditorTab } from './state.ts';
+import { blockQuery, editorTab, functionDraft, propertyTab, type EditorTab } from './state.ts';
 
 const TABS: Array<[EditorTab, string]> = [
   ['blocks', '블록'],
@@ -42,7 +42,7 @@ export function EditorTabs() {
         {tab === 'costumes' && <CostumePane />}
         {tab === 'sounds' && <SoundPane />}
         {tab === 'properties' && (
-          <aside class="prop-panel">
+          <aside class={`prop-panel ${propertyTab.value === 'table' ? 'wide' : ''}`}>
             <PropertyPane />
           </aside>
         )}

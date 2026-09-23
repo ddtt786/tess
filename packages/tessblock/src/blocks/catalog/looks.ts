@@ -1,5 +1,5 @@
 /** Looks category: visibility, costumes, speech bubbles, size and effects. */
-import { define, menu, numIn, pick, textIn } from '../spec.ts';
+import { define, emptyIn, menu, numIn, pick, textIn } from '../spec.ts';
 import { quote } from '../../codegen/quote.ts';
 
 const EFFECTS: Array<[string, string]> = [
@@ -32,6 +32,16 @@ define(
     args: [pick('COSTUME', 'costume')],
     shape: 'statement',
     code: (a) => `costume = ${quote(a.COSTUME)}`,
+  },
+  {
+    // A costume named or numbered by a value, as entry works do.
+    type: 'looks_set_costume_value',
+    category: 'looks',
+    message: '%1 모양으로 바꾸기',
+    args: [emptyIn('VALUE', '1')],
+    shape: 'statement',
+    hidden: true,
+    code: (a) => `costume = ${a.VALUE}`,
   },
   {
     type: 'looks_next_costume',

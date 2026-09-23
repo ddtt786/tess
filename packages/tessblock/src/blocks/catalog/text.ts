@@ -1,5 +1,5 @@
 /** Text category: what a text box writes and how it looks. */
-import { colourField, define, menu, textIn } from '../spec.ts';
+import { colourField, define, emptyIn, menu, textField, textIn } from '../spec.ts';
 import { quote } from '../../codegen/quote.ts';
 
 const FONTS: Array<[string, string]> = [
@@ -54,6 +54,16 @@ define(
     code: (a) => `font = ${quote(a.FONT)}`,
   },
   {
+    // A font outside the menu, as entry works may name.
+    type: 'text_set_font_name',
+    category: 'text',
+    message: '글꼴을 %1 로 정하기',
+    args: [textField('FONT', '나눔고딕')],
+    shape: 'statement',
+    hidden: true,
+    code: (a) => `font = ${quote(a.FONT)}`,
+  },
+  {
     type: 'text_set_colour',
     category: 'text',
     message: '글자 색을 %1 로 정하기',
@@ -62,12 +72,31 @@ define(
     code: (a) => `font_color = ${a.COLOUR}`,
   },
   {
+    // A colour given by a value, as entry works do.
+    type: 'text_set_colour_value',
+    category: 'text',
+    message: '글자 색을 %1 로 정하기',
+    args: [emptyIn('VALUE', '"#000000"')],
+    shape: 'statement',
+    hidden: true,
+    code: (a) => `font_color = ${a.VALUE}`,
+  },
+  {
     type: 'text_set_bg_colour',
     category: 'text',
     message: '글상자 배경색을 %1 로 정하기',
     args: [colourField('COLOUR', '#ffffff')],
     shape: 'statement',
     code: (a) => `bg_color = ${a.COLOUR}`,
+  },
+  {
+    type: 'text_set_bg_colour_value',
+    category: 'text',
+    message: '글상자 배경색을 %1 로 정하기',
+    args: [emptyIn('VALUE', '"#ffffff"')],
+    shape: 'statement',
+    hidden: true,
+    code: (a) => `bg_color = ${a.VALUE}`,
   },
   {
     type: 'text_effect',

@@ -484,7 +484,8 @@ p {
 .po-text {
   display: block;
   width: 100%;
-  line-height: 1.2;
+  /* Matches the height measureTextBox gives a line. */
+  line-height: 1.25;
 }
 .po::after {
   content: "";
@@ -588,7 +589,7 @@ p {
   z-index: 2;
   display: grid;
   gap: 10px;
-  padding: 2px 4px 12px;
+  padding: 10px 4px 12px;
   margin-bottom: 6px;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
@@ -714,7 +715,8 @@ p {
 /* One line per object, no numbers: the card above owns those. */
 .obj-list {
   overflow-y: auto;
-  padding: 8px 10px 12px;
+  /* No top padding: the sticky detail must sit flush, or rows show above it. */
+  padding: 0 10px 12px;
   display: grid;
   gap: 1px;
   align-content: start;
@@ -1001,6 +1003,10 @@ button:focus-visible,
   overflow: hidden;
   /* Above Blockly's toolbox, which sits at 70. */
   z-index: 90;
+}
+/* A table needs room for its columns. */
+.prop-panel.wide {
+  width: min(960px, 92%);
 }
 .blockly-host {
   position: absolute;
@@ -2219,6 +2225,23 @@ button:focus-visible,
 .tbl.grid {
   border: none;
   border-radius: 0;
+  /* Columns keep their width; the frame scrolls sideways instead. */
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
+}
+.tbl.grid .input {
+  width: 120px;
+}
+.tbl.grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.tbl.grid tbody td.corner {
+  position: sticky;
+  left: 0;
+  z-index: 1;
 }
 .tbl.grid th,
 .tbl.grid td {

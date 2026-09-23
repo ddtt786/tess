@@ -92,8 +92,8 @@ export function compileProject(source: string, options: CompileOptions = {}): Co
   // there) only reach the caller through here — the top-level file still parsed,
   // so `loaded.ast` is set and the early return above does not fire. Without
   // this the object is dropped and the build reports success with nothing in it.
-  ctx.errors.push(...loaded.errors, ...semantic.errors);
-  ctx.warnings.push(...loaded.warnings, ...semantic.warnings);
+  for (const list of [loaded.errors, semantic.errors]) for (const item of list) ctx.errors.push(item);
+  for (const list of [loaded.warnings, semantic.warnings]) for (const item of list) ctx.warnings.push(item);
 
   const program = loaded.ast;
   collectScenes(program, ctx);
@@ -789,7 +789,7 @@ function compileBrushDefaults(object: CompiledObject, ctx: Context): EntryBlock[
       value,
       loc: value.loc!,
     };
-    blocks.push(...compileStatement(assign, ctx));
+    for (const block of compileStatement(assign, ctx)) blocks.push(block);
   }
   return blocks;
 }

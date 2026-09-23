@@ -148,12 +148,50 @@ export function installContextMenu(): void {
     },
   });
 
+  // The menu takes focus, which clears the block's selection outline; keep it until the menu closes.
+  const blockProto = Blockly.BlockSvg.prototype as any;
+  if (!blockProto.__tessMenuSelect) {
+    blockProto.__tessMenuSelect = true;
+    const showMenu = blockProto.showContextMenu;
+    blockProto.showContextMenu = function (this: Blockly.BlockSvg, event: PointerEvent) {
+      if (!this.isInFlyout) Blockly.common.setSelected(this);
+      showMenu.call(this, event);
+      if (this.isInFlyout || !Blockly.WidgetDiv.isVisible()) return;
+      this.addSelect();
+      const block = this;
+      const widget = document.querySelector(".blocklyWidgetDiv");
+      if (!widget) return;
+      const watch = new MutationObserver(() => {
+        if (Blockly.WidgetDiv.isVisible()) return;
+        watch.disconnect();
+        if (!block.isDisposed() && Blockly.getFocusManager().getFocusedNode() !== block) block.removeSelect();
+      });
+      watch.observe(widget, { attributes: true, attributeFilter: ["style"] });
+    };
+  }
+
+  // The comment icon is hidden by CSS; drop it from layout so it reserves no space.
+  const info = Blockly.zelos.RenderInfo.prototype as any;
+  if (!info.__tessCommentIconDropped) {
+    info.__tessCommentIconDropped = true;
+    const createRows = info.createRows_;
+    info.createRows_ = function (this: Blockly.zelos.RenderInfo) {
+      createRows.call(this);
+      const first = this.inputRows[0];
+      if (first) {
+        first.elements = first.elements.filter(
+          (elem) => !(elem instanceof Blockly.blockRendering.Icon && elem.icon instanceof Blockly.icons.CommentIcon),
+        );
+      }
+    };
+  }
+
   // Patch CommentIcon to anchor cleanly to the right side of the block with connection line
   if (!(Blockly.icons.CommentIcon.prototype as any).__anchorPatched) {
     (Blockly.icons.CommentIcon.prototype as any).__anchorPatched = true;
-    const originalGetAnchor =
-      Blockly.icons.CommentIcon.prototype.getAnchorLocation;
-    Blockly.icons.CommentIcon.prototype.getAnchorLocation = function () {
+    const iconProto = Blockly.icons.CommentIcon.prototype as any;
+    const originalGetAnchor = iconProto.getAnchorLocation;
+    iconProto.getAnchorLocation = function (this: Blockly.icons.CommentIcon) {
       const block = this.sourceBlock as Blockly.BlockSvg | undefined;
       if (!block) return originalGetAnchor.call(this);
       const bbox = (block as any).pathObject?.svgPath?.getBBox?.();

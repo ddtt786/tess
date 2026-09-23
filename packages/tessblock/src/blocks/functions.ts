@@ -71,6 +71,26 @@ export function defineFunctionBlocks(): void {
       style: 'func_blocks',
       inputsInline: true,
     },
+    {
+      type: 'func_local_get',
+      message0: '지역 변수 %1 값',
+      args0: [{ type: 'field_input', name: 'NAME', text: '값' }],
+      output: 'Value',
+      style: 'func_blocks',
+      inputsInline: true,
+    },
+    {
+      type: 'func_local_set',
+      message0: '지역 변수 %1 를 %2 로 바꾸기',
+      args0: [
+        { type: 'field_input', name: 'NAME', text: '값' },
+        { type: 'input_value', name: 'VALUE' },
+      ],
+      previousStatement: null,
+      nextStatement: null,
+      style: 'func_blocks',
+      inputsInline: true,
+    },
   ]);
 
   defineParamBlock(PARAM_VALUE, '값', ['Value', 'FuncParam']);
@@ -121,6 +141,11 @@ export function defineFunctionBlocks(): void {
   tess.forBlock['func_local_var'] = (block, generator) => {
     const name = safeIdent(String(block.getFieldValue('NAME') ?? '값'));
     return `var ${name} = ${(generator as typeof tess).expr(block, 'VALUE', Order.NONE, '0')}\n`;
+  };
+  tess.forBlock['func_local_get'] = (block) => [safeIdent(String(block.getFieldValue('NAME') ?? '값')), Order.ATOMIC];
+  tess.forBlock['func_local_set'] = (block, generator) => {
+    const name = safeIdent(String(block.getFieldValue('NAME') ?? '값'));
+    return `${name} = ${(generator as typeof tess).expr(block, 'VALUE', Order.NONE, '0')}\n`;
   };
 }
 

@@ -6,6 +6,7 @@ import {
   setProjectName,
 } from '../model/store.ts';
 import { downloadProject, loadProjectFile } from '../model/file-io.ts';
+import { loadEntFile } from '../model/ent-import.ts';
 import { buildEnt } from '../runtime/ent.ts';
 import { currentSource } from './source.ts';
 import { beginDrag } from './drag.ts';
@@ -159,15 +160,21 @@ export function Topbar() {
       <input
         ref={file}
         type="file"
-        accept=".tessproj,application/json"
+        accept=".tessproj,.ent,application/json"
         hidden
         onChange={(event) => {
           const picked = (event.target as HTMLInputElement).files?.[0];
           (event.target as HTMLInputElement).value = '';
           if (!picked) return;
+          const fail = (error: unknown) => notify(error instanceof Error ? error.message : '불러오지 못했습니다.');
+          if (/\.ent$/i.test(picked.name)) {
+            notify('엔트리 작품을 옮기는 중…');
+            void loadEntFile(picked).then(({ missed }) => notify(entSummary(missed))).catch(fail);
+            return;
+          }
           void loadProjectFile(picked)
             .then(() => notify('작품을 불러왔습니다.'))
-            .catch((error: unknown) => notify(error instanceof Error ? error.message : '불러오지 못했습니다.'));
+            .catch(fail);
         }}
       />
       <button
@@ -178,4 +185,12 @@ export function Topbar() {
       </button>
     </header>
   );
+}
+
+/** What the toast says after an entry work is opened. */
+function entSummary(missed: Map<string, number>): string {
+  const total = [...missed.values()].reduce((sum, count) => sum + count, 0);
+  if (!total) return '엔트리 작품을 불러왔습니다.';
+  const kinds = [...missed.keys()].slice(0, 3).join(', ');
+  return `엔트리 작품을 불러왔습니다. 블록으로 옮기지 못한 ${total}개는 빠졌습니다 (${kinds}${missed.size > 3 ? ' …' : ''}).`;
 }

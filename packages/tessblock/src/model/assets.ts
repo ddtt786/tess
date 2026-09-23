@@ -70,6 +70,12 @@ export async function saveAsset(dataUrl: string): Promise<string> {
   const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   cache.set(id, dataUrl);
   recent.set(id, Date.now());
+  // The memory copy is enough to use the asset; the write finishes on its own.
+  void persist(id, dataUrl);
+  return `${PREFIX}${id}`;
+}
+
+async function persist(id: string, dataUrl: string): Promise<void> {
   try {
     const db = await open();
     await new Promise<void>((resolve, reject) => {
@@ -81,7 +87,6 @@ export async function saveAsset(dataUrl: string): Promise<string> {
   } catch {
     // Kept in memory only; the project still works until the page is closed.
   }
-  return `${PREFIX}${id}`;
 }
 
 /** Throws away everything the project no longer points at. */

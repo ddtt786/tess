@@ -298,6 +298,46 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
 - 카테고리를 누르면 검색이 풀린다. 툴박스 DOM 의 `pointerdown` 에서 바로 지운다 —
   Blockly 의 `TOOLBOX_ITEM_SELECT` 는 이벤트 큐를 거쳐 늦게 오므로 입력칸이 남아 보인다.
 
+## 8.10 `.ent` 불러오기 (`model/ent-import.ts`, `blocks/entry-blocks.ts`)
+
+맨 위 **불러오기**는 `.tessproj` 와 `.ent` 를 모두 받는다. `.ent` 는 다음 순서로 옮긴다.
+
+```
+.ent(tar, gzip 허용) ──readTar──▶ project.json + 자산
+   ──decompileProject(inline, sizes, tableRows:false)──▶ Tess 소스
+   ──compileProject──▶ 정규화된 엔트리 블록 트리 (+ restoreTableRows)
+   ──toModel──▶ TessProject (레코드 id 는 컴파일된 id 그대로)
+   ──convertStack──▶ 오브젝트·함수마다 Blockly 직렬화 JSON
+```
+
+- **역변환 표는 카탈로그에서 배운다.** `entryPatterns()` 는 명세마다 표식 값(숫자 70001…,
+  `zqk…` 레코드, 판단 자리는 `표식 == 0` 비교)을 넣어 헤드리스 워크스페이스에 블록을 만들고,
+  `buildSource` → `compileProject` 로 컴파일한 뒤 표식이 놓인 자리를 구멍(`Hole`)으로 바꾼
+  패턴을 루트 엔트리 타입별로 모은다. 드롭다운·체크박스·키는 조합마다 한 패턴(128개 넘으면
+  하나씩만 바꿈). 컴파일에 실패한 변형은 그 줄의 `zqktag = N` 으로 찾아 빼고 다시 컴파일한다.
+  처음 한 번 약 0.5~1.5초.
+- 매칭은 `unify` — 구멍이 아닌 자리는 글자 그대로 같아야 하고, 고정된 부분이 많은 패턴이 이긴다.
+  루트 전체가 구멍인 패턴(`judge_value` 처럼 통과만 하는 명세)은 버린다.
+- 리터럴 포장 블록(`number`·`text`·`angle`)의 값 구멍은 포장 블록째 잡고, 변환할 때 그림자로 둔다.
+- 컴파일러 도우미 함수(`[Tess] …` 라벨)는 모델에 넣지 않는다. 호출 타입을 `helper:<라벨>` 로
+  바꿔(`nameHelperCalls`) 빌드마다 다른 id 와 무관하게 맞추고, 원래 배율 같은 나머지 인자는
+  `any` 구멍으로 둔다.
+- 따로 처리하는 것: 함수 호출(`func_<id>` → `func_call_`/`func_value_`), 매개변수 블록,
+  함수 지역 변수(`get/set_func_variable` → `func_local_get/set`, 첫 최상위 대입은
+  `func_local_var` 선언), `char_at`(→ `calc_char_at`), `get_boolean_value`(안쪽 판단만).
+- 판단 칸에 값 블록이 오면 숨은 `judge_value` 로 감싼다(판단 소켓은 `Boolean` 만 받는다).
+- 드롭다운 자리에 식이 오는 엔트리 작품을 위해 식을 받는 숨은 명세가 있다:
+  `looks_set_costume_value`, `sound_play_value`, `sound_play_bgm_value`,
+  `text_set_colour_value`, `text_set_bg_colour_value`, `text_set_font_name`,
+  `brush_set_colour_value`, `brush_set_fill_value`, `calc_from_hex_value`.
+- 이름: 함수는 첫 라벨(Tess 이름), 같은 이름이면 `_2`. 지역 변수가 매개변수·다른 지역 변수·
+  전역 변수와 겹치면 `_2`. 매개변수 이름은 디컴파일된 소스의 `function 이름(…)` 머리에서 읽는다.
+- 옮기지 못한 블록은 빠지고, 알림에 종류와 개수를 보여 준다(`missed`).
+- 되돌리지 못하는 것: 키 뗌(엔트리 블록 여럿으로 풀림), `root` 등 상수로 접히는 식,
+  `open_table_chart`(번호가 1 줄어 접힘), 삭제된 오브젝트를 가리키던 자리.
+- 예제 32개 중 대부분은 원본을 디컴파일·컴파일한 것과 블록 수가 같다. 남는 차이는
+  `y` 와 `y("self")` 처럼 같은 뜻을 다른 엔트리 블록으로 적는 경우다.
+
 ## 9. 상태와 저장
 
 - 프로젝트 전체는 `model/store.ts` 의 `project` 신호 하나에 있다. 변경은 `update()` 로만.
@@ -341,9 +381,23 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
   tsconfig 로는 검사되지 않으므로 빌드 산출물을 쓴다 — 새로 받은 저장소라면
   `pnpm --filter painter build` 를 한 번 돌려야 모양 탭이 뜬다.
 
+- 팔레트 갱신(`refreshPalette`)은 팔레트에 보이는 것(변수·신호·테이블·장면·오브젝트·모양·
+  소리·함수 머리, 선택된 오브젝트)의 키가 바뀔 때만 한다. 블록을 옮길 때마다 저장이 일어나고,
+  갱신이 flyout 을 다시 그리면 열린 우클릭 메뉴가 닫혔다. 메뉴·드롭다운이 열려 있으면 미룬다.
+- 우클릭 메뉴는 포커스를 가져가 블록의 선택 테두리가 사라진다. `showContextMenu` 를 감싸
+  블록을 먼저 선택하고, 메뉴가 닫힐 때까지 `addSelect()` 로 테두리를 남긴다.
+- 주석 아이콘은 CSS 로 숨기고, zelos `RenderInfo.createRows_` 에서도 빼서 블록 왼쪽에 자리를
+  남기지 않는다.
+- 글상자 크기(`measureTextBox`)는 캔버스에 글꼴을 넣고 잰다. 한 줄 글상자는 불러올 때 다시 잰다.
+- 변수 식별자는 오브젝트·함수 이름을 피한다(`nameTable`). 같으면 Tess 가 다른 것으로 읽는다.
+- `calc_state`(아이디·닉네임·기기·저장 가능·전체 블록 수)는 `calc_user`·`calc_device`·
+  `calc_block_count_all`·`calc_can_save` 로 나뉘었고, 옛 파일을 위해 숨긴 채 남아 있다.
+- 자산 저장(`saveAsset`)은 메모리에 넣고 바로 참조를 돌려준다. IndexedDB 쓰기는 뒤에서 끝난다
+  (다른 탭이 DB 를 쥐고 있어도 불러오기가 멈추지 않는다).
+
 ## 11. 남은 일
 
-- 작품은 `.tessproj` 파일로 저장하고 불러올 수 있다(맨 위 저장·불러오기). 자동 저장은
+- 작품은 `.tessproj` 파일로 저장하고 불러올 수 있다(맨 위 저장·불러오기). `.ent` 도 불러온다(8.10). 자동 저장은
   브라우저 저장소를 쓰므로 큰 작품은 파일로 따로 남기는 편이 안전하다.
 - 오브젝트 복제는 모양·소리·스크립트와 그 오브젝트의 지역 변수까지 함께 복사하고,
   복사한 스크립트가 복사한 변수를 가리키도록 블록 안의 변수 id 를 바꿔 준다. 파일 크기는 막지 않으므로(엔트리도 `.ent` 는
