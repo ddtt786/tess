@@ -289,8 +289,8 @@ function updateBubbleHeader(bubble: any): void {
   const height = isCollapsed ? COLLAPSED_SIZE : (bubble.size?.height ?? 120);
 
   if (bubble.background) {
-    bubble.background.setAttribute("rx", isCollapsed ? "14" : "8");
-    bubble.background.setAttribute("ry", isCollapsed ? "14" : "8");
+    bubble.background.setAttribute("rx", isCollapsed ? "14" : "10");
+    bubble.background.setAttribute("ry", isCollapsed ? "14" : "10");
     if (isCollapsed) {
       bubble.background.setAttribute("width", `${COLLAPSED_SIZE}`);
       bubble.background.setAttribute("height", `${COLLAPSED_SIZE}`);
@@ -307,8 +307,8 @@ function updateBubbleHeader(bubble: any): void {
 
   if (isCollapsed) {
     header.innerHTML = `
-      <circle cx="14" cy="14" r="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" style="pointer-events: none;" />
-      <svg x="7" y="7" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;">
+      <circle cx="14" cy="14" r="13.5" fill="#fffbea" stroke="#f0dc9a" stroke-width="1" style="pointer-events: none;" />
+      <svg x="7" y="7" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b08a2e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
       </svg>
       <circle class="tess-comment-expand-btn" cx="14" cy="14" r="14" fill="transparent" style="cursor: pointer; pointer-events: auto;" />
@@ -343,22 +343,17 @@ function updateBubbleHeader(bubble: any): void {
       expandBtn.onclick = expandComment;
     }
   } else {
-    // Flat modern header with divider, comment icon, "주석" text, chevron, and delete 'x' button
+    // Header on the card itself: a small label, collapse and delete.
     header.innerHTML = `
-      <path class="tess-comment-header-bg" style="pointer-events: none;" d="M 0 8 Q 0 0 8 0 L ${Math.max(0, width - 8)} 0 Q ${width} 0 ${width} 8 L ${width} ${HEADER_HEIGHT} L 0 ${HEADER_HEIGHT} Z" fill="#f8fafc" />
-      <line x1="0" y1="${HEADER_HEIGHT}" x2="${width}" y2="${HEADER_HEIGHT}" stroke="#e2e8f0" stroke-width="1" style="pointer-events: none;" />
-      <svg x="8" y="7" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-      </svg>
-      <text x="26" y="18" font-size="11.5" font-weight="600" fill="#64748b" font-family="Pretendard, Inter, system-ui, sans-serif" style="pointer-events: none; user-select: none;">주석</text>
+      <text x="10" y="18" font-size="11" font-weight="600" fill="#b08a2e" font-family="Pretendard, Inter, system-ui, sans-serif" style="pointer-events: none; user-select: none;">주석</text>
       <g class="tess-comment-collapse-btn" style="cursor: pointer; pointer-events: auto;">
         <rect x="${width - 36}" y="6" width="16" height="16" rx="4" fill="transparent" />
-        <polyline points="${width - 32},17 ${width - 28},12 ${width - 24},17" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;" />
+        <polyline points="${width - 32},17 ${width - 28},12 ${width - 24},17" fill="none" stroke="#b08a2e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;" />
       </g>
       <g class="tess-comment-delete-btn" style="cursor: pointer; pointer-events: auto;">
         <rect x="${width - 20}" y="6" width="16" height="16" rx="4" fill="transparent" />
-        <line x1="${width - 16}" y1="10" x2="${width - 8}" y2="18" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" style="pointer-events: none;" />
-        <line x1="${width - 8}" y1="10" x2="${width - 16}" y2="18" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" style="pointer-events: none;" />
+        <line x1="${width - 16}" y1="10" x2="${width - 8}" y2="18" stroke="#c9a94f" stroke-width="1.6" stroke-linecap="round" style="pointer-events: none;" />
+        <line x1="${width - 8}" y1="10" x2="${width - 16}" y2="18" stroke="#c9a94f" stroke-width="1.6" stroke-linecap="round" style="pointer-events: none;" />
       </g>
     `;
 
@@ -417,7 +412,7 @@ function updateBubbleHeader(bubble: any): void {
       bubble.resizeGroup.innerHTML = "";
       bubble.resizeGroup.setAttribute(
         "href",
-        'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><line x1="13" y1="7" x2="7" y2="13" stroke="%2394a3b8" stroke-width="1.5" stroke-linecap="round"/><line x1="13" y1="10" x2="10" y2="13" stroke="%2394a3b8" stroke-width="1.5" stroke-linecap="round"/></svg>',
+        'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><line x1="13" y1="7" x2="7" y2="13" stroke="%23d4b45c" stroke-width="1.5" stroke-linecap="round"/><line x1="13" y1="10" x2="10" y2="13" stroke="%23d4b45c" stroke-width="1.5" stroke-linecap="round"/></svg>',
       );
     }
   }

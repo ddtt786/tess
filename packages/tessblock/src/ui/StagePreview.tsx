@@ -6,7 +6,7 @@
  * moves the point x and y refer to.
  */
 import { useEffect, useRef } from 'preact/hooks';
-import { sceneObjects, selectObject, selectedObjectId, setObjectProps } from '../model/store.ts';
+import { sceneObjects, selectObject, selectedObjectId, setObjectProps, setTextProps } from '../model/store.ts';
 import { centerMode } from './state.ts';
 import { resolveAsset } from '../model/assets.ts';
 import { beginDrag } from './drag.ts';
@@ -112,6 +112,11 @@ function PreviewObject({ object, toStage }: DragProps) {
             textDecoration: [text.underline ? 'underline' : '', text.strike ? 'line-through' : ''].join(' ').trim(),
             textAlign: text.align,
             whiteSpace: text.lineBreak ? 'pre-wrap' : 'pre',
+            overflowWrap: text.lineBreak ? 'anywhere' : 'normal',
+            height: text.lineBreak ? '100%' : undefined,
+            // The runner sets wrapped lines fontSize + 2 apart, from the top of the box.
+            lineHeight: text.lineBreak ? `${text.fontSize + 2}px` : undefined,
+            overflow: text.lineBreak ? 'hidden' : undefined,
           }}
         >
           {text.content}
@@ -138,7 +143,17 @@ function TransformBox({ object, toStage }: DragProps) {
     if (locked) return;
     beginDrag(event, {
       onMove(moved) {
-        const next = resizeFromHandle(geometry, kind, toStage(moved), kind.length === 2 && !moved.shiftKey);
+        const text = object.text;
+        const frame = object.kind === 'text' && text?.lineBreak;
+        const next = resizeFromHandle(geometry, kind, toStage(moved), !frame && kind.length === 2 && !moved.shiftKey);
+        if (frame && text) {
+          // The handles size the frame the text wraps in; the letters keep their size.
+          const width = geometry.size.x * ((next.scaleX ?? 100) / 100) / (geometry.scale.x || 1);
+          const height = geometry.size.y * ((next.scaleY ?? 100) / 100) / (geometry.scale.y || 1);
+          setTextProps(object.id, { boxWidth: Math.max(8, Math.round(width)), boxHeight: Math.max(8, Math.round(height)) });
+          setObjectProps(object.id, { x: next.x, y: next.y });
+          return;
+        }
         setObjectProps(object.id, next);
       },
     });

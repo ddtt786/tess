@@ -12,8 +12,11 @@ export interface DragHandlers {
   slop?: number;
 }
 
+/** A click that wobbles this little is still a click, not a drag. */
+const CLICK_SLOP = 4;
+
 export function beginDrag(start: PointerEvent, handlers: DragHandlers): void {
-  const slop = handlers.slop ?? 0;
+  const slop = handlers.slop ?? CLICK_SLOP;
   let moved = slop === 0;
 
   const move = (event: PointerEvent) => {

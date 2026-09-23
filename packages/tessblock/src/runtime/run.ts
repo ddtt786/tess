@@ -76,6 +76,16 @@ export async function start(
   return built;
 }
 
+/** Holds the running work where it is; sounds are held too, not ended. */
+export function pause(): void {
+  running?.pause();
+}
+
+/** Carries a paused work on from where it was held. */
+export function resume(): void {
+  running?.start();
+}
+
 export function stop(): void {
   running?.dispose();
   running = null;

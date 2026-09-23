@@ -38,10 +38,70 @@ export const visibleVariables = computed(() =>
 );
 
 export function update(change: (draft: TessProject) => TessProject | void): void {
-  const draft = structuredClone(project.value) as TessProject;
+  const before = project.value;
+  const draft = structuredClone(before) as TessProject;
   const next = change(draft) ?? draft;
+  remember(before);
   project.value = next;
   saveSoon();
+}
+
+// --- undo -------------------------------------------------------------------
+
+/** Edits closer together than this (a drag, typing) undo as one step. */
+const BURST_MS = 500;
+/** Rough memory the history may hold, in serialized characters. */
+const HISTORY_BUDGET = 120_000_000;
+
+const past: TessProject[] = [];
+const future: TessProject[] = [];
+let lastEdit = 0;
+/** Serialized size of the work, updated on every save. */
+let workSize = 0;
+
+/** Bumped when an undo or redo swaps the whole work; open editors reload from it. */
+export const restored = signal(0);
+
+function remember(before: TessProject): void {
+  const now = Date.now();
+  if (now - lastEdit > BURST_MS) {
+    past.push(before);
+    const limit = Math.max(5, Math.min(100, Math.floor(HISTORY_BUDGET / Math.max(workSize, 1))));
+    while (past.length > limit) past.shift();
+  }
+  lastEdit = now;
+  future.length = 0;
+}
+
+export function undo(): boolean {
+  return travel(past, future);
+}
+
+export function redo(): boolean {
+  return travel(future, past);
+}
+
+function travel(from: TessProject[], to: TessProject[]): boolean {
+  const target = from.pop();
+  if (!target) return false;
+  to.push(project.value);
+  lastEdit = 0;
+  project.value = target;
+  if (!target.scenes.some((scene) => scene.id === selectedSceneId.value)) {
+    selectedSceneId.value = target.scenes[0]?.id ?? '';
+  }
+  if (!target.objects.some((object) => object.id === selectedObjectId.value)) {
+    selectedObjectId.value = target.objects.find((object) => object.sceneId === selectedSceneId.value)?.id ?? '';
+  }
+  restored.value += 1;
+  saveSoon();
+  return true;
+}
+
+function forgetHistory(): void {
+  past.length = 0;
+  future.length = 0;
+  lastEdit = 0;
 }
 
 function patchObject(id: string, change: (object: TessObject) => void): void {
@@ -242,7 +302,8 @@ export function setTextProps(id: string, patch: Partial<TextProps>): void {
   patchObject(id, (object) => {
     if (!object.text) return;
     const text = { ...object.text, ...patch };
-    object.text = { ...text, ...measureTextBox(text) };
+    // A multi-line box is a frame the text wraps in, sized by hand; a one-line box fits its text.
+    object.text = text.lineBreak && text.boxWidth > 0 && text.boxHeight > 0 ? text : { ...text, ...measureTextBox(text) };
   });
 }
 
@@ -473,6 +534,7 @@ export function setFps(fps: number): void {
 }
 
 export function replaceProject(next: TessProject): void {
+  forgetHistory();
   const model = migrateProject(next);
   project.value = model;
   selectedSceneId.value = model.scenes[0]?.id ?? '';
@@ -495,7 +557,9 @@ function saveSoon(): void {
   if (saveTimer !== undefined) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(project.value));
+      const serialized = JSON.stringify(project.value);
+      workSize = serialized.length;
+      localStorage.setItem(STORAGE_KEY, serialized);
       saveFailed.value = false;
       void keepOnly(assetRefs(project.value));
     } catch {

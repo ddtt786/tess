@@ -15,7 +15,7 @@ import {
   tessTheme,
 } from "../blocks/registry.ts";
 import { returnsValue } from "../blocks/functions.ts";
-import { project, selectedObjectId, setObjectBlocks } from "../model/store.ts";
+import { project, restored, selectedObjectId, setObjectBlocks } from "../model/store.ts";
 import { blockQuery, dialog, functionDraft } from "./state.ts";
 import { newId } from "../model/ids.ts";
 import type { BlocklyState } from "../model/types.ts";
@@ -103,6 +103,8 @@ export function mount(host: HTMLElement): void {
     blockQuery.value = "";
   });
   watchPalette(host);
+  host.addEventListener("dblclick", openFunctionAt);
+  mountedHost = host;
   shown = "";
   showObject(selectedObjectId.value);
   // Subscribed here rather than from a component: the swap has to happen with
@@ -111,11 +113,16 @@ export function mount(host: HTMLElement): void {
     selectedObjectId.subscribe((id) => showObject(id)),
     project.subscribe(() => refreshPalette()),
     selectedObjectId.subscribe(() => refreshPalette()),
+    restored.subscribe(() => reloadShown()),
     blockQuery.subscribe((query) => showSearch(query)),
   ];
 }
 
+let mountedHost: HTMLElement | null = null;
+
 export function unmount(): void {
+  mountedHost?.removeEventListener("dblclick", openFunctionAt);
+  mountedHost = null;
   flush();
   blockQuery.value = "";
   palette?.disconnect();
@@ -160,6 +167,42 @@ export function showObject(id: string): void {
     Blockly.Events.enable();
   }
   workspace.scrollCenter();
+}
+
+/** Double-clicking a function block, in the palette or on the canvas, opens it for editing. */
+function openFunctionAt(event: MouseEvent): void {
+  const element = event.target instanceof Element ? event.target.closest("[data-id]") : null;
+  const id = element?.getAttribute("data-id");
+  if (!id || !workspace) return;
+  const block =
+    workspace.getBlockById(id) ??
+    workspace.getFlyout()?.getWorkspace().getBlockById(id) ??
+    null;
+  const match = block ? /^func_(?:call|value)_(.+)$/.exec(block.type) : null;
+  if (!match) return;
+  const definition = project.peek().functions.find((candidate) => candidate.id === match[1]);
+  if (!definition) return;
+  event.preventDefault();
+  functionDraft.value = structuredClone(definition);
+}
+
+/**
+ * Loads the shown object again after an undo swapped the work. The workspace is
+ * not written back first: what it holds is the state being undone.
+ */
+function reloadShown(): void {
+  if (!workspace || !shown) return;
+  if (saveTimer !== undefined) {
+    clearTimeout(saveTimer);
+    saveTimer = undefined;
+  }
+  // Keep the view where it was; showObject would recentre it.
+  const { scrollX, scrollY } = workspace;
+  shown = "";
+  showObject(selectedObjectId.peek());
+  workspace.scroll(scrollX, scrollY);
+  workspace.clearUndo();
+  refreshPalette();
 }
 
 /** Fills the palette with search hits, or puts the open category back. */

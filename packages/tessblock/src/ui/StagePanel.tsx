@@ -2,15 +2,16 @@
 import { useSignal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import { currentScene, project } from '../model/store.ts';
-import { relayout, start, stop } from '../runtime/run.ts';
+import { pause, relayout, resume, start, stop } from '../runtime/run.ts';
 import { currentSource } from './source.ts';
 import { codeOpen, notify, stageFullscreen } from './state.ts';
 import { StagePreview } from './StagePreview.tsx';
-import { FlagIcon, MaximizeIcon, MinimizeIcon, StopIcon } from './icons.tsx';
+import { FlagIcon, MaximizeIcon, MinimizeIcon, PauseIcon, PlayIcon, StopIcon } from './icons.tsx';
 
 export function StagePanel() {
   const host = useRef<HTMLDivElement>(null);
   const running = useSignal(false);
+  const paused = useSignal(false);
   const busy = useSignal(false);
 
   useEffect(() => () => stop(), []);
@@ -47,6 +48,7 @@ export function StagePanel() {
         return;
       }
       running.value = true;
+      paused.value = false;
       host.current.focus();
     } catch (error) {
       notify(error instanceof Error ? error.message : '실행하지 못했습니다.');
@@ -55,9 +57,16 @@ export function StagePanel() {
     }
   }
 
+  function togglePause() {
+    if (paused.value) resume();
+    else pause();
+    paused.value = !paused.value;
+  }
+
   function halt() {
     stop();
     running.value = false;
+    paused.value = false;
     host.current?.replaceChildren();
   }
 
@@ -74,9 +83,15 @@ export function StagePanel() {
         <div class="fs-topbar">
           <div class="fs-controls">
             {running.value ? (
-              <button class="play stop" onClick={halt}>
-                <StopIcon size={14} /> 정지하기
-              </button>
+              <>
+                <button class="play pause" onClick={togglePause} title={paused.value ? '계속하기' : '일시정지'}>
+                  {paused.value ? <PlayIcon size={14} /> : <PauseIcon size={14} />}
+                  {paused.value ? '계속하기' : '일시정지'}
+                </button>
+                <button class="play stop" onClick={halt}>
+                  <StopIcon size={14} /> 정지하기
+                </button>
+              </>
             ) : (
               <button class="play flag-btn" onClick={run} disabled={busy.value}>
                 <FlagIcon size={14} /> 시작하기
@@ -102,9 +117,15 @@ export function StagePanel() {
       {!isFs && (
         <div class="stage-controls">
           {running.value ? (
-            <button class="play stop" onClick={halt}>
-              <StopIcon size={13} /> 정지하기
-            </button>
+            <>
+              <button class="play pause" onClick={togglePause} title={paused.value ? '계속하기' : '일시정지'}>
+                {paused.value ? <PlayIcon size={13} /> : <PauseIcon size={13} />}
+                {paused.value ? '계속하기' : '일시정지'}
+              </button>
+              <button class="play stop" onClick={halt}>
+                <StopIcon size={13} /> 정지하기
+              </button>
+            </>
           ) : (
             <button class="play flag-btn" onClick={run} disabled={busy.value}>
               <FlagIcon size={14} /> 시작하기

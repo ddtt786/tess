@@ -542,6 +542,9 @@ p {
 .play.stop {
   background: var(--danger);
 }
+.play.pause {
+  background: #475569;
+}
 .play:disabled {
   opacity: 0.5;
 }
@@ -1561,13 +1564,12 @@ button:focus-visible,
   color: var(--text) !important;
 }
 .blocklyToolboxCategoryIcon {
-  /* Blockly hides this span on a flat category; it carries the colour here. */
+  /* Blockly hides this span on a flat category; it carries the category icon here. */
   visibility: visible !important;
-  width: 10px !important;
-  height: 10px !important;
-  min-width: 10px;
-  border-radius: 3px !important;
-  background: var(--line);
+  width: 17px !important;
+  height: 17px !important;
+  min-width: 17px;
+  background: var(--muted);
 }
 .blocklyFlyoutBackground {
   fill: #f3f4f7;
@@ -2338,8 +2340,9 @@ button:focus-visible,
 .blocklyBubbleTail {
   display: block !important;
   fill: none !important;
-  stroke: #94a3b8 !important;
-  stroke-width: 1.5px !important;
+  stroke: #e2c566 !important;
+  stroke-width: 1px !important;
+  stroke-dasharray: 3 3;
   stroke-linecap: round !important;
   stroke-linejoin: round !important;
   opacity: 0.9 !important;
@@ -2350,16 +2353,6 @@ button:focus-visible,
   display: none !important;
 }
 
-.blocklyComment {
-  filter: drop-shadow(0 10px 24px rgba(22, 24, 29, 0.1))
-    drop-shadow(0 2px 6px rgba(22, 24, 29, 0.05));
-  transition: filter 0.15s var(--ease);
-}
-
-.blocklyComment:hover {
-  filter: drop-shadow(0 14px 30px rgba(22, 24, 29, 0.14))
-    drop-shadow(0 3px 8px rgba(22, 24, 29, 0.08));
-}
 
 .blocklyCommentTopbarBackground {
   fill: #ffd13b !important;
@@ -2466,19 +2459,18 @@ button:focus-visible,
   stroke-dasharray: none !important;
 }
 
-/* Bubble comments (Block-attached comments) */
+/* Block comments: a flat note card, one thin border, no shadow. */
 .blocklyBubble {
-  filter: drop-shadow(0 4px 12px rgba(15, 23, 42, 0.08))
-    drop-shadow(0 1px 3px rgba(15, 23, 42, 0.04));
+  filter: none;
 }
 .blocklyBubble .blocklyDraggable {
-  fill: #ffffff !important;
-  stroke: #cbd5e1 !important;
-  stroke-width: 1.5px !important;
+  fill: #fffbea !important;
+  stroke: #f0dc9a !important;
+  stroke-width: 1px !important;
   transition: stroke 0.15s ease;
 }
 .blocklyBubble:hover .blocklyDraggable {
-  stroke: #94a3b8 !important;
+  stroke: #e2c566 !important;
 }
 .blocklyBubble.blocklySelected .blocklyDraggable,
 .blocklyBubble:focus-within .blocklyDraggable {
@@ -2486,7 +2478,7 @@ button:focus-visible,
 }
 .blocklyTextInputBubble .blocklyTextarea {
   background-color: transparent !important;
-  color: #0f172a !important;
+  color: #3f3a2a !important;
   font-family:
     Pretendard, "Pretendard Variable", Inter, "Noto Sans KR", system-ui,
     sans-serif !important;
@@ -2509,7 +2501,7 @@ button:focus-visible,
   line-height: 1.5 !important;
 }
 .tess-comment-collapse-btn:hover polyline {
-  stroke: #0f172a !important;
+  stroke: #3f3a2a !important;
 }
 .tess-comment-delete-btn:hover line {
   stroke: #ef4444 !important;

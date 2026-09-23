@@ -339,6 +339,10 @@ export class PixiRenderer implements Renderer {
     this.applyStageSize();
     this.app.stage.addChild(this.world);
     this.overlay = new Overlay(this.app.stage);
+    // An opaque WebGL canvas shows black until its first frame; clear it to the
+    // stage colour now, since the first real frame waits for every costume.
+    this.app.canvas.style.background = options.background ?? '#ffffff';
+    this.app.renderer.render(this.app.stage);
     if (options.parent && !options.canvas) {
       options.parent.appendChild(this.app.canvas);
     }
