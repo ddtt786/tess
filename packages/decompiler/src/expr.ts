@@ -135,7 +135,7 @@ function resourceRef(
   return tessString(nameOf(id));
 }
 
-const BARE_NAME = /^[\p{L}_][\p{L}\p{N}_]*$/u;
+const BARE_NAME = /^[\p{L}_][\p{L}0-9_]*$/u;
 
 /**
  * Whether `${text}[i]` reads the i-th character of `text`. It must be a single

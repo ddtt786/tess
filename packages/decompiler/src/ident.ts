@@ -10,7 +10,8 @@ import type { DecompileContext, ResourceInfo } from './types.ts';
  * IDENT_START.test('1'); // false
  */
 const IDENT_START = /[\p{L}_]/u;
-const IDENT_PART = /[\p{L}\p{N}_]/u;
+// Matches the lexer: only ASCII digits, so `¼`/`²` become `_`.
+const IDENT_PART = /[\p{L}0-9_]/u;
 
 /**
  * 주어진 임의의 문자열을 안전한 Tess 식별자로 변환합니다. 
