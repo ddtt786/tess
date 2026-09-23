@@ -12,7 +12,7 @@ import { DEFINE_BLOCK, PARAM_BOOLEAN, PARAM_VALUE, readParams, tidyHeader } from
 import { TOOLBOX, flyoutFor, installBlocks } from '../blocks/registry.ts';
 import { CATEGORY_ORDER } from '../blocks/theme.ts';
 import { editingFunction } from '../model/function-editing.ts';
-import { project, saveFunction } from '../model/store.ts';
+import { project, saveFunction, selectedObjectId } from '../model/store.ts';
 import { WORKSPACE_OPTIONS } from './blockly-host.ts';
 import { functionDraft, notify } from './state.ts';
 import type { FunctionParam } from '../model/types.ts';
@@ -24,6 +24,9 @@ export function FunctionEditor() {
   const known = useRef<FunctionParam[]>([]);
   const settling = useRef(false);
   const exists = project.value.functions.some((candidate) => candidate.id === draft?.id);
+  // The current owner stays offered even when it is not the selected object.
+  const ownerChoices = project.value.objects.filter((object) =>
+    object.id === selectedObjectId.value || object.id === draft?.owner);
 
   useEffect(() => {
     if (!draft || !host.current) return undefined;
@@ -48,6 +51,7 @@ export function FunctionEditor() {
     const define = definitionBlock(created);
     if (define) {
       define.setFieldValue(draft.name, 'NAME');
+      labelDefinition(define, draft.owner ?? null);
       if (!draft.blocks) for (const param of draft.params) restore(define, param);
       tidyHeader(define);
       known.current = readParams(define);
@@ -106,6 +110,18 @@ export function FunctionEditor() {
     close();
   }
 
+  /** Moves the function between global and one object's own. */
+  function setOwner(owner: string | null) {
+    const current = functionDraft.peek();
+    if (!current) return;
+    const next = { ...current, owner };
+    functionDraft.value = next;
+    editingFunction.value = next;
+    const created = workspace.current;
+    const define = created ? definitionBlock(created) : null;
+    if (define) labelDefinition(define, owner);
+  }
+
   /** Leaves the editor; parameter blocks must stop being offered. */
   function close() {
     functionDraft.value = null;
@@ -116,6 +132,16 @@ export function FunctionEditor() {
     <>
       <div class="tabbar func-bar">
         <strong class="func-title">{exists ? '함수 고치기' : '함수 만들기'}</strong>
+        <select
+          class="select func-scope"
+          value={draft.owner ?? ''}
+          aria-label="함수 범위"
+          title="지역 함수는 그 오브젝트의 블록 꾸러미에만 나옵니다"
+          onChange={(event) => setOwner((event.target as HTMLSelectElement).value || null)}
+        >
+          <option value="">전역 함수</option>
+          {ownerChoices.map((object) => <option key={object.id} value={object.id}>{object.name} 지역 함수</option>)}
+        </select>
         <span class="vr" />
         <span class="note-left">
           매개변수는 함수 블록의 ＋ 로 더하고, 쓰려면 그 매개변수를 그대로 끌어다 놓으세요
@@ -155,4 +181,10 @@ function sameParams(left: FunctionParam[], right: FunctionParam[]): boolean {
 
 function definitionBlock(workspace: Blockly.WorkspaceSvg): Blockly.BlockSvg | null {
   return workspace.getTopBlocks(false).find((block) => block.type === DEFINE_BLOCK) ?? null;
+}
+
+/** The definition block says which kind of function it declares. */
+function labelDefinition(define: Blockly.BlockSvg, owner: string | null): void {
+  const label = define.getInput('HEAD')?.fieldRow[0];
+  label?.setValue(owner ? '지역 함수 정의하기' : '함수 정의하기');
 }

@@ -2,10 +2,13 @@
 import { useSignal } from '@preact/signals';
 import { useRef } from 'preact/hooks';
 import {
-  addScene, currentScene, duplicateScene, project, removeScene, renameScene, reorderScene, selectScene,
+  addScene, addSceneFolder, currentScene, duplicateScene, project, removeScene, removeSceneFolder, renameScene,
+  renameSceneFolder, reorderScene, selectScene,
   newProject, setProjectName,
 } from '../model/store.ts';
-import { canUseFolders, detachFolder, folderState, openFolder, reconnectFolder, type FolderResult } from '../model/folder.ts';
+import {
+  canUseFolders, detachFolder, folderState, openFolder, reconnectFolder, saveFolderNow, saveIntoFolder, type FolderResult,
+} from '../model/folder.ts';
 import { downloadProject, loadProjectFile } from '../model/file-io.ts';
 import { loadEntFile } from '../model/ent-import.ts';
 import { buildEnt } from '../runtime/ent.ts';
@@ -45,6 +48,30 @@ export function Topbar() {
     }
   }
 
+  const strip = useRef<HTMLElement>(null);
+  const collapsed = useSignal<Set<string>>(new Set());
+
+  function toggleFolder(name: string) {
+    const next = new Set(collapsed.value);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    collapsed.value = next;
+  }
+
+  /** A mouse wheel scrolls the strip sideways; it has no scrollbar of its own to grab. */
+  function scrollStrip(event: WheelEvent) {
+    const nav = strip.current;
+    if (!nav || Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
+    nav.scrollLeft += event.deltaY;
+  }
+
+  function addSceneAndShow() {
+    addScene();
+    requestAnimationFrame(() => {
+      strip.current?.querySelector('.scene.on')?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+    });
+  }
+
   function startNew() {
     detachFolder();
     newProject();
@@ -70,6 +97,29 @@ export function Topbar() {
     } catch (error) {
       if ((error as DOMException)?.name !== 'AbortError') {
         notify(error instanceof Error ? error.message : '폴더를 열지 못했습니다.');
+      }
+    } finally {
+      busy.value = null;
+    }
+  }
+
+  async function saveToFolder() {
+    try {
+      await saveFolderNow();
+      notify(`${folderState.value?.name ?? '폴더'} 에 저장했습니다.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '폴더에 저장하지 못했습니다.');
+    }
+  }
+
+  async function saveAsFolder() {
+    try {
+      busy.value = { step: '폴더에 저장하는 중', done: 0.5 };
+      await saveIntoFolder();
+      notify(`${folderState.value?.name ?? '폴더'} 에 저장했습니다. 이제 이 폴더에 바로 저장됩니다.`);
+    } catch (error) {
+      if ((error as DOMException)?.name !== 'AbortError') {
+        notify(error instanceof Error ? error.message : '폴더에 저장하지 못했습니다.');
       }
     } finally {
       busy.value = null;
@@ -131,15 +181,42 @@ export function Topbar() {
         aria-label="작품 이름"
       />
       <span class="vr" />
-      <nav class="scenes" aria-label="장면">
-        {model.scenes.map((candidate) => {
+      <nav class="scenes" aria-label="장면" ref={strip} onWheel={scrollStrip}>
+        {model.scenes.map((candidate, index) => {
           const drop = drag.value?.overId === candidate.id ? drag.value : null;
-          return (
+          const folder = candidate.folder ?? null;
+          const opensFolder = folder !== null && model.scenes[index - 1]?.folder !== folder;
+          const folded = folder !== null && collapsed.value.has(folder) && candidate.id !== scene?.id;
+          const chip = opensFolder && (
+            <div
+              key={`folder:${folder}`}
+              class={`scene-folder ${collapsed.value.has(folder!) ? 'closed' : ''}`}
+              title="눌러서 접기·펴기, 두 번 눌러 이름 바꾸기"
+              onClick={() => toggleFolder(folder!)}
+            >
+              <FolderIcon size={13} />
+              <InlineName value={folder!} onCommit={(name) => renameSceneFolder(folder!, name)} />
+              <span class="count">{model.scenes.filter((each) => each.folder === folder).length}</span>
+              <span
+                class="x"
+                title="폴더 풀기 (장면은 그대로)"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  removeSceneFolder(folder!);
+                }}
+              >
+                ✕
+              </span>
+            </div>
+          );
+          if (folded) return chip || null;
+          return [chip, (
             <div
               key={candidate.id}
               data-id={candidate.id}
               class={[
                 'scene',
+                folder !== null ? 'in-folder' : '',
                 candidate.id === scene?.id ? 'on' : '',
                 drag.value?.id === candidate.id ? 'dragging' : '',
                 drop ? (drop.before ? 'drop-before' : 'drop-after') : '',
@@ -182,12 +259,22 @@ export function Topbar() {
                 </span>
               )}
             </div>
-          );
+          )];
         })}
-        <button class="scene-add" title="장면 추가" aria-label="장면 추가" onClick={addScene}>
+      </nav>
+      <div class="scene-tools">
+        <button class="scene-add" title="장면 추가" aria-label="장면 추가" onClick={addSceneAndShow}>
           <PlusIcon />
         </button>
-      </nav>
+        <button
+          class="scene-add"
+          title="지금 장면을 새 폴더에 넣기"
+          aria-label="장면 폴더 만들기"
+          onClick={() => { if (scene) addSceneFolder(scene.id); }}
+        >
+          <FolderIcon size={14} />
+        </button>
+      </div>
       <span class="spacer" />
       <button class="btn" title="새 작품 만들기 (Ctrl+Z 로 되돌릴 수 있습니다)" onClick={startNew}>
         <FilePlusIcon /> 새로 만들기
@@ -211,7 +298,16 @@ export function Topbar() {
       <button class="btn" title="작품 파일 불러오기" onClick={() => file.current?.click()}>
         <UploadIcon /> 불러오기
       </button>
-      <button class="btn" title="작품을 파일로 저장" onClick={downloadProject}>저장</button>
+      {folderState.value?.connected ? (
+        <button class="btn" title={`${folderState.value.name} 폴더에 지금 저장`} onClick={() => void saveToFolder()}>저장</button>
+      ) : (
+        <button class="btn" title="작품을 파일로 내려받기" onClick={downloadProject}>저장</button>
+      )}
+      {canUseFolders && !folderState.value?.connected && (
+        <button class="btn" title="폴더를 골라 그 안에 작품을 저장하고, 앞으로 거기서 작업하기" onClick={() => void saveAsFolder()}>
+          폴더에 저장
+        </button>
+      )}
       <button
         class="btn"
         title="엔트리에서 열 수 있는 .ent 파일로 내보내기"
@@ -230,8 +326,7 @@ export function Topbar() {
           (event.target as HTMLInputElement).value = '';
           if (!picked) return;
           const fail = (error: unknown) => notify(error instanceof Error ? error.message : '불러오지 못했습니다.');
-          // A file opened on its own is not the folder's work any more.
-          detachFolder();
+          // With a folder open, the opened work moves into that folder (and is saved there).
           if (/\.ent$/i.test(picked.name)) {
             void importEnt(picked).catch(fail);
             return;

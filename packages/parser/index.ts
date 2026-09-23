@@ -9,4 +9,6 @@ export { KEYWORDS, UNUSABLE_AS_NAME } from "./src/parser/tokens.ts";
 export { TessParseError } from "./src/parse.ts";
 export type { ParseOptions } from "./src/parse.ts";
 export type { StartRule } from "./src/parser/index.ts";
+export { initTreeSitter, treeSitterReady } from "./src/tree/index.ts";
+export type { TreeSitterFiles } from "./src/tree/index.ts";
 export type * from "./src/ast.ts";

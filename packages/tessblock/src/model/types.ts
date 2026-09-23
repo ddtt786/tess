@@ -86,6 +86,8 @@ export interface TessObject {
 export interface Scene {
   id: string;
   name: string;
+  /** Folder the scene is filed under in the tab strip. Only for sorting; the work ignores it. */
+  folder?: string | null;
 }
 
 export type VariableKind = 'variable' | 'list';
@@ -129,6 +131,11 @@ export interface FunctionParam {
 export interface FunctionDef {
   id: string;
   name: string;
+  /**
+   * Object that keeps the function to itself (declared inside the object in
+   * Tess, offered only in its palette); null or absent for a global one.
+   */
+  owner?: string | null;
   params: FunctionParam[];
   /** Blockly workspace state holding the definition block and its body. */
   blocks: BlocklyState | null;

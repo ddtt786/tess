@@ -15,6 +15,8 @@ import {
   tessTheme,
 } from "../blocks/registry.ts";
 import { returnsValue } from "../blocks/functions.ts";
+import { StackAwarePreviewer } from "../blocks/previewer.ts";
+import { runStack } from "./debug-run.ts";
 import { project, restored, selectedObjectId, setObjectBlocks } from "../model/store.ts";
 import { blockQuery, dialog, functionDraft } from "./state.ts";
 import { newId } from "../model/ids.ts";
@@ -49,6 +51,8 @@ export const WORKSPACE_OPTIONS: Blockly.BlocklyOptions = {
   },
   grid: { spacing: 28, length: 3, colour: "#e2e7f1", snap: false },
   move: { scrollbars: true, drag: true, wheel: true },
+  // Long stacks would re-render top to bottom on every move of the insertion marker.
+  plugins: { connectionPreviewer: StackAwarePreviewer },
 };
 
 export function mount(host: HTMLElement): void {
@@ -88,6 +92,16 @@ export function mount(host: HTMLElement): void {
     functionDraft.value = {
       id: newId("f"),
       name: "함수",
+      owner: null,
+      params: [],
+      blocks: null,
+    };
+  });
+  workspace.registerButtonCallback("NEW_LOCAL_FUNCTION", () => {
+    functionDraft.value = {
+      id: newId("f"),
+      name: "지역 함수",
+      owner: selectedObjectId.peek() || null,
       params: [],
       blocks: null,
     };
@@ -169,7 +183,10 @@ export function showObject(id: string): void {
   workspace.scrollCenter();
 }
 
-/** Double-clicking a function block, in the palette or on the canvas, opens it for editing. */
+/**
+ * Double-clicking a function block, in the palette or on the canvas, opens it
+ * for editing; double-clicking any other stack on the canvas runs it.
+ */
 function openFunctionAt(event: MouseEvent): void {
   const element = event.target instanceof Element ? event.target.closest("[data-id]") : null;
   const id = element?.getAttribute("data-id");
@@ -179,11 +196,19 @@ function openFunctionAt(event: MouseEvent): void {
     workspace.getFlyout()?.getWorkspace().getBlockById(id) ??
     null;
   const match = block ? /^func_(?:call|value)_(.+)$/.exec(block.type) : null;
-  if (!match) return;
-  const definition = project.peek().functions.find((candidate) => candidate.id === match[1]);
-  if (!definition) return;
+  if (match) {
+    const definition = project.peek().functions.find((candidate) => candidate.id === match[1]);
+    if (!definition) return;
+    event.preventDefault();
+    functionDraft.value = structuredClone(definition);
+    return;
+  }
+  // Any other stack on the canvas runs on its own, unless the double click was on a field being edited.
+  const onField = event.target instanceof Element
+    && event.target.closest(".blocklyEditableField, .blocklyEditableText, .blocklyDropdownText, .blocklyFieldRect");
+  if (!block || onField || block.isInFlyout || block.outputConnection || !shown) return;
   event.preventDefault();
-  functionDraft.value = structuredClone(definition);
+  runStack(block as Blockly.BlockSvg, shown);
 }
 
 /**

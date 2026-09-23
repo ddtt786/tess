@@ -14,6 +14,7 @@ import {
 import { DEFINE_BLOCK, PARAM_BOOLEAN, PARAM_VALUE } from '../blocks/function-ids.ts';
 import { safeIdent } from '../codegen/ident.ts';
 import { saveAsset } from './assets.ts';
+import { yieldToPage } from './yield.ts';
 import { replaceProject } from './store.ts';
 import type {
   Costume, FunctionDef, FunctionParam, ObjectProps, Scene, Sound, TableDef, TessObject, TessProject, TextProps,
@@ -36,7 +37,7 @@ export async function loadEntFile(file: File, onProgress?: ImportProgress): Prom
 
 /** Lets the page paint between the long steps, so the progress shows and the tab stays alive. */
 function breathe(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+  return yieldToPage();
 }
 
 /** Builds the editor project an `.ent` holds, without opening it. */
@@ -229,7 +230,15 @@ async function toModel(
   const globals = new Set(work.variables.map((variable) => safeIdent(variable.name)));
   // entry allows two functions of one name; Tess needs them apart, as the decompiler writes them.
   const functionNames = new Set<string>();
-  const functions = own.map((fn) => toFunction(fn, paramNames, globals, functionNames, ctx));
+  const owners = functionOwners(source);
+  const objectIdByName = new Map<string, string>();
+  for (const object of work.objects) if (!objectIdByName.has(object.name)) objectIdByName.set(object.name, object.id);
+  const functions = own.map((fn) => {
+    const definition = toFunction(fn, paramNames, globals, functionNames, ctx);
+    const tessName = readHeader(parseJson<EntryBlock[][]>(fn.content)?.[0]?.[0]?.params?.[0]).name;
+    const ownerName = owners.get(tessName);
+    return { ...definition, owner: ownerName ? objectIdByName.get(ownerName) ?? null : null };
+  });
 
   return {
     model: {
@@ -340,6 +349,36 @@ function scriptsState(scripts: EntryBlock[][], ctx: ConvertContext): Record<stri
 }
 
 // --- functions --------------------------------------------------------------
+
+/**
+ * Functions the decompiler declared inside an object — the ones only that
+ * object uses — by Tess name, with the object's name as the work shows it.
+ */
+function functionOwners(source: string): Map<string, string> {
+  const owners = new Map<string, string>();
+  let current: { indent: number; key: string; display: string | null } | null = null;
+  for (const line of source.split('\n')) {
+    const indent = line.length - line.trimStart().length;
+    const header = /^(\s*)(?:object|text)\s+("(?:[^"\\]|\\.)*")\s*:\s*$/.exec(line);
+    if (header) {
+      current = { indent, key: JSON.parse(header[2]!) as string, display: null };
+      continue;
+    }
+    if (!current || !line.trim()) continue;
+    if (indent <= current.indent) {
+      current = null;
+      continue;
+    }
+    const named = /^\s*name\s+("(?:[^"\\]|\\.)*")\s*$/.exec(line);
+    if (named && current.display === null && indent === current.indent + 2) {
+      current.display = JSON.parse(named[1]!) as string;
+      continue;
+    }
+    const fn = /^\s*function\s+([^\s(]+)\s*\(/.exec(line);
+    if (fn) owners.set(fn[1]!, current.display ?? current.key);
+  }
+  return owners;
+}
 
 /** `function name(a, b?)` headers in the decompiled source, by function name. */
 function functionParamNames(source: string): Map<string, string[]> {

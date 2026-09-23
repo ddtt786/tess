@@ -22,7 +22,16 @@ const INDENT = '  ';
 
 export function buildSource(model: TessProject, options: WriteOptions = {}): string {
   const idents = nameTable(model);
-  useIdents(idents);
+  // Object keys are unique across the whole work, not just inside a scene, and
+  // blocks naming an object must use the same key the object is declared with.
+  const objectKeys = new Map<string, string>();
+  const keys = new Set<string>();
+  for (const scene of model.scenes) {
+    for (const object of model.objects.filter((each) => each.sceneId === scene.id)) {
+      objectKeys.set(object.id, uniqueKey(object.name, keys));
+    }
+  }
+  useIdents(idents, objectKeys);
 
   const lines: string[] = [];
   lines.push('project:');
@@ -39,18 +48,18 @@ export function buildSource(model: TessProject, options: WriteOptions = {}): str
   }
   if (model.variables.some((variable) => !variable.owner) || model.tables.length) lines.push('');
 
-  for (const definition of model.functions) {
+  // A function whose object is gone is written as a global one rather than lost.
+  const objectIds = new Set(model.objects.map((object) => object.id));
+  for (const definition of model.functions.filter((each) => !each.owner || !objectIds.has(each.owner))) {
     lines.push(...functionLines(definition));
     lines.push('');
   }
 
-  // Object keys are unique across the whole work, not just inside a scene.
-  const keys = new Set<string>();
   for (const scene of model.scenes) {
     lines.push(`scene ${quote(scene.name)}:`);
     const objects = model.objects.filter((object) => object.sceneId === scene.id);
     for (const object of objects) {
-      lines.push(...indent(objectLines(object, model, idents, keys, options), 1));
+      lines.push(...indent(objectLines(object, model, idents, objectKeys.get(object.id) ?? object.name, options), 1));
       lines.push('');
     }
     if (!objects.length) lines.push(`${INDENT}# 오브젝트가 없습니다`);
@@ -119,10 +128,9 @@ function objectLines(
   object: TessObject,
   model: TessProject,
   idents: Map<string, string>,
-  keys: Set<string>,
+  key: string,
   options: WriteOptions,
 ): string[] {
-  const key = uniqueKey(object.name, keys);
   const lines = [`${object.kind === 'text' ? 'text' : 'object'} ${quote(key)}:`];
   const body: string[] = [];
   if (key !== object.name) body.push(`name ${quote(object.name)}`);
@@ -179,6 +187,11 @@ function objectLines(
 
   const scripts = objectScripts(object, options);
   for (const script of scripts) body.push('', script);
+
+  // Local functions are declared inside their object, as the decompiler writes them.
+  for (const definition of model.functions.filter((each) => each.owner === object.id)) {
+    body.push('', functionLines(definition).join('\n'));
+  }
 
   lines.push(...indent(body, 1));
   lines.push('end');

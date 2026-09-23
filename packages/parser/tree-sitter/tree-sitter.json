@@ -1,0 +1,16 @@
+{
+  "grammars": [
+    {
+      "name": "tess",
+      "scope": "source.tess",
+      "path": ".",
+      "file-types": ["tess"],
+      "external-files": ["src/scanner.c"]
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Tess grammar for tree-sitter, used as the parser's fast path"
+  }
+}

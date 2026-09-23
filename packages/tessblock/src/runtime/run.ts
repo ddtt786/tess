@@ -74,6 +74,8 @@ export async function start(
     // The scene being worked on is the one that runs, the way entry's editor does.
     scene,
     onProgress,
+    // The editor's files are in memory already; the stage shows the preview until they are drawn.
+    waitForAssets: false,
   });
   return built;
 }

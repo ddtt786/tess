@@ -7,6 +7,9 @@
 import type { CstNode, IToken } from 'chevrotain';
 import { normalizeColor } from '@tess/core';
 import { parser } from './parser.ts';
+import { decodeString } from './strings.ts';
+
+export { decodeString };
 import type {
   AskNode, AssignNode, BooleanNode, CallNode, CenterNode, ClearNode, CloneNode,
   CostumeNode, CostumeStepNode, EventNode, Expr, ExpressionStatementNode,
@@ -32,15 +35,6 @@ type Ctx = Record<string, any>;
 
 const BaseVisitor = parser.getBaseCstVisitorConstructor();
 
-const ESCAPES: Record<string, string> = {
-  n: '\n',
-  t: '\t',
-  r: '\r',
-  b: '\b',
-  f: '\f',
-  v: '\v',
-  0: '\0',
-};
 
 /** Span of a parsed rule. `end` is exclusive, matching the offsets in `loc`. */
 const nodeLoc = (node: CstNode): Loc => ({
@@ -68,27 +62,6 @@ function onlyToken(ctx: Ctx): IToken | undefined {
   return child?.image !== undefined ? child : undefined;
 }
 
-/** Reads a string literal's text, resolving the escapes the grammar allows. */
-export function decodeString(image: string): string {
-  const raw = image.slice(1, -1);
-  let out = '';
-  for (let i = 0; i < raw.length; i += 1) {
-    if (raw[i] !== '\\') {
-      out += raw[i];
-      continue;
-    }
-    const next = raw[i + 1];
-    const hex = raw.slice(i + 2, i + 6);
-    if (next === 'u' && /^[0-9a-fA-F]{4}$/.test(hex)) {
-      out += String.fromCharCode(parseInt(hex, 16));
-      i += 5;
-    } else {
-      out += ESCAPES[next] ?? next;
-      i += 1;
-    }
-  }
-  return out;
-}
 
 const stringNode = (token: IToken): StringNode => ({
   type: 'String',

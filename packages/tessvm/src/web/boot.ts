@@ -340,7 +340,8 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   // not there to touch either, until it lands.
   const sounds = vm.targets.flatMap((target) => target.sounds);
   const waitForAssets = options.waitForAssets ?? true;
-  const total = waitForAssets ? PixiRenderer.costumeCount(vm.targets) + sounds.length : 0;
+  // Progress is reported either way, so a host that does not wait can still tell when the files are in.
+  const total = PixiRenderer.costumeCount(vm.targets) + sounds.length;
   let loaded = 0;
   const arrived = () => {
     loaded += 1;
@@ -350,9 +351,9 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   // Both are started either way — only the waiting is optional. Each keeps its
   // own per-file failures, so these settle whatever the network does.
   const costumes = renderer
-    .preload(vm.targets, vm.currentSceneId, waitForAssets ? arrived : undefined)
+    .preload(vm.targets, vm.currentSceneId, arrived)
     .catch(() => undefined);
-  const files = audio.preload(sounds, 6, waitForAssets ? arrived : undefined).catch(() => undefined);
+  const files = audio.preload(sounds, 6, arrived).catch(() => undefined);
   if (waitForAssets) {
     await Promise.all([costumes, files]);
   }

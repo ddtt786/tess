@@ -8,6 +8,7 @@
 import { useSignal } from '@preact/signals';
 import { resolveAsset } from '../model/assets.ts';
 import { beginDrag } from './drag.ts';
+import { editorTab } from './state.ts';
 import {
   addObject, duplicateObject, removeObject, renameObject, reorderObject, sceneObjects, selectObject,
   selectedObject, selectedObjectId, setObjectProps, setTextProps,
@@ -62,9 +63,13 @@ export function ObjectPanel() {
         <span class="spacer" />
         <button
           class="iconbtn"
-          title="오브젝트 추가"
+          title="새 그림 오브젝트 추가 (그림판이 열립니다)"
           aria-label="오브젝트 추가"
-          onClick={() => addObject('sprite', objects.length)}
+          onClick={() => {
+            addObject('sprite');
+            // A new drawing goes straight to the painter.
+            editorTab.value = 'costumes';
+          }}
         >
           <PlusIcon />
         </button>

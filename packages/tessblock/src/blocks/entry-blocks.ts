@@ -14,6 +14,7 @@ import { optionsFor } from './fields.ts';
 import { installBlocks } from './registry.ts';
 import { allSpecs, type Arg, type BlockSpec, type DynamicSource } from './spec.ts';
 import { PARAM_BOOLEAN, PARAM_VALUE } from './function-ids.ts';
+import { yieldToPage } from '../model/yield.ts';
 import type { BlocklyState, TessProject } from '../model/types.ts';
 
 /** One entry block as `project.json` stores it. */
@@ -122,7 +123,7 @@ export async function warmEntryPatterns(): Promise<void> {
   const patterns = new Map<string, Pattern[]>();
   for (let at = 0; at < variants.length; at += BATCH) {
     learnBatch(variants.slice(at, at + BATCH), model, patterns);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await yieldToPage();
     if (learned) return;
   }
   learned = finishLearning(patterns);

@@ -249,3 +249,74 @@ mismatches: 0
 
 블록을 여는 키워드는 `editors/vscode/language-configuration.json`의
 `increaseIndentPattern`·`onEnterRules`에도 함께 넣어야 들여쓰기가 따라온다.
+
+---
+
+## 10. tree-sitter 경로 (`packages/parser/tree-sitter/`, `src/tree/`)
+
+Program 소스는 tree-sitter 로도 읽는다. Chevrotain 은 그대로 남아 **기준 구현이자 대체 경로**다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `tree-sitter/grammar.js` | Chevrotain 문법을 규칙 단위로 옮긴 tree-sitter 문법 (CommonJS) |
+| `tree-sitter/src/scanner.c` | 외부 스캐너: `_same_line`, `color`, `comment`, `_call_open`, `_index_open`, `string` |
+| `tree-sitter/build.mjs` | `src/colors.h` 생성(`@tess/core` NAMED_COLORS) → `tree-sitter generate` → `tree-sitter-tess.wasm` |
+| `tree-sitter/tree-sitter-tess.wasm` | 빌드 결과. 커밋 대상. `src/parser.c` 등 생성물은 `.gitignore` |
+| `src/tree/convert.ts` | `plainTree`(커서 한 번 순회로 JS 트리 복사) + `programFromTree`(visitor 와 같은 AST) |
+| `src/tree/index.ts` | `initTreeSitter(files?)`, `treeSitterReady()`, `parseProgramWithTree(source)` |
+| `src/tree/vite.ts` | `@tess/parser/vite` — wasm 두 개를 `?url` 로 받아 초기화 (tessblock `main.tsx`) |
+| `test/tree-sitter.test.ts` | 키워드 목록 일치 + 예제 전부와 스니펫의 AST 를 `JSON.stringify` 로(키 순서까지) 비교 |
+
+흐름: `parseSource` 가 시작 규칙이 Program 이고 tree-sitter 가 올라와 있으면 먼저 tree-sitter 로
+읽는다. 트리에 ERROR/MISSING 이 하나라도 있으면 `null` → Chevrotain 이 다시 읽어 에러 메시지를 만든다.
+조각(SceneFragment/ObjectFragment/Statement/Expr)은 언제나 Chevrotain. 초기화하지 않은 환경
+(CLI, 확장, 테스트 대부분)은 동작이 전과 같다.
+
+### 10.1 게이트를 tree-sitter 로 옮긴 방법
+
+- **sameLine** → 외부 스캐너의 0폭 토큰 `_same_line`. 공백을 건너뛰며 줄바꿈을 봤는지 기억하고,
+  유효한 자리이며 줄바꿈이 없을 때만 낸다. 외부 스캐너는 내부 렉서보다 먼저 불리므로
+  이 토큰이 다음 세 경우를 가로채지 않게 막았다.
+  - `이름(` / `이름[` — Chevrotain 의 `LA(2) === LParen/LSquare` 게이트. `call_expr`·`index_expr`·
+    `lvalue`·`_lead_call` 의 여는 괄호를 외부 토큰 `_call_open`/`_index_open` 으로 바꾸고, 그것이
+    유효하면 `_same_line` 보다 먼저 낸다. 숫자 뒤 `(` 는 `_call_open` 이 유효하지 않으므로
+    `go 1 (2)` 는 여전히 두 좌표다.
+  - `save = 1` — `leads()` 의 "뒤에 대입 연산자가 오면 키워드가 아니다". `=`(단 `==` 제외),
+    `+= -= *= /= %= **=` 가 보이면 `_same_line` 을 내지 않는다(`mark_end` 뒤에서 미리 읽기).
+  - 에러 복구 중(모든 외부 기호가 유효)에는 셋 다 내지 않는다.
+- **키워드 = 이름** → `word: _word` + `reserved.global = KEYWORDS`. 어떤 키워드도 `_word` 로 읽히지
+  않고, 이름으로 쓸 수 있는 키워드는 `identifier` 에 명시(`NAME_KEYWORDS` = 예약어 제외).
+  `reserved` 가 없으면 `play sound "x" and wait` 의 `wait` 가 이름으로 새어 `and` 식이 된다.
+- **문장 첫 키워드** → `statement` 에서 키워드 문장은 `prec.dynamic(2)`, `assign_or_call` 은 1.
+  문장 자리 호출의 callee 는 `_call_name`(= `STATEMENT_LEADERS` 제외)이라 `if (a):`·`say (1)` 은
+  호출이 되지 않는다. `store` 는 `var`/`list` 앞에서만 문장이므로 목록에서 뺐다.
+- **`show 표 chart 1`** → 대상 이름을 먼저 탐욕적으로 먹고, `for`/`chart` 꼬리는 대상이 있을 때만.
+  (`hide chart` 는 대상이 `chart` 인 hide.)
+- **문자열** → 외부 스캐너. 생성된 렉서는 U+0000 을 입력 끝으로 읽어 enLM 의 NUL 포함 문자열에서 깨졌다.
+- **색상 vs 주석** → 문맥 없이 스캐너가 결정(렉서와 같은 `colorLiteralLength` 규칙).
+- 빈 본문: `function f():\nend`, `when …:\nend` 모두 `optional(field('body', $.block))`.
+
+### 10.2 위치(loc)
+
+web-tree-sitter 의 인덱스는 UTF-16 코드 단위라 JS 문자열 오프셋과 같다. 노드의 loc 는 안에 든
+첫/마지막 "실제" 토큰(주석과 0폭 제외)으로 계산해 visitor 와 맞춘다. `plainTree` 는 잎에서만
+위치를 읽고 안쪽 노드는 자식 범위로 채운다(노드 범위 = 자식 범위라 동일).
+
+### 10.3 측정 (Node 24, 예제 + 디컴파일한 `.ent` 71개, 모두 AST 동일)
+
+| | 합계 |
+| --- | --- |
+| Chevrotain (토큰화+파싱+visitor) | 약 6.5 s |
+| tree-sitter 파싱 | 약 2.5 s |
+| 트리 복사 + 변환 | 약 2.8 s |
+
+파싱만은 약 2.5배 빠르지만, 전체 AST 가 필요하므로 wasm 경계를 노드마다 넘는 비용(커서
+`goto*` 가 35만 노드에 ~135 ms)이 남아 합계는 약 15~20% 이득이다. 더 줄이려면 트리를 한 번에
+직렬화하는 C 함수가 필요하지만 web-tree-sitter 런타임 wasm 은 고정이라 넣을 수 없다.
+브라우저(tessblock)에서 13 KB 소스 파싱 약 19 ms 확인.
+
+### 10.4 문법을 고칠 때
+
+1. `tokens.ts`/`parser.ts` 와 `grammar.js` 를 함께 고친다 (키워드 목록은 테스트가 비교).
+2. `node packages/parser/tree-sitter/build.mjs` (tree-sitter-cli 0.27, 루트 devDependency).
+3. `node --test test/tree-sitter.test.ts`.

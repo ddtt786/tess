@@ -1,19 +1,22 @@
 {
   "name": "@tess/parser",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "description": "Tess 소스를 AST 로 읽고 의미를 검사한다",
   "license": "MIT",
   "type": "module",
   "main": "index.ts",
   "exports": {
-    ".": "./index.ts"
+    ".": "./index.ts",
+    "./vite": "./src/tree/vite.ts"
   },
   "files": [
     "index.ts",
-    "src"
+    "src",
+    "tree-sitter/tree-sitter-tess.wasm"
   ],
   "dependencies": {
     "@tess/core": "workspace:*",
-    "chevrotain": "^13.2.0"
+    "chevrotain": "^13.2.0",
+    "web-tree-sitter": "0.27.0"
   }
 }

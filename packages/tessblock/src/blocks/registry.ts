@@ -9,7 +9,7 @@ import * as Ko from 'blockly/msg/ko';
 import { tess } from '../codegen/generator.ts';
 import { Order } from '../codegen/order.ts';
 import { editingFunction } from '../model/function-editing.ts';
-import { project } from '../model/store.ts';
+import { project, selectedObjectId } from '../model/store.ts';
 import { installContextMenu } from './context-menu.ts';
 import { registerColourPicker } from './colour-field.ts';
 import { registerFields } from './fields.ts';
@@ -41,6 +41,8 @@ export function installBlocks(): void {
   if (ready) return;
   ready = true;
   Blockly.setLocale(Ko as unknown as Record<string, string>);
+  // Long variable or object names are cut short on the block; the menu still lists them whole.
+  Blockly.Field.prototype.maxDisplayLength = 24;
   installCategoryStyles();
   registerColourPicker();
   registerFields();
@@ -240,7 +242,11 @@ export function flyoutFor(category: Category): FlyoutItem[] {
       items.push({ kind: 'block', type: 'func_local_get' });
     } else {
       items.push({ kind: 'button', text: '＋ 함수 만들기', callbackkey: 'NEW_FUNCTION' });
-      for (const definition of project.value.functions) {
+      items.push({ kind: 'button', text: '＋ 지역 함수 만들기', callbackkey: 'NEW_LOCAL_FUNCTION' });
+      // Global functions, then the ones this object keeps to itself.
+      const here = selectedObjectId.value;
+      const usable = project.value.functions.filter((definition) => !definition.owner || definition.owner === here);
+      for (const definition of usable) {
         items.push(functionCallEntry(definition, false));
         if (returnsValue(definition)) items.push(functionCallEntry(definition, true));
       }

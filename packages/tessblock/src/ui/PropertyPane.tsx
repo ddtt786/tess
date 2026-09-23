@@ -4,10 +4,10 @@ import { useRef } from 'preact/hooks';
 import { beginDrag } from './drag.ts';
 import {
   addSignal, addTable, project, removeFunction, removeSignal, removeTable,
-  removeVariable, selectedObjectId, updateFunction, updateSignal, updateTable, updateVariable,
+  removeVariable, selectObject, selectedObjectId, updateFunction, updateSignal, updateTable, updateVariable,
 } from '../model/store.ts';
 import { newId } from '../model/ids.ts';
-import type { StorageScope, VariableDef } from '../model/types.ts';
+import type { FunctionDef, StorageScope, VariableDef } from '../model/types.ts';
 import { EyeIcon, EyeOffIcon, GripIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.tsx';
 import { InlineName } from './InlineName.tsx';
 import { dialog, functionDraft, pickedList, propertyTab, type PropertyTab } from './state.ts';
@@ -80,6 +80,8 @@ function VariableTable() {
         <div class="rec-group">지역 변수 <span class="muted">{currentObj ? `${currentObj.name} 전용` : '선택된 오브젝트 없음'}</span></div>
         {localVars.map(row)}
         {!localVars.length && <div class="rec-empty">지역 변수가 없습니다.</div>}
+
+        <OtherLocals kind="variable" row={row} />
       </div>
     </>
   );
@@ -128,6 +130,34 @@ function VariableRow({ variable, open, onPick }: { variable: VariableDef; open: 
   );
 }
 
+/**
+ * Variables other objects keep for themselves, under their owner's name. They
+ * stay editable here; the button next to the owner jumps to that object.
+ */
+function OtherLocals({ kind, row }: { kind: 'variable' | 'list'; row: (variable: VariableDef) => preact.JSX.Element }) {
+  const current = selectedObjectId.value;
+  const model = project.value;
+  const owners = model.objects.filter((object) => object.id !== current
+    && model.variables.some((variable) => variable.kind === kind && variable.owner === object.id));
+  if (!owners.length) return null;
+  return (
+    <>
+      <div class="rec-group">다른 오브젝트의 지역 {kind === 'variable' ? '변수' : '리스트'}</div>
+      {owners.map((owner) => (
+        <div key={owner.id} class="rec-owner">
+          <div class="rec-owner-head">
+            <span>{owner.name}</span>
+            <button class="rec-jump" title={`${owner.name} 오브젝트로 가기`} onClick={() => selectObject(owner.id)}>
+              바로가기 →
+            </button>
+          </div>
+          {model.variables.filter((variable) => variable.kind === kind && variable.owner === owner.id).map(row)}
+        </div>
+      ))}
+    </>
+  );
+}
+
 /** Whether the variable or list box shows on the stage. */
 function VisibilityButton({ variable }: { variable: VariableDef }) {
   return (
@@ -168,7 +198,9 @@ function ListEditor() {
   const globalLists = allLists.filter((list) => !list.owner);
   const localLists = allLists.filter((list) => list.owner === currentObjId);
 
-  const current = visibleLists.find((list) => list.id === pickedList.value) ?? visibleLists[visibleLists.length - 1];
+  const current = allLists.find((list) => list.id === pickedList.value) ?? visibleLists[visibleLists.length - 1];
+  const others = project.value.objects.filter((object) => object.id !== currentObjId
+    && allLists.some((list) => list.owner === object.id));
 
   function setItems(items: Array<string | number>) {
     if (current) updateVariable(current.id, { array: items });
@@ -257,6 +289,30 @@ function ListEditor() {
               {!localLists.length && <li class="muted" style="padding:4px 8px; font-size:12px;">없음</li>}
             </ul>
           </div>
+
+          {others.map((owner) => (
+            <div key={owner.id}>
+              <div class="rec-owner-head" style="padding:4px 8px;">
+                <span>{owner.name}</span>
+                <button class="rec-jump" title={`${owner.name} 오브젝트로 가기`} onClick={() => selectObject(owner.id)}>
+                  바로가기 →
+                </button>
+              </div>
+              <ul class="pick-list">
+                {allLists.filter((list) => list.owner === owner.id).map((list) => (
+                  <li key={list.id}>
+                    <button
+                      class={`pick ${list.id === current?.id ? 'on' : ''}`}
+                      onClick={() => { pickedList.value = list.id; }}
+                    >
+                      <span class="pick-name">{list.name}</span>
+                      <span class="pick-count">{list.array.length}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
 
         {current ? (
@@ -527,6 +583,39 @@ function TableEditor() {
 
 function FunctionTable() {
   const functions = project.value.functions;
+  const currentObjId = selectedObjectId.value;
+  const currentObj = project.value.objects.find((object) => object.id === currentObjId);
+  const objectIds = new Set(project.value.objects.map((object) => object.id));
+  const globals = functions.filter((definition) => !definition.owner || !objectIds.has(definition.owner));
+  const locals = functions.filter((definition) => definition.owner === currentObjId);
+  const others = project.value.objects.filter((object) => object.id !== currentObjId
+    && functions.some((definition) => definition.owner === object.id));
+
+  const fnRow = (definition: FunctionDef) => (
+    <div class="rec" key={definition.id}>
+      <div class="rec-row">
+        <InlineName
+          class="rec-name"
+          value={definition.name}
+          onCommit={(name) => updateFunction(definition.id, { name })}
+        />
+        <span class="rec-meta">
+          {definition.params.map((param) => `${param.name}${param.kind === 'boolean' ? '?' : ''}`).join(', ') || '매개변수 없음'}
+        </span>
+        <button
+          class="iconbtn plain"
+          title="블록 편집"
+          aria-label="블록 편집"
+          onClick={() => { functionDraft.value = structuredClone(definition); }}
+        >
+          <PencilIcon size={15} />
+        </button>
+        <button class="iconbtn plain danger" title="삭제" aria-label="삭제" onClick={() => removeFunction(definition.id)}>
+          <TrashIcon size={14} />
+        </button>
+      </div>
+    </div>
+  );
   return (
     <>
       <div class="sheet-head">
@@ -538,39 +627,43 @@ function FunctionTable() {
         <button
           class="btn primary"
           onClick={() => {
-            functionDraft.value = { id: newId('f'), name: `함수${functions.length + 1}`, params: [], blocks: null };
+            functionDraft.value = { id: newId('f'), name: `함수${functions.length + 1}`, owner: null, params: [], blocks: null };
           }}
         >
           <PlusIcon /> 함수 만들기
         </button>
+        <button
+          class="btn"
+          disabled={!currentObj}
+          title="선택한 오브젝트만 쓰는 함수"
+          onClick={() => {
+            functionDraft.value = { id: newId('f'), name: '지역 함수', owner: currentObjId, params: [], blocks: null };
+          }}
+        >
+          <PlusIcon /> 지역 함수
+        </button>
       </div>
       <div class="rec-list">
-        {functions.map((definition) => (
-          <div class="rec" key={definition.id}>
-            <div class="rec-row">
-              <InlineName
-                class="rec-name"
-                value={definition.name}
-                onCommit={(name) => updateFunction(definition.id, { name })}
-              />
-              <span class="rec-meta">
-                {definition.params.map((param) => `${param.name}${param.kind === 'boolean' ? '?' : ''}`).join(', ') || '매개변수 없음'}
-              </span>
-              <button
-                class="iconbtn plain"
-                title="블록 편집"
-                aria-label="블록 편집"
-                onClick={() => { functionDraft.value = structuredClone(definition); }}
-              >
-                <PencilIcon size={15} />
-              </button>
-              <button class="iconbtn plain danger" title="삭제" aria-label="삭제" onClick={() => removeFunction(definition.id)}>
-                <TrashIcon size={14} />
+        <div class="rec-group">전역 함수 <span class="muted">모든 오브젝트</span></div>
+        {globals.map(fnRow)}
+        {!globals.length && <div class="rec-empty">아직 없습니다.</div>}
+
+        <div class="rec-group">지역 함수 <span class="muted">{currentObj ? `${currentObj.name} 전용` : '선택된 오브젝트 없음'}</span></div>
+        {locals.map(fnRow)}
+        {!locals.length && <div class="rec-empty">아직 없습니다.</div>}
+
+        {others.length > 0 && <div class="rec-group">다른 오브젝트의 지역 함수</div>}
+        {others.map((owner) => (
+          <div key={owner.id} class="rec-owner">
+            <div class="rec-owner-head">
+              <span>{owner.name}</span>
+              <button class="rec-jump" title={`${owner.name} 오브젝트로 가기`} onClick={() => selectObject(owner.id)}>
+                바로가기 →
               </button>
             </div>
+            {functions.filter((definition) => definition.owner === owner.id).map(fnRow)}
           </div>
         ))}
-        {!functions.length && <div class="rec-empty">아직 없습니다.</div>}
       </div>
     </>
   );

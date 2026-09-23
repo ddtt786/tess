@@ -44,6 +44,30 @@ export async function openFolder(): Promise<FolderResult> {
   return result;
 }
 
+/** Asks for a folder and saves the current work into it, whatever the folder held. */
+export async function saveIntoFolder(): Promise<void> {
+  const picker = (window as unknown as {
+    showDirectoryPicker(options: { mode: 'readwrite'; id: string }): Promise<FileSystemDirectoryHandle>;
+  }).showDirectoryPicker;
+  const handle = await picker.call(window, { mode: 'readwrite', id: 'tessblock' });
+  root = handle;
+  written.clear();
+  pathOf.clear();
+  folderState.value = { name: handle.name, connected: true };
+  await storeHandle(handle);
+  await saveFolderNow();
+}
+
+/** Writes the work to the attached folder now instead of after the usual pause. */
+export async function saveFolderNow(): Promise<void> {
+  if (writeTimer !== undefined) clearTimeout(writeTimer);
+  writeTimer = undefined;
+  const target = root;
+  if (!target) return;
+  writing = writing.then(() => writeWork(target, project.peek()));
+  await writing;
+}
+
 /** Reattaches the folder used last time; the browser asks for permission again. */
 export async function reconnectFolder(): Promise<FolderResult | null> {
   const handle = await storedHandle();

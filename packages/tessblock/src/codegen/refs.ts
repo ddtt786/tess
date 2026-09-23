@@ -13,6 +13,8 @@ import type { TessProject } from '../model/types.ts';
 const LITERALS = new Set(['mouse', 'wall', 'wall_up', 'wall_down', 'wall_left', 'wall_right', 'self']);
 
 let idents = new Map<string, string>();
+/** Object id → the key its `object "key":` block is written under. */
+let objectKeys = new Map<string, string>();
 let modelOverride: TessProject | null = null;
 
 /** Resolves names against `model` instead of the open project; null restores it. */
@@ -21,8 +23,9 @@ export function useModel(model: TessProject | null): void {
 }
 
 /** Installs the id to identifier table the current write uses. */
-export function useIdents(table: Map<string, string>): void {
+export function useIdents(table: Map<string, string>, keys: Map<string, string> = new Map()): void {
   idents = table;
+  objectKeys = keys;
 }
 
 export function identFor(id: string, fallbackName: string): string {
@@ -40,7 +43,7 @@ export function resolveDynamic(source: DynamicSource, value: string): string {
     case 'target':
     case 'lookTarget':
     case 'cloneTarget':
-      return model.objects.find((object) => object.id === value)?.name ?? '';
+      return objectKeys.get(value) ?? model.objects.find((object) => object.id === value)?.name ?? '';
     case 'signal':
       return model.signals.find((signal) => signal.id === value)?.name ?? '';
     case 'scene':

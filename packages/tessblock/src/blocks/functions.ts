@@ -341,7 +341,7 @@ function defineCallBlock(definition: FunctionDef, asValue: boolean): void {
     name: `ARG${index}`,
     ...(param.kind === 'boolean' ? { check: 'Boolean' } : {}),
   }));
-  const message = `${definition.name}${definition.params.map((_, index) => ` %${index + 1}`).join('')}`;
+  const message = `${shortLabel(definition.name)}${definition.params.map((_, index) => ` %${index + 1}`).join('')}`;
   const json: Record<string, unknown> = {
     type,
     message0: message,
@@ -364,4 +364,12 @@ function defineCallBlock(definition: FunctionDef, asValue: boolean): void {
     const call = `${safeIdent(definition.name)}(${values.join(', ')})`;
     return asValue ? [call, Order.ATOMIC] : `${call}\n`;
   };
+}
+
+/** Longest name a call block spells out; the palette would otherwise grow as wide as the name. */
+const LABEL_LIMIT = 20;
+
+function shortLabel(name: string): string {
+  const letters = [...name];
+  return letters.length > LABEL_LIMIT ? `${letters.slice(0, LABEL_LIMIT - 1).join('')}…` : name;
 }

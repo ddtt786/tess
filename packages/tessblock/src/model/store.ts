@@ -51,7 +51,7 @@ export function update(change: (draft: TessProject) => TessProject | void): void
 /** Edits closer together than this (a drag, typing) undo as one step. */
 const BURST_MS = 500;
 /** Rough memory the history may hold, in serialized characters. */
-const HISTORY_BUDGET = 120_000_000;
+const HISTORY_BUDGET = 40_000_000;
 
 const past: TessProject[] = [];
 const future: TessProject[] = [];
@@ -128,9 +128,14 @@ function freeName(base: string): string {
 
 export function addScene(): void {
   const scene = makeScene(`장면 ${project.value.scenes.length + 1}`);
+  // A new scene lands in the folder of the scene being worked on.
+  scene.folder = project.value.scenes.find((candidate) => candidate.id === selectedSceneId.value)?.folder ?? null;
   const object = makeSprite(freeName('로봇'), scene.id);
   update((draft) => {
-    draft.scenes.push(scene);
+    // Right after the scene being worked on, so a folder stays in one piece.
+    const at = draft.scenes.findIndex((candidate) => candidate.id === selectedSceneId.value);
+    if (at < 0) draft.scenes.push(scene);
+    else draft.scenes.splice(at + 1, 0, scene);
     draft.objects.push(object);
   });
   selectedSceneId.value = scene.id;
@@ -195,11 +200,16 @@ export function selectScene(id: string): void {
 
 // --- objects ----------------------------------------------------------------
 
-export function addObject(kind: 'sprite' | 'text' = 'sprite', costumeIndex = 0): void {
+/** A sprite starts as an empty drawing, ready for the painter. */
+export function addObject(kind: 'sprite' | 'text' = 'sprite'): void {
   const scene = selectedSceneId.value;
-  const template = COSTUME_LIBRARY[costumeIndex % COSTUME_LIBRARY.length]!;
-  const name = freeName(kind === 'sprite' ? '오브젝트' : '글상자');
-  const object = kind === 'sprite' ? makeSprite(name, scene, template) : makeTextBox(name, scene);
+  const name = freeName(kind === 'sprite' ? '새 그림' : '글상자');
+  const object = kind === 'sprite' ? makeSprite(name, scene) : makeTextBox(name, scene);
+  if (kind === 'sprite') {
+    const blank: Costume = { id: newId('c'), name: '새 그림', url: blankCostume(240, 180), width: 240, height: 180 };
+    object.costumes = [blank];
+    object.selectedCostumeId = blank.id;
+  }
   update((draft) => {
     draft.objects.unshift(object);
   });
@@ -475,8 +485,36 @@ export function reorderScene(id: string, targetId: string, before = true): void 
     if (from < 0) return;
     const [moved] = draft.scenes.splice(from, 1);
     const to = draft.scenes.findIndex((scene) => scene.id === targetId);
+    // A scene dropped beside another joins that one's folder (or leaves its own).
+    moved!.folder = draft.scenes[to]?.folder ?? null;
     if (to < 0) draft.scenes.push(moved!);
     else draft.scenes.splice(before ? to : to + 1, 0, moved!);
+  });
+}
+
+/** Files the scene under a new folder of its own. */
+export function addSceneFolder(sceneId: string): string {
+  const taken = new Set(project.peek().scenes.map((scene) => scene.folder).filter(Boolean));
+  let index = 1;
+  while (taken.has(`폴더 ${index}`)) index += 1;
+  const name = `폴더 ${index}`;
+  update((draft) => {
+    const scene = draft.scenes.find((candidate) => candidate.id === sceneId);
+    if (scene) scene.folder = name;
+  });
+  return name;
+}
+
+export function renameSceneFolder(from: string, to: string): void {
+  update((draft) => {
+    for (const scene of draft.scenes) if (scene.folder === from) scene.folder = to;
+  });
+}
+
+/** Takes the scenes out of the folder; the folder goes with its last scene. */
+export function removeSceneFolder(name: string): void {
+  update((draft) => {
+    for (const scene of draft.scenes) if (scene.folder === name) scene.folder = null;
   });
 }
 
