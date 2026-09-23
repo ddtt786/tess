@@ -16,7 +16,7 @@ import type { Variable } from '../runtime/model.ts';
 const DATA_BASE = 1024;
 
 /** Entry unwinds a call chain this deep; the kernel needs room for its own. */
-const CALL_DEPTH_LIMIT = 1000;
+const CALL_DEPTH_LIMIT = 1000000;
 
 /** Calls timed before deciding whether an entry point is worth its crossing. */
 const TRIAL_CALLS = 24;

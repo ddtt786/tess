@@ -1327,6 +1327,15 @@ test('경로가 그래도 겹치면 뒤에 번호를 붙인다', () => {
   assert.equal(new Set(images).size, 2, images.join(', '));
 });
 
+test('숫자 모양의 유니코드 글자(¼·²)는 이름에서 _ 로 바뀌어 다시 컴파일된다', () => {
+  const project = minimalProject(1);
+  project.variables = [{ id: 'v1', name: '3ì¼ ì¤í²', value: 0, variableType: 'variable' }];
+  const result = decompileProject(project, [], { inline: true });
+  assert.match(result.source, /^var var_3ì_ì_í as "3ì¼ ì¤í²"/m);
+  const compiled = compileProject(result.source, { path: 'main.tess' });
+  assert.deepEqual(compiled.errors, []);
+});
+
 // --- 벡터 모양은 엔트리가 저장할 때 남긴 PNG 로 가져온다 ---------------------------
 //
 // 엔트리 벡터 그림판은 그림판 크기를 넘는 이미지도 모양으로 받아 주고, 사용자가 그것을

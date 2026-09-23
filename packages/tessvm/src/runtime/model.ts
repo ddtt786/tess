@@ -736,21 +736,28 @@ export interface CompiledScript {
   blockId: string;
 }
 
-export type ScriptBody = (entity: Entity, thread: Thread) => Generator<number, void, unknown>;
+/**
+ * What compiled code yields: a number ends the frame, a generator is a function
+ * call the thread runs first and whose result it sends back.
+ */
+export type Yielded = number | CallFrame;
+
+/** One function call in progress on a thread's call stack. */
+export type CallFrame = Generator<Yielded, unknown, unknown>;
+
+export type ScriptBody = (entity: Entity, thread: Thread) => Generator<Yielded, void, unknown>;
 
 /** One compiled `함수 정의하기`, as the generated module's `F` array holds it. */
-export type CompiledFunction = (
-  entity: Entity,
-  thread: Thread,
-  args: unknown[],
-) => Generator<number, unknown, unknown>;
+export type CompiledFunction = (entity: Entity, thread: Thread, args: unknown[]) => CallFrame;
 
 /** One running script — entry's `Entry.Executor`. */
 export class Thread {
   readonly target: Target;
   readonly entity: Entity;
   readonly script: CompiledScript;
-  iterator: Generator<number, void, unknown>;
+  iterator: Generator<Yielded, void, unknown>;
+  /** The body and the calls nested in it, innermost last. Kept off the JS stack. */
+  private frames: CallFrame[];
   done = false;
   /** True while this thread's generator is on the stack. */
   running = false;
@@ -764,6 +771,7 @@ export class Thread {
     this.entity = entity;
     this.script = script;
     this.iterator = script.body(entity, this);
+    this.frames = [this.iterator as CallFrame];
   }
 
   step(): void {
@@ -772,12 +780,49 @@ export class Thread {
     }
     this.running = true;
     try {
-      const result = this.iterator.next();
-      if (result.done) {
-        this.done = true;
-      }
+      this.resume();
     } finally {
       this.running = false;
+    }
+  }
+
+  /** Runs the innermost frame until one yields a number or the body ends. */
+  private resume(): void {
+    const frames = this.frames;
+    let input: unknown;
+    let thrown = false;
+    let error: unknown;
+    for (;;) {
+      const frame = frames[frames.length - 1]!;
+      let result: IteratorResult<Yielded, unknown>;
+      try {
+        result = thrown ? frame.throw(error) : frame.next(input);
+        thrown = false;
+      } catch (caught) {
+        frames.pop();
+        if (!frames.length) {
+          this.done = true;
+          throw caught;
+        }
+        thrown = true;
+        error = caught;
+        continue;
+      }
+      if (result.done) {
+        frames.pop();
+        if (!frames.length) {
+          this.done = true;
+          return;
+        }
+        input = result.value;
+        continue;
+      }
+      const value = result.value;
+      if (typeof value === 'number') {
+        return;
+      }
+      frames.push(value);
+      input = undefined;
     }
   }
 
@@ -789,7 +834,10 @@ export class Thread {
   stop(): void {
     this.done = true;
     if (!this.running) {
-      this.iterator.return?.(undefined as never);
+      for (let at = this.frames.length - 1; at >= 0; at -= 1) {
+        this.frames[at]!.return(undefined);
+      }
+      this.frames.length = 0;
     }
   }
 }

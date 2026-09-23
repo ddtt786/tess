@@ -2038,7 +2038,7 @@ end`,
   vm.tick();
   assert.equal(vm.errors.length, 0, '스택이 넘쳐도 오류로 보고하지 않습니다');
   assert.equal(valueOf(vm, '끝났다'), 1, '부르던 자리는 다음 블록으로 이어집니다');
-  assert.ok(valueOf(vm, '깊이') > 100, `한계까지는 실제로 들어갑니다 (${valueOf(vm, '깊이')})`);
+  assert.equal(valueOf(vm, '깊이'), 1000000, '한계(100만)까지 자바스크립트 스택과 상관없이 들어갑니다');
   const source = fs.readFileSync(
     path.join(root, 'packages/tessvm/src/compile/codegen.ts'),
     'utf-8',

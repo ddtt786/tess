@@ -561,7 +561,7 @@ export class Vm implements Project {
             }
           }
         }
-        return yield* javascript(entity, thread, args);
+        return yield javascript(entity, thread, args);
       };
     }
   }

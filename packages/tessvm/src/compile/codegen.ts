@@ -91,10 +91,11 @@ const SPIN_LIMIT = 10_000_000;
  *
  * A thrown stack overflow cannot be answered the same way here: the generators
  * it passes through are finished by the throw, so the thread has nothing left
- * to carry on with. The wall is drawn at a fixed depth instead, which also
- * keeps the behaviour off the engine's own stack size.
+ * to carry on with. The wall is drawn at a fixed depth instead. Calls run on the
+ * thread's own frame stack (`Thread.frames`), so the depth is not bounded by
+ * the engine's stack size.
  */
-const CALL_DEPTH_LIMIT = 1000;
+const CALL_DEPTH_LIMIT = 1000000;
 
 type Kind = 'num' | 'str' | 'bool' | 'any';
 
@@ -1183,7 +1184,8 @@ export class Codegen {
     // body reads them by declaration index (`register.params[paramMap[type]]`).
     // Dropping empty slots would shift every argument after them.
     const args = block.params.map((param) => this.raw(param));
-    const call = `(yield* F[${index}](e, th, [${args.join(', ')}]))`;
+    // The thread runs the yielded call on its own stack, so depth costs no JS stack.
+    const call = `(yield F[${index}](e, th, [${args.join(', ')}]))`;
     return { code: asValue ? call : `${ind}${call};\n` };
   }
 
