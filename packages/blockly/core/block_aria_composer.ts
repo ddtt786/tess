@@ -269,7 +269,8 @@ export function getBeginStackLabel(block: BlockSvg) {
   // Don't include the "begin stack" label for blocks that are moving
   // or blocks in the flyout
   if (block.isInFlyout || block.isDragging()) return undefined;
-  return block.getRootBlock() === block
+  // A root has no parent; getRootBlock() would walk the whole nesting.
+  return !block.getParent()
     ? Msg['BLOCK_LABEL_BEGIN_STACK']
     : undefined;
 }

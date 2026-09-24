@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {BlockSvg} from './block_svg.js';
+import type {BlockSvg} from './block_svg.js';
 import * as eventUtils from './events/utils.js';
+import * as dom from './utils/dom.js';
 import * as userAgent from './utils/useragent.js';
 import type {WorkspaceSvg} from './workspace_svg.js';
 
@@ -14,6 +15,9 @@ const rootBlocks = new Set<BlockSvg>();
 
 /** The set of all blocks in need of rendering. */
 const dirtyBlocks = new WeakSet<BlockSvg>();
+
+/** Blocks between a queued block and its root that are not redrawn themselves. */
+const pathBlocks = new WeakSet<BlockSvg>();
 
 /**
  * A map from queued blocks to the event context from when they were queued.
@@ -39,6 +43,50 @@ let afterRendersResolver: (() => void) | null = null;
  * if necessary.
  */
 let animationRequestId = 0;
+
+/** Nesting depth of render passes that defer placing flat block groups. */
+let placementBatch = 0;
+
+/** Blocks moved during a render pass. */
+const unplaced = new Set<BlockSvg>();
+
+/**
+ * Defers placing a moved block's flat groups to the end of the render pass, so
+ * a pass that moves every block of a stack places each group once.
+ *
+ * @returns Whether the block was deferred.
+ * @internal
+ */
+export function deferPlacement(block: BlockSvg): boolean {
+  if (!placementBatch) return false;
+  unplaced.add(block);
+  return true;
+}
+
+/** Places each stack with a block moved during the pass, once. */
+function placeMovedStacks() {
+  const roots = new Set<BlockSvg>();
+  const rootOf = new Map<BlockSvg, BlockSvg>();
+  for (const block of unplaced) {
+    if (block.isDisposed()) continue;
+    const path: BlockSvg[] = [];
+    let current = block;
+    let root: BlockSvg | undefined;
+    while (!(root = rootOf.get(current))) {
+      path.push(current);
+      const parent = current.getParent();
+      if (!parent) {
+        root = current;
+        break;
+      }
+      current = parent;
+    }
+    for (const each of path) rootOf.set(each, root);
+    roots.add(root);
+  }
+  unplaced.clear();
+  for (const root of roots) root.placeSubtree();
+}
 
 /**
  * Registers that the given block and all of its parents need to be rerendered,
@@ -116,12 +164,27 @@ function queueBlock(block: BlockSvg) {
     group: eventUtils.getGroup(),
     recordUndo: eventUtils.getRecordUndo(),
   });
-  const parent = block.getParent();
-  if (parent) {
-    queueBlock(parent);
-  } else {
-    rootBlocks.add(block);
+  let child = block;
+  let parent = block.getParent();
+  while (parent) {
+    pathBlocks.add(parent);
+    // A block's shape does not depend on the block after it (only a value
+    // block with a next connection measures it), so a block linked to the
+    // changed one through its next connection is not redrawn. Its ancestors
+    // through an input still are: a statement input's height depends on the
+    // whole stack in it.
+    if (parent.nextConnection?.targetBlock() !== child || parent.outputConnection) {
+      if (dirtyBlocks.has(parent)) return;
+      dirtyBlocks.add(parent);
+      eventContexts.set(parent, {
+        group: eventUtils.getGroup(),
+        recordUndo: eventUtils.getRecordUndo(),
+      });
+    }
+    child = parent;
+    parent = parent.getParent();
   }
+  rootBlocks.add(child);
 }
 
 /**
@@ -136,8 +199,17 @@ function doRenders(workspace?: WorkspaceSvg) {
   const blocks = [...rootBlocks]
     .filter(shouldRenderRootBlock)
     .filter((b) => workspaces.has(b.workspace));
-  for (const block of blocks) {
-    renderBlock(block);
+  // Repeated field texts are measured once per batch.
+  dom.startTextWidthCache();
+  placementBatch++;
+  try {
+    for (const block of blocks) {
+      renderBlock(block);
+    }
+  } finally {
+    placementBatch--;
+    if (!placementBatch) placeMovedStacks();
+    dom.stopTextWidthCache();
   }
   for (const workspace of workspaces) {
     workspace.resizeContents();
@@ -175,6 +247,7 @@ function doRenders(workspace?: WorkspaceSvg) {
 function dequeueBlock(block: BlockSvg) {
   rootBlocks.delete(block);
   dirtyBlocks.delete(block);
+  pathBlocks.delete(block);
   eventContexts.delete(block);
   for (const child of block.getChildren(false)) {
     dequeueBlock(child);
@@ -201,10 +274,13 @@ function shouldRenderRootBlock(block: BlockSvg): boolean {
  * @param block The block to rerender.
  */
 function renderBlock(block: BlockSvg) {
-  if (!dirtyBlocks.has(block)) return;
+  const dirty = dirtyBlocks.has(block);
+  if (!dirty && !pathBlocks.has(block)) return;
   if (!block.initialized) return;
   for (const child of block.getChildren(false)) {
     renderBlock(child);
   }
-  block.renderEfficiently();
+  // Only on the way to a changed block: its children are placed again.
+  if (dirty) block.renderEfficiently();
+  else block.tightenChildrenEfficiently();
 }

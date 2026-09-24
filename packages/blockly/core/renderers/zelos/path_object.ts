@@ -107,7 +107,8 @@ export class PathObject extends BasePathObject {
       }
     } else {
       if (this.svgPathSelected) {
-        this.svgRoot.removeChild(this.svgPathSelected);
+        // The block may have moved the outline out of its own group.
+        this.svgPathSelected.remove();
         this.svgPathSelected = null;
       }
     }

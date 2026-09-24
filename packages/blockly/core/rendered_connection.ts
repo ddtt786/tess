@@ -584,7 +584,7 @@ export class RenderedConnection
     child.updateDisabled();
     child.queueRender();
     // Reset visibility, since the child is now a top block.
-    child.getSvgRoot().style.display = 'block';
+    child.setSvgDisplay(true);
 
     eventUtils.setGroup(existingGroup);
   }
@@ -638,7 +638,7 @@ export class RenderedConnection
     const parentInput = parentBlock.getInputWithBlock(childBlock);
     if (parentInput) {
       const visible = parentInput.isVisible();
-      childBlock.getSvgRoot().style.display = visible ? 'block' : 'none';
+      childBlock.setSvgDisplay(visible);
     }
   }
 

@@ -574,9 +574,11 @@ tessblock 은 npm `blockly` 대신 `packages/blockly` 의 포크를 쓴다.
 - 연결: vite `resolve.alias` 로 `blockly/core`, `@blockly/field-colour` 를 빌드 결과로 돌린다. 한 인스턴스만
   쓰기 위해서다(npm field-colour 는 UMD 로 npm `blockly/core` 를 따로 불러온다). 타입 검사는 npm `blockly` 의
   d.ts 를 그대로 쓴다(공개 API 동일). `blockly/msg/ko` 는 문자열만 있어 npm 것을 쓴다.
-- 포크에서 바꾼 곳: `core/dragging/drag_proxy.ts`(새 파일), `block_svg.ts`(`setDragging(adding, mark)`,
-  `translate`, `start/stopDragProxy`, `canUseDragProxy`, `setDeleteStyle`, `dispose`),
-  `dragging/block_drag_strategy.ts`(`proxied`).
+- 포크에서 바꾼 곳: `core/dragging/drag_proxy.ts`(새 파일), `block_svg.ts`(평평한 스택 그룹, `setDragging(adding, mark)`,
+  `translate`, `moveBy`, `start/stopDragProxy`, `canUseDragProxy`, `setDeleteStyle`, `dispose`, 선택 윤곽),
+  `dragging/block_drag_strategy.ts`(`proxied`), `render_management.ts`, `layer_manager.ts`, `block_animations.ts`,
+  `block_flyout_inflater.ts`, `inputs/input.ts`·`rendered_connection.ts`(`setSvgDisplay`),
+  `renderers/zelos/path_object.ts`, `field.ts`, `block_aria_composer.ts`, `serialization/blocks.ts`.
 
 ### 원인
 
@@ -626,4 +628,55 @@ tessblock 은 npm `blockly` 대신 `packages/blockly` 의 포크를 쓴다.
 합성하지 않으면 드래그 중 화면이 원래와 0 픽셀 차이다(대역 구조 검증). 합성하면 Chrome 이 투명 합성 레이어의
 글자에 LCD(서브픽셀) 안티앨리어싱을 쓰지 않아, LCD 글꼴 렌더링을 쓰는 환경(윈도 100% 배율 등)에서 **끄는 동안만**
 블록 글자가 회색조 안티앨리어싱으로 그려진다. 모양·색·그림자·z 순서(팔레트·휴지통·스크롤바 위)는 같다.
+
+### 평평한 스택 그룹 (연결·분리·복사)
+
+원래 Blockly 는 블록 `<g>` 를 부모 블록 `<g>` 안에 중첩한다(DOM 깊이 = 스택 길이). 블록을 끼우거나 빼면 아래쪽
+전체가 DOM 에서 옮겨지고, 옮긴 요소는 스타일·레이아웃(특히 SVG `<text>`)을 처음부터 다시 계산한다.
+
+- 측정: 같은 수의 요소를 옮길 때 중첩 740단은 63ms, 평평한 형제 740개는 2.4ms(중첩 깊이에 제곱으로 증가).
+  평평해도 옮긴 블록 442개(텍스트 2294개)의 재레이아웃은 약 230ms, transform 만 바꾸면 2ms.
+  → 연결·분리에서 **옮기는 요소 수를 최소화**하고 위치는 transform 으로만 바꾼다.
+- 구조: 최상위 블록마다 스택 그룹(`stackGroup`, 캔버스의 `<g>`, transform = 최상위 블록 위치)을 둔다. 이전 연결
+  (다음 블록·문장 입력)로 붙은 블록의 `<g>` 는 모두 이 그룹의 **직계 자식**(flat)으로, 그리는 순서(입력 순, 다음
+  블록 마지막의 전위 순회)대로 놓는다. transform = 최상위 블록 기준 오프셋(`stackX/Y` = 부모 오프셋 +
+  `relativeCoords`). 값 입력(출력 연결) 블록은 원래처럼 부모 `<g>` 안에 중첩(얕고, CSS 후손 선택자 유지).
+- `getSvgRoot()` 는 블록 자신의 `<g>`. 스택 전체가 필요한 곳(레이어 이동, 삭제 애니메이션 복제, 흔들림 skew,
+  `moveSvgRootToFront`, 대역 드래그, 플라이아웃 포인터 바인딩, tess 실행 발광 `.tess-running`)은
+  `getStackSvgRoot()`(최상위면 스택 그룹) 를 쓴다.
+- 분리(`setParent(null)`): 떨어지는 쪽이 절반보다 크면 남는 쪽을 새 그룹(원래 그룹 바로 앞)으로 옮기고 원래
+  그룹을 떨어진 스택이 가진다. 아니면 떨어지는 쪽을 새 그룹(캔버스 끝)으로 옮긴다.
+- 연결: 붙는 쪽이 대상 스택보다 크고 같은 레이어면 대상 스택의 그룹들을 붙는 쪽 그룹으로 옮기고(그리는 순서는
+  붙는 쪽 그룹 위치), 아니면 붙는 쪽을 대상 그룹의 제자리(`precedingFlatGroup` 다음)에 넣는다.
+  → 1485 블록 스크립트 중간에 끼우기·빼기·다시 넣기에서 옮기는 요소는 앞쪽 몇 블록뿐이다.
+- 옮기기는 가능하면 `moveBefore`(포커스 유지, blur/focus 이벤트 없음). 지원하지 않으면 `insertBefore` 후 포커스
+  복원(원래 동작과 같음). 포커스가 풀렸다 잡히면 선택 윤곽이 다시 만들어져 그리는 순서가 달라지므로 필요하다.
+- 위치 갱신: `translate` 는 최상위면 스택 그룹 transform, 아니면 하위 트리 오프셋 재배치(`placeSubtree`).
+  렌더 패스 안에서는 `render_management.deferPlacement` 로 모아 패스 끝에 스택마다 한 번만 배치(후위 순회
+  렌더가 블록마다 하위 전체를 다시 배치하는 O(n²) 방지).
+- 선택 윤곽(zelos `blocklyPathSelected`): 원래는 블록 `<g>` 끝에 붙어 그 아래 블록들 위에 그려진다. flat 블록은
+  윤곽을 같은 클래스(`MutationObserver` 로 동기화)·같은 오프셋의 `<g>` 에 넣어 선택 시점의 하위 트리 끝 다음에 둔다.
+  나중에 붙는 블록은 윤곽 뒤에 넣는다(`skipOutlines`, 원래도 나중에 붙은 자식이 위). 윤곽 그룹의 pointerdown 은
+  블록으로 보낸다.
+- 숨김(`display`): 입력 숨김·접기가 자식 `<g>` 에 주던 `display` 를 `setSvgDisplay` 로 받아, 숨은 조상을 가진 flat
+  그룹에 `none` 을 준다(원래는 중첩으로 상속).
+- 대역 드래그의 흔들림: 스택을 빼낼 때의 skew 를 대역 오버레이 애니메이션에 스택 시작점 기준으로 적용(원래와 같은 모양).
+- 기타: `moveBy(0,0)`(좌표 없는 블록을 불러올 때마다 호출)은 연결 DB 정렬·콘텐츠 크기 재계산을 건너뜀(복사 시
+  블록마다 전체 DB 정렬 → O(n²)). `Field.recomputeAriaContext` 는 초기화 전 예외를 던지지 않고 검사,
+  `getBeginStackLabel` 은 부모 유무로 판정(O(1)), 불러오기·렌더 패스에서 글자 폭 캐시, 다음 연결로만 이어진
+  조상은 다시 그리지 않고 자식 위치만 조임(`pathBlocks`).
+
+### 측정 2 (헤드리스 Chromium, 1485 블록 스크립트, 트레이스 합계 ms)
+
+| | 원래 포크(중첩) | 평평한 스택 그룹 |
+| --- | --- | --- |
+| 블록 하나를 중간에 끼우고 놓기 JS / 스타일 / 레이아웃 | 743 / 450 / 632 | 58 / 6 / 7 |
+| 중간에서 빼내기 시작 | 711 / 281 / 283 | 80 / 6 / 12 |
+| 빼낸 스택을 다시 끼우고 놓기 | 721 / 294 / 318 | 53 / 7 / 4 |
+| 복제(붙여넣기 동기 호출) | 2142 (원래 Blockly) | 549 (대부분 새 요소 첫 레이아웃) |
+
+### 화면 비교 (원래 Blockly 13.3.0 과 픽셀 비교)
+
+정지 화면, 선택 윤곽, 필드 호버, 실행 발광, 끼우기 후, 겹친 스택 놓기, 다시 넣기, 비활성화, 놓은 뒤, 되돌리기:
+블록 영역 0 픽셀 차이(실행 발광 필터 1픽셀 ±1). 끄는 중만 위의 합성 레이어 글자 안티앨리어싱 차이.
 

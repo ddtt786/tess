@@ -239,7 +239,7 @@ export class BlockFlyoutInflater implements IFlyoutInflater {
 
     blockListeners.push(
       browserEvents.conditionalBind(
-        block.getSvgRoot(),
+        block.getStackSvgRoot(),
         'pointerdown',
         block,
         (e: PointerEvent) => {
@@ -253,14 +253,14 @@ export class BlockFlyoutInflater implements IFlyoutInflater {
     );
 
     blockListeners.push(
-      browserEvents.bind(block.getSvgRoot(), 'pointermove', null, () => {
+      browserEvents.bind(block.getStackSvgRoot(), 'pointermove', null, () => {
         if (!this.flyout?.targetWorkspace?.isDragging()) {
           block.addSelect();
         }
       }),
     );
     blockListeners.push(
-      browserEvents.bind(block.getSvgRoot(), 'pointerleave', null, () => {
+      browserEvents.bind(block.getStackSvgRoot(), 'pointerleave', null, () => {
         if (!this.flyout?.targetWorkspace?.isDragging()) {
           block.removeSelect();
         }

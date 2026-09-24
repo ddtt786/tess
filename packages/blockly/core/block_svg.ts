@@ -76,6 +76,55 @@ import type {WorkspaceSvg} from './workspace_svg.js';
  * Class for a block's SVG representation.
  * Not normally called directly, workspace.newBlock() is preferred.
  */
+/** Blocks whose selection outline is drawn apart from their group. */
+const outlined = new Set<BlockSvg>();
+
+/**
+ * Moves a block group, keeping focus inside it where the browser can
+ * (`moveBefore`); otherwise the caller restores focus.
+ */
+function moveGroup(parent: Element, group: Element, ref: Node | null) {
+  const atomic = parent as Element & {
+    moveBefore?: (node: Node, child: Node | null) => void;
+  };
+  if (atomic.moveBefore && parent.isConnected && group.isConnected) {
+    try {
+      atomic.moveBefore(group, ref);
+      return;
+    } catch {
+      // Falls back to a plain move.
+    }
+  }
+  parent.insertBefore(group, ref);
+}
+
+/** The block each selection outline group belongs to. */
+const outlineOwners = new WeakMap<Element, BlockSvg>();
+
+/**
+ * Moves an insertion point past the selection outlines of `parent` and its
+ * ancestors, which stock Blockly draws below blocks attached after them.
+ */
+function skipOutlines(
+  after: Element | null,
+  parent: BlockSvg,
+): Element | null {
+  for (;;) {
+    const next: Element | null = after
+      ? after.nextElementSibling
+      : null;
+    const owner = next ? outlineOwners.get(next) : undefined;
+    if (!next || !owner) return after;
+    let ancestor: BlockSvg | null = parent;
+    while (ancestor && ancestor !== owner) ancestor = ancestor.getParent();
+    if (!ancestor) return after;
+    after = next;
+  }
+}
+
+/** Number of blocks hidden by `setSvgDisplay`. */
+let hiddenBlocks = 0;
+
 export class BlockSvg
   extends Block
   implements
@@ -187,6 +236,33 @@ export class BlockSvg
   private dragProxy: DragProxy | null = null;
 
   /**
+   * While this is a top block, the group holding the groups of its whole stack
+   * side by side, in drawing order. Stock Blockly nests each block's group in
+   * its parent's, which makes moving a long stack in the DOM, and laying it out
+   * again, cost more with every block.
+   */
+  private stackGroup: SVGGElement | null = null;
+
+  /**
+   * Whether this block's group sits directly in its stack's group. A block in
+   * a value input is not flat: its group nests in its parent's, as in stock
+   * Blockly.
+   */
+  private flat = true;
+
+  /** Offset from the top block of the stack, in workspace units. */
+  private stackX = 0;
+  private stackY = 0;
+
+  /** The `display` stock Blockly gives this block's group, set by inputs. */
+  private svgDisplay = '';
+
+  /** The selection outline while it is drawn above the rest of the stack. */
+  private selectedPath: SVGElement | null = null;
+  private selectedGroup: SVGGElement | null = null;
+  private selectedClassSync: MutationObserver | null = null;
+
+  /**
    * @param workspace The block's workspace.
    * @param prototypeName Name of the language object containing type-specific
    *     functions for this block.
@@ -245,7 +321,10 @@ export class BlockSvg
       browserEvents.conditionalBind(svg, 'pointerdown', this, this.onMouseDown);
     }
 
-    if (!svg.parentNode) {
+    if (!this.parentBlock_) {
+      const stack = this.getStackSvgRoot();
+      if (!stack.parentNode) this.workspace.getCanvas().appendChild(stack);
+    } else if (!svg.parentNode) {
       this.workspace.getCanvas().appendChild(svg);
     }
     this.recomputeAriaContext();
@@ -306,24 +385,97 @@ export class BlockSvg
       return;
     }
 
+    const wasFlat = this.flat;
+    const oldStack = oldParent
+      ? oldParent.getRootBlock().stackGroup
+      : this.stackGroup;
+    // Groups of this block's subtree that sit in its old stack's group.
+    const moving = this.flatGroups(wasFlat);
     const focusedNode = getFocusManager().getFocusedNode();
-    const restoreFocus = this.getSvgRoot().contains(
-      focusedNode?.getFocusableElement() ?? null,
-    );
+    const focusedElement = focusedNode?.getFocusableElement() ?? null;
+    let restoreFocus =
+      !!focusedElement &&
+      (svgRoot.contains(focusedElement) ||
+        moving.some((group) => group.contains(focusedElement)));
+
     if (newParent) {
-      (newParent as BlockSvg).getSvgRoot().appendChild(svgRoot);
-      // appendChild() clears focus state, so re-focus the previously focused
-      // node in case it was this block and would otherwise lose its focus. Once
-      // Element.moveBefore() has better browser support, it should be used
-      // instead.
-      if (restoreFocus && focusedNode) {
-        getFocusManager().focusNode(focusedNode);
+      const parent = newParent as BlockSvg;
+      const root = parent.getRootBlock();
+      const stack = root.getStackSvgRoot();
+      this.flat = !this.outputConnection;
+      if (!this.flat) {
+        moveGroup(parent.svgGroup, svgRoot, null);
+        if (wasFlat) moving.shift();
       }
+      const after = moving.length
+        ? skipOutlines(this.precedingFlatGroup(), parent)
+        : null;
+      const ownStack = this.stackGroup;
+      if (
+        ownStack &&
+        moving.length > stack.childElementCount &&
+        ownStack.parentNode &&
+        ownStack.parentNode === stack.parentNode
+      ) {
+        // Fewer groups move if the parent's stack joins this one's group.
+        const others = Array.from(stack.children);
+        restoreFocus ||=
+          !!focusedElement && others.some((g) => g.contains(focusedElement));
+        const split = after ? others.indexOf(after) + 1 : 0;
+        const first = moving[0];
+        for (const group of others.slice(0, split)) {
+          moveGroup(ownStack, group, first);
+        }
+        const next = moving[moving.length - 1].nextSibling;
+        for (const group of others.slice(split)) {
+          moveGroup(ownStack, group, next);
+        }
+        // The merged stack keeps this one's place in the drawing order.
+        stack.remove();
+        root.stackGroup = ownStack;
+        ownStack.setAttribute('transform', stack.getAttribute('transform') ?? '');
+      } else {
+        const next = after ? after.nextSibling : stack.firstChild;
+        for (const group of moving) moveGroup(stack, group, next);
+        ownStack?.remove();
+      }
+      this.stackGroup = null;
+      if (!this.flat) svgRoot.setAttribute('transform', this.getTranslation());
+      this.placeSubtree();
     } else if (oldParent) {
       const oldXY = this.getRelativeToSurfaceXY();
-      this.workspace.getCanvas().appendChild(svgRoot);
+      const oldRoot = oldParent.getRootBlock();
+      if (
+        wasFlat &&
+        oldStack?.parentNode &&
+        moving.length * 2 > oldStack.childElementCount
+      ) {
+        // Fewer groups move if the rest of the old stack leaves its group.
+        const leaving = new Set<Element>(moving);
+        restoreFocus ||= !!focusedElement && !svgRoot.contains(focusedElement);
+        const rest = dom.createSvgElement(Svg.G, {
+          'transform': oldStack.getAttribute('transform') ?? '',
+        });
+        // Attached first, so that its groups move without losing focus.
+        oldStack.parentNode.insertBefore(rest, oldStack);
+        for (const group of Array.from(oldStack.children)) {
+          if (!leaving.has(group)) moveGroup(rest, group, null);
+        }
+        oldRoot.stackGroup = rest;
+        this.stackGroup = oldStack;
+      } else {
+        const stack = dom.createSvgElement(Svg.G, {});
+        this.workspace.getCanvas().appendChild(stack);
+        if (!wasFlat) moveGroup(stack, svgRoot, null);
+        for (const group of moving) moveGroup(stack, group, null);
+        this.stackGroup = stack;
+      }
+      this.flat = true;
       this.translate(oldXY.x, oldXY.y);
+      this.placeSubtree();
     }
+    for (const block of outlined) block.placeSelectedPath();
+    if (hiddenBlocks) this.applyDisplay();
 
     // appendChild() clears focus state, so re-focus the previously focused
     // node in case it was this block and would otherwise lose its focus. Once
@@ -359,15 +511,20 @@ export class BlockSvg
     const currLoc = this.getRelativeToSurfaceXY();
     const newLoc = Coordinate.sum(currLoc, delta);
     this.translate(newLoc.x, newLoc.y);
-    this.workspace.connectionDBList.forEach((db) => db?.beginBulkUpdates());
-    this.updateComponentLocations(newLoc);
-    this.workspace.connectionDBList.forEach((db) => db?.endBulkUpdates());
+    // Nothing moves on a zero offset (every block loaded without coordinates
+    // gets one), so the connection DB and the content bounds stay as they are.
+    const moved = dx !== 0 || dy !== 0;
+    if (moved) {
+      this.workspace.connectionDBList.forEach((db) => db?.beginBulkUpdates());
+      this.updateComponentLocations(newLoc);
+      this.workspace.connectionDBList.forEach((db) => db?.endBulkUpdates());
+    }
 
     if (eventsEnabled && event) {
       event!.recordNew();
       eventUtils.fire(event);
     }
-    this.workspace.resizeContents();
+    if (moved) this.workspace.resizeContents();
   }
 
   /**
@@ -384,7 +541,228 @@ export class BlockSvg
       this.dragProxy.moveTo(x, y);
       return;
     }
-    this.getSvgRoot().setAttribute('transform', this.getTranslation());
+    if (!this.parentBlock_) {
+      this.getStackSvgRoot().setAttribute('transform', this.translation);
+      return;
+    }
+    if (!this.flat) {
+      this.svgGroup.setAttribute('transform', this.translation);
+    }
+    if (!renderManagement.deferPlacement(this)) this.placeSubtree();
+  }
+
+  /**
+   * The group holding this block's stack if it is a top block, created on
+   * first use; otherwise the block's own group.
+   *
+   * @internal
+   */
+  getStackSvgRoot(): SVGGElement {
+    if (this.parentBlock_) return this.svgGroup;
+    if (!this.stackGroup) {
+      this.stackGroup = dom.createSvgElement(Svg.G, {});
+      if (this.translation) {
+        this.stackGroup.setAttribute('transform', this.translation);
+      }
+      this.svgGroup.parentNode?.replaceChild(this.stackGroup, this.svgGroup);
+      this.stackGroup.appendChild(this.svgGroup);
+      this.placeSubtree();
+    }
+    return this.stackGroup;
+  }
+
+  /**
+   * Positions the groups of this block's subtree that sit in the stack's
+   * group, relative to the top block.
+   *
+   * @internal
+   */
+  placeSubtree() {
+    const parent = this.getParent();
+    const pending: Array<[BlockSvg, number, number]> = [
+      [this, parent?.stackX ?? 0, parent?.stackY ?? 0],
+    ];
+    while (pending.length) {
+      const [block, baseX, baseY] = pending.pop()!;
+      const top = !block.parentBlock_;
+      const x = top ? 0 : baseX + block.relativeCoords.x;
+      const y = top ? 0 : baseY + block.relativeCoords.y;
+      block.stackX = x;
+      block.stackY = y;
+      if (block.flat) {
+        const transform = `translate(${x}, ${y})`;
+        if (block.svgGroup.getAttribute('transform') !== transform) {
+          block.svgGroup.setAttribute('transform', transform);
+        }
+        block.selectedGroup?.setAttribute('transform', transform);
+      }
+      for (const child of block.childBlocks_) pending.push([child, x, y]);
+    }
+  }
+
+  /**
+   * The groups of this block's subtree that sit in the stack's group, in
+   * drawing order.
+   *
+   * @param self Whether to count this block's own group as flat.
+   */
+  private flatGroups(self: boolean): SVGGElement[] {
+    const groups: SVGGElement[] = [];
+    const pending: BlockSvg[] = [this];
+    while (pending.length) {
+      const block = pending.pop()!;
+      if (block === this ? self : block.flat) groups.push(block.svgGroup);
+      const children = block.orderedChildren();
+      for (let i = children.length - 1; i >= 0; i--) pending.push(children[i]);
+    }
+    return groups;
+  }
+
+  /** Children in drawing order: those in inputs, then the next block. */
+  private orderedChildren(): BlockSvg[] {
+    const children: BlockSvg[] = [];
+    for (const input of this.inputList) {
+      const child = input.connection?.targetBlock() as BlockSvg | null;
+      if (child) children.push(child);
+    }
+    const next = this.getNextBlock();
+    if (next) children.push(next);
+    return children;
+  }
+
+  /** The last flat group of this block's subtree, if it has any. */
+  private lastFlatGroup(): SVGGElement | null {
+    const children = this.orderedChildren();
+    for (let i = children.length - 1; i >= 0; i--) {
+      const last = children[i].lastFlatGroup();
+      if (last) return last;
+    }
+    return this.flat ? this.svgGroup : null;
+  }
+
+  /** The flat group drawn right before this block's subtree. */
+  private precedingFlatGroup(): SVGGElement | null {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    let child: BlockSvg = this;
+    for (
+      let parent = child.getParent();
+      parent;
+      child = parent, parent = parent.getParent()
+    ) {
+      const siblings = parent.orderedChildren();
+      for (let i = siblings.indexOf(child) - 1; i >= 0; i--) {
+        const last = siblings[i].lastFlatGroup();
+        if (last) return last;
+      }
+      if (parent.flat) return parent.svgGroup;
+    }
+    return null;
+  }
+
+  /**
+   * Shows or hides this block's subtree, as setting its group's `display`
+   * does in stock Blockly.
+   *
+   * @internal
+   */
+  setSvgDisplay(visible: boolean) {
+    const display = visible ? 'block' : 'none';
+    if (this.svgDisplay === display) return;
+    if (this.svgDisplay === 'none') hiddenBlocks--;
+    if (display === 'none') hiddenBlocks++;
+    this.svgDisplay = display;
+    this.applyDisplay();
+  }
+
+  /** Hides the flat groups of this subtree that a hidden block contains. */
+  private applyDisplay() {
+    let hidden = false;
+    for (let parent = this.getParent(); parent; parent = parent.getParent()) {
+      if (parent.svgDisplay === 'none') {
+        hidden = true;
+        break;
+      }
+    }
+    const pending: Array<[BlockSvg, boolean]> = [[this, hidden]];
+    while (pending.length) {
+      const [block, above] = pending.pop()!;
+      const display = block.flat && above ? 'none' : block.svgDisplay;
+      if (block.svgGroup.style.display !== display) {
+        block.svgGroup.style.display = display;
+      }
+      const inside = above || block.svgDisplay === 'none';
+      for (const child of block.childBlocks_) pending.push([child, inside]);
+    }
+  }
+
+  /**
+   * Draws the selection outline where stock Blockly does, above the blocks
+   * below this one, by moving it to the end of the stack's group.
+   */
+  private placeSelectedPath() {
+    const path = this.selectedPath;
+    if (!path) return;
+    if (!this.flat) {
+      this.selectedGroup?.remove();
+      if (path.parentNode !== this.svgGroup) this.svgGroup.appendChild(path);
+      return;
+    }
+    let group = this.selectedGroup;
+    if (!group) {
+      group = this.selectedGroup = dom.createSvgElement(Svg.G, {});
+      outlineOwners.set(group, this);
+      // Same classes as the block's group, for the rules that style its paths.
+      const sync = () =>
+        group!.setAttribute('class', this.svgGroup.getAttribute('class') ?? '');
+      sync();
+      this.selectedClassSync = new MutationObserver(sync);
+      this.selectedClassSync.observe(this.svgGroup, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+      browserEvents.conditionalBind(group, 'pointerdown', this, this.onMouseDown);
+    }
+    group.setAttribute('transform', `translate(${this.stackX}, ${this.stackY})`);
+    if (path.parentNode !== group) group.appendChild(path);
+    // Right after the blocks under this one, as stock Blockly appends it to
+    // the block's group: blocks attached later are drawn over it.
+    const stack = this.getRootBlock().getStackSvgRoot();
+    if (group.parentNode !== stack) {
+      stack.insertBefore(group, this.lastFlatGroup()?.nextSibling ?? null);
+    }
+  }
+
+  /** Stops drawing the selection outline apart from the block. */
+  private dropSelectedPath() {
+    outlined.delete(this);
+    this.selectedPath = null;
+    this.selectedClassSync?.disconnect();
+    this.selectedClassSync = null;
+    this.selectedGroup?.remove();
+    this.selectedGroup = null;
+  }
+
+  /**
+   * Adds a transform to the block's position, e.g. to skew it.
+   *
+   * @internal
+   */
+  setExtraTransform(extra: string) {
+    if (this.dragProxy) {
+      this.dragProxy.setExtraTransform(extra);
+    } else if (this.parentBlock_ && !this.flat) {
+      this.svgGroup.setAttribute('transform', `${this.translation} ${extra}`);
+    } else if (this.parentBlock_) {
+      this.svgGroup.setAttribute(
+        'transform',
+        `translate(${this.stackX}, ${this.stackY}) ${extra}`,
+      );
+    } else {
+      this.getStackSvgRoot().setAttribute(
+        'transform',
+        `${this.translation} ${extra}`,
+      );
+    }
   }
 
   /**
@@ -415,7 +793,7 @@ export class BlockSvg
     if (!proxy) return;
     this.dragProxy = null;
     proxy.dispose();
-    this.getSvgRoot().setAttribute('transform', this.getTranslation());
+    this.getStackSvgRoot().setAttribute('transform', this.getTranslation());
     this.pathObject.updateDraggingDelete(proxy.deleteStyle);
   }
 
@@ -948,12 +1326,14 @@ export class BlockSvg
       focusedElement = null;
     }
 
+    const stack = this.parentBlock_ ? null : this.stackGroup;
     super.dispose(!!healStack);
-    dom.removeNode(this.svgGroup);
+    const root = this.stackGroup ?? stack ?? this.svgGroup;
+    dom.removeNode(root);
 
     // If this block (or a descendant) was focused, focus its parent or
     // workspace instead.
-    if (this.getSvgRoot().contains(focusedElement)) {
+    if (root.contains(focusedElement)) {
       let parent: BlockSvg | undefined | null = this.getParent();
       if (!parent) {
         // In some cases, blocks are disconnected from their parents before
@@ -994,6 +1374,9 @@ export class BlockSvg
   override disposeInternal() {
     this.disposing = true;
     super.disposeInternal();
+    this.dropSelectedPath();
+    if (this.svgDisplay === 'none') hiddenBlocks--;
+    this.svgDisplay = '';
 
     if (getFocusManager().getFocusedNode() === this) {
       this.workspace.cancelCurrentGesture();
@@ -1268,6 +1651,13 @@ export class BlockSvg
    */
   addSelect() {
     this.pathObject.updateSelected(true);
+    this.selectedPath ??= this.svgGroup.querySelector(
+      ':scope > .blocklyPathSelected',
+    );
+    if (this.selectedPath) {
+      outlined.add(this);
+      this.placeSelectedPath();
+    }
   }
 
   /**
@@ -1278,6 +1668,7 @@ export class BlockSvg
    */
   removeSelect() {
     this.pathObject.updateSelected(false);
+    this.dropSelectedPath();
   }
 
   /**
@@ -1409,14 +1800,26 @@ export class BlockSvg
       let block: this | null = this;
       do {
         if (block.isDeadOrDying()) return;
-        const root = block.getSvgRoot();
-        const parent = root.parentNode;
-        if (!parent) return;
-        const childNodes = parent.childNodes;
-        // Avoid moving the block if it's already at the bottom.
-        if (childNodes[childNodes.length - 1] !== root) {
-          while (root.nextSibling) {
-            parent.insertBefore(root.nextSibling, root);
+        // Flat blocks keep their place in the stack's drawing order.
+        if (!block.parentBlock_ || !block.flat) {
+          const root = block.getStackSvgRoot();
+          const parent = root.parentNode;
+          if (!parent) return;
+          const childNodes = parent.childNodes;
+          // Avoid moving the block if it's already at the bottom.
+          if (childNodes[childNodes.length - 1] !== root) {
+            // Moved elements are laid out again: move the smaller side.
+            let later = 0;
+            for (let node = root.nextSibling; node; node = node.nextSibling) {
+              later += (node as Element).childElementCount ?? 0;
+            }
+            if (!block.parentBlock_ && root.childElementCount < later) {
+              parent.appendChild(root);
+            } else {
+              while (root.nextSibling) {
+                parent.insertBefore(root.nextSibling, root);
+              }
+            }
           }
         }
         if (blockOnly) break;

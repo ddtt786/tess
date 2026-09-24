@@ -187,7 +187,7 @@ export function showObject(id: string): void {
   lightStack();
 }
 
-/** The stack group lit as running; Blockly nests the following blocks inside it, so they glow too. */
+/** The group of the stack lit as running; it holds every block of the stack, so they glow together. */
 let lit: SVGElement | null = null;
 
 function lightStack(): void {
@@ -195,8 +195,9 @@ function lightStack(): void {
   lit = null;
   const current = runningStack.peek();
   if (!workspace || !current || current.objectId !== shown) return;
-  const block = workspace.getBlockById(current.blockId) as Blockly.BlockSvg | null;
-  lit = block?.getSvgRoot() ?? null;
+  // The fork's stack group holds the whole stack; getSvgRoot() is the block alone.
+  const block = workspace.getBlockById(current.blockId) as (Blockly.BlockSvg & { getStackSvgRoot?(): SVGElement }) | null;
+  lit = block?.getStackSvgRoot?.() ?? block?.getSvgRoot() ?? null;
   lit?.classList.add("tess-running");
 }
 

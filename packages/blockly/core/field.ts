@@ -1549,13 +1549,10 @@ export abstract class Field<T = any>
    * @returns true if the element is in the accessibility tree, false if the aria state is hidden
    */
   recomputeAriaContext(): boolean {
-    let focusableElement;
-    try {
-      focusableElement = this.getFocusableElement();
-    } catch {
-      // Just return because the field hasn't been initialized yet.
-      return false;
-    }
+    // Not initialized yet. Checked directly: a thrown error would capture a
+    // stack trace, which is costly while a deeply nested stack is loading.
+    if (!this.fieldGroup_) return false;
+    const focusableElement = this.getFocusableElement();
 
     if (!focusableElement) return false;
 
