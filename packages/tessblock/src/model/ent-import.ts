@@ -9,10 +9,11 @@ import { decompileProject, restoreTableRows } from '../../../decompiler/src/inde
 import type { TarEntry } from '../../../decompiler/src/types.ts';
 import { compileProject } from '../../../compiler/src/index.ts';
 import {
-  convertStack, convertValue, helperFunctions, warmEntryPatterns, nameHelperCalls, stackHeight, type BlockJson, type ConvertContext, type EntryBlock,
+  convertStack, convertValue, helperFunctions, warmEntryPatterns, nameHelperCalls, nameStoreFlag, stackHeight, type BlockJson, type ConvertContext, type EntryBlock,
 } from '../blocks/entry-blocks.ts';
 import { DEFINE_BLOCK, PARAM_BOOLEAN, PARAM_VALUE } from '../blocks/function-ids.ts';
 import { safeIdent } from '../codegen/ident.ts';
+import { STORE_FLAG_VARIABLE, STORE_PREFIX, isStoreName } from '../../../core/src/save-manager.ts';
 import { saveAsset } from './assets.ts';
 import { yieldToPage } from './yield.ts';
 import { replaceProject } from './store.ts';
@@ -176,6 +177,7 @@ async function toModel(
   report: (step: string, done: number) => Promise<void>,
 ): Promise<{ model: TessProject; missed: Map<string, number> }> {
   const paramNames = functionParamNames(source);
+  nameStoreFlag(work);
   // The compiler's own helpers come back from the statements that need them.
   const helpers = helperFunctions(work.functions);
   const own = work.functions.filter((fn) => !helpers.has(fn.id));
@@ -205,17 +207,19 @@ async function toModel(
   }
   await report('함수를 옮기는 중', 0.92);
 
+  // `can_save`'s flag comes back from the block that reads it; `@이름` is a `store` variable.
   const variables: VariableDef[] = work.variables
     .filter((variable) => variable.variableType !== 'timer' && variable.variableType !== 'answer')
+    .filter((variable) => variable.object || variable.name !== STORE_FLAG_VARIABLE)
     .map((variable) => ({
       id: variable.id,
-      name: variable.name,
+      name: isStored(variable) ? variable.name.slice(STORE_PREFIX.length) : variable.name,
       kind: variable.variableType === 'list' ? 'list' : 'variable',
       owner: variable.object ?? null,
       value: typeof variable.value === 'number' ? variable.value : String(variable.value ?? 0),
       array: (variable.array ?? []).map((item) => (typeof item.data === 'number' ? item.data : String(item.data ?? ''))),
       visible: Boolean(variable.visible),
-      scope: variable.isRealTime ? 'realtime' : variable.isCloud ? 'shared' : 'local',
+      scope: isStored(variable) ? 'store' : variable.isRealTime ? 'realtime' : variable.isCloud ? 'shared' : 'local',
       slide: variable.variableType === 'slide'
         ? { min: Number(variable.minValue ?? 0), max: Number(variable.maxValue ?? 100) }
         : null,
@@ -379,6 +383,10 @@ function functionOwners(source: string): Map<string, string> {
     if (fn) owners.set(fn[1]!, current.display ?? current.key);
   }
   return owners;
+}
+
+function isStored(variable: CompiledVariable): boolean {
+  return !variable.object && isStoreName(variable.name);
 }
 
 /** `function name(a, b?)` headers in the decompiled source, by function name. */

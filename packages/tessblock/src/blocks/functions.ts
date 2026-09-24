@@ -489,6 +489,35 @@ interface CallBlock extends Blockly.BlockSvg {
   paramIds: string[];
 }
 
+/** Value functions whose statement call the palette also offers, asked for from the block menu. */
+export const statementCallShown = new Set<string>();
+
+/** Turns a placed call into the other shape, keeping its arguments; a value call leaves its socket. */
+export function swapCallShape(block: Blockly.BlockSvg): void {
+  const id = calledId(block.type);
+  if (!id) return;
+  const toValue = block.type === callType(id);
+  const workspace = block.workspace;
+  const state = Blockly.serialization.blocks.save(block, { addCoordinates: false, addNextBlocks: false }) as BlockJson & Record<string, unknown>;
+  state.type = toValue ? valueCallType(id) : callType(id);
+  const at = block.getRelativeToSurfaceXY();
+  state.x = at.x;
+  state.y = toValue ? at.y : at.y + 24;
+  const previous = block.previousConnection?.targetConnection ?? null;
+  const next = block.nextConnection?.targetBlock() ?? null;
+  Blockly.Events.setGroup(true);
+  try {
+    if (next) block.nextConnection!.disconnect();
+    block.dispose(false);
+    const fresh = Blockly.serialization.blocks.append(state as never, workspace) as Blockly.BlockSvg;
+    // A statement taken out of a stack closes the gap behind it.
+    if (previous && next?.previousConnection) previous.connect(next.previousConnection);
+    Blockly.common.setSelected(fresh);
+  } finally {
+    Blockly.Events.setGroup(false);
+  }
+}
+
 // --- keeping placed calls in step with their function -----------------------
 
 /** Rebuilds placed call blocks whose slots were made for other parameters than their function has now. */

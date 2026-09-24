@@ -37,6 +37,14 @@ define(
     code: (a) => `${a.MODE} ${a.NAME}`,
   },
   {
+    type: 'data_store_save',
+    category: 'data',
+    message: '로컬 변수 %1',
+    args: [menu('MODE', [['저장하고 기다리기', 'save'], ['저장하기', 'save async']])],
+    shape: 'statement',
+    code: (a) => a.MODE,
+  },
+  {
     type: 'data_list_item',
     category: 'data',
     message: '%1 의 %2 번째 항목',

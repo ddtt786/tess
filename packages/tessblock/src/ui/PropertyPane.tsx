@@ -99,7 +99,7 @@ function VariableRow({ variable, open, onPick }: { variable: VariableDef; open: 
           onCommit={(name) => updateVariable(variable.id, { name })}
         />
         <span class="rec-meta">{String(variable.value)}</span>
-        {variable.scope !== 'local' && <span class="tag">{variable.scope === 'shared' ? '공유' : '실시간'}</span>}
+        {variable.scope !== 'local' && <span class="tag">{SCOPE_LABELS[variable.scope]}</span>}
         <VisibilityButton variable={variable} />
         <button
           class="iconbtn plain danger"
@@ -175,6 +175,8 @@ function VisibilityButton({ variable }: { variable: VariableDef }) {
   );
 }
 
+const SCOPE_LABELS: Record<StorageScope, string> = { local: '기본', shared: '공유', realtime: '실시간', store: '로컬' };
+
 function ScopeSelect({ variable }: { variable: VariableDef }) {
   return (
     <select
@@ -183,9 +185,9 @@ function ScopeSelect({ variable }: { variable: VariableDef }) {
       aria-label="저장 방식"
       onChange={(event) => updateVariable(variable.id, { scope: (event.target as HTMLSelectElement).value as StorageScope })}
     >
-      <option value="local">기본</option>
-      <option value="shared">공유</option>
-      <option value="realtime">실시간</option>
+      {(Object.keys(SCOPE_LABELS) as StorageScope[]).map((scope) => (
+        <option value={scope}>{SCOPE_LABELS[scope]}</option>
+      ))}
     </select>
   );
 }

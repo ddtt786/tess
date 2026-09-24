@@ -92,7 +92,8 @@ export interface Scene {
 
 export type VariableKind = 'variable' | 'list';
 
-export type StorageScope = 'local' | 'shared' | 'realtime';
+/** `store` is kept between runs on the viewer's own machine (Tess `store var`). */
+export type StorageScope = 'local' | 'shared' | 'realtime' | 'store';
 
 export interface VariableDef {
   id: string;

@@ -6,6 +6,9 @@
  * copy lands where the pointer is, with copy and paste as their own entries.
  */
 import { DEFINE_BLOCK, PARAM_TYPES } from "./function-ids.ts";
+import { returnsValue, statementCallShown, swapCallShape } from "./functions.ts";
+import { calledId } from "../model/call-remap.ts";
+import { project } from "../model/store.ts";
 import * as Blockly from "blockly/core";
 
 const WORDS: Record<string, string> = {
@@ -81,6 +84,42 @@ export function installContextMenu(): void {
         workspace,
         pointerPoint(workspace, open) ?? location,
       );
+    },
+  });
+
+  // A value function's statement call: offered in the palette on request, or swapped for on the canvas.
+  replace({
+    id: "tessCallStatement",
+    scopeType: BLOCK,
+    weight: 0.9,
+    displayText: (scope) => (scope.block?.isInFlyout ? "실행 블록 보이기" : "실행 블록으로 바꾸기"),
+    preconditionFn: (scope) => {
+      const shape = callShape(scope.block);
+      if (shape?.value !== true) return "hidden";
+      return scope.block!.isInFlyout && statementCallShown.has(shape.id) ? "hidden" : "enabled";
+    },
+    callback: (scope) => {
+      const block = scope.block as Blockly.BlockSvg | undefined;
+      const shape = callShape(block);
+      if (!block || !shape) return;
+      if (!block.isInFlyout) return swapCallShape(block);
+      statementCallShown.add(shape.id);
+      refreshFlyout(block);
+    },
+  });
+  replace({
+    id: "tessCallValue",
+    scopeType: BLOCK,
+    weight: 0.9,
+    displayText: (scope) => (scope.block?.isInFlyout ? "실행 블록 숨기기" : "값 블록으로 바꾸기"),
+    preconditionFn: (scope) => (callShape(scope.block)?.value === false ? "enabled" : "hidden"),
+    callback: (scope) => {
+      const block = scope.block as Blockly.BlockSvg | undefined;
+      const shape = callShape(block);
+      if (!block || !shape) return;
+      if (!block.isInFlyout) return swapCallShape(block);
+      statementCallShown.delete(shape.id);
+      refreshFlyout(block);
     },
   });
 
@@ -497,6 +536,20 @@ function copyable(block: Blockly.BlockSvg | undefined): boolean {
 function isHeaderParam(block: Blockly.Block | undefined): boolean {
   return !!block && PARAM_TYPES.includes(block.type)
     && block.outputConnection?.targetBlock()?.type === DEFINE_BLOCK;
+}
+
+/** A call to a value function, and which shape it has; null for any other block. */
+function callShape(block: Blockly.Block | undefined): { id: string; value: boolean } | null {
+  const id = block ? calledId(block.type) : null;
+  const definition = id ? project.peek().functions.find((each) => each.id === id) : undefined;
+  if (!definition || !returnsValue(definition)) return null;
+  return { id: definition.id, value: block!.type.startsWith("func_value_") };
+}
+
+function refreshFlyout(block: Blockly.BlockSvg): void {
+  const target = block.workspace.targetWorkspace ?? block.workspace;
+  // Rebuilding the flyout under the open menu would close it mid-callback.
+  setTimeout(() => target.getToolbox()?.refreshSelection());
 }
 
 /** Registers an item, taking over the id when Blockly already used it. */

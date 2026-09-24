@@ -168,6 +168,7 @@ define({
 - `func_return`, `func_local_var` — `return E`, `var 이름 = E`.
 - 저장하면 `syncFunctionBlocks()` 가 함수마다 `func_call_<id>` 를 정의한다. 정의 본문에
   `func_return` 이 있으면 값 블록 `func_value_<id>` 도 함께 만든다.
+- 팔레트(`functionCallEntries`)는 값 함수에 값 블록만 보인다. 실행 블록은 블록 메뉴로 꺼낸다(8.7).
 
 매개변수 목록은 항상 머리의 블록에서 읽는다(`readParams`). 편집기는 바뀔 때마다 머리를
 정리하고 그 결과를 `functionDraft` 에 반영하며, 저장할 때도 같은 값을 쓴다.
@@ -285,6 +286,12 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
 - 자리는 메뉴가 넘겨주는 `location` 대신 **포인터 좌표를 직접 변환해서**
   쓴다(`svgMath.screenToWsCoordinates`). 그래야 작업판이나 브라우저가 확대돼 있어도,
   스크롤돼 있어도 포인터 밑에 떨어진다.
+- 값 함수 호출 블록 메뉴(`tessCallStatement`/`tessCallValue`, `callShape`):
+  - 팔레트: **실행 블록 보이기/숨기기** — `statementCallShown`(함수 id, 세션 동안만)에 넣고 빼고
+    `refreshSelection` 으로 팔레트를 다시 그린다. 메뉴 콜백 안에서 다시 그리면 메뉴가 닫히므로 `setTimeout`.
+  - 캔버스: **실행 블록으로 바꾸기 / 값 블록으로 바꾸기** — `swapCallShape` 가 인자를 그대로 둔 채
+    타입만 바꿔 다시 만든다. 값 블록은 소켓에서 빠져 그 자리(조금 아래)에 놓이고, 스택 중간의 실행
+    블록은 빠진 자리의 앞뒤를 다시 잇는다. 한 이벤트 그룹이라 되돌리기 한 번.
 
 ## 8.8 확장 카테고리
 
@@ -777,3 +784,17 @@ tessblock 은 npm `blockly` 대신 `packages/blockly` 의 포크를 쓴다.
   않음). 준비는 먼저 `flush` 해서(`currentSource()`) 저장 안 된 편집이 예전 상태 이름으로 캐시되지 않게 한다.
   소스 쓰기에서 예외가 나면 알림을 띄운다(예전엔 아무 반응 없음).
 
+
+## 19. 로컬 변수 (`store`)
+
+- `StorageScope` 에 `store` 가 있고, 속성 패널의 저장 방식에서 **로컬**로 고른다(전역 변수·리스트만).
+  글쓰기는 다른 저장 방식과 같은 자리에 `store var`/`store list` 를 쓰고, 컴파일러가 엔트리 이름 앞에 `@` 를 붙인다.
+- 블록: `data_store_save` "로컬 변수 [저장하고 기다리기|저장하기]" → `save` / `save async`. 기본은 기다리는 쪽.
+  판단은 기존 `calc_can_save`(`can_save`).
+- `.ent` 불러오기:
+  - 오브젝트가 없는 `@이름` 변수·리스트(`isStoreName`)는 `@` 를 뗀 이름에 `scope: 'store'`.
+    `@확장프로그램` 은 모델에 넣지 않는다.
+  - `@저장`·`@비동기저장` 함수는 `helperFunctions` 가 도우미로 다룬다 → `helper:@저장` 호출이 저장 블록 패턴에 맞는다.
+  - `nameStoreFlag` 가 플래그 변수 id 를 빌드마다 같은 `tess:store-flag` 로 바꾼다(학습·불러오기 양쪽).
+  - 값 명세의 패턴이 `get_boolean_value` 로 감싸여 나오면 그 안쪽부터 패턴으로 삼는다. 변환이 그 감싸개를 벗기고
+    안쪽만 보기 때문이다(`can_save` 가 값 자리·판단 자리 모두 `calc_can_save` 로 돌아온다).

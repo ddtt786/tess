@@ -8,6 +8,7 @@
  * with the most fixed parts.
  */
 import { compileProject } from '../../../compiler/src/index.ts';
+import { STORE_FLAG_VARIABLE, STORE_SAVE_ASYNC_FUNCTION, STORE_SAVE_FUNCTION } from '../../../core/src/save-manager.ts';
 import { buildSource } from '../codegen/project.ts';
 import { useModel } from '../codegen/refs.ts';
 import { optionsFor } from './fields.ts';
@@ -50,18 +51,39 @@ type Path = Array<string | number>;
 /** Functions the compiler adds for its own statements (`scale_x = …`) carry this label. */
 const HELPER_LABEL = '[Tess]';
 
-/** Compiler helper function ids, by the label that names them in every build. */
+/** Compiler helper function ids, by the label that names them in every build. The save functions count too. */
 export function helperFunctions(functions: Array<{ id: string; content: string }>): Map<string, string> {
   const helpers = new Map<string, string>();
   for (const fn of functions) {
     try {
       const label = JSON.parse(fn.content)?.[0]?.[0]?.params?.[0]?.params?.[0];
-      if (typeof label === 'string' && label.startsWith(HELPER_LABEL)) helpers.set(fn.id, label);
+      if (typeof label !== 'string') continue;
+      if (label.startsWith(HELPER_LABEL) || label === STORE_SAVE_FUNCTION || label === STORE_SAVE_ASYNC_FUNCTION) {
+        helpers.set(fn.id, label);
+      }
     } catch {
       // Not a function this build could read; it is left as it is.
     }
   }
   return helpers;
+}
+
+/** The id `can_save`'s flag variable is known by, whatever id a build gave it. */
+export const STORE_FLAG_ID = 'tess:store-flag';
+
+/** Rewrites the flag variable's id in a work's scripts to `STORE_FLAG_ID`, in place. */
+export function nameStoreFlag(work: {
+  variables: Array<{ id: string; name: string; object?: string | null }>;
+  objects: Array<{ script: string }>;
+  functions: Array<{ content: string }>;
+}): void {
+  const flag = work.variables.find((variable) => variable.name === STORE_FLAG_VARIABLE && !variable.object);
+  if (!flag) return;
+  const from = JSON.stringify(flag.id);
+  const to = JSON.stringify(STORE_FLAG_ID);
+  for (const object of work.objects) object.script = object.script.replaceAll(from, to);
+  for (const fn of work.functions) fn.content = fn.content.replaceAll(from, to);
+  flag.id = STORE_FLAG_ID;
 }
 
 /** Calls to helpers named by label instead of by the id one build happened to give them. */
@@ -161,6 +183,7 @@ function learnBatch(batch: Variant[], model: TessProject, patterns: Map<string, 
       variants = variants.filter((_, index) => !bad.has(index));
       continue;
     }
+    nameStoreFlag(compiled.project as never);
     collectPatterns(compiled.project as never, variants, patterns);
     return;
   }
@@ -425,6 +448,8 @@ function collectPatterns(work: CompiledWork, variants: Variant[], patterns: Map<
       case 'value': {
         const holder = script[1];
         root = holder?.type === 'set_variable' && holder.params?.[0] === valId ? holder.params[1] as EntryBlock : undefined;
+        // Conversion looks through this wrapper, so the pattern starts inside it.
+        if (root?.type === 'get_boolean_value') root = root.params?.[0] as EntryBlock | undefined;
         break;
       }
       case 'boolean':

@@ -13,7 +13,7 @@ import { project, selectedObjectId } from '../model/store.ts';
 import { installContextMenu } from './context-menu.ts';
 import { registerColourPicker } from './colour-field.ts';
 import { registerFields } from './fields.ts';
-import { DEFINE_BLOCK, defineFunctionBlocks, callType, returnsValue, syncFunctionBlocks, valueCallType } from './functions.ts';
+import { DEFINE_BLOCK, defineFunctionBlocks, callType, returnsValue, statementCallShown, syncFunctionBlocks, valueCallType } from './functions.ts';
 import { CATEGORY_LABELS, CATEGORY_ORDER, installCategoryStyles, tessTheme } from './theme.ts';
 import { allSpecs, specsOf, type Arg, type BlockSpec, type CodeArgs, type Category, type ShadowSpec } from './spec.ts';
 import { resolveDynamic } from '../codegen/refs.ts';
@@ -254,10 +254,7 @@ export function flyoutFor(category: Category): FlyoutItem[] {
       }
       // Global functions, then the ones this object keeps to itself.
       const usable = project.value.functions.filter((definition) => !definition.owner || definition.owner === here);
-      for (const definition of usable) {
-        items.push(functionCallEntry(definition, false));
-        if (returnsValue(definition)) items.push(functionCallEntry(definition, true));
-      }
+      for (const definition of usable) items.push(...functionCallEntries(definition));
     }
   }
   for (const spec of specsOf(category)) items.push(blockEntry(spec));
@@ -276,8 +273,7 @@ export function searchFlyout(query: string): FlyoutItem[] {
   for (const definition of project.value.functions) {
     const name = definition.name.toLowerCase();
     if (!terms.every((term) => name.includes(term) || '함수'.includes(term))) continue;
-    items.push(functionCallEntry(definition, false));
-    if (returnsValue(definition)) items.push(functionCallEntry(definition, true));
+    items.push(...functionCallEntries(definition));
   }
   return items.length ? items : [{ kind: 'label', text: '찾는 블록이 없습니다' }];
 }
@@ -318,6 +314,14 @@ export function shadowBlock(shadow: Exclude<ShadowSpec, { kind: 'none' }>): Reco
     case 'text': return { type: 'calc_text', fields: { TEXT: shadow.value } };
     case 'colour': return { type: 'calc_colour', fields: { COLOUR: shadow.value } };
   }
+}
+
+/** A value function offers its value call; its statement call only once asked for from the block menu. */
+function functionCallEntries(definition: FunctionDef): FlyoutBlock[] {
+  if (!returnsValue(definition)) return [functionCallEntry(definition, false)];
+  const entries = [functionCallEntry(definition, true)];
+  if (statementCallShown.has(definition.id)) entries.push(functionCallEntry(definition, false));
+  return entries;
 }
 
 function functionCallEntry(definition: FunctionDef, asValue: boolean): FlyoutBlock {
