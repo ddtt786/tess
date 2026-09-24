@@ -3152,7 +3152,8 @@ button:focus-visible,
 
   /* A block in hand floats above the canvas. */
   .blocklyDragging > .blocklyPath,
-  .blocklyDragging.blocklyDraggable > .blocklyPath {
+  .blocklyDragging.blocklyDraggable > .blocklyPath,
+  .tess-lifted .blocklyPath {
     filter: drop-shadow(0 6px 10px rgba(15, 23, 42, 0.22));
   }
 
@@ -3212,6 +3213,13 @@ button:focus-visible,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A long stack dragged in place (`blocks/stack-drag.ts`): Blockly's `.blocklyDragging > .blocklyPath` look.
+   Lower specificity so Blockly's later rules (a block disabled mid-drag) still win, as they do over that rule. */
+:where(.tess-lifted) .blocklyPath {
+  fill-opacity: 0.8;
+  stroke-opacity: 0.8;
 }
 
 /* Dragging the canvas itself shows a hand. */

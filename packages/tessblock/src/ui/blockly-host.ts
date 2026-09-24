@@ -17,6 +17,7 @@ import {
 } from "../blocks/registry.ts";
 import { DEFINE_BLOCK, fnIdOf, inlineDefinitions, markForeignParams, refreshCallBlocks, relabelCalls, returnsValue, tidyHeader } from "../blocks/functions.ts";
 import { StackAwarePreviewer } from "../blocks/previewer.ts";
+import { StackDragger } from "../blocks/stack-drag.ts";
 import { runStack } from "./debug-run.ts";
 import { project, restored, selectObject, selectedObjectId, setObjectBlocks } from "../model/store.ts";
 import { blockQuery, dialog, editorTab, functionDraft, runningStack } from "./state.ts";
@@ -53,8 +54,13 @@ export const WORKSPACE_OPTIONS: Blockly.BlocklyOptions = {
   },
   grid: { spacing: 28, length: 3, colour: "#e2e7f1", snap: false },
   move: { scrollbars: true, drag: true, wheel: true },
-  // Long stacks would re-render top to bottom on every move of the insertion marker.
-  plugins: { connectionPreviewer: StackAwarePreviewer, flyoutsVerticalToolbox: CappedFlyout },
+  // Long stacks would re-render top to bottom on every move of the insertion marker,
+  // and restyle whole when lifted onto the drag layer.
+  plugins: {
+    connectionPreviewer: StackAwarePreviewer,
+    flyoutsVerticalToolbox: CappedFlyout,
+    blockDragger: StackDragger,
+  },
 };
 
 export function mount(host: HTMLElement): void {

@@ -31,6 +31,7 @@ Blockly workspace ──(codegen/generator.ts)──▶ Tess 소스 ──(@tess
 | `src/blocks/colour-field.ts` | 팔레트 대신 OS 색 선택기를 여는 `field_colour_picker` |
 | `src/blocks/functions.ts` | 함수 정의 블록 · 매개변수 블록 · 호출 블록 생성 |
 | `src/blocks/theme.ts` | zelos 기반 테마, 카테고리 색, 툴박스 점 색 주입 |
+| `src/blocks/stack-drag.ts` | 긴 스택을 드래그 레이어로 옮기지 않고 제자리에서 끄는 `StackDragger` (14절) |
 | `src/codegen/generator.ts` | `Blockly.CodeGenerator` 구현 (`expr`/`chain`/`scrub_`) |
 | `src/codegen/project.ts` | 프로젝트 모델 + 워크스페이스 → `.tess` 소스 전체 |
 | `src/codegen/refs.ts` | 블록이 들고 있는 id → 이름·식별자 변환 |
@@ -498,7 +499,7 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
   Blockly 는 다음 블록을 그룹 안에 두므로 아래가 함께 빛남). 정지하거나 VM 스레드가 모두 끝나면
   (`activeThreads() === 0`, 150ms 간격) 꺼진다. 첫 프레임 안에 끝난 스택은 1초 뒤 꺼진다.
 - **긴 스택 드래그** — `StackAwarePreviewer`: 120 블록 이상 스택에는 삽입 마커 대신 연결점 강조.
-  마커는 진짜 블록이라 스택 전체를 다시 그린다.
+  마커는 진짜 블록이라 스택 전체를 다시 그린다. 끌려가는 쪽이 긴 스택이면 제자리에서 끈다(14절).
 - **시작** — `waitForAssets: false`. 모든 에셋이 올라올 때까지(최대 1.5 s) 미리보기를 덮어 둬서
   깜빡임이 없다. 첫 장면이 아닌 곳에서는 그 장면부터, Shift 를 누르면 첫 장면부터.
 - **폴더 저장** — 폴더가 연결되어 있으면 "저장"이 폴더에 쓴다. 에셋은 원래 경로를 기억해(`pathOf`)
@@ -560,3 +561,84 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
   모두 `calc_colour` 그림자 위에 같은 색의 **진짜** `calc_colour` 블록을 얹는다. 끌어내 다른 곳에 쓸 수 있고,
   빼면 그림자 색이 남는다.
 
+## 14. 긴 스택 드래그 (`blocks/stack-drag.ts`)
+
+수백 블록짜리 스택을 집거나 놓을 때 화면이 멈추던 문제. 원인은 Blockly 13 의 드래그 방식이다.
+
+- 집을 때 `BlockDragStrategy.startDrag` 가 `setDragging(true)` 로 **스택의 모든 블록**에
+  `blocklyDragging` 클래스를 붙이고, `LayerManager.moveToDragLayer` 로 스택의 SVG 를 드래그 표면
+  (`svg.blocklyBlockDragSurface`)으로 옮긴 뒤 `focusNode` 로 포커스를 되살린다. 놓을 때는 반대로 한다.
+- 블록은 부모 블록의 `<g>` 안에 중첩되므로 DOM 깊이가 스택 길이만큼 깊다. 서브트리를 옮기면 브라우저가
+  스택 전체의 스타일·레이아웃을 새로 계산하고, `focus()` 가 그 계산을 그 자리에서 강제한다.
+- 측정(헤드리스 Chromium, 1485 블록 · SVG 요소 1.09만 개 · 깊이 451): 한 번 옮길 때 스타일 약 210ms +
+  레이아웃 약 280ms, 클래스 토글만으로 스타일 약 210ms. `moveBefore()` 로 옮겨도 DOM 연산만 줄고
+  (75 → 5ms) 스타일·레이아웃은 그대로다.
+
+### 제자리 드래그
+
+- `WORKSPACE_OPTIONS.plugins.blockDragger = StackDragger` (메인·함수 편집기 작업 공간 공통).
+  `installStackDrag()` 는 `installBlocks()` 에서 한 번 `BlockSvg.prototype.setDragging` 을 감싼다.
+- 대상: **포인터 드래그**로 시작하고, 그림자 포함 **120 블록 이상**이며, 시작할 때 팔레트와 겹치지 않는
+  최상위 스택. 키보드 이동·짧은 스택은 Blockly 방식 그대로다.
+- 집을 때(`pickUp`): 원래 `setDragging` 을 부르되 그 동안 `addClass`/`removeClass('blocklyDragging')` 를
+  건너뛴다 — 드래그 플래그·`common.draggingConnections` 는 Blockly 가 그대로 기록한다. 루트에만
+  `tess-lifted` 를 붙인다.
+- 모양: `.tess-lifted` 아래의 `.blocklyPath` 는 `.blocklyDragging > .blocklyPath` 와 **같은 요소**(블록
+  외곽선과 zelos 선택 글로우 경로)이고 같은 값(`fill-opacity`/`stroke-opacity` 0.8, 동작 줄이기 설정이
+  아닐 때 drop-shadow)을 받는다. 불투명도 규칙은 `:where(.tess-lifted)` 로 명시도를 낮춰, Blockly CSS 에서
+  드래그 규칙보다 뒤에 오는 규칙(드래그 중 `markForeignParams` 가 다시 끈 블록의 `.blocklyDisabledPattern`,
+  0.5)이 원래처럼 이긴다. 경로만 다시 스타일 계산된다(1485 블록에서 약 30ms).
+- 커서: 필드·아이콘은 자기 커서를 가지므로, 누른 요소(`pointerdown` 캡처로 기억)에만 인라인
+  `cursor: grabbing` 을 준다. 몸통은 `.blocklyDraggable:active` 가 이미 grabbing 이다.
+- 레이어: `LayerManager` 프로토타입의 `moveToDragLayer`/`moveOffDragLayer` 는 제자리 스택을 옮기지 않고
+  **뒤의 형제 요소를 스택 앞으로 옮겨** 맨 앞에 그리게만 한다(Blockly `moveSvgRootToFront` 와 같은 방식 —
+  스택 자체를 옮기면 전체를 다시 계산한다). 포커스는 그대로이므로 `focusNode` 는 즉시 반환된다. 스택의 열린
+  말풍선은 말풍선 층에 둔 채 따라 움직이고, 놓을 때 Blockly 가 하던 대로 그 층 맨 뒤로 붙는다.
+- 놓을 때(`putDown`): 같은 방식으로 플래그만 되돌리고 `tess-lifted`·인라인 커서를 걷는다. 삭제되어
+  `setDragging(false)` 가 불리지 않은 경우는 `StackDragger.onDragEnd` 의 `settle()` 이 정리한다.
+
+### 드래그 레이어로 올리기 (`raise`)
+
+캔버스 위에 그려지는 것 중 스택이 덮어야 하는 두 경우에는 Blockly 가 시작 때 했을 일을 그 순간에 한다
+(모든 블록에 `blocklyDragging`, 드래그 레이어로 이동, 열린 말풍선도 이동). 이후 끝내기는 Blockly 경로다.
+
+- 스택 영역(집을 때 `getBoundingRectangle` + 이동량, 화면 좌표)이 툴박스·플라이아웃의
+  `getClientRect()` 와 겹칠 때 — 팔레트 위로 그려져야 한다.
+- 포인터가 삭제 영역(팔레트·휴지통) 위일 때(`wouldDeleteDraggable` 이 참) — 삭제 커서와 휴지통 위
+  그리기가 Blockly 와 같다. 놓는 중(`dropping`)에는 올리지 않는다(곧 사라질 스택).
+
+올리는 순간의 비용은 예전 집을 때 비용과 같다. 팔레트로 끌어 지우는 경우 멈춤이 집을 때에서 팔레트에
+닿을 때로 옮겨질 뿐 합계는 같다.
+
+### 알려진 차이
+
+올리지 않은 동안 스택은 메인 SVG 안에 있으므로, 메인 작업 공간 스크롤바·줌 버튼·휴지통(포인터가 그 위가
+아닐 때)·다른 블록의 열린 말풍선이 스택 **위에** 그려진다(평소 블록 위에 그려지는 것과 같다). 드래그 중
+화면을 Blockly 방식과 픽셀 비교하면 차이는 아래쪽 가로 스크롤바 띠뿐이고, 팔레트 위·놓은 뒤는 0 픽셀이다.
+짧은 스택에 적용하지 않는 이유다.
+
+### 측정 (헤드리스 Chromium, 이 저장소의 개발 서버)
+
+| 블록 수 | 집기(ms) 전 → 후 | 놓기(ms) 전 → 후 |
+| --- | --- | --- |
+| 190 | 101 → 52 | 62 → 33 |
+| 466 | 202 → 69 | 168 → 48 |
+| 747 | 367 → 97 | 364 → 48 |
+| 1485 | 1033 → 210 | 966 → 113 |
+
+- 집기 값에는 처음 누를 때의 선택 표시 비용이 들어 있다. `.blocklySelected>.blocklyPath` 같은 Blockly
+  CSS 때문에 경로 전부가 다시 스타일 계산된다(1485 블록 약 48ms). 드래그와 무관한 기존 동작이다.
+- 다른 스택 아래 연결하며 놓기(약 750 블록): 500 → 250ms. 드래그 레이어 → 캔버스 → 대상 두 번이던 이동이
+  캔버스 → 대상 한 번이 된다. 스택 중간에 끼워 넣는 연결은 아래쪽 블록들을 새 부모로 옮기므로 그만큼의
+  비용이 남는다(Blockly 의 중첩 DOM 구조 때문).
+- 프레임당 비용은 비슷하다(1485 블록 메인 스레드 29 → 32ms). 캔버스 안(SVG 루트에서 3단계 아래)에서
+  옮기면 메인 SVG 가 매 프레임 Paint 되고(약 11ms), 드래그 표면에서는 Paint 없이 Layerize 만 돈다.
+  Layerize 는 문서 전체의 페인트 청크 수에 비례한다(15~20ms).
+
+### 쓰지 않은 방법
+
+- 합성 레이어: 스택 `<g>` 에 `will-change: transform`, 드래그 표면 `<svg>` 나 그것을 감싼 `<div>` 를 CSS
+  transform 으로 옮기기 — 모두 Layerize 가 프레임당 0.9~1.4초로 늘어난다(수천 개의 변환 노드가 한 합성
+  레이어 아래에 들어감).
+- 드래그 그림자를 루트 `<g>` 하나에 `filter` 로 주기 — 같은 이유로 Layerize 가 폭증하고, 블록마다 주는
+  그림자와 모양도 다르다(픽셀 4.7만 개 차이).
