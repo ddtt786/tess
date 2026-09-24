@@ -352,6 +352,11 @@ function showPositionedByRect(
     workspace = workspace.options.parentWorkspace;
   }
   setBoundsElement(workspace.getParentSvg().parentNode as Element | null);
+  // The scale the block is drawn at, for styles that size the menu with it.
+  div.style.setProperty(
+    '--blocklyBlockScale',
+    String(sourceBlock.workspace.scale),
+  );
   return show(
     field,
     sourceBlock.RTL,

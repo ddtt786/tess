@@ -211,13 +211,37 @@ export function svgResize(workspace: WorkspaceSvg) {
 
   const width = div.offsetWidth;
   const height = div.offsetHeight;
+  // The workspace takes its size from the cached size. The SVG element itself
+  // is only ever grown, to at least the screen: resizing an SVG root lays out
+  // every element in it again, which is slow with many blocks. What lies past
+  // the container is clipped by the injection div.
+  const screen = typeof window !== 'undefined' ? window.screen : null;
   if (cachedSize.width !== width) {
-    svg.setAttribute('width', width + 'px');
+    const room = Math.max(width, screen?.width ?? 0);
+    if (room > (Number.parseFloat(svg.getAttribute('width') ?? '') || 0)) {
+      svg.setAttribute('width', room + 'px');
+    }
     mainWorkspace.setCachedParentSvgSize(width, null);
   }
   if (cachedSize.height !== height) {
-    svg.setAttribute('height', height + 'px');
+    const room = Math.max(height, screen?.height ?? 0);
+    if (room > (Number.parseFloat(svg.getAttribute('height') ?? '') || 0)) {
+      svg.setAttribute('height', room + 'px');
+    }
     mainWorkspace.setCachedParentSvgSize(null, height);
+  }
+  // Drawn exactly as large as a container-sized SVG would be. A clip only
+  // repaints; resizing the element lays it all out again.
+  const svgWidth = Number.parseFloat(svg.getAttribute('width') ?? '') || width;
+  const svgHeight = Number.parseFloat(svg.getAttribute('height') ?? '') || height;
+  const clip = `inset(0px ${svgWidth - width}px ${svgHeight - height}px 0px)`;
+  if (svg.style.clipPath !== clip) svg.style.clipPath = clip;
+  // The background (and its outline) spans the container as it would span a
+  // container-sized SVG.
+  const background = svg.querySelector(':scope > .blocklyWorkspace > .blocklyMainBackground');
+  if (background) {
+    background.setAttribute('width', `${width}`);
+    background.setAttribute('height', `${height}`);
   }
   mainWorkspace.resize();
 }

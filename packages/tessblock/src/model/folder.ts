@@ -10,6 +10,7 @@ import { isAssetRef, resolveAsset, saveAsset } from './assets.ts';
 import { loadEntFile } from './ent-import.ts';
 import { project, replaceProject } from './store.ts';
 import type { TessObject, TessProject } from './types.ts';
+import { stringify } from './json.ts';
 
 const PROJECT_FILE = 'project.tessproj';
 const ASSET_DIR = 'assets';
@@ -151,7 +152,7 @@ async function writeWork(folder: FileSystemDirectoryHandle, model: TessProject):
       sounds: await Promise.all(object.sounds.map(async (sound) => ({ ...sound, url: await toFile(folder, sound.url) }))),
     });
   }
-  await writeFile(folder, PROJECT_FILE, JSON.stringify({ ...model, objects }, null, 2));
+  await writeFile(folder, PROJECT_FILE, stringify({ ...model, objects }, 2));
 }
 
 /** An asset reference as a file under `assets/`, written the first time it is seen. */

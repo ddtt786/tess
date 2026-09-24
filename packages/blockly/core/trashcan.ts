@@ -11,6 +11,7 @@
  */
 // Former goog.module ID: Blockly.Trashcan
 
+import {stringifyDeep} from './utils/deep_json.js';
 import * as browserEvents from './browser_events.js';
 import {ComponentManager} from './component_manager.js';
 import * as Css from './css.js';
@@ -586,7 +587,7 @@ export class Trashcan
     if (!event.oldJson) {
       throw new Error('Encountered a delete event without proper oldJson');
     }
-    const cleanedJson = JSON.stringify(this.cleanBlockJson(event.oldJson));
+    const cleanedJson = stringifyDeep(this.cleanBlockJson(event.oldJson));
     if (this.contents.includes(cleanedJson)) return;
     this.contents.unshift(cleanedJson);
     while (this.contents.length > this.workspace.options.maxTrashcanContents) {
@@ -607,58 +608,37 @@ export class Trashcan
    *     unnecessary attributes.
    */
   private cleanBlockJson(json: blocks.State): BlockInfo {
-    // Create a deep copy.
-    json = JSON.parse(JSON.stringify(json)) as blocks.State;
+    // Create a deep copy. Written without recursion, as is the clean-up: a
+    // long stack nests each block under the one before it.
+    json = JSON.parse(stringifyDeep(json)) as blocks.State;
 
-    /**
-     * Reshape JSON into a nicer format.
-     *
-     * @param json The JSON to clean.
-     */
-    function cleanRec(json: blocks.State) {
-      if (!json) {
-        return;
-      }
+    const pending: Array<blocks.State | undefined> = [json];
+    while (pending.length) {
+      const each = pending.pop();
+      if (!each) continue;
 
-      delete json['id'];
-      delete json['x'];
-      delete json['y'];
-      delete json['enabled'];
-      delete json['disabledReasons'];
+      delete each['id'];
+      delete each['x'];
+      delete each['y'];
+      delete each['enabled'];
+      delete each['disabledReasons'];
 
-      if (json['icons'] && json['icons']['comment']) {
-        const comment = json['icons']['comment'];
+      if (each['icons'] && each['icons']['comment']) {
+        const comment = each['icons']['comment'];
         delete comment['height'];
         delete comment['width'];
         delete comment['pinned'];
       }
 
-      const inputs = json['inputs'];
+      const inputs = each['inputs'];
       for (const name in inputs) {
         const input = inputs[name];
-        const block = input['block'];
-        const shadow = input['shadow'];
-        if (block) {
-          cleanRec(block);
-        }
-        if (shadow) {
-          cleanRec(shadow);
-        }
+        pending.push(input['block'], input['shadow']);
       }
-      if (json['next']) {
-        const next = json['next'];
-        const block = next['block'];
-        const shadow = next['shadow'];
-        if (block) {
-          cleanRec(block);
-        }
-        if (shadow) {
-          cleanRec(shadow);
-        }
+      if (each['next']) {
+        pending.push(each['next']['block'], each['next']['shadow']);
       }
     }
-
-    cleanRec(json);
 
     const blockInfo: BlockInfo = {
       'kind': 'BLOCK',

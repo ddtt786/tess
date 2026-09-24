@@ -364,6 +364,14 @@ p {
 
 /* --- work area ------------------------------------------------------------ */
 
+/* The side panel width is set on .workarea while it is dragged. Not inherited,
+   so a change restyles .workarea alone rather than every block under it. */
+@property --side-w {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 420px;
+}
+
 .workarea {
   display: grid;
   grid-template-columns: var(--side-w, 420px) 5px minmax(0, 1fr);
@@ -1800,10 +1808,13 @@ button:focus-visible,
 
 /* Field dropdowns take the block's own colour (Blockly sets it); shaped like
    zelos blocks: round corners, bold white labels, a darker pill under the
-   hovered choice. */
+   hovered choice. Sizes follow the block: Blockly sets --blocklyBlockScale to
+   the scale the block is drawn at, and the sizes below are for the start
+   scale (0.75). */
 .blocklyDropDownDiv {
-  border-radius: 12px !important;
-  padding: 6px !important;
+  --tess-dd: calc(var(--blocklyBlockScale, 0.75) / 0.75);
+  border-radius: calc(12px * var(--tess-dd)) !important;
+  padding: calc(6px * var(--tess-dd)) !important;
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16) !important;
 }
 .blocklyDropDownDiv .blocklyMenu {
@@ -1815,14 +1826,15 @@ button:focus-visible,
 .blocklyDropDownDiv .blocklyMenuItem {
   display: flex !important;
   align-items: center;
-  min-height: 34px;
-  padding: 6px 14px 6px 30px !important;
-  border-radius: 8px !important;
+  min-height: calc(34px * var(--tess-dd));
+  padding: calc(6px * var(--tess-dd)) calc(14px * var(--tess-dd))
+    calc(6px * var(--tess-dd)) calc(30px * var(--tess-dd)) !important;
+  border-radius: calc(8px * var(--tess-dd)) !important;
   color: #fff !important;
   font-family:
     Pretendard, "Pretendard Variable", Inter, "Noto Sans KR", system-ui,
     sans-serif !important;
-  font-size: 14px !important;
+  font-size: calc(14px * var(--tess-dd)) !important;
   font-weight: 700 !important;
   line-height: 1.2 !important;
   cursor: pointer;
@@ -1833,6 +1845,8 @@ button:focus-visible,
 .blocklyDropDownDiv .blocklyMenuItemSelected .blocklyMenuItemCheckbox,
 .blocklyDropDownDiv .blocklyMenuItemCheckbox {
   filter: brightness(0) invert(1);
+  /* The check mark is a sprite: scaled whole, with its offset. */
+  zoom: var(--tess-dd);
 }
 .blocklyDropDownDiv .blocklyMenuItemDisabled {
   opacity: 0.5;
@@ -2905,6 +2919,9 @@ button:focus-visible,
 
 .rec-list {
   display: grid;
+  /* One column no wider than the list: a long parameter list is cut short in
+     its own row instead of widening every row past the buttons. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   max-width: 380px;
 }

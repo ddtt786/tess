@@ -28,6 +28,11 @@ export function useIdents(table: Map<string, string>, keys: Map<string, string> 
   objectKeys = keys;
 }
 
+/** The model names are resolved against. */
+export function namesModel(): TessProject {
+  return modelOverride ?? project.value;
+}
+
 export function identFor(id: string, fallbackName: string): string {
   return idents.get(id) ?? safeIdent(fallbackName);
 }

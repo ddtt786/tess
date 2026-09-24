@@ -10,15 +10,52 @@ import { tess, workspaceScripts } from './generator.ts';
 import { safeIdent, uniqueIdent } from './ident.ts';
 import { num, quote } from './quote.ts';
 import { resolveAsset } from '../model/assets.ts';
-import { useIdents } from './refs.ts';
+import { namesModel, useIdents } from './refs.ts';
 import type { BlocklyState, FunctionDef, TessObject, TessProject, VariableDef } from '../model/types.ts';
 
 export interface WriteOptions {
   /** Workspaces to read instead of the stored state, keyed by object id. */
   live?: Map<string, Blockly.Workspace>;
+  /** The live workspaces were saved into their objects right before this write. */
+  liveSaved?: boolean;
 }
 
 const INDENT = '  ';
+
+/**
+ * Code written from a saved workspace state, by state. Writing a script only
+ * reads the state and the names blocks refer to, so the code is reused while
+ * both are the same: a run then writes only the objects that changed.
+ */
+const written = new WeakMap<object, { context: string; value: unknown }>();
+
+/** The names the current write resolves ids to, as one string. */
+let context = '';
+
+function namesContext(idents: Map<string, string>, objectKeys: Map<string, string>): string {
+  const names = namesModel();
+  const pairs = (list: Array<{ id: string; name: string }>) => list.map((each) => [each.id, each.name]);
+  return JSON.stringify([
+    [...idents],
+    [...objectKeys],
+    names.objects.map((object) => [object.id, object.name, pairs(object.costumes), pairs(object.sounds)]),
+    pairs(names.signals),
+    pairs(names.scenes),
+    pairs(names.variables),
+    pairs(names.tables),
+    names.functions.map((definition) => [definition.id, definition.name, definition.params]),
+  ]);
+}
+
+/** `read(state)`, or the value it gave for this state and these names before. */
+function cached<T>(state: BlocklyState | null, read: () => T): T {
+  if (!state || typeof state !== 'object') return read();
+  const hit = written.get(state);
+  if (hit && hit.context === context) return hit.value as T;
+  const value = read();
+  written.set(state, { context, value });
+  return value;
+}
 
 export function buildSource(model: TessProject, options: WriteOptions = {}): string {
   const idents = nameTable(model);
@@ -32,6 +69,7 @@ export function buildSource(model: TessProject, options: WriteOptions = {}): str
     }
   }
   useIdents(idents, objectKeys);
+  context = namesContext(idents, objectKeys);
 
   const lines: string[] = [];
   lines.push('project:');
@@ -114,10 +152,10 @@ function functionLines(definition: FunctionDef): string[] {
   const params = definition.params
     .map((param) => `${safeIdent(param.name)}${param.kind === 'boolean' ? '?' : ''}`)
     .join(', ');
-  const body = readWorkspace(definition.blocks, (workspace) => {
+  const body = cached(definition.blocks, () => readWorkspace(definition.blocks, (workspace) => {
     const define = workspace.getTopBlocks(false).find((block) => block.type === DEFINE_BLOCK);
     return define ? tess.statementToCode(define, 'BODY') : '';
-  });
+  }));
   const lines = [`function ${safeIdent(definition.name)}(${params}):`];
   if (body.trim()) lines.push(body.replace(/\n+$/, ''));
   lines.push('end');
@@ -201,8 +239,10 @@ function objectLines(
 
 function objectScripts(object: TessObject, options: WriteOptions): string[] {
   const live = options.live?.get(object.id);
-  if (live) return workspaceScripts(live);
-  return readWorkspace(object.blocks, (workspace) => workspaceScripts(workspace));
+  // A live workspace just saved into the object reads the same as its state.
+  if (live && !options.liveSaved) return workspaceScripts(live);
+  return cached(object.blocks, () =>
+    live ? workspaceScripts(live) : readWorkspace(object.blocks, (workspace) => workspaceScripts(workspace)));
 }
 
 /** Runs a reader over a headless copy of a saved workspace. */

@@ -33,6 +33,106 @@ export function build(source: string, name: string): BuildResult {
   };
 }
 
+/** One source to compile, and the promise its result settles. */
+interface Job {
+  source: string;
+  name: string;
+  /** A run waits on it; a prepared one may be dropped for newer work. */
+  urgent: boolean;
+  result: Promise<BuildResult>;
+  settle: (result: BuildResult) => void;
+}
+
+/** The result a dropped job settles with; nothing waits on dropped jobs. */
+const DROPPED: BuildResult = { project: null, errors: [], warnings: [] };
+
+/** The last job asked for; the same source asked for again gets its result. */
+let latest: Job | null = null;
+/** The job the worker is compiling, and the jobs waiting for it: runs, and the newest prepare. */
+let active: Job | null = null;
+const pending: Job[] = [];
+let worker: Worker | null = null;
+let workerFailed = false;
+
+function compileWorker(): Worker | null {
+  if (worker || workerFailed || typeof Worker === 'undefined') return worker;
+  try {
+    worker = new Worker(new URL('./compile-worker.ts', import.meta.url), { type: 'module' });
+  } catch {
+    workerFailed = true;
+    return null;
+  }
+  worker.onmessage = (event: MessageEvent<{ result?: BuildResult; error?: string }>) => {
+    const job = active;
+    active = null;
+    job?.settle(event.data.result ?? build(job.source, job.name));
+    sendNext();
+  };
+  worker.onerror = () => {
+    // Without a worker the page compiles on the main thread, as before.
+    workerFailed = true;
+    worker?.terminate();
+    worker = null;
+    for (const job of [active, ...pending.splice(0)]) job?.settle(build(job.source, job.name));
+    active = null;
+  };
+  return worker;
+}
+
+function sendNext(): void {
+  if (active || !pending.length) return;
+  const target = compileWorker();
+  const job = pending.shift()!;
+  if (!target) {
+    job.settle(build(job.source, job.name));
+    return;
+  }
+  active = job;
+  target.postMessage({ id: 0, source: job.source, name: job.name });
+}
+
+/** Drops a job no one waits on; a later ask for its source compiles again. */
+function drop(job: Job | null): void {
+  if (!job) return;
+  if (latest === job) latest = null;
+  job.settle(DROPPED);
+}
+
+/**
+ * The compiled work for `source`, compiled off the main thread. The same
+ * source asked for again (a run right after a prepare) gets the same result.
+ * A run (`urgent`) does not wait behind older prepared work: that work is
+ * stopped. A prepare waits for the worker, replacing any prepare still waiting.
+ */
+export function compile(source: string, name: string, urgent = true): Promise<BuildResult> {
+  if (latest && latest.source === source && latest.name === name) {
+    latest.urgent ||= urgent;
+    return latest.result;
+  }
+  let settle!: (result: BuildResult) => void;
+  const result = new Promise<BuildResult>((resolve) => { settle = resolve; });
+  const job: Job = { source, name, urgent, result, settle };
+  latest = job;
+  if (!compileWorker()) {
+    job.settle(build(source, name));
+    return result;
+  }
+  // Only the newest prepare is worth compiling; runs are never dropped.
+  for (let index = pending.length - 1; index >= 0; index--) {
+    if (!pending[index]!.urgent) drop(pending.splice(index, 1)[0]!);
+  }
+  pending.push(job);
+  if (active && urgent && !active.urgent) {
+    // Older prepared work is thrown away with the worker compiling it.
+    worker?.terminate();
+    worker = null;
+    drop(active);
+    active = null;
+  }
+  sendNext();
+  return result;
+}
+
 let running: TessVmHandle | null = null;
 
 export function isRunning(): boolean {
@@ -61,7 +161,7 @@ export async function start(
   onProgress?: (loaded: number, total: number) => void,
   boost = true,
 ): Promise<BuildResult> {
-  const built = build(source, name);
+  const built = await compile(source, name);
   if (!built.project) return built;
   stop();
   installRuntimeStyles();

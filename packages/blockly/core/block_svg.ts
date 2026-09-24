@@ -76,6 +76,9 @@ import type {WorkspaceSvg} from './workspace_svg.js';
  * Class for a block's SVG representation.
  * Not normally called directly, workspace.newBlock() is preferred.
  */
+/** The top block owning each stack group. */
+const stackOwners = new WeakMap<Node, BlockSvg>();
+
 /** Blocks whose selection outline is drawn apart from their group. */
 const outlined = new Set<BlockSvg>();
 
@@ -387,7 +390,7 @@ export class BlockSvg
 
     const wasFlat = this.flat;
     const oldStack = oldParent
-      ? oldParent.getRootBlock().stackGroup
+      ? oldParent.stackRoot().stackGroup
       : this.stackGroup;
     // Groups of this block's subtree that sit in its old stack's group.
     const moving = this.flatGroups(wasFlat);
@@ -400,7 +403,7 @@ export class BlockSvg
 
     if (newParent) {
       const parent = newParent as BlockSvg;
-      const root = parent.getRootBlock();
+      const root = parent.stackRoot();
       const stack = root.getStackSvgRoot();
       this.flat = !this.outputConnection;
       if (!this.flat) {
@@ -432,19 +435,19 @@ export class BlockSvg
         }
         // The merged stack keeps this one's place in the drawing order.
         stack.remove();
-        root.stackGroup = ownStack;
+        root.setStackGroup(ownStack);
         ownStack.setAttribute('transform', stack.getAttribute('transform') ?? '');
       } else {
         const next = after ? after.nextSibling : stack.firstChild;
         for (const group of moving) moveGroup(stack, group, next);
         ownStack?.remove();
       }
-      this.stackGroup = null;
+      this.setStackGroup(null);
       if (!this.flat) svgRoot.setAttribute('transform', this.getTranslation());
       this.placeSubtree();
     } else if (oldParent) {
       const oldXY = this.getRelativeToSurfaceXY();
-      const oldRoot = oldParent.getRootBlock();
+      const oldRoot = oldParent.stackRoot();
       if (
         wasFlat &&
         oldStack?.parentNode &&
@@ -461,14 +464,14 @@ export class BlockSvg
         for (const group of Array.from(oldStack.children)) {
           if (!leaving.has(group)) moveGroup(rest, group, null);
         }
-        oldRoot.stackGroup = rest;
-        this.stackGroup = oldStack;
+        oldRoot.setStackGroup(rest);
+        this.setStackGroup(oldStack);
       } else {
         const stack = dom.createSvgElement(Svg.G, {});
         this.workspace.getCanvas().appendChild(stack);
         if (!wasFlat) moveGroup(stack, svgRoot, null);
         for (const group of moving) moveGroup(stack, group, null);
-        this.stackGroup = stack;
+        this.setStackGroup(stack);
       }
       this.flat = true;
       this.translate(oldXY.x, oldXY.y);
@@ -560,15 +563,42 @@ export class BlockSvg
   getStackSvgRoot(): SVGGElement {
     if (this.parentBlock_) return this.svgGroup;
     if (!this.stackGroup) {
-      this.stackGroup = dom.createSvgElement(Svg.G, {});
+      this.setStackGroup(dom.createSvgElement(Svg.G, {}));
+      const stack = this.stackGroup!;
       if (this.translation) {
-        this.stackGroup.setAttribute('transform', this.translation);
+        stack.setAttribute('transform', this.translation);
       }
-      this.svgGroup.parentNode?.replaceChild(this.stackGroup, this.svgGroup);
-      this.stackGroup.appendChild(this.svgGroup);
+      this.svgGroup.parentNode?.replaceChild(stack, this.svgGroup);
+      stack.appendChild(this.svgGroup);
       this.placeSubtree();
     }
-    return this.stackGroup;
+    return this.stackGroup!;
+  }
+
+  /** Sets the stack group this top block owns. */
+  private setStackGroup(group: SVGGElement | null) {
+    this.stackGroup = group;
+    if (group) stackOwners.set(group, this);
+  }
+
+  /**
+   * The top block of this block's stack, found through the stack group its
+   * group sits in rather than by walking up a possibly long stack.
+   */
+  private stackRoot(): BlockSvg {
+    for (
+      let element: Node | null = this.svgGroup;
+      element;
+      element = element.parentNode
+    ) {
+      const owner = stackOwners.get(element);
+      if (owner) {
+        // The group is only trusted while it is still its owner's.
+        if (owner.stackGroup === element && !owner.parentBlock_) return owner;
+        break;
+      }
+    }
+    return this.getRootBlock();
   }
 
   /**
@@ -632,12 +662,18 @@ export class BlockSvg
 
   /** The last flat group of this block's subtree, if it has any. */
   private lastFlatGroup(): SVGGElement | null {
-    const children = this.orderedChildren();
-    for (let i = children.length - 1; i >= 0; i--) {
-      const last = children[i].lastFlatGroup();
-      if (last) return last;
+    // The last child's subtree first, then earlier ones, then the block itself.
+    const pending: Array<[BlockSvg, boolean]> = [[this, false]];
+    while (pending.length) {
+      const [block, visited] = pending.pop()!;
+      if (visited) {
+        if (block.flat) return block.svgGroup;
+        continue;
+      }
+      pending.push([block, true]);
+      for (const child of block.orderedChildren()) pending.push([child, false]);
     }
-    return this.flat ? this.svgGroup : null;
+    return null;
   }
 
   /** The flat group drawn right before this block's subtree. */
@@ -674,7 +710,7 @@ export class BlockSvg
     this.applyDisplay();
   }
 
-  /** Hides the flat groups of this subtree that a hidden block contains. */
+  /** Hides this subtree's groups that a hidden block contains. */
   private applyDisplay() {
     let hidden = false;
     for (let parent = this.getParent(); parent; parent = parent.getParent()) {
@@ -686,9 +722,12 @@ export class BlockSvg
     const pending: Array<[BlockSvg, boolean]> = [[this, hidden]];
     while (pending.length) {
       const [block, above] = pending.pop()!;
-      const display = block.flat && above ? 'none' : block.svgDisplay;
-      if (block.svgGroup.style.display !== display) {
-        block.svgGroup.style.display = display;
+      // Hidden with `visibility`, which keeps the layout, so showing the
+      // blocks again (e.g. expanding) does not lay out their text again.
+      const hide = (block.flat && above) || block.svgDisplay === 'none';
+      const visibility = hide ? 'hidden' : '';
+      if (block.svgGroup.style.visibility !== visibility) {
+        block.svgGroup.style.visibility = visibility;
       }
       const inside = above || block.svgDisplay === 'none';
       for (const child of block.childBlocks_) pending.push([child, inside]);
@@ -915,22 +954,14 @@ export class BlockSvg
    * @returns true if any child has a warning, false otherwise.
    */
   private childHasWarning(): boolean {
+    // Walks the blocks inside this one; the blocks after it are not inside.
     const next = this.getNextBlock();
-    const excluded = next ? new Set(next.getDescendants(false)) : null;
-    const descendants = this.getDescendants(false);
-
-    for (const descendant of descendants) {
-      if (descendant === this) {
-        continue;
-      }
-      if (excluded?.has(descendant)) {
-        continue;
-      }
-      if (descendant.getIcon(WarningIcon.TYPE)) {
-        return true;
-      }
+    const pending = this.getChildren(false).filter((child) => child !== next);
+    while (pending.length) {
+      const block = pending.pop()!;
+      if (block.getIcon(WarningIcon.TYPE)) return true;
+      pending.push(...block.getChildren(false));
     }
-
     return false;
   }
 
@@ -954,7 +985,9 @@ export class BlockSvg
     }
 
     if (!collapsed) {
-      this.updateDisabled();
+      // Expanding changes nothing the blocks after this one inherit, so only
+      // this block and the blocks in its inputs are brought up to date.
+      this.updateDisabledWith(this.getInheritedDisabled(), false);
       this.removeInput(collapsedInputName);
       dom.removeClass(this.svgGroup, 'blocklyCollapsed');
       this.setWarningText(null, BlockSvg.COLLAPSED_WARNING_ID);
@@ -1108,17 +1141,20 @@ export class BlockSvg
    * @internal
    */
   updateComponentLocations(blockOrigin: Coordinate) {
-    this.xy.x = blockOrigin.x;
-    this.xy.y = blockOrigin.y;
+    // The blocks under this one follow, walked without recursion.
+    const pending: Array<[BlockSvg, Coordinate]> = [[this, blockOrigin]];
+    while (pending.length) {
+      const [block, origin] = pending.pop()!;
+      block.xy.x = origin.x;
+      block.xy.y = origin.y;
 
-    if (!this.dragging) this.updateConnectionLocations(blockOrigin);
-    this.updateIconLocations(blockOrigin);
-    this.updateFieldLocations(blockOrigin);
+      if (!block.dragging) block.updateConnectionLocations(origin);
+      block.updateIconLocations(origin);
+      block.updateFieldLocations(origin);
 
-    for (const child of this.getChildren(false)) {
-      child.updateComponentLocations(
-        Coordinate.sum(blockOrigin, child.relativeCoords),
-      );
+      for (const child of block.getChildren(false)) {
+        pending.push([child, Coordinate.sum(origin, child.relativeCoords)]);
+      }
     }
   }
 
@@ -1170,21 +1206,22 @@ export class BlockSvg
    * @internal
    */
   setDragging(adding: boolean, mark = true) {
-    this.dragging = adding;
-    if (adding) {
-      this.translation = '';
-      common.draggingConnections.push(...this.getConnections_(true));
-      if (mark) this.addClass('blocklyDragging');
-    } else {
-      common.draggingConnections.length = 0;
-      if (mark) this.removeClass('blocklyDragging');
-      if (this.getFullBlockField()) {
-        this.recomputeAriaContext();
+    // Every block attached under this one, in order, without recursion.
+    for (const block of this.getDescendants(false)) {
+      block.dragging = adding;
+      if (adding) {
+        block.translation = '';
+        for (const connection of block.getConnections_(true)) {
+          common.draggingConnections.push(connection);
+        }
+        if (mark) block.addClass('blocklyDragging');
+      } else {
+        common.draggingConnections.length = 0;
+        if (mark) block.removeClass('blocklyDragging');
+        if (block.getFullBlockField()) {
+          block.recomputeAriaContext();
+        }
       }
-    }
-    // Recurse through all blocks attached under this one.
-    for (let i = 0; i < this.childBlocks_.length; i++) {
-      (this.childBlocks_[i] as BlockSvg).setDragging(adding, mark);
     }
   }
 
@@ -1459,19 +1496,30 @@ export class BlockSvg
    * @internal
    */
   updateDisabled() {
-    const disabled = !this.isEnabled() || this.getInheritedDisabled();
+    this.updateDisabledWith(this.getInheritedDisabled());
+  }
 
-    if (this.visuallyDisabled === disabled) {
-      this.getNextBlock()?.updateDisabled();
-      return;
+  /**
+   * Same as `updateDisabled`, given whether an enclosing block is disabled.
+   * The blocks after this one share that value, and the blocks inside a block
+   * inherit its own, so no block looks up its ancestors again.
+   */
+  private updateDisabledWith(inherited: boolean, chain = true) {
+    for (
+      let block: BlockSvg | null = this;
+      block;
+      block = chain ? block.getNextBlock() : null
+    ) {
+      const disabled = !block.isEnabled() || inherited;
+      if (block.visuallyDisabled === disabled) continue;
+      block.applyColour();
+      block.visuallyDisabled = disabled;
+      const next = block.getNextBlock();
+      for (const child of block.getChildren(false)) {
+        if (child !== next) child.updateDisabledWith(disabled);
+      }
+      block.recomputeAriaContext();
     }
-
-    this.applyColour();
-    this.visuallyDisabled = disabled;
-    for (const child of this.getChildren(false)) {
-      child.updateDisabled();
-    }
-    this.recomputeAriaContext();
   }
 
   /**
@@ -1813,9 +1861,25 @@ export class BlockSvg
             for (let node = root.nextSibling; node; node = node.nextSibling) {
               later += (node as Element).childElementCount ?? 0;
             }
-            if (!block.parentBlock_ && root.childElementCount < later) {
-              parent.appendChild(root);
-            } else {
+            // Moving the stack itself must keep focus in it (`moveBefore`), or
+            // the block pressed to start a drag would lose its selection.
+            const atomic = parent as ParentNode & {
+              moveBefore?: (node: Node, child: Node | null) => void;
+            };
+            let moved = false;
+            if (
+              !block.parentBlock_ &&
+              root.childElementCount < later &&
+              atomic.moveBefore
+            ) {
+              try {
+                atomic.moveBefore(root, null);
+                moved = true;
+              } catch {
+                // Falls back to moving the later siblings.
+              }
+            }
+            if (!moved) {
               while (root.nextSibling) {
                 parent.insertBefore(root.nextSibling, root);
               }
@@ -1925,37 +1989,39 @@ export class BlockSvg
    * @param track If true, start tracking. If false, stop tracking.
    * @internal
    */
-  setConnectionTracking(track: boolean) {
-    if (this.previousConnection) {
-      this.previousConnection.setTracking(track);
-    }
-    if (this.outputConnection) {
-      this.outputConnection.setTracking(track);
-    }
-    if (this.nextConnection) {
-      this.nextConnection.setTracking(track);
-      const child = this.nextConnection.targetBlock();
-      if (child) {
-        child.setConnectionTracking(track);
+  setConnectionTracking(track: boolean, subtree = true) {
+    // Walked with a list rather than recursion, for long stacks. Without
+    // `subtree`, only this block's own connections change.
+    const pending: BlockSvg[] = [this];
+    while (pending.length) {
+      const block = pending.pop()!;
+      if (block.previousConnection) {
+        block.previousConnection.setTracking(track);
       }
-    }
+      if (block.outputConnection) {
+        block.outputConnection.setTracking(track);
+      }
+      if (block.nextConnection) {
+        block.nextConnection.setTracking(track);
+        const child = block.nextConnection.targetBlock();
+        if (child && subtree) pending.push(child);
+      }
 
-    if (this.collapsed_) {
-      // When track is true, we don't want to start tracking collapsed
-      // connections. When track is false, we're already not tracking
-      // collapsed connections, so no need to update.
-      return;
-    }
+      if (block.collapsed_) {
+        // When track is true, we don't want to start tracking collapsed
+        // connections. When track is false, we're already not tracking
+        // collapsed connections, so no need to update.
+        continue;
+      }
 
-    for (let i = 0; i < this.inputList.length; i++) {
-      const conn = this.inputList[i].connection as RenderedConnection;
-      if (conn) {
-        conn.setTracking(track);
+      for (let i = 0; i < block.inputList.length; i++) {
+        const conn = block.inputList[i].connection as RenderedConnection;
+        if (conn) {
+          conn.setTracking(track);
 
-        // Pass tracking on down the chain.
-        const block = conn.targetBlock();
-        if (block) {
-          block.setConnectionTracking(track);
+          // Pass tracking on down the chain.
+          const child = conn.targetBlock();
+          if (child && subtree) pending.push(child);
         }
       }
     }
@@ -2069,15 +2135,42 @@ export class BlockSvg
       return;
     }
 
-    function neighbourIsInStack(neighbour: RenderedConnection) {
-      return neighbour.getSourceBlock().getRootBlock() === root;
-    }
+    // Blocks of the stack, looked up once rather than by walking up from each
+    // neighbour.
+    let stack: Set<BlockSvg> | null = null;
+    const neighbourIsInStack = (neighbour: RenderedConnection) => {
+      stack ??= new Set(root.getDescendants(false));
+      return stack.has(neighbour.getSourceBlock());
+    };
 
-    for (const conn of this.getConnections_(false)) {
-      if (conn.isSuperior()) {
-        // Recurse down the block stack.
-        conn.targetBlock()?.bumpNeighbours();
+    // Down the block stack in the same order as recursing through each
+    // superior connection, with a list of frames instead of the call stack.
+    const frames: Array<{
+      connections: RenderedConnection[];
+      index: number;
+      descended: boolean;
+    }> = [{connections: this.getConnections_(false), index: 0, descended: false}];
+    while (frames.length) {
+      const frame = frames[frames.length - 1];
+      if (frame.index >= frame.connections.length) {
+        frames.pop();
+        continue;
       }
+      const conn = frame.connections[frame.index];
+      if (!frame.descended) {
+        frame.descended = true;
+        const child = conn.isSuperior() ? conn.targetBlock() : null;
+        if (child && !child.isDeadOrDying() && !child.isDragging()) {
+          frames.push({
+            connections: child.getConnections_(false),
+            index: 0,
+            descended: false,
+          });
+          continue;
+        }
+      }
+      frame.index++;
+      frame.descended = false;
 
       for (const neighbour of conn.neighbours(config.snapRadius)) {
         if (neighbourIsInStack(neighbour)) continue;
@@ -2217,15 +2310,11 @@ export class BlockSvg
   getHeightWidth(): {height: number; width: number} {
     let height = this.height;
     let width = this.width;
-    // Recursively add size of subsequent blocks.
-    const nextBlock = this.getNextBlock();
-    if (nextBlock) {
-      const nextHeightWidth = nextBlock.getHeightWidth();
-      const tabHeight = this.workspace
-        .getRenderer()
-        .getConstants().NOTCH_HEIGHT;
-      height += nextHeightWidth.height - tabHeight;
-      width = Math.max(width, nextHeightWidth.width);
+    // Adds the size of subsequent blocks, walking down the stack.
+    const tabHeight = this.workspace.getRenderer().getConstants().NOTCH_HEIGHT;
+    for (let next = this.getNextBlock(); next; next = next.getNextBlock()) {
+      height += next.height - tabHeight;
+      width = Math.max(width, next.width);
     }
     return {height, width};
   }

@@ -47,14 +47,16 @@ export function Resizer() {
   );
 }
 
-function applyWidth(width: number): void {
-  const clamped = Math.min(MAX, Math.max(MIN, Math.round(width)));
-  document.documentElement.style.setProperty('--side-w', `${clamped}px`);
+/** Last width applied, kept for saving without reading styles back. */
+let width = DEFAULT_WIDTH;
+
+function applyWidth(next: number): void {
+  width = Math.min(MAX, Math.max(MIN, Math.round(next)));
+  document.querySelector<HTMLElement>('.workarea')?.style.setProperty('--side-w', `${width}px`);
 }
 
 function currentWidth(): number {
-  const value = getComputedStyle(document.documentElement).getPropertyValue('--side-w');
-  return Number.parseInt(value, 10) || DEFAULT_WIDTH;
+  return width;
 }
 
 function setHidden(hidden: boolean): void {

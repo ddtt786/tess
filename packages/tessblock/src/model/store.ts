@@ -12,8 +12,17 @@ import type {
   BlocklyState, Costume, FunctionDef, ObjectProps, Signal, Sound, TableDef, TessObject, TessProject,
   TextProps, VariableDef, VariableKind,
 } from './types.ts';
+import { copyDeep, stringify } from './json.ts';
 
 const STORAGE_KEY = 'tessblock.project.v1';
+
+/**
+ * Blocks whose colour moved from a field to a socket holding a colour shadow.
+ * Declared before `project`: loading the saved work reads it.
+ */
+const COLOUR_SOCKETS = new Set([
+  'brush_set_colour', 'brush_set_fill', 'text_set_colour', 'text_set_bg_colour', 'calc_from_hex',
+]);
 
 export const project = signal<TessProject>(loadProject());
 export const selectedSceneId = signal<string>(project.value.scenes[0]?.id ?? '');
@@ -40,11 +49,65 @@ export const visibleVariables = computed(() =>
 
 export function update(change: (draft: TessProject) => TessProject | void): void {
   const before = project.value;
-  const draft = structuredClone(before) as TessProject;
+  const draft = editableCopy(before);
   const next = change(draft) ?? draft;
   remember(before);
   project.value = next;
   saveSoon();
+}
+
+/** JSON of each saved block state, which is never changed in place. */
+const stateTexts = new WeakMap<object, string>();
+
+/** `JSON.stringify(state)`, written once per state. */
+function stateText(state: unknown): string {
+  if (!state || typeof state !== 'object') return JSON.stringify(state ?? null);
+  let text = stateTexts.get(state);
+  if (text === undefined) {
+    text = stringify(state);
+    stateTexts.set(state, text);
+  }
+  return text;
+}
+
+/** Stands in for a block state while the rest of the work is written. */
+const STATE_MARK = '\u0000tess-state:';
+
+/**
+ * `JSON.stringify(model)`, with block states written from `stateText`: a save
+ * after an edit writes only the scripts that changed.
+ */
+function projectText(model: TessProject): string {
+  const states: unknown[] = [];
+  const mark = (state: unknown) => {
+    if (!state || typeof state !== 'object') return state;
+    states.push(state);
+    return `${STATE_MARK}${states.length - 1}`;
+  };
+  const shell = {
+    ...model,
+    objects: model.objects.map((object) => ({ ...object, blocks: mark(object.blocks) })),
+    functions: model.functions.map((definition) => ({ ...definition, blocks: mark(definition.blocks) })),
+  };
+  return JSON.stringify(shell).replace(/"\\u0000tess-state:(\d+)"/g, (_, index: string) => stateText(states[Number(index)]));
+}
+
+/**
+ * A deep copy of the work to edit, sharing the saved block states. A block
+ * state is replaced whole when scripts change and never changed in place, so
+ * an edit does not copy every script in the work, and an object whose scripts
+ * did not change keeps the same state (and the code written from it).
+ */
+function editableCopy(model: TessProject): TessProject {
+  const shell = {
+    ...model,
+    objects: model.objects.map((object) => ({ ...object, blocks: null })),
+    functions: model.functions.map((definition) => ({ ...definition, blocks: null })),
+  };
+  const copy = structuredClone(shell) as TessProject;
+  copy.objects.forEach((object, index) => { object.blocks = model.objects[index]!.blocks; });
+  copy.functions.forEach((definition, index) => { definition.blocks = model.functions[index]!.blocks; });
+  return copy;
 }
 
 // --- undo -------------------------------------------------------------------
@@ -226,7 +289,8 @@ function cloneObject(
   sceneId = source.sceneId,
   swap = new Map<string, string>(),
 ): { object: TessObject; variables: VariableDef[]; functions: FunctionDef[] } {
-  const copy = structuredClone(source) as TessObject;
+  // Scripts nest too deeply for structuredClone; they are copied as text below.
+  const copy = structuredClone({ ...source, blocks: null }) as TessObject;
   copy.id = newId('o');
   copy.name = name;
   copy.sceneId = sceneId;
@@ -246,10 +310,10 @@ function cloneObject(
     .map((definition) => {
       const id = newId('f');
       ids.set(definition.id, id);
-      return { ...structuredClone(definition), id, owner: copy.id };
+      return { ...copyDeep(definition), id, owner: copy.id };
     });
 
-  let blocks = JSON.stringify(copy.blocks ?? null);
+  let blocks = stateText(source.blocks);
   for (const [from, to] of ids) blocks = blocks.split(from).join(to);
   copy.blocks = JSON.parse(blocks) as typeof copy.blocks;
   return { object: copy, variables, functions };
@@ -401,8 +465,8 @@ export function setObjectBlocks(id: string, blocks: BlocklyState, inline?: Funct
   const model = project.peek();
   const current = model.objects.find((candidate) => candidate.id === id);
   const declared = model.functions.filter((each) => each.inline && each.owner === id);
-  const sameBlocks = !!current && JSON.stringify(current.blocks) === JSON.stringify(blocks);
-  const sameFunctions = !inline || JSON.stringify(declared) === JSON.stringify(inline);
+  const sameBlocks = !!current && stateText(current.blocks) === stateText(blocks);
+  const sameFunctions = !inline || stringify(declared) === stringify(inline);
   if (sameBlocks && sameFunctions) return;
   update((draft) => {
     const object = draft.objects.find((candidate) => candidate.id === id);
@@ -643,7 +707,7 @@ function saveSoon(): void {
   if (saveTimer !== undefined) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
-      const serialized = JSON.stringify(project.value);
+      const serialized = projectText(project.value);
       workSize = serialized.length;
       localStorage.setItem(STORAGE_KEY, serialized);
       saveFailed.value = false;
@@ -707,29 +771,23 @@ interface BlockState {
   extraState?: { slots?: string[] } & Record<string, unknown>;
 }
 
-/** Blocks whose colour moved from a field to a socket holding a colour shadow. */
-const COLOUR_SOCKETS = new Set([
-  'brush_set_colour', 'brush_set_fill', 'text_set_colour', 'text_set_bg_colour', 'calc_from_hex',
-]);
-
 /** Rewrites block states saved by an older editor in place. */
 function upgradeBlocks<T extends { blocks: unknown }>(owner: T): T {
-  const visit = (block: BlockState | undefined) => {
-    if (!block) return;
+  const state = owner.blocks as { blocks?: { blocks?: BlockState[] } } | null;
+  // A list, not recursion: a long stack nests each block under the one before it.
+  const pending: Array<BlockState | undefined> = [...(state?.blocks?.blocks ?? [])];
+  while (pending.length) {
+    const block = pending.pop();
+    if (!block) continue;
     const colour = block.fields?.COLOUR;
     if (block.type && COLOUR_SOCKETS.has(block.type) && typeof colour === 'string') {
       delete block.fields!.COLOUR;
       const swatch = { type: 'calc_colour', fields: { COLOUR: colour } };
       block.inputs = { ...block.inputs, COLOUR: { shadow: swatch, block: { ...swatch } } };
     }
-    for (const input of Object.values(block.inputs ?? {})) {
-      visit(input.block);
-      visit(input.shadow);
-    }
-    visit(block.next?.block);
-  };
-  const state = owner.blocks as { blocks?: { blocks?: BlockState[] } } | null;
-  for (const top of state?.blocks?.blocks ?? []) visit(top);
+    for (const input of Object.values(block.inputs ?? {})) pending.push(input.block, input.shadow);
+    pending.push(block.next?.block);
+  }
   return owner;
 }
 

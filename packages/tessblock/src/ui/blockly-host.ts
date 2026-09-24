@@ -19,10 +19,11 @@ import { DEFINE_BLOCK, fnIdOf, inlineDefinitions, markForeignParams, refreshCall
 import { StackAwarePreviewer } from "../blocks/previewer.ts";
 import { runStack } from "./debug-run.ts";
 import { project, restored, selectObject, selectedObjectId, setObjectBlocks } from "../model/store.ts";
-import { blockQuery, dialog, editorTab, functionDraft, runningStack } from "./state.ts";
+import { blockQuery, dialog, editorTab, functionDraft, notify, runningStack } from "./state.ts";
 import { newId } from "../model/ids.ts";
 import type { BlocklyState, FunctionDef } from "../model/types.ts";
 import { signatureOf } from "../model/call-remap.ts";
+import { copyDeep } from "../model/json.ts";
 
 /** A gap at the top of every palette, so the search strip covers no blocks. */
 const PALETTE_TOP = { kind: "sep", gap: 44 };
@@ -34,6 +35,8 @@ let palette: ResizeObserver | null = null;
 let shown = "";
 let saveTimer: number | undefined;
 let isLoadingWorkspace = false;
+/** The object whose blocks failed to load; its stored scripts are not saved over. */
+let unreadable: string | null = null;
 /** Signal subscriptions the mounted workspace owns. */
 let watches: Array<() => void> = [];
 
@@ -170,6 +173,7 @@ export function showObject(id: string): void {
     .objects.find((candidate) => candidate.id === id);
   Blockly.Events.disable();
   isLoadingWorkspace = true;
+  unreadable = null;
   try {
     workspace.clear();
     if (object?.blocks) {
@@ -177,6 +181,12 @@ export function showObject(id: string): void {
         recordUndo: false,
       });
     }
+  } catch (error) {
+    // What did load is shown, but saving it would replace the stored scripts
+    // with the part that loaded: they stay as they were.
+    unreadable = id;
+    console.error(error);
+    notify("이 오브젝트의 블록을 모두 불러오지 못했습니다. 저장된 블록은 그대로 둡니다.");
   } finally {
     isLoadingWorkspace = false;
     Blockly.Events.enable();
@@ -242,7 +252,7 @@ function openFunctionAt(event: MouseEvent): void {
       focusDefinition(definition.id);
       return;
     }
-    functionDraft.value = structuredClone(definition);
+    functionDraft.value = copyDeep(definition);
     return;
   }
   // Any other stack on the canvas runs on its own, unless the double click was on a field being edited.
@@ -364,7 +374,7 @@ export function flush(): void {
     clearTimeout(saveTimer);
     saveTimer = undefined;
   }
-  if (!workspace || !shown || isLoadingWorkspace) return;
+  if (!workspace || !shown || isLoadingWorkspace || shown === unreadable) return;
   const inline = inlineDefinitions(workspace, shown);
   const state = Blockly.serialization.workspaces.save(
     workspace,

@@ -352,16 +352,32 @@ export class Block {
    */
   protected disposeInternal() {
     this.disposing = true;
+    // The blocks after this one go first, from the last one back, so a long
+    // stack is not disposed by recursing down it. They are marked first: a
+    // block's connections leave a parent alone only while it is dying.
+    const after: Block[] = [];
+    for (
+      let next = this.getNextBlock();
+      next && !next.isDeadOrDying();
+      next = next.getNextBlock()
+    ) {
+      next.disposing = true;
+      after.push(next);
+    }
+    for (let i = after.length - 1; i >= 0; i--) after[i].disposeInternal();
     if (this.onchangeWrapper) {
       this.workspace.removeChangeListener(this.onchangeWrapper);
     }
 
     this.workspace.removeTypedBlock(this);
     this.workspace.removeBlockById(this.id);
+    if (this.disabledReasons.size) this.workspace.disabledBlocks--;
 
     if (typeof this.destroy === 'function') this.destroy();
 
-    this.childBlocks_.forEach((c) => c.disposeInternal());
+    this.childBlocks_.forEach((c) => {
+      if (!c.isDisposed()) c.disposeInternal();
+    });
     this.inputList.forEach((i) => i.dispose());
     this.inputList.length = 0;
     this.getConnections_(true).forEach((c) => c.dispose());
@@ -782,12 +798,17 @@ export class Block {
    * @returns Flattened array of blocks.
    */
   getDescendants(ordered: boolean): this[] {
-    const blocks = [this];
-    const childBlocks = this.getChildren(ordered);
-    for (let child, i = 0; (child = childBlocks[i]); i++) {
-      // AnyDuringMigration because:  Argument of type 'Block[]' is not
-      // assignable to parameter of type 'this[]'.
-      blocks.push(...(child.getDescendants(ordered) as AnyDuringMigration));
+    // Walked with a list rather than recursion: a long stack nests each block
+    // under the one before it.
+    const blocks: this[] = [];
+    const pending: this[] = [this];
+    while (pending.length) {
+      const block = pending.pop()!;
+      blocks.push(block);
+      const childBlocks = block.getChildren(ordered) as this[];
+      for (let i = childBlocks.length - 1; i >= 0; i--) {
+        pending.push(childBlocks[i]);
+      }
     }
     return blocks;
   }
@@ -1462,10 +1483,15 @@ export class Block {
     }
 
     if (this.disabledReasons.has(reason) !== disabled) {
+      const wasEnabled = this.disabledReasons.size === 0;
       if (disabled) {
         this.disabledReasons.add(reason);
       } else {
         this.disabledReasons.delete(reason);
+      }
+      const isEnabled = this.disabledReasons.size === 0;
+      if (wasEnabled !== isEnabled) {
+        this.workspace.disabledBlocks += isEnabled ? -1 : 1;
       }
       const blockChangeEvent = new (eventUtils.get(EventType.BLOCK_CHANGE))(
         this,
@@ -1486,6 +1512,8 @@ export class Block {
    * @returns True if disabled.
    */
   getInheritedDisabled(): boolean {
+    // Nothing to inherit while no block of the workspace is disabled.
+    if (!this.workspace.disabledBlocks) return false;
     let ancestor = this.getSurroundParent();
     while (ancestor) {
       if (!ancestor.isEnabled()) {
@@ -2523,12 +2551,17 @@ export class Block {
       }
     }
 
-    // Recursively check the next block after the current block.
-    const next = this.getNextBlock();
-    if (next) {
-      return next.allInputsFilled(opt_shadowBlocksAreFilled);
+    // The next block after the current block, without recursing down the stack.
+    for (let next = this.getNextBlock(); next; next = next.getNextBlock()) {
+      if (!opt_shadowBlocksAreFilled && next.isShadow()) return false;
+      for (const input of next.inputList) {
+        if (!input.connection) continue;
+        const target = input.connection.targetBlock();
+        if (!target || !target.allInputsFilled(opt_shadowBlocksAreFilled)) {
+          return false;
+        }
+      }
     }
-
     return true;
   }
 

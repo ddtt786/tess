@@ -7,6 +7,7 @@
 import { resolveAsset, saveAsset } from './assets.ts';
 import { project, replaceProject } from './store.ts';
 import type { TessObject, TessProject } from './types.ts';
+import { stringify } from './json.ts';
 
 const EXTENSION = '.tessproj';
 
@@ -14,7 +15,7 @@ export function downloadProject(): void {
   // Pictures and sounds live in the browser's own store, so they are written
   // into the file; otherwise it would open somewhere else with nothing in it.
   const model = withInlineAssets(project.peek());
-  const blob = new Blob([JSON.stringify(model, null, 2)], { type: 'application/json' });
+  const blob = new Blob([stringify(model, 2)], { type: 'application/json' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = `${model.name || '작품'}${EXTENSION}`;

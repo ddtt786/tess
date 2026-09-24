@@ -37,6 +37,16 @@ export enum NodeType {
 /** Temporary cache of text widths. */
 let cacheWidths: {[key: string]: number} | null = null;
 
+/** Font of a text element, as used to measure it. */
+interface FontStyle {
+  fontSize: string;
+  fontWeight: string;
+  fontFamily: string;
+}
+
+/** Fonts looked up while caching, by SVG and then by class. */
+let cacheFonts: Map<SVGSVGElement, Map<string, FontStyle>> | null = null;
+
 /** Number of current references to cache. */
 let cacheReference = 0;
 
@@ -200,6 +210,7 @@ export function stopTextWidthCache() {
   cacheReference--;
   if (!cacheReference) {
     cacheWidths = null;
+    cacheFonts = null;
   }
 }
 
@@ -220,13 +231,35 @@ export function getTextWidth(textElement: SVGTextElement): number {
     }
   }
 
-  // Compute the width of the SVG text element.
-  const style = window.getComputedStyle(textElement);
+  // Compute the width of the SVG text element. While caching, texts with the
+  // same class in the same SVG share one style lookup: each lookup after a DOM
+  // change recalculates styles.
+  let font: FontStyle | undefined;
+  if (cacheWidths) {
+    const svg = textElement.ownerSVGElement;
+    let fonts = svg ? cacheFonts?.get(svg) : undefined;
+    if (svg && !fonts) {
+      fonts = new Map();
+      (cacheFonts ??= new Map()).set(svg, fonts);
+    }
+    font = fonts?.get(textElement.className.baseVal);
+    if (!font) {
+      const style = window.getComputedStyle(textElement);
+      font = {
+        fontSize: style.fontSize,
+        fontWeight: style.fontWeight,
+        fontFamily: style.fontFamily,
+      };
+      fonts?.set(textElement.className.baseVal, font);
+    }
+  } else {
+    font = window.getComputedStyle(textElement);
+  }
   width = getFastTextWidthWithSizeString(
     textElement,
-    style.fontSize,
-    style.fontWeight,
-    style.fontFamily,
+    font.fontSize,
+    font.fontWeight,
+    font.fontFamily,
   );
 
   // Cache the computed width and return.

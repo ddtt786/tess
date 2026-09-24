@@ -20,6 +20,7 @@ import type {
   Costume, FunctionDef, FunctionParam, ObjectProps, Scene, Sound, TableDef, TessObject, TessProject, TextProps,
   VariableDef,
 } from './types.ts';
+import { copyDeep } from './json.ts';
 
 export interface EntImportResult {
   /** Entry block types that have no editor block, with how often they appeared. */
@@ -509,7 +510,7 @@ function readHeader(node: unknown): { name: string; params: Array<{ id: string; 
 function linkStacks(stacks: BlockJson[]): BlockJson | null {
   let head: BlockJson | null = null;
   for (let index = stacks.length - 1; index >= 0; index -= 1) {
-    const top = structuredClone(stacks[index]!);
+    const top = copyDeep(stacks[index]!);
     if (head) {
       let tail = top;
       while ((tail.next as { block?: BlockJson } | undefined)?.block) tail = (tail.next as { block: BlockJson }).block;
