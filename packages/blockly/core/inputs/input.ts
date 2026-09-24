@@ -200,7 +200,7 @@ export class Input {
       }
       const child = this.connection.targetBlock();
       if (child) {
-        child.getSvgRoot().style.display = visible ? 'block' : 'none';
+        child.setSvgDisplay(visible);
       }
     }
     return renderList;

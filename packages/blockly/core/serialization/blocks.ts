@@ -21,6 +21,7 @@ import type {
 } from '../interfaces/i_variable_model.js';
 import * as registry from '../registry.js';
 import * as renderManagement from '../render_management.js';
+import * as dom from '../utils/dom.js';
 import * as utilsXml from '../utils/xml.js';
 import * as Variables from '../variables.js';
 import type {Workspace} from '../workspace.js';
@@ -393,9 +394,12 @@ export function appendInternal(
 
   const variablesBeforeCreation = workspace.getVariableMap().getAllVariables();
   let block;
+  // Repeated field texts are measured once per load or paste.
+  dom.startTextWidthCache();
   try {
     block = appendPrivate(state, workspace, {parentConnection, isShadow});
   } finally {
+    dom.stopTextWidthCache();
     eventUtils.enable();
   }
 

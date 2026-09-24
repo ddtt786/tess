@@ -64,6 +64,8 @@ export class DragProxy {
   private readonly savedClip: string;
   private readonly observer: MutationObserver;
   private readonly motion: Animation;
+  /** Transform added after the position, e.g. the wobble when unplugged. */
+  private extra = '';
   deleteStyle = false;
 
   /** Whether a drag of this block should use a stand-in. */
@@ -80,7 +82,7 @@ export class DragProxy {
 
   constructor(private readonly block: BlockSvg) {
     const workspace = block.workspace;
-    const root = block.getSvgRoot();
+    const root = block.getStackSvgRoot();
     this.origin = block.getRelativeToSurfaceXY();
 
     // In front of the other stacks, as the drop will leave it. Later siblings
@@ -94,7 +96,8 @@ export class DragProxy {
     this.overlay.className = 'blocklyDragProxy';
     this.overlay.style.cssText =
       'position:absolute;left:0;top:0;right:0;bottom:0;z-index:80;' +
-      'pointer-events:none;overflow:visible;will-change:transform;';
+      'pointer-events:none;overflow:visible;will-change:transform;' +
+      'transform-origin:0 0;';
     const svg = dom.createSvgElement(Svg.SVG, {
       'xmlns': dom.SVG_NS,
       'xmlns:html': dom.HTML_NS,
@@ -138,13 +141,35 @@ export class DragProxy {
   moveTo(x: number, y: number) {
     this.offset = new Coordinate(x - this.origin.x, y - this.origin.y);
     this.syncLayer();
-    const scale = this.block.workspace.scale;
-    (this.motion.effect as KeyframeEffect | null)?.setKeyframes(
-      keyframes(
-        `translate(${this.offset.x * scale}px, ${this.offset.y * scale}px)`,
-      ),
-    );
+    this.animate();
     this.fill();
+  }
+
+  /**
+   * Adds an SVG transform after the stack's position, as Blockly adds it to
+   * the stack's group, e.g. `skewX(5)`.
+   */
+  setExtraTransform(extra: string) {
+    this.extra = extra.trim();
+    this.animate();
+  }
+
+  private animate() {
+    const scale = this.block.workspace.scale;
+    let transform = `translate(${this.offset.x * scale}px, ${this.offset.y * scale}px)`;
+    const skew = /^skewX\(([-\d.e]+)\)$/.exec(this.extra);
+    if (skew) {
+      // Around the stack's start position, in the overlay's pixels.
+      const matrix = this.layer.transform.baseVal.consolidate()?.matrix;
+      const x = (matrix?.a ?? scale) * this.origin.x + (matrix?.e ?? 0);
+      const y = (matrix?.d ?? scale) * this.origin.y + (matrix?.f ?? 0);
+      transform +=
+        ` translate(${x}px, ${y}px) skewX(${skew[1]}deg)` +
+        ` translate(${-x}px, ${-y}px)`;
+    }
+    (this.motion.effect as KeyframeEffect | null)?.setKeyframes(
+      keyframes(transform),
+    );
   }
 
   setDeleteStyle(enable: boolean) {
@@ -162,7 +187,7 @@ export class DragProxy {
     this.observer.disconnect();
     this.motion.cancel();
     this.overlay.remove();
-    this.block.getSvgRoot().style.clipPath = this.savedClip;
+    this.block.getStackSvgRoot().style.clipPath = this.savedClip;
   }
 
   /** Keeps the overlay in the workspace's scroll and zoom. */
@@ -185,7 +210,7 @@ export class DragProxy {
     const shiftX = this.origin.x - root.x;
     const shiftY = this.origin.y - root.y;
     let order = 0;
-    const visit = (block: BlockSvg) => {
+    const entryOf = (block: BlockSvg): Entry => {
       const now = block.getRelativeToSurfaceXY();
       const xy = new Coordinate(now.x + shiftX, now.y + shiftY);
       const left = block.RTL ? xy.x - block.width : xy.x;
@@ -197,6 +222,10 @@ export class DragProxy {
         copied: false,
       };
       this.entries.push(entry);
+      return entry;
+    };
+    const visit = (block: BlockSvg) => {
+      const entry = entryOf(block);
       let parts: Element[] = [];
       const flush = () => {
         entry.segments.push({order: order++, entry, parts, copy: null});
@@ -213,7 +242,26 @@ export class DragProxy {
       }
       if (parts.length || !entry.segments.length) flush();
     };
-    visit(this.block);
+    // The stack's group holds the groups of its flat blocks side by side;
+    // anything else in it, like a selection outline, goes with the top block.
+    let rootEntry: Entry | null = null;
+    for (const child of Array.from(this.block.getStackSvgRoot().children)) {
+      const childBlock = blocks.get(child);
+      if (childBlock) {
+        visit(childBlock);
+        if (childBlock === this.block) {
+          rootEntry = this.entries.find((entry) => entry.block === this.block)!;
+        }
+        continue;
+      }
+      rootEntry ??= entryOf(this.block);
+      rootEntry.segments.push({
+        order: order++,
+        entry: rootEntry,
+        parts: [child],
+        copy: null,
+      });
+    }
   }
 
   /** Copies the blocks that are, or are about to be, in view. */

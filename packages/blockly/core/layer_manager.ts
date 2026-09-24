@@ -105,7 +105,7 @@ export class LayerManager {
    * @internal
    */
   moveToDragLayer(elem: IRenderedElement & IFocusableNode, focus = true) {
-    this.dragLayer?.appendChild(elem.getSvgRoot());
+    this.dragLayer?.appendChild(layerRoot(elem));
 
     if (focus && elem.canBeFocused()) {
       // Since moving the element to the drag layer will cause it to lose focus,
@@ -149,7 +149,7 @@ export class LayerManager {
     if (!this.layers.has(layerNum)) {
       this.createLayer(layerNum);
     }
-    const childElem = elem.getSvgRoot();
+    const childElem = layerRoot(elem);
     if (this.layers.get(layerNum)?.lastChild !== childElem) {
       // Only append the child if it isn't already last (to avoid re-firing
       // events like focused).
@@ -224,4 +224,12 @@ export class LayerManager {
   getDragLayer(): SVGGElement | undefined {
     return this.dragLayer;
   }
+}
+
+/** The element that carries an item in its layer: a block's whole stack. */
+function layerRoot(elem: IRenderedElement): SVGElement {
+  const stacked = elem as IRenderedElement & {
+    getStackSvgRoot?: () => SVGElement;
+  };
+  return stacked.getStackSvgRoot?.() ?? elem.getSvgRoot();
 }

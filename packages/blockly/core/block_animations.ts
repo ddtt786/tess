@@ -35,7 +35,7 @@ export function disposeUiEffect(block: BlockSvg) {
   if (block.getDescendants(false).length > 100) return;
 
   const workspace = block.workspace;
-  const svgGroup = block.getSvgRoot();
+  const svgGroup = block.getStackSvgRoot();
   workspace.getAudioManager().play('delete');
 
   const xy = block.getRelativeToSurfaceXY();
@@ -210,9 +210,7 @@ function disconnectUiStep(
     );
   }
 
-  block
-    .getSvgRoot()
-    .setAttribute('transform', `${block.getTranslation()} ${skew}`);
+  block.setExtraTransform(skew);
 }
 
 /**
@@ -226,8 +224,6 @@ export function disconnectUiStop() {
     clearTimeout(disconnectPid);
     disconnectPid = null;
   }
-  wobblingBlock
-    .getSvgRoot()
-    .setAttribute('transform', wobblingBlock.getTranslation());
+  wobblingBlock.setExtraTransform('');
   wobblingBlock = null;
 }
