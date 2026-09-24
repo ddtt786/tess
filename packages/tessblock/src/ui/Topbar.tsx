@@ -2,8 +2,7 @@
 import { useSignal } from '@preact/signals';
 import { useRef } from 'preact/hooks';
 import {
-  addScene, addSceneFolder, currentScene, duplicateScene, project, removeScene, removeSceneFolder, renameScene,
-  renameSceneFolder, reorderScene, selectScene,
+  addScene, currentScene, duplicateScene, project, removeScene, renameScene, reorderScene, selectScene,
   newProject, setProjectName,
 } from '../model/store.ts';
 import {
@@ -49,14 +48,6 @@ export function Topbar() {
   }
 
   const strip = useRef<HTMLElement>(null);
-  const collapsed = useSignal<Set<string>>(new Set());
-
-  function toggleFolder(name: string) {
-    const next = new Set(collapsed.value);
-    if (next.has(name)) next.delete(name);
-    else next.add(name);
-    collapsed.value = next;
-  }
 
   /** A mouse wheel scrolls the strip sideways; it has no scrollbar of its own to grab. */
   function scrollStrip(event: WheelEvent) {
@@ -182,41 +173,14 @@ export function Topbar() {
       />
       <span class="vr" />
       <nav class="scenes" aria-label="장면" ref={strip} onWheel={scrollStrip}>
-        {model.scenes.map((candidate, index) => {
+        {model.scenes.map((candidate) => {
           const drop = drag.value?.overId === candidate.id ? drag.value : null;
-          const folder = candidate.folder ?? null;
-          const opensFolder = folder !== null && model.scenes[index - 1]?.folder !== folder;
-          const folded = folder !== null && collapsed.value.has(folder) && candidate.id !== scene?.id;
-          const chip = opensFolder && (
-            <div
-              key={`folder:${folder}`}
-              class={`scene-folder ${collapsed.value.has(folder!) ? 'closed' : ''}`}
-              title="눌러서 접기·펴기, 두 번 눌러 이름 바꾸기"
-              onClick={() => toggleFolder(folder!)}
-            >
-              <FolderIcon size={13} />
-              <InlineName value={folder!} onCommit={(name) => renameSceneFolder(folder!, name)} />
-              <span class="count">{model.scenes.filter((each) => each.folder === folder).length}</span>
-              <span
-                class="x"
-                title="폴더 풀기 (장면은 그대로)"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  removeSceneFolder(folder!);
-                }}
-              >
-                ✕
-              </span>
-            </div>
-          );
-          if (folded) return chip || null;
-          return [chip, (
+          return (
             <div
               key={candidate.id}
               data-id={candidate.id}
               class={[
                 'scene',
-                folder !== null ? 'in-folder' : '',
                 candidate.id === scene?.id ? 'on' : '',
                 drag.value?.id === candidate.id ? 'dragging' : '',
                 drop ? (drop.before ? 'drop-before' : 'drop-after') : '',
@@ -259,20 +223,12 @@ export function Topbar() {
                 </span>
               )}
             </div>
-          )];
+          );
         })}
       </nav>
       <div class="scene-tools">
         <button class="scene-add" title="장면 추가" aria-label="장면 추가" onClick={addSceneAndShow}>
           <PlusIcon />
-        </button>
-        <button
-          class="scene-add"
-          title="지금 장면을 새 폴더에 넣기"
-          aria-label="장면 폴더 만들기"
-          onClick={() => { if (scene) addSceneFolder(scene.id); }}
-        >
-          <FolderIcon size={14} />
         </button>
       </div>
       <span class="spacer" />

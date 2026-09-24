@@ -1,5 +1,5 @@
 /** Calc category: numbers, text, colours and everything read off the stage. */
-import { colourField, define, emptyIn, menu, numField, numIn, pick, textField, textIn } from '../spec.ts';
+import { colourField, colourIn, define, emptyIn, menu, numField, numIn, pick, textField, textIn } from '../spec.ts';
 import { Order, type OrderValue } from '../../codegen/order.ts';
 import { num, quote } from '../../codegen/quote.ts';
 
@@ -322,7 +322,7 @@ define(
     type: 'calc_from_hex',
     category: 'calc',
     message: '%1 의 %2 값',
-    args: [colourField('COLOUR', '#ff5f5f'), menu('CHANNEL', [['빨강', 'red'], ['초록', 'green'], ['파랑', 'blue']])],
+    args: [colourIn('COLOUR', '#ff5f5f'), menu('CHANNEL', [['빨강', 'red'], ['초록', 'green'], ['파랑', 'blue']])],
     shape: 'value',
     order: Order.ATOMIC,
     code: (a) => [`from_hex(${a.COLOUR}, ${a.CHANNEL})`, Order.ATOMIC],

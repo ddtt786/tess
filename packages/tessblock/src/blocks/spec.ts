@@ -33,6 +33,7 @@ export type Arg =
 export type ShadowSpec =
   | { kind: 'number'; value: number }
   | { kind: 'text'; value: string }
+  | { kind: 'colour'; value: string }
   | { kind: 'none' };
 
 export type CodeArgs = Record<string, string>;
@@ -69,6 +70,11 @@ export function numIn(name: string, value = 0, order: OrderValue = Order.NONE): 
 /** A socket holding text, with an inline default. */
 export function textIn(name: string, value = '', order: OrderValue = Order.NONE): Arg {
   return { type: 'value', name, fallback: JSON.stringify(value), order, shadow: { kind: 'text', value } };
+}
+
+/** A socket holding a colour picker; a variable or hex string can replace it. */
+export function colourIn(name: string, value = '#ff0000'): Arg {
+  return { type: 'value', name, fallback: value, order: Order.NONE, shadow: { kind: 'colour', value } };
 }
 
 /** A socket with no default block in it. */

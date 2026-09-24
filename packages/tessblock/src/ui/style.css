@@ -195,39 +195,6 @@ p {
   gap: 2px;
   flex: none;
 }
-.scene-folder {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 8px;
-  border-radius: var(--r-sm);
-  background: var(--bg-hover);
-  color: var(--text-2);
-  font-size: 12px;
-  font-weight: 650;
-  white-space: nowrap;
-  cursor: pointer;
-  flex: none;
-}
-.scene-folder .count {
-  font-size: 10.5px;
-  color: var(--muted);
-}
-.scene-folder .x {
-  opacity: 0;
-  font-size: 10px;
-  color: var(--muted);
-}
-.scene-folder:hover .x {
-  opacity: 1;
-}
-.scene-folder.closed {
-  opacity: 0.8;
-}
-.scene.in-folder {
-  box-shadow: inset 0 -2px 0 var(--line);
-}
 
 .scene {
   display: inline-flex;
@@ -824,6 +791,48 @@ button:focus-visible,
 }
 .obj.drop-after::before {
   bottom: -2px;
+}
+.obj-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+  user-select: none;
+}
+.obj-folder:hover {
+  background: var(--bg-hover);
+}
+.obj-folder.drop-into {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.obj-folder .caret {
+  width: 10px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.obj-folder .count {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.obj-folder .del {
+  margin-left: auto;
+  opacity: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.obj-folder:hover .del {
+  opacity: 1;
+}
+/* Filed objects sit indented under their folder. */
+.obj.in-folder {
+  margin-left: 14px;
 }
 .obj .grip {
   display: grid;

@@ -15,7 +15,7 @@ import { registerColourPicker } from './colour-field.ts';
 import { registerFields } from './fields.ts';
 import { defineFunctionBlocks, callType, returnsValue, syncFunctionBlocks, valueCallType } from './functions.ts';
 import { CATEGORY_LABELS, CATEGORY_ORDER, installCategoryStyles, tessTheme } from './theme.ts';
-import { allSpecs, specsOf, type Arg, type BlockSpec, type CodeArgs, type Category } from './spec.ts';
+import { allSpecs, specsOf, type Arg, type BlockSpec, type CodeArgs, type Category, type ShadowSpec } from './spec.ts';
 import { resolveDynamic } from '../codegen/refs.ts';
 import type { FunctionDef } from '../model/types.ts';
 
@@ -294,12 +294,19 @@ function blockEntry(spec: BlockSpec): FlyoutBlock {
   const inputs: Record<string, unknown> = {};
   for (const arg of spec.args) {
     if (arg.type !== 'value' || arg.shadow.kind === 'none') continue;
-    inputs[arg.name] = arg.shadow.kind === 'number'
-      ? { shadow: { type: 'calc_number', fields: { NUM: arg.shadow.value } } }
-      : { shadow: { type: 'calc_text', fields: { TEXT: arg.shadow.value } } };
+    inputs[arg.name] = { shadow: shadowBlock(arg.shadow) };
   }
   if (Object.keys(inputs).length) entry.inputs = inputs;
   return entry;
+}
+
+/** The default block a socket starts with. */
+export function shadowBlock(shadow: Exclude<ShadowSpec, { kind: 'none' }>): Record<string, unknown> {
+  switch (shadow.kind) {
+    case 'number': return { type: 'calc_number', fields: { NUM: shadow.value } };
+    case 'text': return { type: 'calc_text', fields: { TEXT: shadow.value } };
+    case 'colour': return { type: 'calc_colour', fields: { COLOUR: shadow.value } };
+  }
 }
 
 function functionCallEntry(definition: FunctionDef, asValue: boolean): FlyoutBlock {

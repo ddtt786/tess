@@ -81,13 +81,13 @@ export interface TessObject {
   text: TextProps | null;
   /** Blockly workspace state for this object's script. */
   blocks: BlocklyState | null;
+  /** Folder the object is filed under in the object list. Only for sorting; the work ignores it. */
+  folder?: string | null;
 }
 
 export interface Scene {
   id: string;
   name: string;
-  /** Folder the scene is filed under in the tab strip. Only for sorting; the work ignores it. */
-  folder?: string | null;
 }
 
 export type VariableKind = 'variable' | 'list';

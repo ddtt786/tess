@@ -1,5 +1,5 @@
 /** Text category: what a text box writes and how it looks. */
-import { colourField, define, emptyIn, menu, textField, textIn } from '../spec.ts';
+import { colourIn, define, emptyIn, menu, textField, textIn } from '../spec.ts';
 import { quote } from '../../codegen/quote.ts';
 
 const FONTS: Array<[string, string]> = [
@@ -67,7 +67,7 @@ define(
     type: 'text_set_colour',
     category: 'text',
     message: '글자 색을 %1 로 정하기',
-    args: [colourField('COLOUR', '#000000')],
+    args: [colourIn('COLOUR', '#000000')],
     shape: 'statement',
     code: (a) => `font_color = ${a.COLOUR}`,
   },
@@ -85,7 +85,7 @@ define(
     type: 'text_set_bg_colour',
     category: 'text',
     message: '글상자 배경색을 %1 로 정하기',
-    args: [colourField('COLOUR', '#ffffff')],
+    args: [colourIn('COLOUR', '#ffffff')],
     shape: 'statement',
     code: (a) => `bg_color = ${a.COLOUR}`,
   },

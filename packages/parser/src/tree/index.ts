@@ -22,22 +22,31 @@ interface Loaded {
   language: import('web-tree-sitter').Language;
 }
 
-let loaded: Loaded | null = null;
-let loading: Promise<boolean> | null = null;
+interface Shared {
+  loaded: Loaded | null;
+  loading: Promise<boolean> | null;
+}
+
+// `Parser.init` replaces the wasm module under every parser made before it, so
+// all copies of this module (bundlers can load it twice) share one load.
+const shared: Shared = ((globalThis as { [key: symbol]: Shared })[Symbol.for('@tess/parser/tree-sitter')] ??= {
+  loaded: null,
+  loading: null,
+});
 
 /** Loads tree-sitter; resolves false (and parsing stays on Chevrotain) when it cannot. */
 export function initTreeSitter(files: TreeSitterFiles = {}): Promise<boolean> {
-  loading ??= load(files).then(
+  shared.loading ??= load(files).then(
     (result) => {
-      loaded = result;
+      shared.loaded = result;
       return true;
     },
     () => {
-      loading = null;
+      shared.loading = null;
       return false;
     },
   );
-  return loading;
+  return shared.loading;
 }
 
 async function load(files: TreeSitterFiles): Promise<Loaded> {
@@ -63,17 +72,28 @@ function defaultLanguageFile(): string | URL {
 
 /** Whether `initTreeSitter` has finished. */
 export function treeSitterReady(): boolean {
-  return loaded !== null;
+  return shared.loaded !== null;
 }
 
 /** The program's AST, or null when tree-sitter is not loaded or the source has errors. */
 export function parseProgramWithTree(source: string): ProgramNode | null {
+  const { loaded } = shared;
   if (!loaded) return null;
   const tree = loaded.parser.parse(source);
   if (!tree) return null;
   try {
     if (tree.rootNode.hasError) return null;
-    return programFromTree(plainTree(tree.walk(), loaded.language), source);
+    // Cursors are deleted by hand: their GC finalizer frees whatever cursor the
+    // shared transfer buffer holds at that moment, corrupting the heap.
+    const cursor = tree.walk();
+    try {
+      return programFromTree(plainTree(cursor, loaded.language), source);
+    } finally {
+      cursor.delete();
+    }
+  } catch {
+    // A tree the converter does not expect is left to Chevrotain.
+    return null;
   } finally {
     tree.delete();
   }

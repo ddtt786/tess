@@ -296,6 +296,17 @@ Program 소스는 tree-sitter 로도 읽는다. Chevrotain 은 그대로 남아 
 - **색상 vs 주석** → 문맥 없이 스캐너가 결정(렉서와 같은 `colorLiteralLength` 규칙).
 - 빈 본문: `function f():\nend`, `when …:\nend` 모두 `optional(field('body', $.block))`.
 
+### 10.1.1 web-tree-sitter 사용 시 주의
+
+- **커서는 반드시 `cursor.delete()`**. `TreeCursor` 의 GC 파이널라이저는 트리 주소만 들고 있다가
+  `_ts_tree_cursor_delete_wasm` 을 부르는데, 그 함수는 **그 순간 공유 전송 버퍼에 있는 커서**를 해제한다.
+  GC 가 언제 도느냐에 따라 엉뚱한 메모리가 풀려 다음 트리가 깨진다(필드가 비고 `memory access out of
+  bounds`). tessblock 의 `.ent` 불러오기 첫 실행(패턴 학습)에서 재현됐고, 명시적 삭제로 사라졌다.
+- **`Parser.init` 은 한 번만**. 다시 부르면 wasm 모듈을 통째로 바꿔 이미 만든 파서가 무효가 된다.
+  번들러가 모듈을 두 벌 올릴 수 있으므로 로드 상태를 `globalThis[Symbol.for('@tess/parser/tree-sitter')]`
+  에 둔다.
+- 변환 중 예외는 `null` → Chevrotain 이 다시 읽는다(작품이 멈추지 않게).
+
 ### 10.2 위치(loc)
 
 web-tree-sitter 의 인덱스는 UTF-16 코드 단위라 JS 문자열 오프셋과 같다. 노드의 loc 는 안에 든

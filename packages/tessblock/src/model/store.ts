@@ -128,11 +128,9 @@ function freeName(base: string): string {
 
 export function addScene(): void {
   const scene = makeScene(`장면 ${project.value.scenes.length + 1}`);
-  // A new scene lands in the folder of the scene being worked on.
-  scene.folder = project.value.scenes.find((candidate) => candidate.id === selectedSceneId.value)?.folder ?? null;
   const object = makeSprite(freeName('로봇'), scene.id);
   update((draft) => {
-    // Right after the scene being worked on, so a folder stays in one piece.
+    // Right after the scene being worked on.
     const at = draft.scenes.findIndex((candidate) => candidate.id === selectedSceneId.value);
     if (at < 0) draft.scenes.push(scene);
     else draft.scenes.splice(at + 1, 0, scene);
@@ -325,8 +323,50 @@ export function reorderObject(id: string, targetId: string, before = true): void
     if (from < 0) return;
     const [moved] = draft.objects.splice(from, 1);
     const to = draft.objects.findIndex((object) => object.id === targetId);
+    // An object dropped beside another joins that one's folder (or leaves its own).
+    moved!.folder = draft.objects[to]?.folder ?? null;
     if (to < 0) draft.objects.push(moved!);
     else draft.objects.splice(before ? to : to + 1, 0, moved!);
+  });
+}
+
+/** Moves an object to the top of a folder in its scene. */
+export function fileObject(id: string, folder: string): void {
+  update((draft) => {
+    const from = draft.objects.findIndex((object) => object.id === id);
+    if (from < 0) return;
+    const [moved] = draft.objects.splice(from, 1);
+    moved!.folder = folder;
+    const to = draft.objects.findIndex((object) => object.sceneId === moved!.sceneId && object.folder === folder);
+    if (to < 0) draft.objects.splice(from, 0, moved!);
+    else draft.objects.splice(to, 0, moved!);
+  });
+}
+
+/** Files the object under a new folder of its own. */
+export function addObjectFolder(objectId: string): string {
+  const taken = new Set(project.peek().objects.map((object) => object.folder).filter(Boolean));
+  let index = 1;
+  while (taken.has(`폴더 ${index}`)) index += 1;
+  const name = `폴더 ${index}`;
+  patchObject(objectId, (object) => {
+    object.folder = name;
+  });
+  return name;
+}
+
+export function renameObjectFolder(sceneId: string, from: string, to: string): void {
+  const name = to.trim();
+  if (!name || name === from) return;
+  update((draft) => {
+    for (const object of draft.objects) if (object.sceneId === sceneId && object.folder === from) object.folder = name;
+  });
+}
+
+/** Takes the objects out of the folder; the folder goes with them. */
+export function removeObjectFolder(sceneId: string, name: string): void {
+  update((draft) => {
+    for (const object of draft.objects) if (object.sceneId === sceneId && object.folder === name) object.folder = null;
   });
 }
 
@@ -485,38 +525,11 @@ export function reorderScene(id: string, targetId: string, before = true): void 
     if (from < 0) return;
     const [moved] = draft.scenes.splice(from, 1);
     const to = draft.scenes.findIndex((scene) => scene.id === targetId);
-    // A scene dropped beside another joins that one's folder (or leaves its own).
-    moved!.folder = draft.scenes[to]?.folder ?? null;
     if (to < 0) draft.scenes.push(moved!);
     else draft.scenes.splice(before ? to : to + 1, 0, moved!);
   });
 }
 
-/** Files the scene under a new folder of its own. */
-export function addSceneFolder(sceneId: string): string {
-  const taken = new Set(project.peek().scenes.map((scene) => scene.folder).filter(Boolean));
-  let index = 1;
-  while (taken.has(`폴더 ${index}`)) index += 1;
-  const name = `폴더 ${index}`;
-  update((draft) => {
-    const scene = draft.scenes.find((candidate) => candidate.id === sceneId);
-    if (scene) scene.folder = name;
-  });
-  return name;
-}
-
-export function renameSceneFolder(from: string, to: string): void {
-  update((draft) => {
-    for (const scene of draft.scenes) if (scene.folder === from) scene.folder = to;
-  });
-}
-
-/** Takes the scenes out of the folder; the folder goes with its last scene. */
-export function removeSceneFolder(name: string): void {
-  update((draft) => {
-    for (const scene of draft.scenes) if (scene.folder === name) scene.folder = null;
-  });
-}
 
 export function removeTable(id: string): void {
   update((draft) => {
@@ -623,8 +636,8 @@ function migrateProject(model: TessProject): TessProject {
     variables: model.variables ?? [],
     signals: model.signals ?? [],
     tables: model.tables ?? [],
-    functions: (model.functions ?? []).map(migrateFunction),
-    objects: (model.objects ?? []).map(migrateObject),
+    functions: (model.functions ?? []).map((definition) => migrateFunction(upgradeBlocks(definition))),
+    objects: (model.objects ?? []).map((object) => migrateObject(upgradeBlocks(object))),
   };
 }
 
@@ -661,8 +674,35 @@ function migrateFunction(definition: FunctionDef): FunctionDef {
 
 interface BlockState {
   type?: string;
-  inputs?: Record<string, unknown>;
+  fields?: Record<string, unknown>;
+  inputs?: Record<string, { block?: BlockState; shadow?: BlockState }>;
+  next?: { block?: BlockState };
   extraState?: { slots?: string[] } & Record<string, unknown>;
+}
+
+/** Blocks whose colour moved from a field to a socket holding a colour shadow. */
+const COLOUR_SOCKETS = new Set([
+  'brush_set_colour', 'brush_set_fill', 'text_set_colour', 'text_set_bg_colour', 'calc_from_hex',
+]);
+
+/** Rewrites block states saved by an older editor in place. */
+function upgradeBlocks<T extends { blocks: unknown }>(owner: T): T {
+  const visit = (block: BlockState | undefined) => {
+    if (!block) return;
+    const colour = block.fields?.COLOUR;
+    if (block.type && COLOUR_SOCKETS.has(block.type) && typeof colour === 'string') {
+      delete block.fields!.COLOUR;
+      block.inputs = { ...block.inputs, COLOUR: { shadow: { type: 'calc_colour', fields: { COLOUR: colour } } } };
+    }
+    for (const input of Object.values(block.inputs ?? {})) {
+      visit(input.block);
+      visit(input.shadow);
+    }
+    visit(block.next?.block);
+  };
+  const state = owner.blocks as { blocks?: { blocks?: BlockState[] } } | null;
+  for (const top of state?.blocks?.blocks ?? []) visit(top);
+  return owner;
 }
 
 /** Every costume and sound the work still points at. */

@@ -6,25 +6,44 @@
  * suggests a second card could appear next to it.
  */
 import { useSignal } from '@preact/signals';
+import type { ComponentChildren } from 'preact';
 import { resolveAsset } from '../model/assets.ts';
 import { beginDrag } from './drag.ts';
+import { InlineName } from './InlineName.tsx';
 import { editorTab } from './state.ts';
 import {
-  addObject, duplicateObject, removeObject, renameObject, reorderObject, sceneObjects, selectObject,
-  selectedObject, selectedObjectId, setObjectProps, setTextProps,
+  addObject, addObjectFolder, duplicateObject, fileObject, removeObject, removeObjectFolder, renameObject,
+  renameObjectFolder, reorderObject, sceneObjects, selectObject, selectedObject, selectedObjectId,
+  selectedSceneId, setObjectProps, setTextProps,
 } from '../model/store.ts';
 import type { RotateMethod, TessObject } from '../model/types.ts';
 import {
-  CopyIcon, EyeIcon, EyeOffIcon, GripIcon, LockIcon, PlusIcon, TextIcon, TrashIcon, UnlockIcon,
+  CopyIcon, EyeIcon, EyeOffIcon, FolderIcon, GripIcon, LockIcon, PlusIcon, TextIcon, TrashIcon, UnlockIcon,
 } from './icons.tsx';
+
+/** Folders folded shut, by scene and name; kept across scene switches. */
+const collapsedFolders = new Set<string>();
 
 export function ObjectPanel() {
   const objects = sceneObjects.value;
   const selected = selectedObject.value;
-  const drag = useSignal<{ id: string; overId: string; before: boolean } | null>(null);
+  const drag = useSignal<{ id: string; overId: string; before: boolean; folder?: string } | null>(null);
+  const folds = useSignal(0);
+  const scene = selectedSceneId.value;
+  const foldKey = (folder: string) => `${scene}\u0000${folder}`;
 
-  /** Row under the pointer, and which half of it. */
-  function rowAt(clientY: number): { id: string; before: boolean } | null {
+  function toggleFolder(folder: string) {
+    if (collapsedFolders.has(foldKey(folder))) collapsedFolders.delete(foldKey(folder));
+    else collapsedFolders.add(foldKey(folder));
+    folds.value += 1;
+  }
+
+  /** Row under the pointer, and which half of it; a folder header files the object into it. */
+  function rowAt(clientY: number): { id: string; before: boolean; folder?: string } | null {
+    for (const head of document.querySelectorAll<HTMLElement>('.obj-folder[data-folder]')) {
+      const rect = head.getBoundingClientRect();
+      if (clientY >= rect.top && clientY <= rect.bottom) return { id: '', before: true, folder: head.dataset.folder };
+    }
     const rows = [...document.querySelectorAll<HTMLElement>('.obj[data-id]')];
     for (const row of rows) {
       const rect = row.getBoundingClientRect();
@@ -45,11 +64,12 @@ export function ObjectPanel() {
       slop: 4,
       onMove(moved) {
         const target = rowAt(moved.clientY);
-        drag.value = { id, overId: target?.id ?? '', before: target?.before ?? true };
+        drag.value = { id, overId: target?.id ?? '', before: target?.before ?? true, folder: target?.folder };
       },
       onEnd(_event, moved) {
         const state = drag.value;
-        if (moved && state?.overId && state.overId !== id) reorderObject(state.id, state.overId, state.before);
+        if (moved && state?.folder !== undefined) fileObject(state.id, state.folder);
+        else if (moved && state?.overId && state.overId !== id) reorderObject(state.id, state.overId, state.before);
         drag.value = null;
       },
     });
@@ -76,22 +96,73 @@ export function ObjectPanel() {
         <button class="iconbtn" title="글상자 추가" aria-label="글상자 추가" onClick={() => addObject('text')}>
           <TextIcon />
         </button>
+        <button
+          class="iconbtn"
+          title="선택한 오브젝트를 새 폴더에 넣기"
+          aria-label="오브젝트 폴더 만들기"
+          disabled={!selected}
+          onClick={() => { if (selected) addObjectFolder(selected.id); }}
+        >
+          <FolderIcon />
+        </button>
       </div>
 
       <div class="obj-list">
         {selected ? <ObjectDetail object={selected} /> : <p class="hint">오브젝트를 추가해 시작하세요.</p>}
 
-        {objects.map((object) => {
+        {objects.map((object, index) => {
+          void folds.value;
+          const folder = object.folder ?? null;
+          const opensFolder = folder !== null && objects[index - 1]?.folder !== folder;
+          const closed = folder !== null && collapsedFolders.has(foldKey(folder));
+          let head: ComponentChildren = null;
+          if (opensFolder) {
+            head = (
+              <div
+                key={`folder:${folder}`}
+                data-folder={folder}
+                class={[
+                  'obj-folder',
+                  closed ? 'closed' : '',
+                  drag.value?.folder === folder ? 'drop-into' : '',
+                ].join(' ')}
+                role="button"
+                tabIndex={0}
+                title="눌러서 접기·펴기, 두 번 눌러 이름 바꾸기"
+                onClick={() => toggleFolder(folder)}
+              >
+                <span class="caret" aria-hidden="true">{closed ? '▸' : '▾'}</span>
+                <FolderIcon size={14} />
+                <InlineName value={folder} onCommit={(name) => renameObjectFolder(scene, folder, name)} />
+                <span class="count">{objects.filter((each) => each.folder === folder).length}</span>
+                <button
+                  class="del"
+                  title="폴더 풀기 (오브젝트는 그대로)"
+                  aria-label={`${folder} 폴더 풀기`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    removeObjectFolder(scene, folder);
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          }
+          // A folded folder still shows the object being edited.
+          if (closed && object.id !== selectedObjectId.value) return head;
           const isSelected = object.id === selectedObjectId.value;
           const drop = drag.value?.overId === object.id ? drag.value : null;
           const costume = object.costumes.find((candidate) => candidate.id === object.selectedCostumeId)
             ?? object.costumes[0];
-          return (
+          return [head, (
             <div
               key={object.id}
               data-id={object.id}
               class={[
                 'obj',
+                folder !== null ? 'in-folder' : '',
                 isSelected ? 'on' : '',
                 drag.value?.id === object.id ? 'dragging' : '',
                 drop ? (drop.before ? 'drop-before' : 'drop-after') : '',
@@ -148,7 +219,7 @@ export function ObjectPanel() {
                 </button>
               </div>
             </div>
-          );
+          )];
         })}
       </div>
     </section>

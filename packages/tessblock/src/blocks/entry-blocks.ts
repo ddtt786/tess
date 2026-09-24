@@ -284,7 +284,7 @@ function variantsOf(spec: BlockSpec, model: TessProject): Variant[] {
         const taken = used.get(arg.source) ?? 0;
         used.set(arg.source, taken + 1);
         markers.set(arg.name, pool ? pool[taken % pool.length]! : `${MARK}x${markerSeed++}`);
-      } else if (arg.type === 'colour') {
+      } else if (arg.type === 'colour' || (arg.type === 'value' && arg.shadow.kind === 'colour')) {
         markers.set(arg.name, `#${(markerSeed++ % 0xffffff).toString(16).padStart(6, '0')}`);
       } else if (arg.type === 'text') {
         markers.set(arg.name, `${MARK}x${markerSeed++}`);
@@ -336,7 +336,9 @@ function variantBlock(variant: Variant): BlockJson {
     const marker = variant.markers.get(arg.name)!;
     switch (arg.type) {
       case 'value':
-        inputs[arg.name] = numberShadow(Number(marker));
+        inputs[arg.name] = arg.shadow.kind === 'colour'
+          ? { shadow: { type: 'calc_colour', fields: { COLOUR: marker } } }
+          : numberShadow(Number(marker));
         break;
       case 'bool':
         inputs[arg.name] = {
@@ -736,14 +738,25 @@ function fromMatch(pattern: Pattern, binds: Binds, ctx: ConvertContext): BlockJs
   return json;
 }
 
-type ShadowKind = { kind: 'number'; value: number } | { kind: 'text'; value: string } | { kind: 'none' };
+type ShadowKind =
+  | { kind: 'number'; value: number }
+  | { kind: 'text'; value: string }
+  | { kind: 'colour'; value: string }
+  | { kind: 'none' };
 
 /** A socket input: a literal becomes the shadow, anything else sits on top of one. */
 function valueInput(node: unknown, shadow: ShadowKind, ctx: ConvertContext): Record<string, unknown> {
+  if (shadow.kind === 'colour') {
+    const literal = literalOf(node);
+    if (typeof literal === 'string' && /^#[0-9a-f]{6}$/i.test(literal)) {
+      return { shadow: { type: 'calc_colour', fields: { COLOUR: literal.toLowerCase() } } };
+    }
+  }
   const converted = convertValue(node, ctx);
   const fallback = shadow.kind === 'number'
     ? { type: 'calc_number', fields: { NUM: shadow.value } }
-    : shadow.kind === 'text' ? { type: 'calc_text', fields: { TEXT: shadow.value } } : null;
+    : shadow.kind === 'text' ? { type: 'calc_text', fields: { TEXT: shadow.value } }
+    : shadow.kind === 'colour' ? { type: 'calc_colour', fields: { COLOUR: shadow.value } } : null;
   if (!converted) return fallback ? { shadow: fallback } : {};
   if (fallback && converted.type === fallback.type) return { shadow: converted };
   return fallback ? { shadow: fallback, block: converted } : { block: converted };
