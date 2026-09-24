@@ -101,9 +101,9 @@ export function SoundPane() {
       </div>
 
       {object.sounds.length ? (
-        <table class="tbl">
+        <table class="tbl sounds">
           <thead>
-            <tr><th style="width:44px" /><th>이름</th><th style="width:20%">길이</th><th style="width:90px" /></tr>
+            <tr><th style="width:44px" /><th>이름</th><th style="width:20%">길이</th><th style="width:56px" /></tr>
           </thead>
           <tbody>
             {object.sounds.map((sound) => {

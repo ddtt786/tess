@@ -1,6 +1,6 @@
 {
   "name": "@tess/tessblock",
-  "version": "0.3.27",
+  "version": "0.3.30",
   "description": "Blockly 기반 Tess 블록 에디터",
   "license": "MIT",
   "type": "module",

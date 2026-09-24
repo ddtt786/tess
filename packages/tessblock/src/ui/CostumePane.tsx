@@ -15,7 +15,7 @@ import { readDataUrl } from '../model/files.ts';
 import { flushPainter, measure, mountPainter, unmountPainter } from './painter-host.ts';
 import { InlineName } from './InlineName.tsx';
 import { PaintTools } from './PaintTools.tsx';
-import { PlusIcon, TrashIcon, UploadIcon } from './icons.tsx';
+import { AlignCenterIcon, AlignLeftIcon, AlignRightIcon, PlusIcon, TrashIcon, UploadIcon, WrapIcon } from './icons.tsx';
 import { notify } from './state.ts';
 import type { TessObject, TextAlign, TextProps } from '../model/types.ts';
 
@@ -157,119 +157,120 @@ function TextBoxPane({ object }: { object: TessObject }) {
   if (!text) return <div class="sheet"><p class="sub">글상자 정보가 없습니다.</p></div>;
 
   const set = (patch: Partial<TextProps>) => setTextProps(object.id, patch);
+  const aligns: Array<[TextAlign, string, typeof AlignLeftIcon]> = [
+    ['left', '왼쪽 정렬', AlignLeftIcon],
+    ['center', '가운데 정렬', AlignCenterIcon],
+    ['right', '오른쪽 정렬', AlignRightIcon],
+  ];
+  const decorations: Array<[keyof Pick<TextProps, 'bold' | 'italic' | 'underline' | 'strike'>, string, string]> = [
+    ['bold', '굵게', 'font-weight:800'],
+    ['italic', '기울임', 'font-style:italic'],
+    ['underline', '밑줄', 'text-decoration:underline'],
+    ['strike', '취소선', 'text-decoration:line-through'],
+  ];
 
   return (
     <div class="sheet">
-      <div class="sheet-head">
-        <div>
-          <h3>글상자</h3>
-          <p class="sub">글상자는 모양 대신 글자 그 자체를 꾸밉니다.</p>
+      <div class="text-card">
+        <div class="text-preview" style={{ background: text.bgColor ?? 'transparent' }}>
+          <span
+            style={{
+              color: text.color,
+              fontSize: `${text.fontSize}px`,
+              fontFamily: fontFamily(text.font),
+              fontWeight: text.bold ? 800 : 400,
+              fontStyle: text.italic ? 'italic' : 'normal',
+              textDecoration: [text.underline ? 'underline' : '', text.strike ? 'line-through' : ''].join(' ').trim(),
+              textAlign: text.align,
+              whiteSpace: text.lineBreak ? 'pre-wrap' : 'pre',
+            }}
+          >
+            {text.content || '글상자'}
+          </span>
         </div>
-      </div>
 
-      <div class="text-editor">
-        <div class="f">
-          <label>내용</label>
-          <textarea
-            value={text.content}
-            onInput={(event) => set({ content: (event.target as HTMLTextAreaElement).value })}
+
+        <div class="text-bar">
+          <select
+            class="select text-font"
+            aria-label="글꼴"
+            value={fontFamily(text.font)}
+            onChange={(event) => set({ font: (event.target as HTMLSelectElement).value })}
+          >
+            {FONTS.map((font) => (
+              <option key={font.family} value={font.family} style={{ fontFamily: font.family }}>{font.label}</option>
+            ))}
+          </select>
+          <input
+            class="input text-size"
+            type="number"
+            title="글자 크기"
+            aria-label="글자 크기"
+            value={text.fontSize}
+            onInput={(event) => set({ fontSize: Number((event.target as HTMLInputElement).value) || 20 })}
+          />
+          <div class="seg icons">
+            {aligns.map(([align, label, Glyph]) => (
+              <button class={text.align === align ? 'on' : ''} title={label} aria-label={label} onClick={() => set({ align })}>
+                <Glyph size={14} />
+              </button>
+            ))}
+          </div>
+          <div class="seg icons">
+            {decorations.map(([key, label, look]) => (
+              <button class={text[key] ? 'on' : ''} title={label} aria-label={label} style={look} onClick={() => set({ [key]: !text[key] })}>
+                가
+              </button>
+            ))}
+          </div>
+          <button
+            class={`chip-toggle ${text.lineBreak ? 'on' : ''}`}
+            title={text.lineBreak ? '여러 줄로 쓰기 (누르면 한 줄)' : '한 줄로 쓰기 (누르면 여러 줄)'}
+            aria-pressed={text.lineBreak}
+            onClick={() => set({ lineBreak: !text.lineBreak })}
+          >
+            <WrapIcon size={14} />
+          </button>
+          <ColourChip label="글자 색" value={text.color} onPick={(color) => set({ color })} />
+          <ColourChip
+            label="배경색"
+            value={text.bgColor}
+            onPick={(bgColor) => set({ bgColor })}
+            onClear={() => set({ bgColor: null })}
           />
         </div>
 
-        <div class="text-grid">
-          <div class="f">
-            <label>글꼴</label>
-            <select class="select" value={fontFamily(text.font)} onChange={(event) => set({ font: (event.target as HTMLSelectElement).value })}>
-              {FONTS.map((font) => (
-                <option key={font.family} value={font.family} style={{ fontFamily: font.family }}>{font.label}</option>
-              ))}
-            </select>
-          </div>
-          <div class="f">
-            <label>글자 크기</label>
-            <input
-              class="input"
-              type="number"
-              value={text.fontSize}
-              onInput={(event) => set({ fontSize: Number((event.target as HTMLInputElement).value) || 20 })}
-            />
-          </div>
-          <div class="f">
-            <label>정렬</label>
-            <select
-              class="select"
-              value={text.align}
-              onChange={(event) => set({ align: (event.target as HTMLSelectElement).value as TextAlign })}
-            >
-              <option value="left">왼쪽</option>
-              <option value="center">가운데</option>
-              <option value="right">오른쪽</option>
-            </select>
-          </div>
-          <div class="f">
-            <label>글자 색</label>
-            <input
-              class="swatch"
-              type="color"
-              value={text.color}
-              onInput={(event) => set({ color: (event.target as HTMLInputElement).value })}
-            />
-          </div>
-          <div class="f">
-            <label>배경색</label>
-            <input
-              class="swatch"
-              type="color"
-              value={text.bgColor ?? '#ffffff'}
-              onInput={(event) => set({ bgColor: (event.target as HTMLInputElement).value })}
-            />
-          </div>
-          <div class="f">
-            <label>배경 없애기</label>
-            <button class={`style-btn ${text.bgColor === null ? 'on' : ''}`} onClick={() => set({ bgColor: text.bgColor === null ? '#ffffff' : null })}>
-              {text.bgColor === null ? '투명' : '투명으로'}
-            </button>
-          </div>
-        </div>
-
-        <div class="f">
-          <label>줄바꿈</label>
-          <div class="seg">
-            <button class={text.lineBreak ? '' : 'on'} onClick={() => set({ lineBreak: false })}>한 줄로 쓰기</button>
-            <button class={text.lineBreak ? 'on' : ''} onClick={() => set({ lineBreak: true })}>여러 줄로 쓰기</button>
-          </div>
-        </div>
-
-        <div class="f">
-          <label>꾸미기</label>
-          <div class="style-row">
-            <button class={`style-btn ${text.bold ? 'on' : ''}`} title="굵게" onClick={() => set({ bold: !text.bold })} style="font-weight:800">가</button>
-            <button class={`style-btn ${text.italic ? 'on' : ''}`} title="기울임" onClick={() => set({ italic: !text.italic })} style="font-style:italic">가</button>
-            <button class={`style-btn ${text.underline ? 'on' : ''}`} title="밑줄" onClick={() => set({ underline: !text.underline })} style="text-decoration:underline">가</button>
-            <button class={`style-btn ${text.strike ? 'on' : ''}`} title="취소선" onClick={() => set({ strike: !text.strike })} style="text-decoration:line-through">가</button>
-          </div>
-        </div>
-
-        <div class="f">
-          <label>미리 보기</label>
-          <div class="text-preview" style={{ background: text.bgColor ?? 'transparent' }}>
-            <span
-              style={{
-                color: text.color,
-                fontSize: `${text.fontSize}px`,
-                fontFamily: fontFamily(text.font),
-                fontWeight: text.bold ? 800 : 400,
-                fontStyle: text.italic ? 'italic' : 'normal',
-                textDecoration: [text.underline ? 'underline' : '', text.strike ? 'line-through' : ''].join(' ').trim(),
-                textAlign: text.align,
-                whiteSpace: text.lineBreak ? 'pre-wrap' : 'pre',
-              }}
-            >
-              {text.content || '글상자'}
-            </span>
-          </div>
-        </div>
+        <textarea
+          class="text-content"
+          rows={2}
+          placeholder="글상자에 쓸 내용"
+          aria-label="내용"
+          value={text.content}
+          onInput={(event) => set({ content: (event.target as HTMLTextAreaElement).value })}
+        />
       </div>
     </div>
+  );
+}
+
+/** A round colour chip; a clearable one shows a slashed chip while it has no colour. */
+function ColourChip(
+  { label, value, onPick, onClear }:
+  { label: string; value: string | null; onPick: (colour: string) => void; onClear?: () => void },
+) {
+  return (
+    <span class="chip-colour-wrap">
+      <label class={`chip-colour ${value === null ? 'none' : ''}`} title={label} style={{ background: value ?? undefined }}>
+        <input
+          type="color"
+          aria-label={label}
+          value={value ?? '#ffffff'}
+          onInput={(event) => onPick((event.target as HTMLInputElement).value)}
+        />
+      </label>
+      {onClear && value !== null && (
+        <button class="chip-clear" title={`${label} 없애기`} aria-label={`${label} 없애기`} onClick={onClear}>×</button>
+      )}
+    </span>
   );
 }

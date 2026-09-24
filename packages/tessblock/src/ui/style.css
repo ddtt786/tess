@@ -915,7 +915,9 @@ p {
   align-items: center;
   gap: 6px;
 }
+/* X and Y sit at the right of their column, over the boxes below them. */
 .detail-grid .f.inset {
+  justify-self: end;
   display: flex;
   width: 72px;
   height: 28px;
@@ -1154,14 +1156,6 @@ button:focus-visible,
   opacity: 1;
   color: var(--danger);
   background: rgba(239, 68, 68, 0.08);
-}
-
-.text-content-field {
-  margin-top: 6px;
-}
-.text-content-input {
-  font-size: 12px;
-  background: var(--bg-sunken);
 }
 
 .hint {
@@ -2299,26 +2293,6 @@ button:focus-visible,
 
 /* --- text box editor ------------------------------------------------------ */
 
-.text-editor {
-  display: grid;
-  gap: 14px;
-  max-width: 720px;
-}
-.text-editor textarea {
-  width: 100%;
-  min-height: 92px;
-  padding: 10px 11px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--bg);
-  resize: vertical;
-  font: inherit;
-}
-.text-editor textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-weak);
-}
 .text-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2364,16 +2338,6 @@ button:focus-visible,
   background: var(--accent-weak);
   border-color: var(--accent-line);
   color: var(--accent);
-}
-.text-preview {
-  display: grid;
-  place-items: center;
-  min-height: 90px;
-  padding: 14px;
-  border: 1px dashed var(--line);
-  border-radius: var(--r-md);
-  background: var(--bg);
-  overflow: hidden;
 }
 
 /* --- transform box -------------------------------------------------------- */
@@ -3573,4 +3537,162 @@ button:focus-visible,
   font-size: 10.5px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+/* --- text box pane: preview, content, one bar of settings ------------------ */
+.text-card {
+  display: grid;
+  gap: 10px;
+  max-width: 560px;
+}
+.text-preview {
+  display: grid;
+  place-items: center;
+  min-height: 76px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  overflow: hidden;
+}
+.text-content {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  resize: vertical;
+  font: inherit;
+  line-height: 1.45;
+}
+.text-content:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-weak);
+}
+.text-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.text-bar .text-font {
+  width: 150px;
+  height: 30px;
+}
+.text-bar .text-size {
+  width: 56px;
+  height: 30px;
+  text-align: center;
+  appearance: textfield;
+}
+.text-bar .seg.icons {
+  padding: 2px;
+}
+.seg.icons button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+}
+.chip-toggle {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  color: var(--muted);
+}
+.chip-toggle.on {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: var(--accent-weak);
+  color: var(--accent);
+}
+.chip-colour-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.chip-colour {
+  position: relative;
+  display: block;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--line);
+  cursor: pointer;
+}
+.chip-colour input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+/* No colour: a white chip crossed out. */
+.chip-colour.none {
+  background: linear-gradient(45deg, transparent calc(50% - 1px), #e0525f calc(50% - 1px), #e0525f calc(50% + 1px), transparent calc(50% + 1px)), #fff;
+}
+.chip-clear {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-2);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease);
+}
+.chip-colour-wrap:hover .chip-clear,
+.chip-clear:focus-visible {
+  opacity: 1;
+}
+
+/* --- compact sheets: title and hint on one line, a small add button beside them,
+       content no wider than it needs to be ------------------------------------ */
+.sheet-head {
+  max-width: 560px;
+  margin-bottom: 10px;
+}
+.sheet-head > div:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.sheet-head .sub {
+  margin-top: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sheet-head .btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  flex: none;
+}
+.sheet > .dropzone,
+.sheet > .tbl.sounds {
+  max-width: 560px;
+}
+.sheet > .dropzone {
+  padding: 22px;
+}
+
+.detail-grid .f.inset > span {
+  color: var(--muted);
+  opacity: 0.7;
+  font-weight: 600;
 }

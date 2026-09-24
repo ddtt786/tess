@@ -354,3 +354,29 @@ export const RotateNoneIcon = (props: IconProps) => (
     <path d="M4.1 11.9l7.8-7.8" />
   </Icon>
 );
+
+export const AlignLeftIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M2.5 4h11M2.5 8h7M2.5 12h9" />
+  </Icon>
+);
+
+export const AlignCenterIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M2.5 4h11M4.5 8h7M3.5 12h9" />
+  </Icon>
+);
+
+export const AlignRightIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M2.5 4h11M6.5 8h7M4.5 12h9" />
+  </Icon>
+);
+
+/** Text running on to the next line. */
+export const WrapIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M2.5 4h11M2.5 8h9a2 2 0 0 1 0 4H8.5" />
+    <path d="M10 10.5 8.5 12l1.5 1.5M2.5 12h3" />
+  </Icon>
+);

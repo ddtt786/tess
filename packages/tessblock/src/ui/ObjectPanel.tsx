@@ -14,7 +14,7 @@ import { editorTab } from './state.ts';
 import {
   addObject, addObjectFolder, duplicateObject, fileObject, removeObject, removeObjectFolder, renameObject,
   renameObjectFolder, reorderObject, sceneObjects, selectObject, selectedObject, selectedObjectId,
-  selectedSceneId, setObjectProps, setTextProps,
+  selectedSceneId, setObjectProps,
 } from '../model/store.ts';
 import type { RotateMethod, TessObject } from '../model/types.ts';
 import {
@@ -291,19 +291,6 @@ function ObjectDetail({ object }: { object: TessObject }) {
           {props.lock ? <LockIcon /> : <UnlockIcon />}
         </button>
       </div>
-
-      {object.kind === 'text' && object.text && (
-        <div class="text-content-field">
-          <input
-            class="input text-content-input"
-            value={object.text.content}
-            placeholder="글상자 내용 입력"
-            aria-label="글상자 내용"
-            onInput={(event) =>
-              setTextProps(object.id, { content: (event.target as HTMLInputElement).value })}
-          />
-        </div>
-      )}
 
       <div class="detail-body">
       <div class="detail-grid">

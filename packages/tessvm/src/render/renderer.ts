@@ -208,6 +208,15 @@ function vectorTextureData(
  * 계단처럼 남습니다(`play.ent` 의 단추). 크기를 박아 두면 브라우저가 처음부터 그 크기로
  * 그리므로 진짜 벡터 화질이 나옵니다 — `viewBox` 는 그대로라 그림은 달라지지 않습니다.
  */
+/**
+ * Whether a costume url is a vector drawing: a `.svg` file, or an svg data url
+ * (what an editor hands over for costumes it keeps in memory). Either way it is
+ * baked at the sharpness the stage is drawn at rather than at its own size.
+ */
+export function isVectorUrl(url: string): boolean {
+  return /\.svg(?:[?#]|$)/i.test(url) || /^data:image\/svg\+xml[;,]/i.test(url);
+}
+
 export function sizedVector(text: string, width: number, height: number): string {
   const open = /<svg\b[^>]*>/i.exec(text);
   if (!open) return '';
@@ -1051,10 +1060,12 @@ export class PixiRenderer implements Renderer {
       try {
         const url = await this.pickUrl(picture);
         const resolution = this.svgResolution(picture);
-        const vector = url.endsWith('.svg');
+        const vector = isVectorUrl(url);
+        // A raster costume is mipmapped so one drawn much smaller than itself
+        // stays smooth instead of picking pixels here and there.
         const loaded = vector
           ? await this.loadVector(picture, url, resolution)
-          : { texture: (await Assets.load(url)) as Texture, src: url };
+          : { texture: (await Assets.load({ src: url, data: { autoGenerateMipmaps: true } })) as Texture, src: url };
         const texture = loaded.texture;
         if (vector) {
           this.keepBaked(picture.id, { url, src: loaded.src, resolution });

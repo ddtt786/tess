@@ -722,6 +722,11 @@ tessblock 처럼 무대를 작게(≈390px) 보이는 곳에서도 HD 로 그려
 덕에 작은 창을 끌어 크기를 바꿔도 해상도가 그대로라 캔버스를 다시 만들지 않고, 해상도가 실제로
 바뀌면 `layout` 이 그 자리에서 한 번 그려 멈춘 무대가 검게 비지 않습니다.
 
+**벡터 알아보기**: `isVectorUrl` — `.svg` 파일뿐 아니라 `data:image/svg+xml` 주소도 벡터로 보고
+`loadVector` 로 무대 배율에 맞춰 굽습니다. 편집기(tessblock)는 모양을 data 주소로 넘기므로, 예전에는
+벡터가 제 크기(1×)로 한 번 래스터화된 뒤 확대돼 뭉개졌습니다. 래스터 모양은 `autoGenerateMipmaps` 로
+불러 크게 줄여 그릴 때(큰 그림을 작은 무대에) 거칠어지지 않습니다.
+
 ### 값 블록 하나 계산하기 (`Vm.evaluate`)
 
 `evaluate(block, targetId, timeoutMs)` — 편집기에서 값 블록을 누르면 보이는 값. `Codegen.compileProbe`
