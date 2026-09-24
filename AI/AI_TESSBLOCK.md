@@ -224,6 +224,14 @@ Blockly 가 `ARG1` 을 찾지 못해 작품 전체가 컴파일되지 않는다.
 - 편집이 있었을 때만(`dirty`) 저장한다. 탭을 열어 본 것만으로 모양이 다시 쓰이지 않는다.
 - 결과는 `data:image/svg+xml,…` 또는 `data:image/png;base64,…` 로 모델에 담긴다.
   컴파일은 `assetUrls: true` 로 돌리므로 이 주소가 그대로 `fileurl` 이 된다.
+- **모양 다듬기 성능** (`painter/src/vector/tools/reshape.ts`, `brush.ts`)
+  - 붓 획은 perfect-freehand 윤곽점마다 노드가 생겨 한 획에 수백 개였다. 확정할 때 화면 0.35px 이내의
+    점을 버린다(`simplifyRings`, 모양은 그대로, 노드는 약 1/3).
+  - 다듬기 오버레이는 요소를 유지한다(`drawn`). 드래그는 한 프레임에 한 번(`requestAnimationFrame`)
+    움직인 노드의 사각형·외곽선·선택 노드 손잡이만 고친다. 선택 변경은 class 만 바꾸고, 줌이
+    바뀌었거나 오버레이가 지워졌으면 전체를 다시 그린다.
+  - 손잡이 판정은 7px 안에서 **가장 가까운** 것을 고른다(예전엔 첫 번째라 촘촘한 획에서 엉뚱한 노드가 잡힘).
+  - 헤드리스 Chromium, 1500 노드 경로에서 한 프레임에 이동 3번: 예전 방식 약 38ms/프레임 → 16.5ms(vsync).
 
 ## 8. 실행
 
@@ -452,8 +460,28 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
 
 - **지역 함수** — `FunctionDef.owner` 가 오브젝트 id 이면 그 오브젝트 본문 안에 `function` 으로
   나간다(`codegen/project.ts`). 팔레트는 전역 함수 + 선택한 오브젝트의 지역 함수만 보인다.
-  정의 블록 머리 라벨이 "지역 함수 정의하기"로 바뀐다. `.ent` 불러오기는 디컴파일 소스의
-  `object "키":` 안 `function` 을 찾아(`functionOwners`) owner 를 채운다.
+  `.ent` 불러오기는 디컴파일 소스의 `object "키":` 안 `function` 을 찾아(`functionOwners`) owner 를
+  채운다(이것들은 함수 편집기에서 고치는 옛 방식 그대로).
+- **스크립트 자리에서 선언하는 지역 함수(`inline`)** — 함수 꾸러미의 "지역 함수 정의하기" 블록
+  (`func_define`)을 오브젝트 스크립트 자리에 놓으면 그 자체가 선언이다.
+  - 블록은 `fnId` 를 extraState(`fn`)에 들고 있다. 팔레트 블록은 `fn` 을 저장하지 않아(`isInFlyout`)
+    끌어낼 때마다 새 id 를 받고, 붙여넣기·복제로 겹친 id 는 `inlineDefinitions` 가 새로 준다.
+  - `flush` 가 스크립트와 함께 `FunctionDef{inline:true, blocks:null, returns}` 목록을 한 번의
+    `update` 로 저장한다(되돌리기 한 번). 호출 블록 등록·팔레트는 기존 `project.functions` 경로 그대로.
+    이름을 바꾸면 이미 놓인 호출 블록 라벨도 따라간다(`relabelCalls`).
+  - 글쓰기: `forBlock[func_define]` 이 `function 이름(인자):…end` 전체를 쓰고, 스크립트 목록에 섞여
+    오브젝트 안에 나간다. 전역/옛 지역 루프는 `inline` 을 건너뛴다. 오브젝트 복제는 새 id 로 복사.
+  - 함수 편집기의 정의 블록은 `setDeletable(false)` 를 편집기가 건다(블록 기본값은 지울 수 있음).
+  - 몸통 안 스택은 더블클릭해도 따로 돌리지 않는다(인자에 값이 없음).
+- **남의 인자 비활성화** — `markForeignParams`: 매개변수 블록의 뿌리가 그 매개변수를 가진 정의
+  블록이 아니면 `setDisabledReason(true, 'tess_foreign_param')`. 비활성 블록은 글쓰기에서 빠지고
+  소켓 기본값이 쓰인다. 편집 후 한 프레임에 한 번, 불러온 직후에 한 번.
+- **인자 지우기** — 머리의 매개변수를 휴지통에 버리면 지워진다. Blockly 는 `endDrag` 가 끝난 **뒤에**
+  블록을 dispose 하므로 `isDisposed()` 대신 `disposition === DragDisposition.DELETE` 로 판단한다
+  (예전에는 머리에 남긴 복사본이 그대로 있어 지워지지 않았다).
+- **인자 ＋ 단추** — 더할 블록 모양 그대로: 둥근 알약 "＋ 값", 육각형 "＋ 판단".
+- **카테고리 색** — 엔트리 계열(시작 초록, 흐름 하늘, 움직임 보라, 생김새 분홍빨강, 붓 주황, 소리 연두,
+  판단 파랑, 계산 노랑, 자료 자홍, 함수 주황빨강…)을 조금씩 옮긴 값(`theme.ts`).
 - **오브젝트 참조는 키로** — 이름이 겹치는 오브젝트(ladybug 의 `엔트리봇`×n)가 이름으로
   참조되어 클릭·닿기가 엉뚱한 대상을 가리켰다. `objectKeys`(장면 전체에서 유일한 키)로 참조한다.
 - **오브젝트 폴더** — `TessObject.folder` 는 표시용 문자열(장면 id + 이름으로 구분). 목록 순서가 곧
@@ -466,6 +494,9 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
   마커를 넣어 엔트리의 색 리터럴 블록과 맞추고, 색 리터럴이면 그림자로 되살린다.
 - **블록 더블클릭 실행** — `ui/debug-run.ts`. 그 스택(모자면 몸통)만 `start_when_run` 에 담아 다른
   스크립트를 모두 비운 소스를 만들어 실행한다. 프로젝트는 건드리지 않으므로 멈추면 원래대로.
+  도는 동안 그 스택이 빛난다(`runningStack` → 블록 SVG 그룹에 `tess-running`, drop-shadow 필터;
+  Blockly 는 다음 블록을 그룹 안에 두므로 아래가 함께 빛남). 정지하거나 VM 스레드가 모두 끝나면
+  (`activeThreads() === 0`, 150ms 간격) 꺼진다. 첫 프레임 안에 끝난 스택은 1초 뒤 꺼진다.
 - **긴 스택 드래그** — `StackAwarePreviewer`: 120 블록 이상 스택에는 삽입 마커 대신 연결점 강조.
   마커는 진짜 블록이라 스택 전체를 다시 그린다.
 - **시작** — `waitForAssets: false`. 모든 에셋이 올라올 때까지(최대 1.5 s) 미리보기를 덮어 둬서
@@ -473,3 +504,40 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
 - **폴더 저장** — 폴더가 연결되어 있으면 "저장"이 폴더에 쓴다. 에셋은 원래 경로를 기억해(`pathOf`)
   다시 쓰지 않는다. 파일을 불러와도 폴더 연결은 유지된다.
 - **파서** — 시작할 때 `@tess/parser/vite` 로 tree-sitter 를 올린다(`AI_PARSER.md` 10절).
+
+## 13. 편집기 다듬기 (0.3.17)
+
+- **호출 블록이 함수를 따라감** (`model/call-remap.ts`, `blocks/functions.ts`) — 호출 블록은 자기 자리들이
+  어떤 매개변수용인지(`extraState.params`, id 순서)를 저장한다. 함수의 매개변수 목록(`signatureOf`)이
+  바뀌면 그 `update` 안에서 모든 저장된 스크립트(오브젝트·함수 본문)의 호출을 id 기준으로 옮기고
+  (`remapProjectCalls`, 없어진 매개변수 자리는 버리고 새 자리는 기본 그림자), 열려 있는 작업 공간의
+  호출은 그 자리에서 다시 만든다(`refreshCallBlocks`). 서명 문자열이 그대로면 아무것도 돌지 않는다.
+  예전 저장본(기록 없음)은 바뀌기 직전 목록으로 본다.
+- **인수 지우기** — 머리의 매개변수를 Del/메뉴로 지워도 빈 자리를 닫는다(작업 공간 변경 후 한 프레임에
+  `tidyHeader`). 머리 매개변수의 메뉴는 "인수 삭제"이고 접기·끄기는 숨긴다.
+- **값 함수의 문장 호출** — tessblock 은 호출 블록을 그대로 `f(x)` 로 쓰고, 컴파일러가 엔트리용으로 바꾼다
+  (`AI_SPEC-ADDENDUM.md` 5.1).
+- **순서 바꾸기 드래그** (`ui/drag.ts` `SlideReorder`, `dragGhost`) — 오브젝트·리스트 항목·장면 탭 공통.
+  드래그 시작 때 위치를 한 번 재고, 끼어들 자리에 틈이 벌어지도록 사이 항목을 `translate` 로 민다
+  (`.obj` 는 `rise-in` 애니메이션이 `both` 로 `transform` 을 잡고 있어 `transform` 은 먹지 않는다).
+  끌리는 원래 줄은 `visibility:hidden`, 그 복사본이 포인터를 따라간다(부모를 얕게 복제해 그 안에 넣어
+  `.item-list li` 같은 부모 기준 스타일이 유지됨). 폴더 머리 위에서는 틈 대신 폴더 강조.
+- **주석** — Blockly 버블의 `blocklyEmboss` 필터(그림자)와 `blocklyMinimalBody` 의 흰 배경을 없애고
+  zelos 식 평평한 노란 카드(#fef49c, 테두리 #d8c34a 1px, 머리 띠 #f7e46c).
+- **필드 드롭다운** — `.blocklyDropDownDiv` 에 둥근 모서리, 굵은 14px 흰 글자, 고른 줄 아래 어두운 알약.
+- **미리보기 = 실행 화면**
+  - 한 줄 글상자는 정렬에 따라 x 에 매달린다(왼쪽 정렬이면 x 에서 오른쪽으로, 엔트리/러너와 같음,
+    `stage-geometry.ts` `textAnchor`). 글꼴은 러너 캔버스처럼 없으면 `sans-serif` 로 떨어지게.
+  - 보이게 한 변수·리스트 상자를 미리보기에도 그린다(`ui/PreviewMonitors.tsx`). tessblock 은 상자 위치를
+    쓰지 않으므로 러너의 `Overlay.homeOf`(엔트리 `generateView`) 배치를 그대로 따른다 — 종류별로
+    전역 → 오브젝트 순으로 센 번호. 상자 모양도 overlay.ts 치수 그대로.
+- **시작 단추의 조합키** — 그냥 누르면 부스트 꺼짐, Shift 를 누른 채면 부스트 켬(Shift 를 누르고 깃발에
+  올리면 불붙은 깃발 `FireFlagIcon`), Alt 는 첫 장면부터(예전 Shift 자리). 블록 더블클릭도 Shift 를
+  누른 채면 부스트로 돈다. 부스트 실행 중에는 일시정지/계속 단추가 은은하게 타오른다(`.play.pause.boost`).
+  `boot({ boost })` 로 넘어가 `boost_mode?` 와 글상자 세로 정렬에 영향.
+- **디버깅 표시** — 더블클릭 실행 중에는 조작 단추 옆에 "디버깅 중 · 오브젝트" 알약(깜박이는 점)과 무대
+  테두리(주황, 캔버스 위에 `::after` 로)를 띄운다.
+- **왼쪽 패널 숨기기** (`ui/Resizer.tsx`) — 너비를 끄는 중 포인터가 최솟값의 절반(`HIDE_BELOW` = 150px)보다
+  왼쪽으로 가면 숨길 뜻이 분명하다고 보고 `html.side-hidden` 을 켠다(그 사이는 최솟값 300 에서 멈춤).
+  숨기면 첫 열이 0, 손잡이만 10px 띠로 왼쪽 끝에 남고, 그 띠를 끌어내면 다시 보인다. 상태는
+  localStorage `tessblock.sideHidden`. 블록 작업 공간은 `EditorTabs` 의 ResizeObserver 로 따라 커진다.

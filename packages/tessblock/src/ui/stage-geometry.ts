@@ -40,11 +40,22 @@ export function geometryOf(object: TessObject): Geometry {
   const props = object.props;
   return {
     origin: { x: STAGE.width / 2 + props.x, y: STAGE.height / 2 - props.y },
-    reg: props.center ?? { x: size.x / 2, y: size.y / 2 },
+    reg: props.center ?? { x: textAnchor(object, size.x), y: size.y / 2 },
     size,
     scale: { x: props.scaleX / 100, y: props.scaleY / 100 },
     angle: props.rotation === 'free' ? props.angle : 0,
   };
+}
+
+/**
+ * Where a one-line text box hangs from its x: entry grows left-aligned text to
+ * the right of x and right-aligned text to the left of it. Wrapping boxes and
+ * pictures hang from their middle.
+ */
+function textAnchor(object: TessObject, width: number): number {
+  const text = object.kind === 'text' ? object.text : null;
+  if (!text || text.lineBreak) return width / 2;
+  return text.align === 'left' ? 0 : text.align === 'right' ? width : width / 2;
 }
 
 /** A point given in costume pixels, placed on the stage. */

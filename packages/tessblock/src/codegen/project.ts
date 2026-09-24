@@ -50,7 +50,7 @@ export function buildSource(model: TessProject, options: WriteOptions = {}): str
 
   // A function whose object is gone is written as a global one rather than lost.
   const objectIds = new Set(model.objects.map((object) => object.id));
-  for (const definition of model.functions.filter((each) => !each.owner || !objectIds.has(each.owner))) {
+  for (const definition of model.functions.filter((each) => !each.inline && (!each.owner || !objectIds.has(each.owner)))) {
     lines.push(...functionLines(definition));
     lines.push('');
   }
@@ -189,7 +189,8 @@ function objectLines(
   for (const script of scripts) body.push('', script);
 
   // Local functions are declared inside their object, as the decompiler writes them.
-  for (const definition of model.functions.filter((each) => each.owner === object.id)) {
+  // Inline ones are among the scripts already.
+  for (const definition of model.functions.filter((each) => each.owner === object.id && !each.inline)) {
     body.push('', functionLines(definition).join('\n'));
   }
 

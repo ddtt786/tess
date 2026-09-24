@@ -250,6 +250,11 @@ export class Vm implements Project {
   pressedKeys = new Set<number>();
   mouseX = 0;
   mouseY = 0;
+  /**
+   * Whether the pointer has been over the stage yet. Until then entry's canvas
+   * pointer sits at the canvas's top left corner, not at the stage middle.
+   */
+  pointerSeen = false;
   mouseDown = false;
   clickedEntityId: string | null = null;
   /** The table whose window stands open, and when it closes itself. */

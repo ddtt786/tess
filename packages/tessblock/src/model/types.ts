@@ -139,6 +139,13 @@ export interface FunctionDef {
   params: FunctionParam[];
   /** Blockly workspace state holding the definition block and its body. */
   blocks: BlocklyState | null;
+  /**
+   * Declared by a definition block in its owner's own script area rather than
+   * in the function editor; `blocks` is then null and the body lives there.
+   */
+  inline?: boolean;
+  /** Whether an inline function's body returns a value (it has no `blocks` to look in). */
+  returns?: boolean;
 }
 
 /** Blockly's own serialized workspace. Kept opaque on purpose. */

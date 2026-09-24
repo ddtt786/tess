@@ -13,7 +13,7 @@ import { project, selectedObjectId } from '../model/store.ts';
 import { installContextMenu } from './context-menu.ts';
 import { registerColourPicker } from './colour-field.ts';
 import { registerFields } from './fields.ts';
-import { defineFunctionBlocks, callType, returnsValue, syncFunctionBlocks, valueCallType } from './functions.ts';
+import { DEFINE_BLOCK, defineFunctionBlocks, callType, returnsValue, syncFunctionBlocks, valueCallType } from './functions.ts';
 import { CATEGORY_LABELS, CATEGORY_ORDER, installCategoryStyles, tessTheme } from './theme.ts';
 import { allSpecs, specsOf, type Arg, type BlockSpec, type CodeArgs, type Category, type ShadowSpec } from './spec.ts';
 import { resolveDynamic } from '../codegen/refs.ts';
@@ -242,9 +242,17 @@ export function flyoutFor(category: Category): FlyoutItem[] {
       items.push({ kind: 'block', type: 'func_local_get' });
     } else {
       items.push({ kind: 'button', text: '＋ 함수 만들기', callbackkey: 'NEW_FUNCTION' });
-      items.push({ kind: 'button', text: '＋ 지역 함수 만들기', callbackkey: 'NEW_LOCAL_FUNCTION' });
-      // Global functions, then the ones this object keeps to itself.
       const here = selectedObjectId.value;
+      // Dropped among the scripts, the definition block declares a function of this object's own;
+      // what only a function body can hold comes with it.
+      if (here) {
+        items.push({ kind: 'block', type: DEFINE_BLOCK });
+        items.push({ kind: 'block', type: 'func_return' });
+        items.push({ kind: 'block', type: 'func_local_var' });
+        items.push({ kind: 'block', type: 'func_local_set', inputs: { VALUE: { shadow: { type: 'calc_number', fields: { NUM: 0 } } } } });
+        items.push({ kind: 'block', type: 'func_local_get' });
+      }
+      // Global functions, then the ones this object keeps to itself.
       const usable = project.value.functions.filter((definition) => !definition.owner || definition.owner === here);
       for (const definition of usable) {
         items.push(functionCallEntry(definition, false));

@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef } from 'preact/hooks';
 import * as Blockly from 'blockly/core';
-import { DEFINE_BLOCK, PARAM_BOOLEAN, PARAM_VALUE, readParams, tidyHeader } from '../blocks/functions.ts';
+import { DEFINE_BLOCK, PARAM_BOOLEAN, PARAM_VALUE, markForeignParams, readParams, tidyHeader } from '../blocks/functions.ts';
 import { TOOLBOX, flyoutFor, installBlocks } from '../blocks/registry.ts';
 import { CATEGORY_ORDER } from '../blocks/theme.ts';
 import { editingFunction } from '../model/function-editing.ts';
@@ -50,6 +50,8 @@ export function FunctionEditor() {
     }
     const define = definitionBlock(created);
     if (define) {
+      // The editor is the function; its definition stays.
+      define.setDeletable(false);
       define.setFieldValue(draft.name, 'NAME');
       labelDefinition(define, draft.owner ?? null);
       if (!draft.blocks) for (const param of draft.params) restore(define, param);
@@ -80,6 +82,7 @@ export function FunctionEditor() {
     settling.current = true;
     try {
       tidyHeader(define);
+      markForeignParams(created);
       const params = readParams(define);
       known.current = params;
       const current = functionDraft.peek();

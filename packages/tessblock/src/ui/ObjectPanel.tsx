@@ -8,7 +8,7 @@
 import { useSignal } from '@preact/signals';
 import type { ComponentChildren } from 'preact';
 import { resolveAsset } from '../model/assets.ts';
-import { beginDrag } from './drag.ts';
+import { SlideReorder, beginDrag, dragGhost, type DragGhost } from './drag.ts';
 import { InlineName } from './InlineName.tsx';
 import { editorTab } from './state.ts';
 import {
@@ -38,35 +38,35 @@ export function ObjectPanel() {
     folds.value += 1;
   }
 
-  /** Row under the pointer, and which half of it; a folder header files the object into it. */
-  function rowAt(clientY: number): { id: string; before: boolean; folder?: string } | null {
-    for (const head of document.querySelectorAll<HTMLElement>('.obj-folder[data-folder]')) {
-      const rect = head.getBoundingClientRect();
-      if (clientY >= rect.top && clientY <= rect.bottom) return { id: '', before: true, folder: head.dataset.folder };
-    }
-    const rows = [...document.querySelectorAll<HTMLElement>('.obj[data-id]')];
-    for (const row of rows) {
-      const rect = row.getBoundingClientRect();
-      if (clientY >= rect.top && clientY <= rect.bottom) {
-        return { id: row.dataset.id ?? '', before: clientY < rect.top + rect.height / 2 };
-      }
-    }
-    const first = rows[0]?.getBoundingClientRect();
-    const last = rows[rows.length - 1]?.getBoundingClientRect();
-    if (first && clientY < first.top) return { id: rows[0]!.dataset.id ?? '', before: true };
-    if (last && clientY > last.bottom) return { id: rows[rows.length - 1]!.dataset.id ?? '', before: false };
-    return null;
-  }
-
   function startRowDrag(event: PointerEvent, id: string) {
     if (event.button !== 0) return;
+    const row = event.currentTarget as HTMLElement;
+    let ghost: DragGhost | null = null;
+    let slide: SlideReorder | null = null;
+    let items: HTMLElement[] = [];
     beginDrag(event, {
       slop: 4,
       onMove(moved) {
-        const target = rowAt(moved.clientY);
-        drag.value = { id, overId: target?.id ?? '', before: target?.before ?? true, folder: target?.folder };
+        if (!slide) {
+          items = [...document.querySelectorAll<HTMLElement>('.obj-list > .obj[data-id], .obj-list > .obj-folder[data-folder]')];
+          slide = new SlideReorder(items, row);
+          ghost = dragGhost(row, event);
+        }
+        ghost!.follow(moved);
+        const target = slide.targetAt(moved.clientY);
+        const over = target ? items[target.over] : undefined;
+        // Over a folder header: the object goes into that folder.
+        if (over?.dataset.folder !== undefined) {
+          slide.show(null);
+          drag.value = { id, overId: '', before: true, folder: over.dataset.folder };
+          return;
+        }
+        slide.show(target);
+        drag.value = { id, overId: over?.dataset.id ?? '', before: target?.before ?? true };
       },
       onEnd(_event, moved) {
+        ghost?.remove();
+        slide?.clear();
         const state = drag.value;
         if (moved && state?.folder !== undefined) fileObject(state.id, state.folder);
         else if (moved && state?.overId && state.overId !== id) reorderObject(state.id, state.overId, state.before);
@@ -153,7 +153,6 @@ export function ObjectPanel() {
           // A folded folder still shows the object being edited.
           if (closed && object.id !== selectedObjectId.value) return head;
           const isSelected = object.id === selectedObjectId.value;
-          const drop = drag.value?.overId === object.id ? drag.value : null;
           const costume = object.costumes.find((candidate) => candidate.id === object.selectedCostumeId)
             ?? object.costumes[0];
           return [head, (
@@ -164,8 +163,6 @@ export function ObjectPanel() {
                 'obj',
                 folder !== null ? 'in-folder' : '',
                 isSelected ? 'on' : '',
-                drag.value?.id === object.id ? 'dragging' : '',
-                drop ? (drop.before ? 'drop-before' : 'drop-after') : '',
               ].join(' ')}
               role="button"
               tabIndex={0}

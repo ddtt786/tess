@@ -1,7 +1,7 @@
 /** Properties: variables, lists, signals, tables and functions of the project. */
 import { useSignal } from '@preact/signals';
 import { useRef } from 'preact/hooks';
-import { beginDrag } from './drag.ts';
+import { SlideReorder, beginDrag, dragGhost, type DragGhost } from './drag.ts';
 import {
   addSignal, addTable, project, removeFunction, removeSignal, removeTable,
   removeVariable, selectObject, selectedObjectId, updateFunction, updateSignal, updateTable, updateVariable,
@@ -10,6 +10,7 @@ import { newId } from '../model/ids.ts';
 import type { FunctionDef, StorageScope, VariableDef } from '../model/types.ts';
 import { EyeIcon, EyeOffIcon, GripIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.tsx';
 import { InlineName } from './InlineName.tsx';
+import { revealFunction } from './blockly-host.ts';
 import { dialog, functionDraft, pickedList, propertyTab, type PropertyTab } from './state.ts';
 
 const TABS: Array<[PropertyTab, string]> = [
@@ -213,17 +214,27 @@ function ListEditor() {
   /** Drags an item by its grip; the row under the pointer is where it lands. */
   function startItemDrag(event: PointerEvent, index: number) {
     event.preventDefault();
+    const row = (event.currentTarget as HTMLElement).closest('li') as HTMLElement | null;
+    let ghost: DragGhost | null = null;
+    let slide: SlideReorder | null = null;
     beginDrag(event, {
       onMove(moved) {
+        if (!row) return;
+        if (!slide) {
+          slide = new SlideReorder([...(itemList.current?.children ?? [])] as HTMLElement[], row);
+          ghost = dragGhost(row, event);
+        }
+        ghost!.follow(moved);
+        const target = slide.targetAt(moved.clientY);
+        slide.show(target);
         dragFrom.value = index;
-        const rows = [...(itemList.current?.children ?? [])] as HTMLElement[];
-        const target = rows.findIndex((row) => {
-          const box = row.getBoundingClientRect();
-          return moved.clientY < box.bottom;
-        });
-        dragTo.value = target < 0 ? rows.length - 1 : target;
+        // The slot before `insertAt`, counted once the item has left its old place.
+        const insertAt = target ? (target.before ? target.over : target.over + 1) : index;
+        dragTo.value = insertAt > index ? insertAt - 1 : insertAt;
       },
       onEnd() {
+        ghost?.remove();
+        slide?.clear();
         const from = dragFrom.value;
         const to = dragTo.value;
         dragFrom.value = null;
@@ -340,15 +351,7 @@ function ListEditor() {
 
             <ol class="item-list" ref={itemList}>
               {current.array.map((item, index) => (
-                <li
-                  key={index}
-                  class={[
-                    dragFrom.value === index ? 'dragging' : '',
-                    dragTo.value === index && dragFrom.value !== null && dragFrom.value !== index
-                      ? (dragTo.value > dragFrom.value ? 'drop-after' : 'drop-before')
-                      : '',
-                  ].join(' ')}
-                >
+                <li key={index}>
                   <span
                     class="item-grip"
                     title="끌어서 순서 바꾸기"
@@ -594,14 +597,28 @@ function FunctionTable() {
   const fnRow = (definition: FunctionDef) => (
     <div class="rec" key={definition.id}>
       <div class="rec-row">
-        <InlineName
-          class="rec-name"
-          value={definition.name}
-          onCommit={(name) => updateFunction(definition.id, { name })}
-        />
+        {definition.inline ? (
+          <span class="rec-name">{definition.name}</span>
+        ) : (
+          <InlineName
+            class="rec-name"
+            value={definition.name}
+            onCommit={(name) => updateFunction(definition.id, { name })}
+          />
+        )}
         <span class="rec-meta">
           {definition.params.map((param) => `${param.name}${param.kind === 'boolean' ? '?' : ''}`).join(', ') || '매개변수 없음'}
         </span>
+        {definition.inline ? (
+          <button
+            class="rec-jump"
+            title="정의 블록으로 가기 (이름과 내용은 그 블록에서 고칩니다)"
+            onClick={() => revealFunction(definition)}
+          >
+            정의로 가기 →
+          </button>
+        ) : (
+          <>
         <button
           class="iconbtn plain"
           title="블록 편집"
@@ -613,6 +630,8 @@ function FunctionTable() {
         <button class="iconbtn plain danger" title="삭제" aria-label="삭제" onClick={() => removeFunction(definition.id)}>
           <TrashIcon size={14} />
         </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -632,16 +651,6 @@ function FunctionTable() {
         >
           <PlusIcon /> 함수 만들기
         </button>
-        <button
-          class="btn"
-          disabled={!currentObj}
-          title="선택한 오브젝트만 쓰는 함수"
-          onClick={() => {
-            functionDraft.value = { id: newId('f'), name: '지역 함수', owner: currentObjId, params: [], blocks: null };
-          }}
-        >
-          <PlusIcon /> 지역 함수
-        </button>
       </div>
       <div class="rec-list">
         <div class="rec-group">전역 함수 <span class="muted">모든 오브젝트</span></div>
@@ -650,7 +659,7 @@ function FunctionTable() {
 
         <div class="rec-group">지역 함수 <span class="muted">{currentObj ? `${currentObj.name} 전용` : '선택된 오브젝트 없음'}</span></div>
         {locals.map(fnRow)}
-        {!locals.length && <div class="rec-empty">아직 없습니다.</div>}
+        {!locals.length && <div class="rec-empty">함수 꾸러미의 '지역 함수 정의하기' 블록을 끌어다 놓으면 생깁니다.</div>}
 
         {others.length > 0 && <div class="rec-group">다른 오브젝트의 지역 함수</div>}
         {others.map((owner) => (

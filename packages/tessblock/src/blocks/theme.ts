@@ -8,19 +8,19 @@ import * as Blockly from 'blockly/core';
 import type { Category } from './spec.ts';
 
 export const CATEGORY_COLOURS: Record<Category, string> = {
-  start: '#22b45a',
-  flow: '#3b9cf6',
-  moving: '#6366f1',
-  looks: '#ec4899',
-  brush: '#f97316',
-  sound: '#a855f7',
-  judge: '#2556d6',
-  calc: '#f2a007',
-  data: '#f43f5e',
-  analysis: '#64748b',
-  text: '#14b3a4',
-  expansion: '#65b30f',
-  func: '#d946ef',
+  start: '#1fb14b',
+  flow: '#1eb3e6',
+  moving: '#a452e6',
+  looks: '#f23d67',
+  brush: '#fb9a12',
+  sound: '#6db51b',
+  judge: '#4a63f0',
+  calc: '#f2ad1c',
+  data: '#dc4fd8',
+  analysis: '#2f9ee0',
+  text: '#14ae9e',
+  expansion: '#f47c7c',
+  func: '#e0621a',
 };
 
 /** Line icons for the palette, drawn in each category's colour through a mask. */

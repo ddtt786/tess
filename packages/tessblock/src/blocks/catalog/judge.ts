@@ -105,7 +105,7 @@ define(
   {
     type: 'judge_boost_mode',
     category: 'judge',
-    message: '터보 모드인가?',
+    message: '부스트 모드인가?',
     args: [],
     shape: 'boolean',
     order: Order.ATOMIC,

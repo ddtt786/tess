@@ -2,6 +2,7 @@
  * @fileoverview Editor state: one project signal plus the actions that change
  * it. Components read the signals; nothing else holds project data.
  */
+import { remapProjectCalls } from './call-remap.ts';
 import { computed, signal } from '@preact/signals';
 import { newId } from './ids.ts';
 import { COSTUME_LIBRARY, costumeFrom, makeScene, makeSprite, makeTextBox, starterProject } from './defaults.ts';
@@ -178,6 +179,7 @@ export function duplicateScene(id: string): void {
     const last = draft.objects.map((object) => object.sceneId === id).lastIndexOf(true);
     draft.objects.splice(last + 1, 0, ...clones.map((clone) => clone.object));
     draft.variables.push(...clones.flatMap((clone) => clone.variables));
+    draft.functions.push(...clones.flatMap((clone) => clone.functions));
   });
   selectedSceneId.value = scene.id;
   selectedObjectId.value = clones[0]?.object.id ?? '';
@@ -223,7 +225,7 @@ function cloneObject(
   name: string,
   sceneId = source.sceneId,
   swap = new Map<string, string>(),
-): { object: TessObject; variables: VariableDef[] } {
+): { object: TessObject; variables: VariableDef[]; functions: FunctionDef[] } {
   const copy = structuredClone(source) as TessObject;
   copy.id = newId('o');
   copy.name = name;
@@ -238,22 +240,31 @@ function cloneObject(
   const variables = locals.map((variable) => ({ ...variable, id: newId('v'), owner: copy.id }));
   const ids = new Map(swap);
   locals.forEach((variable, index) => ids.set(variable.id, variables[index]!.id));
+  // Functions declared in the scripts are the copy's own, under new ids.
+  const functions = project.value.functions
+    .filter((definition) => definition.inline && definition.owner === source.id)
+    .map((definition) => {
+      const id = newId('f');
+      ids.set(definition.id, id);
+      return { ...structuredClone(definition), id, owner: copy.id };
+    });
 
   let blocks = JSON.stringify(copy.blocks ?? null);
   for (const [from, to] of ids) blocks = blocks.split(from).join(to);
   copy.blocks = JSON.parse(blocks) as typeof copy.blocks;
-  return { object: copy, variables };
+  return { object: copy, variables, functions };
 }
 
 /** Copies an object, its costumes, its sounds, its scripts and its variables. */
 export function duplicateObject(id: string): void {
   const source = project.value.objects.find((object) => object.id === id);
   if (!source) return;
-  const { object, variables } = cloneObject(source, freeName(source.name));
+  const { object, variables, functions } = cloneObject(source, freeName(source.name));
   update((draft) => {
     const at = draft.objects.findIndex((candidate) => candidate.id === id);
     draft.objects.splice(at < 0 ? draft.objects.length : at, 0, object);
     draft.variables.push(...variables);
+    draft.functions.push(...functions);
   });
   selectedObjectId.value = object.id;
 }
@@ -262,6 +273,7 @@ export function removeObject(id: string): void {
   update((draft) => {
     draft.objects = draft.objects.filter((object) => object.id !== id);
     draft.variables = draft.variables.filter((variable) => variable.owner !== id);
+    draft.functions = draft.functions.filter((definition) => !(definition.inline && definition.owner === id));
   });
   if (selectedObjectId.value === id) {
     selectedObjectId.value = sceneObjects.value[0]?.id ?? '';
@@ -381,13 +393,24 @@ export function moveObject(id: string, delta: number): void {
   });
 }
 
-export function setObjectBlocks(id: string, blocks: BlocklyState): void {
-  const current = project.peek().objects.find((candidate) => candidate.id === id);
-  if (current && JSON.stringify(current.blocks) === JSON.stringify(blocks)) {
-    return;
-  }
-  patchObject(id, (object) => {
-    object.blocks = blocks;
+/**
+ * Stores an object's scripts, and with them the local functions its definition
+ * blocks declare (`inline`), so both land in one undo step.
+ */
+export function setObjectBlocks(id: string, blocks: BlocklyState, inline?: FunctionDef[]): void {
+  const model = project.peek();
+  const current = model.objects.find((candidate) => candidate.id === id);
+  const declared = model.functions.filter((each) => each.inline && each.owner === id);
+  const sameBlocks = !!current && JSON.stringify(current.blocks) === JSON.stringify(blocks);
+  const sameFunctions = !inline || JSON.stringify(declared) === JSON.stringify(inline);
+  if (sameBlocks && sameFunctions) return;
+  update((draft) => {
+    const object = draft.objects.find((candidate) => candidate.id === id);
+    if (object) object.blocks = blocks;
+    if (inline && !sameFunctions) {
+      draft.functions = [...draft.functions.filter((each) => !(each.inline && each.owner === id)), ...inline];
+      remapProjectCalls(draft, model.functions);
+    }
   });
 }
 
@@ -546,10 +569,12 @@ export function addFunction(definition: FunctionDef): void {
 }
 
 export function saveFunction(definition: FunctionDef): void {
+  const previous = project.peek().functions;
   update((draft) => {
     const index = draft.functions.findIndex((candidate) => candidate.id === definition.id);
     if (index >= 0) draft.functions[index] = definition;
     else draft.functions.push(definition);
+    remapProjectCalls(draft, previous);
   });
 }
 
@@ -558,9 +583,11 @@ export function updateFunction(id: string, patch: Partial<FunctionDef>): void {
   if (current && patch.name !== undefined && patch.name === current.name && patch.params === undefined && patch.blocks === undefined) {
     return;
   }
+  const previous = project.peek().functions;
   update((draft) => {
     const at = draft.functions.findIndex((fn) => fn.id === id);
     if (at >= 0) draft.functions[at] = { ...draft.functions[at]!, ...patch };
+    remapProjectCalls(draft, previous);
   });
 }
 

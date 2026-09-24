@@ -14,13 +14,14 @@ import {
   TOOLBOX,
   tessTheme,
 } from "../blocks/registry.ts";
-import { returnsValue } from "../blocks/functions.ts";
+import { DEFINE_BLOCK, fnIdOf, inlineDefinitions, markForeignParams, refreshCallBlocks, relabelCalls, returnsValue, tidyHeader } from "../blocks/functions.ts";
 import { StackAwarePreviewer } from "../blocks/previewer.ts";
 import { runStack } from "./debug-run.ts";
-import { project, restored, selectedObjectId, setObjectBlocks } from "../model/store.ts";
-import { blockQuery, dialog, functionDraft } from "./state.ts";
+import { project, restored, selectObject, selectedObjectId, setObjectBlocks } from "../model/store.ts";
+import { blockQuery, dialog, editorTab, functionDraft, runningStack } from "./state.ts";
 import { newId } from "../model/ids.ts";
-import type { BlocklyState } from "../model/types.ts";
+import type { BlocklyState, FunctionDef } from "../model/types.ts";
+import { signatureOf } from "../model/call-remap.ts";
 
 /** A gap at the top of every palette, so the search strip covers no blocks. */
 const PALETTE_TOP = { kind: "sep", gap: 44 };
@@ -97,15 +98,6 @@ export function mount(host: HTMLElement): void {
       blocks: null,
     };
   });
-  workspace.registerButtonCallback("NEW_LOCAL_FUNCTION", () => {
-    functionDraft.value = {
-      id: newId("f"),
-      name: "지역 함수",
-      owner: selectedObjectId.peek() || null,
-      params: [],
-      blocks: null,
-    };
-  });
   workspace.addChangeListener(onChange);
   // The palette stays open like entry's: a category swaps its contents instead
   // of toggling a drawer.
@@ -126,8 +118,16 @@ export function mount(host: HTMLElement): void {
   watches = [
     selectedObjectId.subscribe((id) => showObject(id)),
     project.subscribe(() => refreshPalette()),
+    // Calls already placed follow a function whose parameters changed.
+    project.subscribe((model) => {
+      const key = model.functions.map((definition) => `${definition.id}=${signatureOf(definition)}`).join(";");
+      if (key === signatures) return;
+      signatures = key;
+      if (workspace && !isLoadingWorkspace) refreshCallBlocks(workspace, model.functions);
+    }),
     selectedObjectId.subscribe(() => refreshPalette()),
     restored.subscribe(() => reloadShown()),
+    runningStack.subscribe(() => lightStack()),
     blockQuery.subscribe((query) => showSearch(query)),
   ];
 }
@@ -180,7 +180,42 @@ export function showObject(id: string): void {
     isLoadingWorkspace = false;
     Blockly.Events.enable();
   }
+  markForeignParams(workspace);
   workspace.scrollCenter();
+  if (revealing) focusDefinition(revealing);
+  lightStack();
+}
+
+/** The stack group lit as running; Blockly nests the following blocks inside it, so they glow too. */
+let lit: SVGElement | null = null;
+
+function lightStack(): void {
+  lit?.classList.remove("tess-running");
+  lit = null;
+  const current = runningStack.peek();
+  if (!workspace || !current || current.objectId !== shown) return;
+  const block = workspace.getBlockById(current.blockId) as Blockly.BlockSvg | null;
+  lit = block?.getSvgRoot() ?? null;
+  lit?.classList.add("tess-running");
+}
+
+/** Local function whose definition block should be brought into view once its object is shown. */
+let revealing: string | null = null;
+
+/** Shows the definition block of a local function declared among its object's scripts. */
+export function revealFunction(definition: FunctionDef): void {
+  revealing = definition.id;
+  editorTab.value = "blocks";
+  if (definition.owner && definition.owner !== selectedObjectId.peek()) selectObject(definition.owner);
+  else if (workspace && shown) focusDefinition(definition.id);
+}
+
+function focusDefinition(id: string): void {
+  const define = workspace?.getTopBlocks(false).find((each) => each.type === DEFINE_BLOCK && fnIdOf(each) === id);
+  if (!workspace || !define) return;
+  revealing = null;
+  workspace.centerOnBlock(define.id);
+  (define as Blockly.BlockSvg).select();
 }
 
 /**
@@ -200,6 +235,11 @@ function openFunctionAt(event: MouseEvent): void {
     const definition = project.peek().functions.find((candidate) => candidate.id === match[1]);
     if (!definition) return;
     event.preventDefault();
+    // A local function declared among the scripts is edited where it stands.
+    if (definition.inline) {
+      focusDefinition(definition.id);
+      return;
+    }
     functionDraft.value = structuredClone(definition);
     return;
   }
@@ -207,8 +247,11 @@ function openFunctionAt(event: MouseEvent): void {
   const onField = event.target instanceof Element
     && event.target.closest(".blocklyEditableField, .blocklyEditableText, .blocklyDropdownText, .blocklyFieldRect");
   if (!block || onField || block.isInFlyout || block.outputConnection || !shown) return;
+  // A function body only runs when called; its parameters have no values on their own.
+  if (block.getRootBlock().type === DEFINE_BLOCK) return;
   event.preventDefault();
-  runStack(block as Blockly.BlockSvg, shown);
+  // Shift held: the stack runs in boost mode, as Shift does on the flag.
+  runStack(block as Blockly.BlockSvg, shown, event.shiftKey);
 }
 
 /**
@@ -320,10 +363,12 @@ export function flush(): void {
     saveTimer = undefined;
   }
   if (!workspace || !shown || isLoadingWorkspace) return;
+  const inline = inlineDefinitions(workspace, shown);
   const state = Blockly.serialization.workspaces.save(
     workspace,
   ) as BlocklyState;
-  setObjectBlocks(shown, state);
+  setObjectBlocks(shown, state, inline);
+  relabelCalls(workspace, inline);
 }
 
 /** Events that mean the script itself changed. */
@@ -339,12 +384,27 @@ const EDITS = new Set<string>([
   Blockly.Events.COMMENT_MOVE,
 ]);
 
+/** Parameter lists of every function, last seen; call blocks are only checked when this changes. */
+let signatures = "";
+
+/** Pending frame for greying out misplaced parameter blocks. */
+let paramCheck = 0;
+
 function onChange(event: Blockly.Events.Abstract): void {
   if (isLoadingWorkspace) return;
   if (event.type === Blockly.Events.TOOLBOX_ITEM_SELECT) blockQuery.value = "";
   if (event.isUiEvent || !workspace || !shown) return;
   if (event.workspaceId !== workspace.id) return;
   if (!EDITS.has(event.type)) return;
+  paramCheck ||= requestAnimationFrame(() => {
+    paramCheck = 0;
+    if (!workspace) return;
+    // A parameter deleted from a header (Delete key, menu) leaves its slot empty; close it up.
+    for (const define of workspace.getTopBlocks(false)) {
+      if (define.type === DEFINE_BLOCK) tidyHeader(define as Blockly.BlockSvg);
+    }
+    markForeignParams(workspace);
+  });
   if (saveTimer !== undefined) clearTimeout(saveTimer);
   saveTimer = setTimeout(flush, 350) as unknown as number;
 }

@@ -1521,6 +1521,10 @@ export function createOps(vm: Vm) {
         return vm.collision.touchingWall(entity, targetId, TOUCH_THRESHOLD);
       }
       if (targetId === 'mouse') {
+        // Before the pointer has been over the stage it is at the canvas's top left (world 0, 0).
+        if (!vm.pointerSeen) {
+          return vm.collision.touchingMouse(entity, 0, 0);
+        }
         return vm.collision.touchingMouse(
           entity,
           vm.mouseX * stage.scale + stage.worldWidth / 2,

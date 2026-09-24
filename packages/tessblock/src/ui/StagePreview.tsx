@@ -15,6 +15,7 @@ import {
   rotate, type HandleKind, type Point,
 } from './stage-geometry.ts';
 import type { TessObject } from '../model/types.ts';
+import { PreviewMonitors } from './PreviewMonitors.tsx';
 
 const HANDLES: HandleKind[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 /** How far above the top edge the rotation arm reaches, in screen pixels. */
@@ -49,6 +50,7 @@ export function StagePreview() {
         {[...objects].reverse().map((object) => (
           <PreviewObject key={object.id} object={object} toStage={toStage} />
         ))}
+        <PreviewMonitors />
       </div>
       {selected && <TransformBox object={selected} toStage={toStage} />}
     </div>
@@ -106,7 +108,8 @@ function PreviewObject({ object, toStage }: DragProps) {
             color: text.color,
             background: text.bgColor ?? 'transparent',
             fontSize: `${text.fontSize}px`,
-            fontFamily: text.font,
+            // The runner's canvas falls back on sans-serif for a font it does not have.
+            fontFamily: `"${text.font}", sans-serif`,
             fontWeight: text.bold ? 700 : 400,
             fontStyle: text.italic ? 'italic' : 'normal',
             textDecoration: [text.underline ? 'underline' : '', text.strike ? 'line-through' : ''].join(' ').trim(),

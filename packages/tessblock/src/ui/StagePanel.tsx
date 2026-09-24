@@ -2,11 +2,11 @@
 import { useSignal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import { currentScene, project } from '../model/store.ts';
-import { pause, relayout, resume, start, stop } from '../runtime/run.ts';
+import { activeThreads, pause, relayout, resume, start, stop } from '../runtime/run.ts';
 import { currentSource } from './source.ts';
-import { codeOpen, debugRequest, notify, stageFullscreen } from './state.ts';
+import { codeOpen, debugRequest, notify, runningStack, stageFullscreen } from './state.ts';
 import { StagePreview } from './StagePreview.tsx';
-import { FlagIcon, MaximizeIcon, MinimizeIcon, PauseIcon, PlayIcon, StopIcon } from './icons.tsx';
+import { FireFlagIcon, FlagIcon, MaximizeIcon, MinimizeIcon, PauseIcon, PlayIcon, StopIcon } from './icons.tsx';
 
 /** Longest the preview stays in front of a started work waiting for its costumes. */
 const REVEAL_LIMIT_MS = 1500;
@@ -20,6 +20,10 @@ export function StagePanel() {
   const revealed = useSignal(true);
   /** Name of the object whose double-clicked stack is running on its own, or null. */
   const debugging = useSignal<string | null>(null);
+  const shiftHeld = useSignal(false);
+  /** The running work was started in boost mode; its pause button smoulders. */
+  const boosted = useSignal(false);
+  const stackWatch = useRef<number | undefined>(undefined);
 
   useEffect(() => () => stop(), []);
 
@@ -34,25 +38,44 @@ export function StagePanel() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  /** Starts from the scene being worked on; with Shift held, from the first scene as entry does. */
+  /**
+   * Starts from the scene being worked on. Shift runs in boost mode (the flag
+   * catches fire while Shift is held); Alt starts from the first scene, as entry does.
+   */
   function run(event?: MouseEvent) {
-    const fromFirst = Boolean(event?.shiftKey);
-    void launch(currentSource(), fromFirst ? '' : currentScene.peek()?.name ?? '', null);
+    const fromFirst = Boolean(event?.altKey);
+    void launch(currentSource(), fromFirst ? '' : currentScene.peek()?.name ?? '', null, Boolean(event?.shiftKey));
   }
+
+  // Shift turns the flag into the boost flag while it is held.
+  useEffect(() => {
+    const track = (event: KeyboardEvent) => { shiftHeld.value = event.shiftKey; };
+    const release = () => { shiftHeld.value = false; };
+    window.addEventListener('keydown', track);
+    window.addEventListener('keyup', track);
+    window.addEventListener('blur', release);
+    return () => {
+      window.removeEventListener('keydown', track);
+      window.removeEventListener('keyup', track);
+      window.removeEventListener('blur', release);
+    };
+  }, []);
 
   // A double-clicked stack runs on its own; stopping puts the stage back as it was.
   useEffect(() => debugRequest.subscribe((request) => {
     if (!request) return;
     debugRequest.value = null;
     if (running.value) halt();
-    void launch(request.source, request.scene, request.label);
+    void launch(request.source, request.scene, request.label, request.boost);
   }), []);
 
-  async function launch(source: string, scene: string, debugLabel: string | null) {
+  async function launch(source: string, scene: string, debugLabel: string | null, boost = false) {
     if (!host.current || busy.value) return;
     busy.value = true;
     revealed.value = false;
     debugging.value = debugLabel;
+    boosted.value = boost;
+    if (!debugLabel) runningStack.value = null;
     try {
       const built = await start(
         host.current,
@@ -60,10 +83,12 @@ export function StagePanel() {
         project.peek().name,
         scene,
         (loaded, total) => { if (loaded >= total) revealed.value = true; },
+        boost,
       );
       // Costumes that are slow to come in do not hold the picture back for long.
       setTimeout(() => { revealed.value = true; }, REVEAL_LIMIT_MS);
       if (!built.project) {
+        runningStack.value = null;
         const first = built.errors[0];
         notify(
           first
@@ -76,6 +101,7 @@ export function StagePanel() {
       running.value = true;
       paused.value = false;
       host.current.focus();
+      if (debugLabel) watchStack();
     } catch (error) {
       notify(error instanceof Error ? error.message : '실행하지 못했습니다.');
     } finally {
@@ -89,7 +115,25 @@ export function StagePanel() {
     paused.value = !paused.value;
   }
 
+  /** Lights the double-clicked stack until its scripts have all ended (a `forever` keeps it lit). */
+  function watchStack() {
+    window.clearInterval(stackWatch.current);
+    const began = performance.now();
+    let seen = false;
+    stackWatch.current = window.setInterval(() => {
+      const threads = activeThreads();
+      if (threads > 0) seen = true;
+      // A stack over within the first frame is never seen running; it stays lit briefly.
+      if ((seen && threads === 0) || (!seen && performance.now() - began > 1000)) {
+        window.clearInterval(stackWatch.current);
+        runningStack.value = null;
+      }
+    }, 150);
+  }
+
   function halt() {
+    window.clearInterval(stackWatch.current);
+    runningStack.value = null;
     stop();
     running.value = false;
     paused.value = false;
@@ -107,7 +151,7 @@ export function StagePanel() {
   const controls = running.value ? (
     <>
       <button
-        class="play pause"
+        class={`play pause ${boosted.value ? 'boost' : ''}`}
         onClick={togglePause}
         title={paused.value ? '계속하기' : '일시정지'}
         aria-label={paused.value ? '계속하기' : '일시정지'}
@@ -117,16 +161,23 @@ export function StagePanel() {
       <button class="play stop" onClick={halt} title="정지하기" aria-label="정지하기">
         <StopIcon size={20} />
       </button>
+      {debugging.value && (
+        <span class="debug-pill" title="더블클릭한 블록만 실행 중입니다. 정지하면 원래 상태로 돌아갑니다.">
+          <span class="debug-dot" aria-hidden="true" />
+          디버깅 중 · {debugging.value}
+        </span>
+      )}
     </>
   ) : (
     <button
-      class="play flag-btn"
+      class={`play flag-btn ${shiftHeld.value ? 'shift' : ''}`}
       onClick={(event) => void run(event)}
       disabled={busy.value}
-      title="시작하기 (Shift: 첫 장면부터)"
+      title="시작하기 (Shift: 부스트 모드 · Alt: 첫 장면부터)"
       aria-label="시작하기"
     >
-      <FlagIcon size={22} />
+      <span class="flag-plain"><FlagIcon size={22} /></span>
+      <span class="flag-fire"><FireFlagIcon size={22} /></span>
     </button>
   );
 
@@ -150,12 +201,11 @@ export function StagePanel() {
 
       <div class="stage-frame">
         {(!running.value || !revealed.value) && <StagePreview />}
-        <div class={`stage-host ${revealed.value ? '' : 'concealed'}`} ref={host} tabIndex={0} />
-        {running.value && debugging.value && (
-          <div class="debug-badge" title="정지하면 원래 상태로 돌아갑니다">
-            블록 실행 · {debugging.value}
-          </div>
-        )}
+        <div
+          class={`stage-host ${revealed.value ? '' : 'concealed'} ${running.value && debugging.value ? 'debugging' : ''}`}
+          ref={host}
+          tabIndex={0}
+        />
       </div>
 
       {!isFs && (

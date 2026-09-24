@@ -288,6 +288,17 @@ export const FlagIcon = (props: IconProps) => (
   </Icon>
 );
 
+/** The flag on fire: boost mode. */
+export const FireFlagIcon = (props: IconProps) => (
+  <Icon {...props} fill="currentColor">
+    <path d="M3.2 2.2a.6.6 0 0 1 .6.6v10.4a.6.6 0 1 1-1.2 0V2.8a.6.6 0 0 1 .6-.6Z" stroke="none" />
+    <path
+      d="M3.5 9.9V3.3c.9.8 1.9-.3 2.4-1.5.4 1.3 1.4 1.4 2 0 .6 1.5 1.8 1.7 2.5.4.5 1.1 1.5 1.4 2.4 1.2v5.5c0 .6-.6 1.1-1.2 1.2-2.3.5-4.5-1.1-7.1-.1Z"
+      stroke="none"
+    />
+  </Icon>
+);
+
 export const MaximizeIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" />

@@ -9,11 +9,12 @@
 import * as Blockly from 'blockly/core';
 import { buildSource } from '../codegen/project.ts';
 import { tess } from '../codegen/generator.ts';
+import { DEFINE_BLOCK } from '../blocks/functions.ts';
 import { project } from '../model/store.ts';
-import { debugRequest } from './state.ts';
+import { debugRequest, runningStack } from './state.ts';
 
-/** Starts the stage on `block` and the blocks under it; a hat runs its body. */
-export function runStack(block: Blockly.BlockSvg, objectId: string): void {
+/** Starts the stage on `block` and the blocks under it; a hat runs its body. `boost` runs it in boost mode. */
+export function runStack(block: Blockly.BlockSvg, objectId: string, boost = false): void {
   const model = project.peek();
   const object = model.objects.find((candidate) => candidate.id === objectId);
   if (!object) return;
@@ -27,10 +28,16 @@ export function runStack(block: Blockly.BlockSvg, objectId: string): void {
     Blockly.serialization.blocks.append({ type: 'start_when_run', x: 0, y: 0, next: { block: body } }, holder, {
       recordUndo: false,
     });
+    // The stack may call the object's local functions, declared among its scripts.
+    for (const define of block.workspace.getTopBlocks(false)) {
+      if (define.type !== DEFINE_BLOCK || define === block) continue;
+      Blockly.serialization.blocks.append(Blockly.serialization.blocks.save(define)!, holder, { recordUndo: false });
+    }
     const quiet = { ...model, objects: model.objects.map((each) => ({ ...each, blocks: null })) };
     const source = buildSource(quiet, { live: new Map([[objectId, holder]]) });
     const scene = model.scenes.find((candidate) => candidate.id === object.sceneId)?.name ?? '';
-    debugRequest.value = { source, scene, label: object.name };
+    debugRequest.value = { source, scene, label: object.name, boost };
+    runningStack.value = { objectId, blockId: block.id };
   } finally {
     holder.dispose();
   }

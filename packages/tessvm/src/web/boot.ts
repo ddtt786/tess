@@ -616,6 +616,7 @@ function bindInput(
     const point = toStage(clientX, clientY);
     vm.mouseX = point.x;
     vm.mouseY = point.y;
+    vm.pointerSeen = true;
   };
 
   // The cursor is only worth working out while the pointer is over the stage.

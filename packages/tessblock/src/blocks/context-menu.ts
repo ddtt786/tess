@@ -5,6 +5,7 @@
  * its duplicate drops the copy a fixed distance away from the original. Here a
  * copy lands where the pointer is, with copy and paste as their own entries.
  */
+import { DEFINE_BLOCK, PARAM_TYPES } from "./function-ids.ts";
 import * as Blockly from "blockly/core";
 
 const WORDS: Record<string, string> = {
@@ -40,6 +41,29 @@ export function installContextMenu(): void {
   Object.assign(Blockly.Msg, WORDS);
 
   const registry = Blockly.ContextMenuRegistry.registry;
+  // On a parameter sitting in a function header, deleting takes the parameter away.
+  const blockDelete = registry.getItem("blockDelete");
+  if (blockDelete) {
+    const text = blockDelete.displayText;
+    replace({
+      ...blockDelete,
+      displayText: (scope: Blockly.ContextMenuRegistry.Scope) =>
+        isHeaderParam(scope.block)
+          ? "인수 삭제"
+          : typeof text === "function" ? text(scope) : text ?? "",
+    } as Blockly.ContextMenuRegistry.RegistryItem);
+  }
+  // Folding or switching off a header parameter means nothing.
+  for (const id of ["blockCollapseExpand", "blockDisable"]) {
+    const item = registry.getItem(id);
+    if (!item?.preconditionFn) continue;
+    const precondition = item.preconditionFn;
+    replace({
+      ...item,
+      preconditionFn: (scope: Blockly.ContextMenuRegistry.Scope, menuEvent?: Event) =>
+        isHeaderParam(scope.block) ? "hidden" : precondition(scope, menuEvent as never),
+    } as Blockly.ContextMenuRegistry.RegistryItem);
+  }
   replace({
     id: "blockDuplicate",
     scopeType: BLOCK,
@@ -308,7 +332,7 @@ function updateBubbleHeader(bubble: any): void {
   if (isCollapsed) {
     header.innerHTML = `
       <circle cx="14" cy="14" r="13.5" fill="#fff4a8" stroke="#d9ae2b" stroke-width="1.5" style="pointer-events: none;" />
-      <svg x="7" y="7" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8a6500" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;">
+      <svg x="7" y="7" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a6600" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
       </svg>
       <circle class="tess-comment-expand-btn" cx="14" cy="14" r="14" fill="transparent" style="cursor: pointer; pointer-events: auto;" />
@@ -345,16 +369,16 @@ function updateBubbleHeader(bubble: any): void {
   } else {
     // Header on the card itself: a small label, collapse and delete.
     header.innerHTML = `
-      <path style="pointer-events: none;" d="M 0 10 Q 0 0 10 0 L ${Math.max(0, width - 10)} 0 Q ${width} 0 ${width} 10 L ${width} ${HEADER_HEIGHT} L 0 ${HEADER_HEIGHT} Z" fill="#ffe46b" />
-      <text x="10" y="18" font-size="11" font-weight="700" fill="#7a5a00" font-family="Pretendard, Inter, system-ui, sans-serif" style="pointer-events: none; user-select: none;">주석</text>
+      <path style="pointer-events: none;" d="M 0 10 Q 0 0 10 0 L ${Math.max(0, width - 10)} 0 Q ${width} 0 ${width} 10 L ${width} ${HEADER_HEIGHT} L 0 ${HEADER_HEIGHT} Z" fill="#f7e46c" />
+      <text x="10" y="18" font-size="11" font-weight="700" fill="#6b5a00" font-family="Pretendard, Inter, system-ui, sans-serif" style="pointer-events: none; user-select: none;">주석</text>
       <g class="tess-comment-collapse-btn" style="cursor: pointer; pointer-events: auto;">
         <rect x="${width - 36}" y="6" width="16" height="16" rx="4" fill="transparent" />
-        <polyline points="${width - 32},17 ${width - 28},12 ${width - 24},17" fill="none" stroke="#8a6500" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;" />
+        <polyline points="${width - 32},17 ${width - 28},12 ${width - 24},17" fill="none" stroke="#7a6600" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;" />
       </g>
       <g class="tess-comment-delete-btn" style="cursor: pointer; pointer-events: auto;">
         <rect x="${width - 20}" y="6" width="16" height="16" rx="4" fill="transparent" />
-        <line x1="${width - 16}" y1="10" x2="${width - 8}" y2="18" stroke="#a07c12" stroke-width="1.6" stroke-linecap="round" style="pointer-events: none;" />
-        <line x1="${width - 8}" y1="10" x2="${width - 16}" y2="18" stroke="#a07c12" stroke-width="1.6" stroke-linecap="round" style="pointer-events: none;" />
+        <line x1="${width - 16}" y1="10" x2="${width - 8}" y2="18" stroke="#8f7a14" stroke-width="1.6" stroke-linecap="round" style="pointer-events: none;" />
+        <line x1="${width - 8}" y1="10" x2="${width - 16}" y2="18" stroke="#8f7a14" stroke-width="1.6" stroke-linecap="round" style="pointer-events: none;" />
       </g>
     `;
 
@@ -467,6 +491,12 @@ function copyable(block: Blockly.BlockSvg | undefined): boolean {
   return Boolean(
     block && !block.isInFlyout && block.isMovable() && block.isDeletable(),
   );
+}
+
+/** A parameter block in a definition's header slot, i.e. the parameter itself. */
+function isHeaderParam(block: Blockly.Block | undefined): boolean {
+  return !!block && PARAM_TYPES.includes(block.type)
+    && block.outputConnection?.targetBlock()?.type === DEFINE_BLOCK;
 }
 
 /** Registers an item, taking over the id when Blockly already used it. */

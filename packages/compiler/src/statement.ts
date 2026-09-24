@@ -1292,12 +1292,11 @@ function compileCallStatement(node: ExpressionStatementNode, ctx: Context): Entr
     ]);
   }
   if (fn.isValue) {
-    return blocksOf([
-      ctx.error(
-        node,
-        `함수 '${call.callee}' 는 값을 돌려줍니다. var 결과 = ${call.callee}(...) 처럼 값으로 받아 쓰세요.`,
-      ),
-    ]);
+    // Entry has no statement form of a value function: the call runs as the
+    // condition of an empty `if`, which evaluates it once with no other effect.
+    const value = compileValue(call, ctx);
+    if (!value) return [];
+    return [ctx.block('_if', [ctx.block('boolean_basic_operator', [value, 'EQUAL', ctx.text('')]), null], [[]])];
   }
   if (call.arguments.length !== fn.params.length) {
     return blocksOf([

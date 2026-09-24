@@ -12,7 +12,7 @@ import { downloadProject, loadProjectFile } from '../model/file-io.ts';
 import { loadEntFile } from '../model/ent-import.ts';
 import { buildEnt } from '../runtime/ent.ts';
 import { currentSource } from './source.ts';
-import { beginDrag } from './drag.ts';
+import { SlideReorder, beginDrag, dragGhost, type DragGhost } from './drag.ts';
 import { CodeIcon, CopyIcon, FilePlusIcon, FolderIcon, PlusIcon, UploadIcon } from './icons.tsx';
 import { InlineName } from './InlineName.tsx';
 import { busy, codeOpen, notify } from './state.ts';
@@ -129,28 +129,28 @@ export function Topbar() {
     }
   }
 
-  /** Which scene chip the pointer is over, and which half of it. */
-  function chipAt(clientX: number): { id: string; before: boolean } | null {
-    const chips = [...document.querySelectorAll<HTMLElement>('.scene[data-id]')];
-    for (const chip of chips) {
-      const rect = chip.getBoundingClientRect();
-      if (clientX >= rect.left && clientX <= rect.right) {
-        return { id: chip.dataset.id ?? '', before: clientX < rect.left + rect.width / 2 };
-      }
-    }
-    const last = chips[chips.length - 1];
-    return last ? { id: last.dataset.id ?? '', before: false } : null;
-  }
-
   function startDrag(event: PointerEvent, id: string) {
     if (event.button !== 0) return;
+    const chip = event.currentTarget as HTMLElement;
+    let ghost: DragGhost | null = null;
+    let slide: SlideReorder | null = null;
+    let chips: HTMLElement[] = [];
     beginDrag(event, {
       slop: 4,
       onMove(moved) {
-        const target = chipAt(moved.clientX);
-        drag.value = { id, overId: target?.id ?? '', before: target?.before ?? true };
+        if (!slide) {
+          chips = [...(strip.current?.querySelectorAll<HTMLElement>('.scene[data-id]') ?? [])];
+          slide = new SlideReorder(chips, chip, 'x');
+          ghost = dragGhost(chip, event, 'x');
+        }
+        ghost!.follow(moved);
+        const target = slide.targetAt(moved.clientX);
+        slide.show(target);
+        drag.value = { id, overId: target ? chips[target.over]?.dataset.id ?? '' : '', before: target?.before ?? true };
       },
       onEnd(_event, moved) {
+        ghost?.remove();
+        slide?.clear();
         const state = drag.value;
         if (moved && state?.overId && state.overId !== id) reorderScene(state.id, state.overId, state.before);
         drag.value = null;
@@ -174,7 +174,6 @@ export function Topbar() {
       <span class="vr" />
       <nav class="scenes" aria-label="장면" ref={strip} onWheel={scrollStrip}>
         {model.scenes.map((candidate) => {
-          const drop = drag.value?.overId === candidate.id ? drag.value : null;
           return (
             <div
               key={candidate.id}
@@ -182,8 +181,6 @@ export function Topbar() {
               class={[
                 'scene',
                 candidate.id === scene?.id ? 'on' : '',
-                drag.value?.id === candidate.id ? 'dragging' : '',
-                drop ? (drop.before ? 'drop-before' : 'drop-after') : '',
               ].join(' ')}
               role="button"
               tabIndex={0}

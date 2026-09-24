@@ -246,25 +246,6 @@ p {
   cursor: pointer;
   user-select: none;
 }
-.scene.dragging {
-  opacity: 0.45;
-}
-.scene.drop-before::before,
-.scene.drop-after::before {
-  content: "";
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--accent);
-}
-.scene.drop-before::before {
-  left: -3px;
-}
-.scene.drop-after::before {
-  right: -3px;
-}
 .scene:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -407,6 +388,38 @@ p {
 .resizer.dragging::after {
   background: var(--accent-line);
 }
+/* Side panel hidden: only the handle is left, at the window's edge, to pull it back out. */
+.side-hidden .workarea {
+  grid-template-columns: 0 10px minmax(0, 1fr);
+}
+.side-hidden .side {
+  visibility: hidden;
+  overflow: hidden;
+}
+.side-hidden .resizer {
+  background: var(--bg-sunken);
+  border-right: 1px solid var(--line);
+}
+.resizer-grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 36px;
+  margin: -18px 0 0 -2px;
+  border-radius: 2px;
+  background: var(--line);
+  opacity: 0;
+  transition: opacity 0.12s var(--ease);
+  z-index: 1;
+}
+.resizer:hover .resizer-grip,
+.side-hidden .resizer-grip {
+  opacity: 1;
+}
+.side-hidden .resizer:hover .resizer-grip {
+  background: var(--accent);
+}
 
 .side {
   display: grid;
@@ -476,6 +489,83 @@ p {
   transform-origin: center;
 }
 
+/* Variable and list boxes, as the runner draws them (overlay.ts). */
+.pm-value,
+.pm-list {
+  position: absolute;
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 1px solid #aac5d5;
+  font-family: "Nanum Gothic", sans-serif;
+  font-size: 13.33px;
+  color: #000000;
+  pointer-events: none;
+  white-space: pre;
+  z-index: 1;
+}
+.pm-value {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 24px;
+  padding: 0 6px 0 4px;
+  border-radius: 4px;
+}
+.pm-pill {
+  height: 16px;
+  padding: 0 7.5px;
+  border-radius: 7px;
+  background: #4f80ff;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 16px;
+}
+.pm-list {
+  border-radius: 7px;
+  overflow: hidden;
+  padding: 0 12px 0 6px;
+}
+/* The runner's resize corner on a list box. */
+.pm-list::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 6px;
+  border-left: 9.8px solid transparent;
+  border-bottom: 9.8px solid #4f80ff;
+}
+.pm-list-title {
+  height: 23px;
+  line-height: 23px;
+  text-align: center;
+}
+.pm-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+}
+.pm-row-no {
+  min-width: 12px;
+  font-size: 13.33px;
+}
+.pm-row-value {
+  flex: 1;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #4f80ff;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pm-list-empty {
+  color: #94a3b8;
+  font-size: 12px;
+  text-align: center;
+}
 .po {
   position: absolute;
   display: grid;
@@ -547,6 +637,16 @@ p {
 }
 .play:active {
   transform: scale(0.94);
+}
+/* Pause and resume during a boost run: a quiet flame. */
+.play.pause.boost {
+  color: #f0590f;
+  background: radial-gradient(circle at 50% 70%, rgba(255, 159, 28, 0.28), rgba(255, 90, 31, 0) 70%);
+  animation: smoulder 1.4s ease-in-out infinite alternate;
+}
+@keyframes smoulder {
+  from { box-shadow: 0 0 0 0 rgba(255, 122, 26, 0.18); }
+  to { box-shadow: 0 0 10px 2px rgba(255, 122, 26, 0.32); }
 }
 .play.flag-btn {
   color: #22b45a;
@@ -773,24 +873,21 @@ button:focus-visible,
   background: var(--bg-hover);
   color: var(--text);
 }
-.obj.dragging {
-  opacity: 0.45;
+/* Rows slide apart to open a gap where the dragged one will land. */
+.sliding {
+  transition: translate 0.14s var(--ease);
 }
-.obj.drop-before::before,
-.obj.drop-after::before {
-  content: "";
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--accent);
+/* The dragged row's own place: empty, since its copy follows the pointer. */
+.lifted {
+  visibility: hidden;
 }
-.obj.drop-before::before {
-  top: -2px;
-}
-.obj.drop-after::before {
-  bottom: -2px;
+/* The lifted copy that follows the pointer. */
+.drag-ghost {
+  opacity: 0.95;
+  background: var(--bg);
+  border-radius: var(--r-sm);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.18), 0 0 0 1px var(--accent-line);
+  cursor: grabbing;
 }
 .obj-folder {
   display: flex;
@@ -1694,6 +1791,46 @@ button:focus-visible,
   font-size: 12.5px !important;
 }
 
+/* Field dropdowns take the block's own colour (Blockly sets it); shaped like
+   zelos blocks: round corners, bold white labels, a darker pill under the
+   hovered choice. */
+.blocklyDropDownDiv {
+  border-radius: 12px !important;
+  padding: 6px !important;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16) !important;
+}
+.blocklyDropDownDiv .blocklyMenu {
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.blocklyDropDownDiv .blocklyMenuItem {
+  display: flex !important;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 14px 6px 30px !important;
+  border-radius: 8px !important;
+  color: #fff !important;
+  font-family:
+    Pretendard, "Pretendard Variable", Inter, "Noto Sans KR", system-ui,
+    sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  cursor: pointer;
+}
+.blocklyDropDownDiv .blocklyMenuItemHighlight {
+  background: rgba(0, 0, 0, 0.16) !important;
+}
+.blocklyDropDownDiv .blocklyMenuItemSelected .blocklyMenuItemCheckbox,
+.blocklyDropDownDiv .blocklyMenuItemCheckbox {
+  filter: brightness(0) invert(1);
+}
+.blocklyDropDownDiv .blocklyMenuItemDisabled {
+  opacity: 0.5;
+}
+
 /* --- costume editor ------------------------------------------------------- */
 
 .costume-pane {
@@ -2397,11 +2534,11 @@ button:focus-visible,
 .blocklyBubbleTail {
   display: block !important;
   fill: none !important;
-  stroke: #d9ae2b !important;
+  stroke: #d8c34a !important;
   stroke-width: 1.5px !important;
   stroke-linecap: round !important;
   stroke-linejoin: round !important;
-  opacity: 0.9 !important;
+  opacity: 1 !important;
 }
 
 /* Hide the comment icon on the block header so nothing appears on the left */
@@ -2515,45 +2652,54 @@ button:focus-visible,
   stroke-dasharray: none !important;
 }
 
-/* Block comments: a flat note card, one thin border, no shadow. */
-.blocklyBubble {
-  filter: none;
+/* Block comments: one flat yellow card in the zelos manner — a deeper header
+   band, a thin border, no emboss filter and no white body behind the text. */
+.blocklyBubble,
+.blocklyBubble .blocklyEmboss {
+  filter: none !important;
 }
 .blocklyBubble .blocklyDraggable {
-  fill: #fff4a8 !important;
-  stroke: #d9ae2b !important;
-  stroke-width: 1.5px !important;
+  fill: #fef49c !important;
+  stroke: #d8c34a !important;
+  stroke-width: 1px !important;
   transition: stroke 0.15s ease;
 }
 .blocklyBubble:hover .blocklyDraggable {
-  stroke: #b8901a !important;
+  stroke: #bfa92b !important;
 }
 .blocklyBubble.blocklySelected .blocklyDraggable,
 .blocklyBubble:focus-within .blocklyDraggable {
-  stroke: var(--accent, #4f46e5) !important;
+  stroke: #a88f14 !important;
+  stroke-width: 1.5px !important;
+}
+.blocklyBubble .blocklyMinimalBody,
+.blocklyBubble .blocklyCommentForeignObject,
+.blocklyTextInputBubble .blocklyMinimalBody {
+  background: transparent !important;
 }
 .blocklyTextInputBubble .blocklyTextarea {
   background-color: transparent !important;
-  color: #2b2200 !important;
+  color: #3d3100 !important;
   font-family:
     Pretendard, "Pretendard Variable", Inter, "Noto Sans KR", system-ui,
     sans-serif !important;
   font-size: 13px !important;
+  font-weight: 500 !important;
   line-height: 1.5 !important;
-  padding: 8px 10px !important;
+  padding: 6px 10px !important;
   resize: none !important;
   border: none !important;
   outline: none !important;
   box-shadow: none !important;
 }
 .blocklyTextInputBubble .blocklyTextarea::placeholder {
-  color: #94a3b8 !important;
-  opacity: 0.8 !important;
+  color: #a3955a !important;
+  opacity: 1 !important;
 }
 .blocklyText.blocklyBubbleText {
   font-family: Pretendard, Inter, sans-serif !important;
   font-size: 12.5px !important;
-  fill: #0f172a !important;
+  fill: #3d3100 !important;
   line-height: 1.5 !important;
 }
 .tess-comment-collapse-btn:hover polyline {
@@ -2872,15 +3018,10 @@ button:focus-visible,
   border-radius: var(--r-sm);
   transition: opacity 0.15s var(--ease), box-shadow 0.12s var(--ease);
 }
-.item-list li.dragging {
-  opacity: 0.4;
+.item-list li {
+  position: relative;
 }
-.item-list li.drop-before {
-  box-shadow: inset 0 2px 0 var(--accent);
-}
-.item-list li.drop-after {
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
+
 
 @keyframes rise-in {
   from { opacity: 0; transform: translateY(4px); }
@@ -3070,6 +3211,10 @@ button:focus-visible,
 }
 
 /* Dragging the canvas itself shows a hand. */
+/* The double-clicked stack while it runs, lit the way scratch lights a running script. */
+.tess-running {
+  filter: drop-shadow(0 0 2px #ffd23f) drop-shadow(0 0 5px #ffb800);
+}
 .blocklyMainBackground {
   cursor: grab;
 }
@@ -3079,17 +3224,67 @@ button:focus-visible,
 }
 
 /* A double-clicked stack is running on its own. */
-.debug-badge {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 6;
-  padding: 3px 10px;
-  border-radius: 99px;
-  background: rgba(37, 86, 214, 0.9);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  pointer-events: none;
+/* A double-clicked stack running on its own: said beside the controls, and the stage is framed. */
+.debug-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 11px 0 9px;
+  margin-left: 6px;
+  border-radius: 13px;
+  background: #fff4e5;
+  border: 1.5px solid #f59e0b;
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
   animation: pop-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.debug-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f97316;
+  flex: none;
+  animation: debug-pulse 1.1s ease-in-out infinite;
+}
+@keyframes debug-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.55); }
+  50% { box-shadow: 0 0 0 5px rgba(249, 115, 22, 0); }
+}
+/* Drawn over the canvas: an outline on the host would sit under it. */
+.stage-host.debugging::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2.5px solid #f59e0b;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 5;
+}
+/* Shift over the flag: it catches fire, and the run starts in boost mode. */
+.flag-btn .flag-plain,
+.flag-btn .flag-fire {
+  display: inline-grid;
+}
+.flag-btn .flag-fire,
+.flag-btn.shift:hover .flag-plain {
+  display: none;
+}
+.flag-btn.shift:hover .flag-fire {
+  display: inline-grid;
+  color: #ff5a1f;
+  filter: drop-shadow(0 0 3px rgba(255, 138, 0, 0.75));
+  animation: flag-flicker 0.5s ease-in-out infinite alternate;
+}
+.flag-btn.shift:hover {
+  background: #fff1e6;
+}
+@keyframes flag-flicker {
+  from { transform: rotate(-3deg) scale(1); color: #ff5a1f; }
+  to { transform: rotate(3deg) scale(1.08); color: #ff9f1c; }
 }

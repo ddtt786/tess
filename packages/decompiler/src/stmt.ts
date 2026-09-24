@@ -257,6 +257,20 @@ const TEXT_BOX_STATEMENTS = new Set([
   "text_change_effect",
 ]);
 
+/**
+ * `if f(...) == "":` with an empty body is how a value function called as a
+ * statement compiles; read it back as the plain call.
+ */
+function discardedCall(block: any, ctx: DecompileContext): any | null {
+  if (block.statements?.[0]?.length) return null;
+  const test = block.params?.[0];
+  if (test?.type !== "boolean_basic_operator" || test.params?.[1] !== "EQUAL") return null;
+  const [call, , empty] = test.params;
+  if (empty?.type !== "text" || String(empty.params?.[0] ?? "") !== "") return null;
+  if (typeof call?.type !== "string" || !call.type.startsWith("func_")) return null;
+  return ctx.functionsById.has(call.type.slice("func_".length)) ? call : null;
+}
+
 function statementLines(block: any, ctx: DecompileContext): string[] {
   if (!block || typeof block !== "object" || !block.type) return [];
   const p = block.params ?? [];
@@ -290,8 +304,11 @@ function statementLines(block: any, ctx: DecompileContext): string[] {
       return [];
 
     // --- 제어 흐름 ---------------------------------------------------------
-    case "_if":
+    case "_if": {
+      const discarded = discardedCall(block, ctx);
+      if (discarded) return [exprOf(discarded, ctx)];
       return [`if ${e(0)}:`, ...branch(block, 0, ctx), "end"];
+    }
     case "if_else":
       return [
         `if ${e(0)}:`,

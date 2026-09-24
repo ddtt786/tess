@@ -997,6 +997,31 @@ end`;
   return { vm, collision: new CollisionSystem(masks) };
 }
 
+test('포인터가 무대에 올라온 적이 없으면 가운데 오브젝트도 마우스에 닿지 않는다', () => {
+  const source = `
+scene "s":
+  object "a":
+    costume 기본 "a.png" size 20 20
+    x = 0
+    y = 0
+  end
+end`;
+  const result = compileProject(source, { path: 'test.tess' });
+  assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+  const vm = new Vm({ renderer: null, audio: null });
+  vm.load(result.project as unknown as never);
+  for (const target of vm.targets) {
+    for (const picture of target.pictures) (vm as any).masks.put(picture.id, squareMask(20));
+  }
+  const entity = vm.targets[0]!.entity;
+  vm.collision.beginFrame();
+  // entry's canvas pointer starts at the canvas's top left, not at the stage middle
+  assert.equal((vm as any).ops.touching(entity, 'mouse'), false);
+  vm.pointerSeen = true;
+  vm.collision.beginFrame();
+  assert.equal((vm as any).ops.touching(entity, 'mouse'), true, '무대 가운데(0, 0)에 올라오면 닿는다');
+});
+
 test('겹치는 사각형은 닿은 것으로, 떨어지면 아닌 것으로 본다', () => {
   const { vm, collision } = collisionVm(() => squareMask(20));
   const [a, b] = vm.targets.map((target) => target.entity);

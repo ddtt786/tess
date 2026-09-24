@@ -59,6 +59,7 @@ export async function start(
   name: string,
   scene = '',
   onProgress?: (loaded: number, total: number) => void,
+  boost = true,
 ): Promise<BuildResult> {
   const built = build(source, name);
   if (!built.project) return built;
@@ -76,6 +77,7 @@ export async function start(
     onProgress,
     // The editor's files are in memory already; the stage shows the preview until they are drawn.
     waitForAssets: false,
+    boost,
   });
   return built;
 }
@@ -93,6 +95,16 @@ export function resume(): void {
 export function stop(): void {
   running?.dispose();
   running = null;
+}
+
+/** The running work's handle, for the dev console. */
+export function runningHandle(): TessVmHandle | null {
+  return running;
+}
+
+/** Scripts still running in the work; 0 once every one has come to its end. */
+export function activeThreads(): number {
+  return running?.vm.targets.reduce((count, target) => count + target.threads.length, 0) ?? 0;
 }
 
 export function relayout(): void {
