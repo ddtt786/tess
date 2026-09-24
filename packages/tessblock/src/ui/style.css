@@ -514,9 +514,16 @@ p {
   font-family: "Nanum Gothic", sans-serif;
   font-size: 13.33px;
   color: #000000;
-  pointer-events: none;
   white-space: pre;
   z-index: 1;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.pm-value.moving,
+.pm-list.moving {
+  cursor: grabbing;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
 }
 .pm-value {
   display: flex;
@@ -798,10 +805,94 @@ p {
   background-repeat: no-repeat;
 }
 
+.detail-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 .detail-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 6px 10px;
+  grid-template-columns: repeat(3, max-content);
+  justify-content: start;
+  gap: 8px 14px;
+}
+/* Rotation method: icon and word, stepped through by clicking. */
+.rot-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rot-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* Moving direction, read like a gauge. */
+.dial {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  flex: none;
+}
+.dial svg {
+  width: 60px;
+  height: 60px;
+  cursor: grab;
+  touch-action: none;
+}
+.dial svg:active {
+  cursor: grabbing;
+}
+.dial-face {
+  fill: var(--bg);
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+.dial-tick {
+  stroke: var(--muted);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+.dial-needle {
+  stroke: var(--accent);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+.dial-tip,
+.dial-hub {
+  fill: var(--accent);
+}
+.dial-value {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dial-value .input {
+  width: 44px;
+  height: 22px;
+  padding: 0 4px;
+  text-align: center;
+  appearance: textfield;
+}
+.dial-value .input::-webkit-outer-spin-button,
+.dial-value .input::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
 }
 .f {
   display: grid;
@@ -819,13 +910,39 @@ p {
 /* The object's numbers read as label-then-box on one line; stacking them ate
    a third of a panel that is already narrow. */
 .detail-grid .f {
-  grid-column: span 2;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto 64px;
+  justify-content: start;
   align-items: center;
   gap: 6px;
 }
-.detail-grid .f.wide {
-  grid-column: span 3;
+.detail-grid .f.inset {
+  display: flex;
+  width: 72px;
+  height: 28px;
+  gap: 4px;
+  padding: 0 6px;
+}
+.detail-grid .f.inset:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-weak);
+}
+.detail-grid .f.inset > input {
+  flex: 1;
+  text-align: right;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  appearance: textfield;
+}
+.detail-grid .f.inset > input::-webkit-outer-spin-button,
+.detail-grid .f.inset > input::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
 }
 .detail-grid .f > span {
   padding-left: 0;
@@ -1813,8 +1930,8 @@ button:focus-visible,
    scale (0.75). */
 .blocklyDropDownDiv {
   --tess-dd: calc(var(--blocklyBlockScale, 0.75) / 0.75);
-  border-radius: calc(12px * var(--tess-dd)) !important;
-  padding: calc(6px * var(--tess-dd)) !important;
+  border-radius: calc(10px * var(--tess-dd)) !important;
+  padding: calc(4px * var(--tess-dd)) !important;
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16) !important;
 }
 .blocklyDropDownDiv .blocklyMenu {
@@ -1826,15 +1943,15 @@ button:focus-visible,
 .blocklyDropDownDiv .blocklyMenuItem {
   display: flex !important;
   align-items: center;
-  min-height: calc(34px * var(--tess-dd));
-  padding: calc(6px * var(--tess-dd)) calc(14px * var(--tess-dd))
-    calc(6px * var(--tess-dd)) calc(30px * var(--tess-dd)) !important;
-  border-radius: calc(8px * var(--tess-dd)) !important;
+  min-height: calc(26px * var(--tess-dd));
+  padding: calc(4px * var(--tess-dd)) calc(12px * var(--tess-dd))
+    calc(4px * var(--tess-dd)) calc(28px * var(--tess-dd)) !important;
+  border-radius: calc(7px * var(--tess-dd)) !important;
   color: #fff !important;
   font-family:
     Pretendard, "Pretendard Variable", Inter, "Noto Sans KR", system-ui,
     sans-serif !important;
-  font-size: calc(14px * var(--tess-dd)) !important;
+  font-size: calc(11.5px * var(--tess-dd)) !important;
   font-weight: 700 !important;
   line-height: 1.2 !important;
   cursor: pointer;
@@ -1845,8 +1962,9 @@ button:focus-visible,
 .blocklyDropDownDiv .blocklyMenuItemSelected .blocklyMenuItemCheckbox,
 .blocklyDropDownDiv .blocklyMenuItemCheckbox {
   filter: brightness(0) invert(1);
-  /* The check mark is a sprite: scaled whole, with its offset. */
+  /* The check mark is a sprite: scaled whole, with its offset. Centred in the left padding. */
   zoom: var(--tess-dd);
+  margin-left: -22px !important;
 }
 .blocklyDropDownDiv .blocklyMenuItemDisabled {
   opacity: 0.5;
@@ -2048,6 +2166,57 @@ button:focus-visible,
   min-width: 0;
   accent-color: var(--accent);
 }
+/* A soft track filled up to the thumb, and a round thumb that lifts when held. */
+.paint-range {
+  appearance: none;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+.paint-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--fill, 0%), var(--line) var(--fill, 0%));
+}
+.paint-range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+}
+.paint-range::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.paint-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
+  transition: transform 0.12s var(--ease);
+}
+.paint-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
+}
+.paint-range:hover::-webkit-slider-thumb,
+.paint-range:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+.paint-range:focus-visible {
+  outline: none;
+}
+.paint-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px var(--accent-weak);
+}
 .input.tiny {
   width: 52px;
   height: 26px;
@@ -2163,6 +2332,18 @@ button:focus-visible,
   border-radius: var(--r-sm);
   background: var(--bg);
   cursor: pointer;
+}
+/* The colour itself is rounded too, inside the rounded box. */
+.swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: calc(var(--r-sm) - 3px);
+}
+.swatch::-moz-color-swatch {
+  border: none;
+  border-radius: calc(var(--r-sm) - 3px);
 }
 .style-row {
   display: flex;
@@ -3312,4 +3493,84 @@ button:focus-visible,
 @keyframes flag-flicker {
   from { transform: rotate(-3deg) scale(1); color: #ff5a1f; }
   to { transform: rotate(3deg) scale(1.08); color: #ff9f1c; }
+}
+
+/* A clicked value block's value, under the block. */
+.report-bubble {
+  position: fixed;
+  z-index: 1000;
+  transform: translateX(-50%);
+  max-width: 320px;
+  padding: 5px 12px;
+  border: 1.5px solid color-mix(in srgb, var(--report, #888) 70%, #fff);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--report, #888) 13%, #fff);
+  color: color-mix(in srgb, var(--report, #888) 55%, #000);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: pre-wrap;
+  word-break: break-all;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.14);
+  pointer-events: none;
+  animation: report-pop 0.14s ease-out;
+}
+.report-bubble::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-left: 1.5px solid color-mix(in srgb, var(--report, #888) 70%, #fff);
+  border-top: 1.5px solid color-mix(in srgb, var(--report, #888) 70%, #fff);
+  background: color-mix(in srgb, var(--report, #888) 13%, #fff);
+  transform: rotate(45deg);
+}
+.report-swatch {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+.report-bubble.failed {
+  color: #c2410c;
+}
+@keyframes report-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px) scale(0.96);
+  }
+}
+
+/* The stage's share of the painter sheet: a guide, not a limit. */
+.stage-guide {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.stage-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: rgba(30, 41, 59, 0.07);
+  pointer-events: none;
+}
+.stage-guide > span {
+  position: absolute;
+  left: -1.5px;
+  bottom: calc(100% + 4px);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 88%, #fff);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
 }

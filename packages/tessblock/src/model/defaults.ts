@@ -43,7 +43,7 @@ export function defaultProps(): ObjectProps {
 export function defaultTextProps(content: string): TextProps {
   const text: TextProps = {
     content,
-    font: '나눔고딕',
+    font: 'Nanum Gothic',
     fontSize: 20,
     color: '#000000',
     bgColor: null,

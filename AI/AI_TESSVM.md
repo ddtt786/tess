@@ -716,6 +716,19 @@ resolution = (화면에 그려질 CSS 폭 / 640) × devicePixelRatio × 화질�
 
 즉 기본값(1×)에서 이미 **화면 픽셀 1:1** 입니다. 2×·4× 는 그 위에 초과 표본화를 얹습니다.
 
+**하한**: 캔버스 버퍼 폭은 최소 `MIN_CANVAS_WIDTH`(1280, HD), 무대가 CSS 폭 1280px 이상으로
+보이면(전체화면) 최소 `FULLSCREEN_CANVAS_WIDTH`(1920, FHD) 입니다(`render/sharpness.ts`, `layout`).
+tessblock 처럼 무대를 작게(≈390px) 보이는 곳에서도 HD 로 그려 브라우저가 줄여 보이게 합니다. 이
+덕에 작은 창을 끌어 크기를 바꿔도 해상도가 그대로라 캔버스를 다시 만들지 않고, 해상도가 실제로
+바뀌면 `layout` 이 그 자리에서 한 번 그려 멈춘 무대가 검게 비지 않습니다.
+
+### 값 블록 하나 계산하기 (`Vm.evaluate`)
+
+`evaluate(block, targetId, timeoutMs)` — 편집기에서 값 블록을 누르면 보이는 값. `Codegen.compileProbe`
+가 `compile()` 때 남겨 둔 `compileInput` 으로 함수들과 함께 스크립트 하나(`th.state.result = <값>`)를
+만들고, 그 오브젝트 원본 엔티티의 `Thread` 로 돌립니다. 기다리는 블록(번역·읽기 같은 api)은
+16ms 마다 다시 밟아 끝나거나 시간이 다 될 때까지 기다립니다(`Promise`).
+
 ### 텍스처에 구워지는 것은 그 배율을 따라간다
 
 무대에 바로 그려지는 png 모양과 달리, **글상자와 벡터 모양은 텍스처에 한 번 구워집니다.**

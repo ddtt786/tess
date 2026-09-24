@@ -38,8 +38,17 @@ export function Dialogs() {
     owned.value = false;
   }
 
+  /** First free `변수1`, `변수2`… (or `리스트N`) for a variable or list left unnamed. */
+  function autoName(): string {
+    const base = kind === 'list' ? '리스트' : '변수';
+    const taken = new Set(project.value.variables.map((variable) => variable.name));
+    let index = 1;
+    while (taken.has(`${base}${index}`)) index += 1;
+    return `${base}${index}`;
+  }
+
   function create() {
-    const label = name.value.trim();
+    const label = name.value.trim() || (kind === 'variable' || kind === 'list' ? autoName() : '');
     if (!label) {
       notify('이름을 적어주세요.');
       return;
@@ -86,7 +95,9 @@ export function Dialogs() {
             <input
               class="input dialog-input"
               autoFocus
-              placeholder={`${kind === 'variable' ? '변수' : kind === 'signal' ? '신호' : kind === 'list' ? '리스트' : '테이블'} 이름 입력`}
+              placeholder={kind === 'variable' || kind === 'list'
+                ? autoName()
+                : `${kind === 'signal' ? '신호' : '테이블'} 이름 입력`}
               value={name.value}
               onInput={(event) => { name.value = (event.target as HTMLInputElement).value; }}
               onKeyDown={(event) => {

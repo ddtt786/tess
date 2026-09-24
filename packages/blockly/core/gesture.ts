@@ -300,6 +300,9 @@ export class Gesture {
     }
     this.calledUpdateIsDragging = true;
 
+    if (this.targetBlock?.isShadow() && this.canDetachShadow(this.targetBlock)) {
+      this.detachShadow(this.targetBlock);
+    }
     const selected = common.getSelected();
     if (selected && isDraggable(selected) && selected.isMovable()) {
       this.dragging = true;
@@ -309,6 +312,35 @@ export class Gesture {
     } else {
       this.updateIsDraggingWorkspace();
     }
+  }
+
+  /**
+   * Shadows this accepts are dragged out on their own, like a value block,
+   * instead of dragging the block they sit in: true leaves a shadow of the
+   * same value in the socket, a state leaves that shadow instead. Null keeps
+   * Blockly's behaviour.
+   */
+  static detachableShadow: ((block: BlockSvg) => boolean | blocks.State) | null = null;
+
+  private canDetachShadow(block: BlockSvg): boolean {
+    const parent = block.getParent();
+    return (
+      !!Gesture.detachableShadow?.(block) &&
+      !block.isInFlyout &&
+      !!parent &&
+      parent.isEditable() &&
+      !block.workspace.isReadOnly()
+    );
+  }
+
+  /** Turns a shadow into a real block and leaves the socket the shadow `detachableShadow` names. */
+  private detachShadow(block: BlockSvg) {
+    const connection = block.outputConnection?.targetConnection;
+    const rule = Gesture.detachableShadow?.(block);
+    const state = typeof rule === 'object' ? rule : blocks.save(block, {addCoordinates: false});
+    block.setShadow(false);
+    if (connection && state) connection.setShadowState(state);
+    common.setSelected(block);
   }
 
   private createDragger(draggable: IDraggable): IDragger {
@@ -1003,7 +1035,7 @@ export class Gesture {
    * @param block The block the gesture targets.
    */
   private setTargetBlock(block: BlockSvg) {
-    if (block.isShadow()) {
+    if (block.isShadow() && !this.canDetachShadow(block)) {
       // Non-null assertion is fine b/c it is an invariant that shadows always
       // have parents.
       this.setTargetBlock(block.getParent()!);

@@ -2,6 +2,7 @@
  * 모양 tab. A sprite gets the painter; a text box gets its own settings, since
  * there is no costume to draw.
  */
+import { FONTS, fontFamily } from '../model/fonts.ts';
 import { useSignal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import {
@@ -150,7 +151,6 @@ function PainterPane() {
   );
 }
 
-const FONTS = ['나눔고딕', '나눔명조', '나눔손글씨', '바탕체', '고딕체', '궁서체', 'DungGeunMo'];
 
 function TextBoxPane({ object }: { object: TessObject }) {
   const text = object.text;
@@ -179,8 +179,10 @@ function TextBoxPane({ object }: { object: TessObject }) {
         <div class="text-grid">
           <div class="f">
             <label>글꼴</label>
-            <select class="select" value={text.font} onChange={(event) => set({ font: (event.target as HTMLSelectElement).value })}>
-              {FONTS.map((font) => <option key={font} value={font}>{font}</option>)}
+            <select class="select" value={fontFamily(text.font)} onChange={(event) => set({ font: (event.target as HTMLSelectElement).value })}>
+              {FONTS.map((font) => (
+                <option key={font.family} value={font.family} style={{ fontFamily: font.family }}>{font.label}</option>
+              ))}
             </select>
           </div>
           <div class="f">
@@ -255,7 +257,7 @@ function TextBoxPane({ object }: { object: TessObject }) {
               style={{
                 color: text.color,
                 fontSize: `${text.fontSize}px`,
-                fontFamily: text.font,
+                fontFamily: fontFamily(text.font),
                 fontWeight: text.bold ? 800 : 400,
                 fontStyle: text.italic ? 'italic' : 'normal',
                 textDecoration: [text.underline ? 'underline' : '', text.strike ? 'line-through' : ''].join(' ').trim(),

@@ -132,7 +132,7 @@ export async function warmEntryPatterns(): Promise<void> {
 function prepareLearning(): { model: TessProject; variants: Variant[] } {
   installBlocks();
   const model = markerModel();
-  return { model, variants: allSpecs().flatMap((spec) => variantsOf(spec, model)) };
+  return { model, variants: allSpecs().filter((spec) => !spec.unlearned).flatMap((spec) => variantsOf(spec, model)) };
 }
 
 function finishLearning(patterns: Map<string, Pattern[]>): Map<string, Pattern[]> {
@@ -653,6 +653,9 @@ export function convertValue(node: unknown, ctx: ConvertContext): BlockJson | nu
   }
   // The compiler adds this around a judgement used as a value; the judgement is enough.
   if (block.type === 'get_boolean_value') return convertValue(params[0], ctx);
+  // Entry's costume and sound menus are blocks of their own.
+  if (block.type === 'get_pictures') return { type: 'looks_costume_menu', fields: { COSTUME: String(params[0] ?? '') } };
+  if (block.type === 'get_sounds') return { type: 'sound_menu', fields: { SOUND: String(params[0] ?? '') } };
   if (block.type === 'char_at') {
     return {
       type: 'calc_char_at',
@@ -742,6 +745,7 @@ type ShadowKind =
   | { kind: 'number'; value: number }
   | { kind: 'text'; value: string }
   | { kind: 'colour'; value: string }
+  | { kind: 'menu'; type: string }
   | { kind: 'none' };
 
 /** A socket input: a literal becomes the shadow, anything else sits on top of one. */
@@ -758,7 +762,8 @@ function valueInput(node: unknown, shadow: ShadowKind, ctx: ConvertContext): Rec
   const fallback = shadow.kind === 'number'
     ? { type: 'calc_number', fields: { NUM: shadow.value } }
     : shadow.kind === 'text' ? { type: 'calc_text', fields: { TEXT: shadow.value } }
-    : shadow.kind === 'colour' ? { type: 'calc_colour', fields: { COLOUR: shadow.value } } : null;
+    : shadow.kind === 'colour' ? { type: 'calc_colour', fields: { COLOUR: shadow.value } }
+    : shadow.kind === 'menu' ? { type: shadow.type } : null;
   if (!converted) return fallback ? { shadow: fallback } : {};
   if (fallback && converted.type === fallback.type) return { shadow: converted };
   return fallback ? { shadow: fallback, block: converted } : { block: converted };

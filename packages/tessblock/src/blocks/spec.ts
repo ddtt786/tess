@@ -34,6 +34,8 @@ export type ShadowSpec =
   | { kind: 'number'; value: number }
   | { kind: 'text'; value: string }
   | { kind: 'colour'; value: string }
+  /** A menu block that picks a project record; any value block can replace it. */
+  | { kind: 'menu'; type: string }
   | { kind: 'none' };
 
 export type CodeArgs = Record<string, string>;
@@ -57,6 +59,10 @@ export interface BlockSpec {
   tooltip?: string;
   /** Hidden from the palette — built by a menu or only restored from a file. */
   hidden?: boolean;
+  /** Left out of the patterns `.ent` import matches against. */
+  unlearned?: boolean;
+  /** SVG markup (16px box, stroked in white) drawn before the first word. */
+  icon?: string;
   code: CodeFn;
 }
 
@@ -75,6 +81,11 @@ export function textIn(name: string, value = '', order: OrderValue = Order.NONE)
 /** A socket holding a colour picker; a variable or hex string can replace it. */
 export function colourIn(name: string, value = '#ff0000'): Arg {
   return { type: 'value', name, fallback: value, order: Order.NONE, shadow: { kind: 'colour', value } };
+}
+
+/** A socket holding a menu block (`kind: 'menu'`), the way entry offers costumes and sounds. */
+export function menuIn(name: string, type: string, fallback = '1'): Arg {
+  return { type: 'value', name, fallback, order: Order.NOT, shadow: { kind: 'menu', type } };
 }
 
 /** A socket with no default block in it. */

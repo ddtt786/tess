@@ -18,8 +18,16 @@ import {
 } from '../model/store.ts';
 import type { RotateMethod, TessObject } from '../model/types.ts';
 import {
-  CopyIcon, EyeIcon, EyeOffIcon, FolderIcon, GripIcon, LockIcon, PlusIcon, TextIcon, TrashIcon, UnlockIcon,
+  CopyIcon, EyeIcon, EyeOffIcon, FolderIcon, GripIcon, LockIcon, PlusIcon, RotateFlipIcon, RotateFreeIcon,
+  RotateNoneIcon, TextIcon, TrashIcon, UnlockIcon,
 } from './icons.tsx';
+
+/** Rotation methods in the order the header button steps through them. */
+const ROTATIONS: Array<{ method: RotateMethod; label: string; icon: typeof RotateFreeIcon }> = [
+  { method: 'free', label: '자유', icon: RotateFreeIcon },
+  { method: 'vertical', label: '좌우', icon: RotateFlipIcon },
+  { method: 'none', label: '없음', icon: RotateNoneIcon },
+];
 
 /** Folders folded shut, by scene and name; kept across scene switches. */
 const collapsedFolders = new Set<string>();
@@ -263,6 +271,7 @@ function ObjectDetail({ object }: { object: TessObject }) {
           aria-label="오브젝트 이름"
           onInput={(event) => renameObject(object.id, (event.target as HTMLInputElement).value)}
         />
+        <RotationButton object={object} />
         <button
           class={`iconbtn plain ${props.visible ? 'on' : ''}`}
           title={props.visible ? '무대에서 숨기기' : '무대에 보이기'}
@@ -296,28 +305,91 @@ function ObjectDetail({ object }: { object: TessObject }) {
         </div>
       )}
 
+      <div class="detail-body">
       <div class="detail-grid">
-        <Field label="X" value={props.x} onChange={(value) => setNumber('x', value)} />
-        <Field label="Y" value={props.y} onChange={(value) => setNumber('y', value)} />
+        <Field label="X" value={props.x} inset onChange={(value) => setNumber('x', value)} />
+        <Field label="Y" value={props.y} inset onChange={(value) => setNumber('y', value)} />
         <Field label="크기" value={size} onChange={setSize} />
         <Field label="가로" value={round(props.scaleX)} onChange={(value) => setNumber('scaleX', value)} />
         <Field label="세로" value={round(props.scaleY)} onChange={(value) => setNumber('scaleY', value)} />
         <Field label="방향" value={props.angle} onChange={(value) => setNumber('angle', value)} />
-        <Field label="이동 방향" value={props.way} wide onChange={(value) => setNumber('way', value)} />
-        <label class="f wide">
-          <span>회전</span>
-          <select
-            class="select"
-            value={props.rotation}
-            onChange={(event) =>
-              setObjectProps(object.id, { rotation: (event.target as HTMLSelectElement).value as RotateMethod })}
-          >
-            <option value="free">자유</option>
-            <option value="vertical">좌우</option>
-            <option value="none">없음</option>
-          </select>
-        </label>
       </div>
+      <DirectionDial value={props.way} onChange={(value) => setNumber('way', String(value))} />
+      </div>
+    </div>
+  );
+}
+
+/** Steps the object through free, left-right and no rotation. */
+function RotationButton({ object }: { object: TessObject }) {
+  const at = Math.max(0, ROTATIONS.findIndex((each) => each.method === object.props.rotation));
+  const current = ROTATIONS[at]!;
+  const next = ROTATIONS[(at + 1) % ROTATIONS.length]!;
+  const Glyph = current.icon;
+  return (
+    <button
+      class="rot-toggle"
+      title={`회전 방식: ${current.label} (누르면 ${next.label})`}
+      aria-label={`회전 방식 ${current.label}`}
+      onClick={() => setObjectProps(object.id, { rotation: next.method })}
+    >
+      <Glyph size={14} />
+      <span>{current.label}</span>
+    </button>
+  );
+}
+
+/** Moving direction as a gauge: 0 points up, 90 right. Drag the needle or type the number. */
+function DirectionDial({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  const turn = ((value % 360) + 360) % 360;
+
+  function pick(event: PointerEvent) {
+    const face = (event.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const dx = event.clientX - (face.left + face.width / 2);
+    const dy = event.clientY - (face.top + face.height / 2);
+    const degrees = Math.round((Math.atan2(dx, -dy) * 180) / Math.PI);
+    onChange((degrees + 360) % 360);
+  }
+
+  return (
+    <div class="dial">
+      <svg
+        viewBox="-32 -32 64 64"
+        role="slider"
+        aria-label="이동 방향"
+        aria-valuemin={0}
+        aria-valuemax={359}
+        aria-valuenow={turn}
+        onPointerDown={(event) => {
+          (event.currentTarget as SVGSVGElement).setPointerCapture(event.pointerId);
+          pick(event);
+        }}
+        onPointerMove={(event) => {
+          if ((event.currentTarget as SVGSVGElement).hasPointerCapture(event.pointerId)) pick(event);
+        }}
+      >
+        <circle class="dial-face" r="29" />
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((tick) => (
+          <line class="dial-tick" y1={-29} y2={tick % 90 ? -25 : -23} transform={`rotate(${tick})`} />
+        ))}
+        <g transform={`rotate(${turn})`}>
+          <line class="dial-needle" y1={4} y2={-15} />
+          <path class="dial-tip" d="M0 -26 L5 -14 L0 -16.5 L-5 -14 Z" />
+        </g>
+        <circle class="dial-hub" r="3" />
+      </svg>
+      <label class="dial-value">
+        <span>이동 방향</span>
+        <input
+          class="input"
+          type="number"
+          value={value}
+          onInput={(event) => {
+            const parsed = Number((event.target as HTMLInputElement).value);
+            if (Number.isFinite(parsed)) onChange(parsed);
+          }}
+        />
+      </label>
     </div>
   );
 }
@@ -327,11 +399,25 @@ function round(value: number): number {
 }
 
 function Field(
-  { label, value, wide, onChange }:
-  { label: string; value: number; wide?: boolean; onChange: (value: string) => void },
+  { label, value, inset, onChange }:
+  { label: string; value: number; inset?: boolean; onChange: (value: string) => void },
 ) {
+  // A one-letter label sits inside the box.
+  if (inset) {
+    return (
+      <label class="f inset input">
+        <span>{label}</span>
+        <input
+          type="number"
+          value={value}
+          aria-label={label}
+          onInput={(event) => onChange((event.target as HTMLInputElement).value)}
+        />
+      </label>
+    );
+  }
   return (
-    <label class={`f ${wide ? 'wide' : ''}`}>
+    <label class="f">
       <span>{label}</span>
       <input
         class="input"

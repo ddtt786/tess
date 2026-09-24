@@ -4,9 +4,10 @@
  * The painter package draws the canvas; everything around it is built here so
  * it matches the rest of the editor.
  */
+import { FONTS } from '../model/fonts.ts';
 import { useSignal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
-import { getPainter, painterVersion } from './painter-host.ts';
+import { getPainter, painterVersion, fitStage } from './painter-host.ts';
 import {
   BrushIcon, CircleIcon, CursorIcon, EraserIcon, FillIcon, FitIcon, FlipHIcon, FlipVIcon,
   FrontIcon, BackIcon, GroupIcon, LineIcon, NodeIcon, RectIcon, RedoIcon, TextIcon, TrashIcon,
@@ -38,7 +39,6 @@ const BITMAP_TOOLS: Array<[ToolName, string, typeof CursorIcon]> = [
   ['ellipse', '원', CircleIcon],
 ];
 
-const FONTS = ['나눔고딕', 'Pretendard', '나눔명조', 'DungGeunMo', 'Helvetica, Arial, sans-serif'];
 
 /** Redraws this component whenever the painter reports anything. */
 function usePainterState(): number {
@@ -98,7 +98,7 @@ export function PaintTools() {
         <button class="iconbtn" title="축소" onClick={() => painter.zoomOut()}><ZoomOutIcon /></button>
         <span class="zoom">{Math.round(painter.zoom * 100)}%</span>
         <button class="iconbtn" title="확대" onClick={() => painter.zoomIn()}><ZoomInIcon /></button>
-        <button class="iconbtn" title="화면에 맞추기" onClick={() => painter.zoomToFit()}><FitIcon /></button>
+        <button class="iconbtn" title="실행 화면에 맞추기" onClick={fitStage}><FitIcon /></button>
       </div>
 
       <div class="paint-rail">
@@ -177,7 +177,9 @@ export function PaintTools() {
             value={text.fontFamily}
             onChange={(event) => painter.setTextStyle({ fontFamily: (event.target as HTMLSelectElement).value })}
           >
-            {FONTS.map((font) => <option key={font} value={font}>{font.split(',')[0]}</option>)}
+            {FONTS.map((font) => (
+              <option key={font.family} value={font.family} style={{ fontFamily: font.family }}>{font.label}</option>
+            ))}
           </select>
         </div>
         <Slider
@@ -201,10 +203,13 @@ function Slider(
       <span>{label}</span>
       <div class="slider-row">
         <input
+          class="paint-range"
           type="range"
           min={min}
           max={max}
           value={value}
+          // How far along the track is filled.
+          style={{ '--fill': `${((Math.min(max, Math.max(min, value)) - min) / (max - min || 1)) * 100}%` }}
           onInput={(event) => onChange(Number((event.target as HTMLInputElement).value))}
         />
         <input

@@ -296,6 +296,8 @@ export class Vm implements Project {
   private readonly written = new Map<string, string>();
   private lastStoreFlush = 0;
   unknownBlocks = new Map<string, number>();
+  /** What the loaded work was compiled from; `evaluate` compiles against the same records. */
+  private compileInput: CompileInput | null = null;
 
   constructor(options: VmOptions = {}) {
     this.renderer = options.renderer ?? null;
@@ -489,6 +491,7 @@ export class Vm implements Project {
       messages: this.messages,
       tables: this.tables,
     };
+    this.compileInput = input;
     const codegen = new Codegen(input);
     const program = codegen.compile();
     this.unknownBlocks = program.unknown;
@@ -569,6 +572,33 @@ export class Vm implements Project {
         return yield javascript(entity, thread, args);
       };
     }
+  }
+
+  /**
+   * Works out one value block for an object as the work stands now. A block
+   * that waits (an api answer, a timer) is stepped again every frame until it
+   * is done or `timeoutMs` has gone by, which gives undefined.
+   */
+  async evaluate(block: RawBlock, targetId: string, timeoutMs = 5000): Promise<unknown> {
+    const target = this.targetOf(targetId);
+    if (!target || !this.compileInput) {
+      return undefined;
+    }
+    const source = new Codegen(this.compileInput).compileProbe(block);
+    const built = (new Function('R', source) as (runtime: Vm) => { scripts: CompiledScript['body'][] })(this);
+    const thread = new Thread(target, target.entity, {
+      event: 'probe',
+      filter: null,
+      blockId: String(block.id ?? ''),
+      body: built.scripts[0]!,
+    });
+    const until = Date.now() + timeoutMs;
+    thread.step();
+    while (!thread.done && Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+      thread.step();
+    }
+    return thread.done ? thread.state.result : undefined;
   }
 
   /** Generated source, for `tessvm build --emit-js` and for debugging. */

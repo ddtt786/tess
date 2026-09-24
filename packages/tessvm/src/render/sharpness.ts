@@ -12,6 +12,10 @@
  * window, and reaches this full screen on a large display.
  */
 export const MAX_SHARPNESS = 8;
+/** Fewest canvas pixels across the stage is drawn with: HD. */
+export const MIN_CANVAS_WIDTH = 1280;
+/** Fewest canvas pixels across once the stage is shown HD wide or more (full screen): full HD. */
+export const FULLSCREEN_CANVAS_WIDTH = 1920;
 /** Least sharpness a text box is drawn with, whatever the canvas is doing. */
 export const MIN_TEXT_SHARPNESS = 2;
 /**

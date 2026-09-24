@@ -5,6 +5,7 @@
  * box: corners and edges resize it, the arm above turns it, and the crosshair
  * moves the point x and y refer to.
  */
+import { fontFamily } from '../model/fonts.ts';
 import { useEffect, useRef } from 'preact/hooks';
 import { sceneObjects, selectObject, selectedObjectId, setObjectProps, setTextProps } from '../model/store.ts';
 import { centerMode } from './state.ts';
@@ -52,7 +53,7 @@ export function StagePreview() {
         {[...objects].reverse().map((object) => (
           <PreviewObject key={object.id} object={object} toStage={toStage} />
         ))}
-        <PreviewMonitors />
+        <PreviewMonitors toStage={toStage} />
       </div>
       {selected && <TransformBox object={selected} toStage={toStage} />}
     </div>
@@ -111,7 +112,7 @@ function PreviewObject({ object, toStage }: DragProps) {
             background: text.bgColor ?? 'transparent',
             fontSize: `${text.fontSize}px`,
             // The runner's canvas falls back on sans-serif for a font it does not have.
-            fontFamily: `"${text.font}", sans-serif`,
+            fontFamily: `"${fontFamily(text.font)}", sans-serif`,
             fontWeight: text.bold ? 700 : 400,
             fontStyle: text.italic ? 'italic' : 'normal',
             textDecoration: [text.underline ? 'underline' : '', text.strike ? 'line-through' : ''].join(' ').trim(),
@@ -246,7 +247,7 @@ function percent(value: number, total: number): number {
 /** Font metrics the way the runner's PIXI text measures them. */
 const runnerMetrics: RunnerMetrics = (text) => {
   const style = new TextStyle({
-    fontFamily: text.font,
+    fontFamily: fontFamily(text.font),
     fontSize: text.fontSize,
     fontWeight: text.bold ? 'bold' : 'normal',
     fontStyle: text.italic ? 'italic' : 'normal',

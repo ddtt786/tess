@@ -4,6 +4,7 @@
  * Block workspaces are loaded headless, one object at a time, so every script
  * is written from the same generator the live editor uses.
  */
+import { fontFamily } from '../model/fonts.ts';
 import * as Blockly from 'blockly/core';
 import { DEFINE_BLOCK } from '../blocks/functions.ts';
 import { tess, workspaceScripts } from './generator.ts';
@@ -124,12 +125,13 @@ function variableLine(variable: VariableDef, idents: Map<string, string>): strin
   const ident = idents.get(variable.id) ?? safeIdent(variable.name);
   const scope = variable.scope === 'local' ? '' : `${variable.scope} `;
   const display = ident === variable.name.trim() ? '' : ` as ${quote(variable.name)}`;
+  const place = variable.at ? ` at ${num(variable.at.x)} ${num(variable.at.y)}` : '';
   if (variable.kind === 'list') {
     const items = variable.array.map((item) => literal(item)).join(', ');
-    return `${scope}list ${ident}${display} = [${items}]${variable.visible ? ' visible' : ''}`;
+    return `${scope}list ${ident}${display} = [${items}]${variable.visible ? ' visible' : ''}${place}`;
   }
   const slide = variable.slide ? ` from ${num(variable.slide.min)} to ${num(variable.slide.max)}` : '';
-  return `${scope}var ${ident}${display} = ${literal(variable.value)}${slide}${variable.visible ? ' visible' : ''}`;
+  return `${scope}var ${ident}${display} = ${literal(variable.value)}${slide}${variable.visible ? ' visible' : ''}${place}`;
 }
 
 function literal(value: string | number): string {
@@ -206,7 +208,7 @@ function objectLines(
   if (object.kind === 'text' && object.text) {
     const text = object.text;
     body.push(`text_content = ${quote(text.content)}`);
-    body.push(`font = ${quote(text.font)}`);
+    body.push(`font = ${quote(fontFamily(text.font))}`);
     body.push(`font_size = ${num(text.fontSize)}`);
     body.push(`font_color = ${text.color}`);
     body.push(`bg_color = ${text.bgColor ?? 'transparent'}`);

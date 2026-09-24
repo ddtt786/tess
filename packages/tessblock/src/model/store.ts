@@ -546,7 +546,7 @@ export function addVariable(name: string, kind: VariableKind, owner: string | nu
     owner,
     value: kind === 'list' ? '' : 0,
     array: [],
-    visible: false,
+    visible: true,
     scope: 'local',
     slide: null,
   };

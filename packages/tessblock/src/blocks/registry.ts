@@ -36,6 +36,10 @@ export { tessTheme };
 
 let ready = false;
 
+/** Literals keep their value in the socket when dragged out; a menu leaves the text `10`, as in entry. */
+const DETACHABLE_SHADOWS = new Set(['calc_number', 'calc_text', 'calc_colour']);
+const MENU_SHADOWS = new Set(['looks_costume_menu', 'sound_menu']);
+
 /** Defines every block and writer once, before any workspace is injected. */
 export function installBlocks(): void {
   if (ready) return;
@@ -47,6 +51,12 @@ export function installBlocks(): void {
   registerColourPicker();
   registerFields();
   installContextMenu();
+  // Literals and record menus come out of their socket when dragged, as in entry.
+  // `detachableShadow` is the fork's own (packages/blockly/core/gesture.ts).
+  (Blockly.Gesture as unknown as { detachableShadow: (block: Blockly.BlockSvg) => boolean | object }).detachableShadow =
+    (block) => MENU_SHADOWS.has(block.type)
+      ? { type: 'calc_text', fields: { TEXT: '10' } }
+      : DETACHABLE_SHADOWS.has(block.type);
 
   const definitions = allSpecs().map(blockDefinition);
   Blockly.common.defineBlocksWithJsonArray(definitions as never[]);
@@ -66,8 +76,14 @@ function blockDefinition(spec: BlockSpec): Record<string, unknown> {
     tooltip: spec.tooltip ?? '',
   };
   layoutRows(spec).forEach((row, index) => {
-    json[`message${index}`] = row.message;
-    json[`args${index}`] = row.args.map(argDefinition);
+    const args = row.args.map(argDefinition);
+    let message = row.message;
+    if (index === 0 && spec.icon) {
+      args.push({ type: 'field_image', src: iconUrl(spec.icon), width: ICON_WIDTH, height: ICON_HEIGHT, alt: '' });
+      message = `%${args.length} ${message}`;
+    }
+    json[`message${index}`] = message;
+    json[`args${index}`] = args;
   });
   switch (spec.shape) {
     case 'hat':
@@ -85,6 +101,18 @@ function blockDefinition(spec: BlockSpec): Record<string, unknown> {
       break;
   }
   return json;
+}
+
+/** Hat icons are drawn 24px tall with 6px of room on their left. */
+const ICON_HEIGHT = 24;
+const ICON_WIDTH = 30;
+
+function iconUrl(markup: string): string {
+  const inset = (16 * (ICON_WIDTH - ICON_HEIGHT)) / ICON_HEIGHT;
+  const box = `${-inset} 0 ${16 + inset} 16`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${ICON_WIDTH}" height="${ICON_HEIGHT}" viewBox="${box}" fill="none" `
+    + 'stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + markup + '</svg>';
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 }
 
 interface Row {
@@ -317,6 +345,7 @@ export function shadowBlock(shadow: Exclude<ShadowSpec, { kind: 'none' }>): Reco
     case 'number': return { type: 'calc_number', fields: { NUM: shadow.value } };
     case 'text': return { type: 'calc_text', fields: { TEXT: shadow.value } };
     case 'colour': return { type: 'calc_colour', fields: { COLOUR: shadow.value } };
+    case 'menu': return { type: shadow.type };
   }
 }
 

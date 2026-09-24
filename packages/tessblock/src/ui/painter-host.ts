@@ -12,8 +12,14 @@ import { project, selectedObjectId, setObjectProps, updateCostume } from '../mod
 import { imageSize } from '../model/files.ts';
 import type { Costume } from '../model/types.ts';
 
-/** Drawing sheet, twice the stage in both directions. */
-export const SHEET = { width: 960, height: 540 };
+/** Drawing sheet: full HD, far more room than the stage shows. */
+export const SHEET = { width: 1920, height: 1080 };
+/**
+ * The stage, in costume pixels: a costume at full size in the middle of the
+ * stage shows this much of the sheet around it. Marked on the sheet as a
+ * guide only; it says nothing about where the object stands.
+ */
+const STAGE_VIEW = { width: 480, height: 270 };
 
 let ui: Painter | null = null;
 let objectId = '';
@@ -35,7 +41,12 @@ export function mountPainter(host: HTMLElement): void {
     mode: 'vector',
     tool: 'select',
   });
+  // Text starts in entry's own default font, which the font menu lists.
+  ui.setTextStyle({ fontFamily: 'Nanum Gothic' });
   ui.on('change', scheduleSave);
+  // A mode switch builds a new sheet, which needs the guide again.
+  ui.on('modechange', markStage);
+  markStage();
   // The canvas follows the selection straight from the store, the same way the
   // block workspace does.
   watches = [project.subscribe(syncFromStore), selectedObjectId.subscribe(syncFromStore)];
@@ -97,10 +108,46 @@ export async function loadCostume(nextObjectId: string, next: Costume): Promise<
       if (ui.mode !== 'bitmap') await ui.setMode('bitmap');
       await ui.bitmap?.loadImage(resolveAsset(next.url), { fit: true, clear: true });
     }
-    ui.zoomToFit();
+    markStage();
+    fitStage();
   } finally {
     loading = false;
   }
+}
+
+/** Draws the stage guide in the middle of the sheet, sized in percent so it follows the zoom. */
+function markStage(): void {
+  const frame = ui?.surface.viewport.querySelector<HTMLElement>('.pt-frame');
+  if (!frame || frame.querySelector('.stage-guide')) return;
+  const left = ((SHEET.width - STAGE_VIEW.width) / 2 / SHEET.width) * 100;
+  const top = ((SHEET.height - STAGE_VIEW.height) / 2 / SHEET.height) * 100;
+  const right = 100 - left;
+  const bottom = 100 - top;
+  // The sheet past the guide is softly veiled: a sheet-sized veil with the guide cut out.
+  const veil = document.createElement('div');
+  veil.className = 'stage-veil';
+  veil.style.clipPath = `polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, `
+    + `${left}% ${top}%, ${right}% ${top}%, ${right}% ${bottom}%, ${left}% ${bottom}%, ${left}% ${top}%)`;
+  const guide = document.createElement('div');
+  guide.className = 'stage-guide';
+  guide.style.inset = `${top}% ${left}%`;
+  const label = document.createElement('span');
+  label.textContent = '실행 화면';
+  guide.appendChild(label);
+  frame.append(veil, guide);
+}
+
+/** Zooms so the stage guide fills most of the view, and centres it. */
+export function fitStage(): void {
+  const surface = ui?.surface;
+  if (!surface) return;
+  const view = surface.viewport;
+  if (!view.clientWidth || !view.clientHeight) return;
+  surface.setZoom(Math.min(view.clientWidth / STAGE_VIEW.width, view.clientHeight / STAGE_VIEW.height) * 0.8);
+  const frame = view.querySelector<HTMLElement>('.pt-frame');
+  if (!frame) return;
+  view.scrollLeft = frame.offsetLeft + frame.offsetWidth / 2 - view.clientWidth / 2;
+  view.scrollTop = frame.offsetTop + frame.offsetHeight / 2 - view.clientHeight / 2;
 }
 
 function scheduleSave(): void {

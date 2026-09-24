@@ -348,7 +348,6 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
   `func_local_var` 선언), `char_at`(→ `calc_char_at`), `get_boolean_value`(안쪽 판단만).
 - 판단 칸에 값 블록이 오면 숨은 `judge_value` 로 감싼다(판단 소켓은 `Boolean` 만 받는다).
 - 드롭다운 자리에 식이 오는 엔트리 작품을 위해 식을 받는 숨은 명세가 있다:
-  `looks_set_costume_value`, `sound_play_value`, `sound_play_bgm_value`,
   `text_set_colour_value`, `text_set_bg_colour_value`, `text_set_font_name`,
   `brush_set_colour_value`, `brush_set_fill_value`, `calc_from_hex_value`.
 - 이름: 함수는 첫 라벨(Tess 이름), 같은 이름이면 `_2`. 지역 변수가 매개변수·다른 지역 변수·
@@ -714,7 +713,8 @@ tessblock 은 npm `blockly` 대신 `packages/blockly` 의 포크를 쓴다.
   원래 Blockly 와 픽셀 동일.
 - **드롭다운 크기**: 포크 `dropdowndiv.ts` 가 드롭다운을 띄울 때 블록이 그려진 배율을
   `--blocklyBlockScale` 로 넘기고, `style.css` 가 시작 배율 0.75 대비 비율(`--tess-dd`)로 글자·여백·높이·모서리·
-  체크 표시(`zoom`)를 곱한다. 0.75 에서는 예전과 픽셀 동일.
+  체크 표시(`zoom`)를 곱한다. 기준 크기는 블록 글자에 맞춘 11.5px·항목 26px 이고, 체크 표시는
+  왼쪽 여백 28px 의 가운데(`margin-left: -22px`)에 둔다.
 - **속성 탭 함수 목록**: `.rec-list` 는 그리드인데 열 너비가 가장 긴 행(줄바꿈 없는 매개변수 목록)의
   min-content 로 늘어 모든 행의 편집·삭제 버튼이 패널 밖으로 밀렸다. `grid-template-columns: minmax(0, 1fr)`.
 
@@ -777,3 +777,59 @@ tessblock 은 npm `blockly` 대신 `packages/blockly` 의 포크를 쓴다.
   않음). 준비는 먼저 `flush` 해서(`currentSource()`) 저장 안 된 편집이 예전 상태 이름으로 캐시되지 않게 한다.
   소스 쓰기에서 예외가 나면 알림을 띄운다(예전엔 아무 반응 없음).
 
+
+## 20. 모양·소리 메뉴 블록, 기본값 끌어내기, 오브젝트 정보
+
+- **메뉴 블록**: 엔트리처럼 모양·소리 드롭다운이 소켓 안의 블록이다. `menuIn(name, type)` →
+  `ShadowSpec { kind: 'menu', type }`, 기본 그림자가 `looks_costume_menu`/`sound_menu`(숨은 값 명세, `pick` 한 칸,
+  이름을 따옴표로 쓴다). 쓰는 블록: `looks_set_costume_by`, `sound_play_by`, `sound_play_wait_by`,
+  `sound_play_for_by`, `sound_play_for_wait_by`, `sound_play_range_by`, `sound_play_range_wait_by`,
+  `sound_play_bgm_by`. 소켓 순위는 `Order.NOT` 이라 `and`/`or` 식은 괄호가 붙는다(`play sound … and wait` 와 안 섞임).
+- 예전 필드형(`looks_set_costume`, `sound_play*`)과 `*_value` 는 저장된 작품을 열기 위해 숨겨 남겨 두고
+  `unlearned: true` 로 `.ent` 패턴 학습에서 뺀다. 불러오기는 `get_pictures`/`get_sounds` 를 메뉴 블록으로
+  바꾸고(`convertValue`), `valueInput` 이 같은 타입이면 그림자로 둔다.
+- **기본값 끌어내기**: 포크 `gesture.ts` 의 `Gesture.detachableShadow(block)` 가 받아 주는 그림자는 부모 대신
+  그 자신이 끌린다. 드래그가 시작될 때(`updateIsDragging`) `setShadow(false)` 로 진짜 블록이 되고, 소켓에는
+  `setShadowState` 로 새 그림자를 남긴다. `true` 면 같은 값, 상태 객체면 그 그림자. tessblock 은
+  `calc_number`·`calc_text`·`calc_colour` 는 같은 값, 메뉴 블록은 `calc_text "10"` 을 남긴다(`registry.ts`).
+  플라이아웃·읽기 전용·잠긴 부모는 예전처럼 부모가 끌린다. 되돌리기는 블록이 진짜 블록인 채로 소켓에 돌아간다.
+- **변수·리스트 만들기**: 새로 만든 것은 무대에 보인다(`addVariable` 의 `visible: true`). 이름을 비우고
+  만들면 `변수N`/`리스트N`(비어 있는 가장 작은 N)이고, 입력칸 자리표시에 그 이름을 보여 준다.
+- **오브젝트 정보**: 숫자 칸은 64px, 칸 사이 14px/8px. X·Y 는 라벨이 입력칸 안에 있다(`.f.inset`).
+  이동 방향은 오른쪽의 계기판(`DirectionDial`, 0 이 위·90 이 오른쪽, 끝이 화살표인 바늘을 끌거나 아래 칸에 입력),
+  회전 방식은 이름 칸 오른쪽의 `rot-toggle`(아이콘+글자, 누를 때마다 자유→좌우→없음).
+- **모자 블록 아이콘**: `BlockSpec.icon`(16px 상자 SVG, 흰색) 이 있으면 `blockDefinition` 이 첫 줄 앞에
+  `field_image` 를 붙인다(높이 24px, 왼쪽 6px 여백은 viewBox 를 왼쪽으로 늘려 만든다, `iconUrl`).
+  지금은 `start_when_run` 의 깃발 하나만 쓴다.
+
+## 21. 값 말풍선, 변수 창 자리, 폰트, 확장 api, 그림판
+
+- **값 말풍선** (`ui/report-bubble.ts`): 부모 없는 값·판단 블록을 누르면(작업판·팔레트, `Events.CLICK`)
+  아래에 값을 보인다. 블록을 `말하기` 두 개(값, 표식 `__tess_probe__`) 스크립트로 적어 그 오브젝트만
+  살린 사본을 컴파일하고, 표식 앞 `dialog` 의 값을 꺼낸다.
+  - 실행 중이면 사본 레코드 id 를 실행 중 작품 id 로 바꿔(`idMap`: 오브젝트는 순서, 모양·소리·변수·
+    신호·장면·테이블은 이름, 함수는 라벨) `vm.evaluate`. 아니면 사본을 실행하지 않은 채 불러 둔 VM
+    (소스별로 하나 캐시)에서 계산 — 처음 상태.
+  - `calc_random_colour` 는 Tess 에서 값이 아니므로(`draw_color = random_color()` 뿐) 실행기처럼 채널마다
+    무작위로 뽑은 색을 보인다. 색 값이면 견본을 붙인다. 계산이 안 되면 컴파일 오류 문구.
+  - 말풍선 색은 블록 색(`--report`)을 `color-mix` 로 옅게. 다른 곳을 누르거나 작업판이 움직이면 닫힌다.
+  - 주의: `Events.fire` 는 애니메이션 프레임에 전달되므로 백그라운드 탭에서는 클릭 이벤트가 오지 않는다.
+- **변수·리스트 창 자리**: `VariableDef.at`(무대 가운데 기준 좌상단, y 아래로 — 엔트리 값 그대로). 미리보기
+  (`PreviewMonitors`)에서 끌어 놓으면 반올림해 저장(0 은 엔트리가 "자리 없음"으로 읽어 1 로). 글쓰기는
+  `visible` 뒤 `at X Y`. `.ent` 불러오기는 x·y 가 둘 다 0 이 아니면 `at`.
+- **폰트** (`model/fonts.ts`): 엔트리가 주는 폰트 CSS 전체(`@tess/player` 의 `ENTRY_FONT_STYLES`, tessvm 페이지와
+  같은 목록)를 시작할 때 페이지에 건다(`loadFonts`). 메뉴(`FONTS`)는 라벨 → CSS family. 글상자 속성·글꼴 블록·
+  그림판 글꼴이 같은 목록을 쓴다. 예전 값(`나눔고딕` 등 한글 이름)은 `fontFamily()` 가 family 로 바꿔 쓴다
+  (글상자 기본값도 `Nanum Gothic`). 글꼴 블록 드롭다운의 예전 한글 값은 Blockly 가 첫 항목으로 되돌린다.
+- **확장 api**: 번역·읽어주기는 엔트리처럼 같은 출처 `/api/expansionBlock/...` 를 부른다. `vite.config.ts` 의
+  dev/preview 프록시가 playentry.org 로 넘기고 referer 를 엔트리로 둔다(`tessvm run` 서버와 같은 방식).
+  정적 호스팅에서는 이 경로를 받아 줄 서버가 따로 있어야 한다.
+- **그림판**: 시트 FHD(1920×1080). 가운데 480×270(모양 100% 가 무대에 보이는 범위)을 `stage-guide`(점선,
+  "실행 화면" 라벨)와 `stage-veil`(바깥을 옅게, `clip-path` evenodd 구멍)로 표시 — 오브젝트 위치와 무관한 안내.
+  `%` 로 놓아 확대를 따라가고, 모드 전환(`modechange`)마다 다시 붙인다. 모양을 열면 `fitStage` 가 안내 틀이 보기
+  영역의 80% 가 되게 확대·가운데 정렬(맞추기 버튼도 같음). 기본 글꼴 `Nanum Gothic`. 슬라이더는 `.paint-range`
+  (채워진 트랙은 `--fill`). 색 칸(`.swatch`)은 안쪽 색도 둥글게.
+- **painter 패키지**: 글자 도구는 입력이 끝나면(다른 곳 클릭·Esc) 다음 틱에 도구가 아직 `text` 일 때만 `select`
+  로 바꾼다(`handOver`). 편집 중 다른 도구를 고르면 그 도구가 남는다. tessblock 은 `packages/painter/dist` 를
+  쓰므로 painter 를 고치면 `npm run build` 가 필요하다.
+- 오브젝트 정보: X·Y 칸 72px, 값 오른쪽 정렬.

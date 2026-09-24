@@ -1,5 +1,6 @@
 /** Sound category: playback, volume, speed and text to speech. */
-import { define, emptyIn, menu, numIn, pick, textIn } from '../spec.ts';
+import { define, emptyIn, menu, menuIn, numIn, pick, textIn } from '../spec.ts';
+import { Order } from '../../codegen/order.ts';
 import { quote } from '../../codegen/quote.ts';
 
 const VOICES: Array<[string, string]> = [
@@ -25,23 +26,95 @@ const PITCHES: Array<[string, string]> = [
   ['아주 높게', 'veryhigh'],
 ];
 
+/** The sound menu is a block, so a name or number can take its place. */
+const SOUND = menuIn('SOUND', 'sound_menu');
+
 define(
+  {
+    type: 'sound_menu',
+    category: 'sound',
+    message: '%1',
+    args: [pick('SOUND', 'sound')],
+    shape: 'value',
+    hidden: true,
+    unlearned: true,
+    code: (a) => [quote(a.SOUND), Order.ATOMIC],
+  },
+  {
+    type: 'sound_play_by',
+    category: 'sound',
+    message: '소리 %1 재생하기',
+    args: [SOUND],
+    shape: 'statement',
+    code: (a) => `play sound ${a.SOUND}`,
+  },
+  {
+    type: 'sound_play_wait_by',
+    category: 'sound',
+    message: '소리 %1 재생하고 기다리기',
+    args: [SOUND],
+    shape: 'statement',
+    code: (a) => `play sound ${a.SOUND} and wait`,
+  },
+  {
+    type: 'sound_play_for_by',
+    category: 'sound',
+    message: '소리 %1 을(를) %2 초 재생하기',
+    args: [SOUND, numIn('SECS', 1)],
+    shape: 'statement',
+    code: (a) => `play sound ${a.SOUND} for ${a.SECS}`,
+  },
+  {
+    type: 'sound_play_for_wait_by',
+    category: 'sound',
+    message: '소리 %1 을(를) %2 초 재생하고 기다리기',
+    args: [SOUND, numIn('SECS', 1)],
+    shape: 'statement',
+    code: (a) => `play sound ${a.SOUND} for ${a.SECS} and wait`,
+  },
+  {
+    type: 'sound_play_range_by',
+    category: 'sound',
+    message: '소리 %1 을(를) %2 초부터 %3 초까지 재생하기',
+    args: [SOUND, numIn('FROM', 0), numIn('TO', 1)],
+    shape: 'statement',
+    code: (a) => `play sound ${a.SOUND} from ${a.FROM} to ${a.TO}`,
+  },
+  {
+    type: 'sound_play_range_wait_by',
+    category: 'sound',
+    message: '소리 %1 을(를) %2 초부터 %3 초까지 재생하고 기다리기',
+    args: [SOUND, numIn('FROM', 0), numIn('TO', 1)],
+    shape: 'statement',
+    code: (a) => `play sound ${a.SOUND} from ${a.FROM} to ${a.TO} and wait`,
+  },
+  {
+    type: 'sound_play_bgm_by',
+    category: 'sound',
+    message: '배경음악 %1 재생하기',
+    args: [SOUND],
+    shape: 'statement',
+    code: (a) => `play bgm ${a.SOUND}`,
+  },
+  // Kept to open works saved before the sound menu became a block.
   {
     type: 'sound_play',
     category: 'sound',
     message: '소리 %1 재생하기',
     args: [pick('SOUND', 'sound')],
     shape: 'statement',
+    hidden: true,
+    unlearned: true,
     code: (a) => `play sound ${quote(a.SOUND)}`,
   },
   {
-    // A sound named or numbered by a value, as entry works do.
     type: 'sound_play_value',
     category: 'sound',
     message: '소리 %1 재생하기',
     args: [emptyIn('VALUE', '1')],
     shape: 'statement',
     hidden: true,
+    unlearned: true,
     code: (a) => `play sound ${a.VALUE}`,
   },
   {
@@ -50,6 +123,8 @@ define(
     message: '소리 %1 재생하고 기다리기',
     args: [pick('SOUND', 'sound')],
     shape: 'statement',
+    hidden: true,
+    unlearned: true,
     code: (a) => `play sound ${quote(a.SOUND)} and wait`,
   },
   {
@@ -58,6 +133,8 @@ define(
     message: '소리 %1 을(를) %2 초 재생하기',
     args: [pick('SOUND', 'sound'), numIn('SECS', 1)],
     shape: 'statement',
+    hidden: true,
+    unlearned: true,
     code: (a) => `play sound ${quote(a.SOUND)} for ${a.SECS}`,
   },
   {
@@ -66,6 +143,8 @@ define(
     message: '소리 %1 을(를) %2 초 재생하고 기다리기',
     args: [pick('SOUND', 'sound'), numIn('SECS', 1)],
     shape: 'statement',
+    hidden: true,
+    unlearned: true,
     code: (a) => `play sound ${quote(a.SOUND)} for ${a.SECS} and wait`,
   },
   {
@@ -74,6 +153,8 @@ define(
     message: '소리 %1 을(를) %2 초부터 %3 초까지 재생하기',
     args: [pick('SOUND', 'sound'), numIn('FROM', 0), numIn('TO', 1)],
     shape: 'statement',
+    hidden: true,
+    unlearned: true,
     code: (a) => `play sound ${quote(a.SOUND)} from ${a.FROM} to ${a.TO}`,
   },
   {
@@ -82,6 +163,8 @@ define(
     message: '소리 %1 을(를) %2 초부터 %3 초까지 재생하고 기다리기',
     args: [pick('SOUND', 'sound'), numIn('FROM', 0), numIn('TO', 1)],
     shape: 'statement',
+    hidden: true,
+    unlearned: true,
     code: (a) => `play sound ${quote(a.SOUND)} from ${a.FROM} to ${a.TO} and wait`,
   },
   {
@@ -90,6 +173,8 @@ define(
     message: '배경음악 %1 재생하기',
     args: [pick('SOUND', 'sound')],
     shape: 'statement',
+    hidden: true,
+    unlearned: true,
     code: (a) => `play bgm ${quote(a.SOUND)}`,
   },
   {
@@ -99,6 +184,7 @@ define(
     args: [emptyIn('VALUE', '1')],
     shape: 'statement',
     hidden: true,
+    unlearned: true,
     code: (a) => `play bgm ${a.VALUE}`,
   },
   {

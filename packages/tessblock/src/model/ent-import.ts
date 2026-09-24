@@ -149,6 +149,8 @@ interface CompiledVariable {
   array?: Array<{ data: unknown }>;
   minValue?: number;
   maxValue?: number;
+  x?: number;
+  y?: number;
 }
 
 interface CompiledFunction {
@@ -216,6 +218,8 @@ async function toModel(
       array: (variable.array ?? []).map((item) => (typeof item.data === 'number' ? item.data : String(item.data ?? ''))),
       visible: Boolean(variable.visible),
       scope: variable.isRealTime ? 'realtime' : variable.isCloud ? 'shared' : 'local',
+      // Entry reads a zero as "not placed" and lays the box out itself.
+      at: variable.x && variable.y ? { x: Number(variable.x), y: Number(variable.y) } : null,
       slide: variable.variableType === 'slide'
         ? { min: Number(variable.minValue ?? 0), max: Number(variable.maxValue ?? 100) }
         : null,

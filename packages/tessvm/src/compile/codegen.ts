@@ -299,6 +299,19 @@ export class Codegen {
     return { source: this.emitModule(), plans: this.plans, unknown: this.unknown };
   }
 
+  /**
+   * A module whose only script works out one value block and leaves it in
+   * `th.state.result`: what an editor shows when a reporter is clicked.
+   */
+  compileProbe(block: RawBlock): string {
+    for (const fn of this.input.functions) {
+      this.functionSources.push(this.compileFunction(fn));
+    }
+    const result = this.value(block);
+    this.bodies.push(`function* (e, th) {\n  th.state.result = ${result.code};\n}`);
+    return this.emitModule();
+  }
+
   private emitModule(): string {
     const parts: string[] = [];
     parts.push('"use strict";');

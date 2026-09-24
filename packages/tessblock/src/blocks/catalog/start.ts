@@ -14,8 +14,12 @@ function hat(type: string, message: string, head: (args: CodeArgs) => string, ar
   };
 }
 
+/** The flag the run button shows, drawn on the hat it starts. */
+const FLAG_ICON = '<path d="M3.6 14.2V2.4" stroke-width="1.8" />'
+  + '<path d="M3.8 2.8c2.2-1.2 3.8 1 6 0 .9-.4 1.8-.3 2.4.1v5.8c-.6-.4-1.5-.5-2.4-.1-2.2 1-3.8-1.2-6 0z" fill="#fff" />';
+
 define(
-  hat('start_when_run', '시작하기 버튼을 클릭했을 때', () => 'when start'),
+  { ...hat('start_when_run', '시작하기 버튼을 클릭했을 때', () => 'when start'), icon: FLAG_ICON },
   hat('start_when_key', '%1 키를 눌렀을 때', (a) => `when key ${quote(a.KEY!)}`, [pick('KEY', 'key')]),
   hat('start_when_key_up', '%1 키를 뗐을 때', (a) => `when key ${quote(a.KEY!)} up`, [pick('KEY', 'key')]),
   hat('start_when_click', '오브젝트를 클릭했을 때', () => 'when click'),

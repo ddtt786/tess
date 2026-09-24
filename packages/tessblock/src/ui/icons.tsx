@@ -331,3 +331,26 @@ export const PauseIcon = (props: IconProps) => (
   </Icon>
 );
 
+
+/** A pivot with an orbit around it: turning in place, not reloading. */
+export const RotateFreeIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
+    <path d="M8 2.5a5.5 5.5 0 1 1-5.5 5.5" stroke-dasharray="2 1.6" />
+    <path d="M8 2.5 5.8 1M8 2.5 6.2 4.6" />
+  </Icon>
+);
+
+export const RotateFlipIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M1.8 8h12.4" />
+    <path d="M4.5 5.3 1.8 8l2.7 2.7M11.5 5.3 14.2 8l-2.7 2.7" />
+  </Icon>
+);
+
+export const RotateNoneIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="8" cy="8" r="5.5" />
+    <path d="M4.1 11.9l7.8-7.8" />
+  </Icon>
+);

@@ -29,7 +29,9 @@ import { Overlay, type TableLike } from './overlay.ts';
 import { fillParts } from './fill.ts';
 import { isSegment, SegmentBatch, SEGMENT_FLOOR } from './segments.ts';
 import {
+  FULLSCREEN_CANVAS_WIDTH,
   MAX_SHARPNESS,
+  MIN_CANVAS_WIDTH,
   svgBudgetScale,
   svgSharpness,
   textSharpness,
@@ -461,9 +463,12 @@ export class PixiRenderer implements Renderer {
     const fit = Math.min(width / stage.worldWidth, height / stage.worldHeight);
     const cssWidth = Math.max(1, Math.floor(stage.worldWidth * fit));
     const cssHeight = Math.max(1, Math.floor(stage.worldHeight * fit));
-    const resolution = Math.max(
-      1,
-      Math.min(MAX_SHARPNESS, (cssWidth / stage.worldWidth) * this.pixelRatio()),
+    // The canvas never draws fewer pixels than HD across, or full HD once it
+    // is shown that large (full screen), however small the box it sits in.
+    const floorWidth = cssWidth >= MIN_CANVAS_WIDTH ? FULLSCREEN_CANVAS_WIDTH : MIN_CANVAS_WIDTH;
+    const resolution = Math.min(
+      MAX_SHARPNESS,
+      Math.max(floorWidth / stage.worldWidth, (cssWidth / stage.worldWidth) * this.pixelRatio()),
     );
     if (this.lastResolution !== resolution) {
       this.lastResolution = resolution;
@@ -475,6 +480,8 @@ export class PixiRenderer implements Renderer {
       this.markTextDirty();
       this.fitSvgBudget();
       void this.rebakeVectors();
+      // Resizing clears the canvas; drawing now keeps a paused or idle stage from going black.
+      this.app.renderer.render(this.app.stage);
     }
     const canvas = this.app.canvas;
     canvas.style.width = `${cssWidth}px`;

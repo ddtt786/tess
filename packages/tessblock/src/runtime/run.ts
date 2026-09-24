@@ -134,6 +134,8 @@ export function compile(source: string, name: string, urgent = true): Promise<Bu
 }
 
 let running: TessVmHandle | null = null;
+/** The work `running` was booted with. */
+let runningProject: EntryProject | null = null;
 
 export function isRunning(): boolean {
   return running !== null;
@@ -166,6 +168,7 @@ export async function start(
   stop();
   installRuntimeStyles();
   container.replaceChildren();
+  runningProject = built.project;
   running = await boot({
     project: built.project as never,
     container,
@@ -195,11 +198,17 @@ export function resume(): void {
 export function stop(): void {
   running?.dispose();
   running = null;
+  runningProject = null;
 }
 
 /** The running work's handle, for the dev console. */
 export function runningHandle(): TessVmHandle | null {
   return running;
+}
+
+/** The compiled work that is running, for reading its records' ids. */
+export function runningWork(): EntryProject | null {
+  return running ? runningProject : null;
 }
 
 /** Scripts still running in the work; 0 once every one has come to its end. */

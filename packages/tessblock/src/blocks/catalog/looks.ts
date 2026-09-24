@@ -1,5 +1,6 @@
 /** Looks category: visibility, costumes, speech bubbles, size and effects. */
-import { define, emptyIn, menu, numIn, pick, textIn } from '../spec.ts';
+import { define, emptyIn, menu, menuIn, numIn, pick, textIn } from '../spec.ts';
+import { Order } from '../../codegen/order.ts';
 import { quote } from '../../codegen/quote.ts';
 
 const EFFECTS: Array<[string, string]> = [
@@ -26,21 +27,43 @@ define(
     code: () => 'hide',
   },
   {
+    // The costume menu is a block, so a name or number can take its place.
+    type: 'looks_set_costume_by',
+    category: 'looks',
+    message: '%1 모양으로 바꾸기',
+    args: [menuIn('COSTUME', 'looks_costume_menu')],
+    shape: 'statement',
+    code: (a) => `costume = ${a.COSTUME}`,
+  },
+  {
+    type: 'looks_costume_menu',
+    category: 'looks',
+    message: '%1',
+    args: [pick('COSTUME', 'costume')],
+    shape: 'value',
+    hidden: true,
+    unlearned: true,
+    code: (a) => [quote(a.COSTUME), Order.ATOMIC],
+  },
+  // Kept to open works saved before the costume menu became a block.
+  {
     type: 'looks_set_costume',
     category: 'looks',
     message: '%1 모양으로 바꾸기',
     args: [pick('COSTUME', 'costume')],
     shape: 'statement',
+    hidden: true,
+    unlearned: true,
     code: (a) => `costume = ${quote(a.COSTUME)}`,
   },
   {
-    // A costume named or numbered by a value, as entry works do.
     type: 'looks_set_costume_value',
     category: 'looks',
     message: '%1 모양으로 바꾸기',
     args: [emptyIn('VALUE', '1')],
     shape: 'statement',
     hidden: true,
+    unlearned: true,
     code: (a) => `costume = ${a.VALUE}`,
   },
   {

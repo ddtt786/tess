@@ -15,6 +15,7 @@ import {
   TOOLBOX,
   tessTheme,
 } from "../blocks/registry.ts";
+import { reportValue } from "./report-bubble.ts";
 import { DEFINE_BLOCK, fnIdOf, inlineDefinitions, markForeignParams, refreshCallBlocks, relabelCalls, returnsValue, tidyHeader } from "../blocks/functions.ts";
 import { StackAwarePreviewer } from "../blocks/previewer.ts";
 import { runStack } from "./debug-run.ts";
@@ -107,6 +108,9 @@ export function mount(host: HTMLElement): void {
   // of toggling a drawer.
   const flyout = workspace.getFlyout();
   if (flyout) flyout.autoClose = false;
+  // A lone value block, clicked here or in the palette, shows its value.
+  workspace.addChangeListener(onValueClick);
+  flyout?.getWorkspace().addChangeListener(onValueClick);
   workspace.getToolbox()?.selectItemByPosition(0);
   // Picking a category is how you leave a search.
   host.querySelector(".blocklyToolbox")?.addEventListener("pointerdown", () => {
@@ -401,6 +405,18 @@ let signatures = "";
 
 /** Pending frame for greying out misplaced parameter blocks. */
 let paramCheck = 0;
+
+function onValueClick(event: Blockly.Events.Abstract): void {
+  if (event.type !== Blockly.Events.CLICK || !workspace || !shown) return;
+  const click = event as Blockly.Events.Click;
+  if (click.targetType !== "block" || !click.blockId) return;
+  const owner = Blockly.Workspace.getById(click.workspaceId ?? "");
+  let block = owner?.getBlockById(click.blockId) as Blockly.BlockSvg | null | undefined;
+  // A click on a literal inside the block counts as a click on the block.
+  while (block?.isShadow() && block.getParent()) block = block.getParent() as Blockly.BlockSvg;
+  if (!block || !block.outputConnection || block.getParent()) return;
+  void reportValue(block, shown);
+}
 
 function onChange(event: Blockly.Events.Abstract): void {
   if (isLoadingWorkspace) return;

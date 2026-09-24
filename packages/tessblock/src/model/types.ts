@@ -106,6 +106,11 @@ export interface VariableDef {
   scope: StorageScope;
   /** Slider ends, for a slide variable. */
   slide: { min: number; max: number } | null;
+  /**
+   * Where its box sits on the stage: top left, from the stage middle, y down
+   * (entry's own numbers). Absent or null lays it out the way entry does.
+   */
+  at?: { x: number; y: number } | null;
 }
 
 export interface Signal {

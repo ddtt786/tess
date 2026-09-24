@@ -4,9 +4,12 @@ import './ui/style.css';
 import { openAssets } from './model/assets.ts';
 import { restoreFolderState } from './model/folder.ts';
 import { App } from './ui/App.tsx';
+import { loadFonts } from './model/fonts.ts';
 
 // Program sources parse through tree-sitter once it has loaded.
 void initTreeSitterForVite();
+
+loadFonts();
 
 const host = document.getElementById('app');
 // Costumes and sounds come out of IndexedDB before the first paint, so nothing

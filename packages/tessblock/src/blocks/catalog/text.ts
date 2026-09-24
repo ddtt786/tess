@@ -1,16 +1,9 @@
 /** Text category: what a text box writes and how it looks. */
 import { colourIn, define, emptyIn, menu, textField, textIn } from '../spec.ts';
 import { quote } from '../../codegen/quote.ts';
+import { FONTS, fontFamily } from '../../model/fonts.ts';
 
-const FONTS: Array<[string, string]> = [
-  ['나눔고딕', '나눔고딕'],
-  ['나눔명조', '나눔명조'],
-  ['나눔손글씨', '나눔손글씨'],
-  ['바탕체', '바탕체'],
-  ['고딕체', '고딕체'],
-  ['궁서체', '궁서체'],
-  ['둥근모꼴', 'DungGeunMo'],
-];
+const FONT_MENU: Array<[string, string]> = FONTS.map((font) => [font.label, font.family]);
 
 define(
   {
@@ -49,9 +42,9 @@ define(
     type: 'text_set_font',
     category: 'text',
     message: '글꼴을 %1 로 정하기',
-    args: [menu('FONT', FONTS)],
+    args: [menu('FONT', FONT_MENU)],
     shape: 'statement',
-    code: (a) => `font = ${quote(a.FONT)}`,
+    code: (a) => `font = ${quote(fontFamily(a.FONT!))}`,
   },
   {
     // A font outside the menu, as entry works may name.
