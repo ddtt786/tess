@@ -116,25 +116,17 @@ export function registerCleanup() {
  * @param topBlocks Top blocks in the workspace.
  */
 function toggleOption_(shouldCollapse: boolean, topBlocks: BlockSvg[]) {
-  const DELAY = 10;
-  let ms = 0;
-  let timeoutCounter = 0;
-  function timeoutFn(block: BlockSvg) {
-    timeoutCounter--;
-    block.setCollapsed(shouldCollapse);
-    if (timeoutCounter === 0) {
-      Events.setGroup(false);
-    }
-  }
+  // All blocks change in one pass, drawn by one render, instead of one timer
+  // (and one frame) per block.
   Events.setGroup(true);
-  for (let i = 0; i < topBlocks.length; i++) {
-    let block: BlockSvg | null = topBlocks[i];
-    while (block) {
-      timeoutCounter++;
-      setTimeout(timeoutFn.bind(null, block), ms);
-      block = block.getNextBlock();
-      ms += DELAY;
+  try {
+    for (const top of topBlocks) {
+      for (let block: BlockSvg | null = top; block; block = block.getNextBlock()) {
+        block.setCollapsed(shouldCollapse);
+      }
     }
+  } finally {
+    Events.setGroup(false);
   }
 }
 

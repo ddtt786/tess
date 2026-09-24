@@ -415,7 +415,7 @@ export abstract class Field<T = any>
     }
     this.fieldGroup_ = dom.createSvgElement(Svg.G, {});
     if (!this.isVisible()) {
-      this.fieldGroup_.style.display = 'none';
+      this.fieldGroup_.style.visibility = 'hidden';
     }
     const sourceBlockSvg = this.sourceBlock_ as BlockSvg;
     sourceBlockSvg.getSvgRoot().appendChild(this.fieldGroup_);
@@ -799,7 +799,9 @@ export abstract class Field<T = any>
     this.visible_ = visible;
     const root = this.fieldGroup_;
     if (root) {
-      root.style.display = visible ? 'block' : 'none';
+      // `visibility` keeps the field laid out, so showing it again (e.g. on
+      // expanding a block) does not lay out its text again.
+      root.style.visibility = visible ? '' : 'hidden';
     }
   }
 

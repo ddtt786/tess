@@ -3,7 +3,7 @@ import { useSignal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import { currentScene, project } from '../model/store.ts';
 import { activeThreads, pause, relayout, resume, start, stop } from '../runtime/run.ts';
-import { currentSource } from './source.ts';
+import { currentSource, prepareRuns } from './source.ts';
 import { codeOpen, debugRequest, notify, runningStack, stageFullscreen } from './state.ts';
 import { StagePreview } from './StagePreview.tsx';
 import { FireFlagIcon, FlagIcon, MaximizeIcon, MinimizeIcon, PauseIcon, PlayIcon, StopIcon } from './icons.tsx';
@@ -26,6 +26,7 @@ export function StagePanel() {
   const stackWatch = useRef<number | undefined>(undefined);
 
   useEffect(() => () => stop(), []);
+  useEffect(() => prepareRuns(), []);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {

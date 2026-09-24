@@ -33,6 +33,55 @@ export function build(source: string, name: string): BuildResult {
   };
 }
 
+/** The last source handed to the compiler, and its result. */
+let compiled: { source: string; name: string; result: Promise<BuildResult> } | null = null;
+let worker: Worker | null = null;
+let workerFailed = false;
+let nextId = 0;
+const waiting = new Map<number, (result: BuildResult | null) => void>();
+
+function compileWorker(): Worker | null {
+  if (worker || workerFailed || typeof Worker === 'undefined') return worker;
+  try {
+    worker = new Worker(new URL('./compile-worker.ts', import.meta.url), { type: 'module' });
+  } catch {
+    workerFailed = true;
+    return null;
+  }
+  worker.onmessage = (event: MessageEvent<{ id: number; result?: BuildResult; error?: string }>) => {
+    const done = waiting.get(event.data.id);
+    waiting.delete(event.data.id);
+    done?.(event.data.result ?? null);
+  };
+  worker.onerror = () => {
+    // Without a worker the page compiles on the main thread, as before.
+    workerFailed = true;
+    worker?.terminate();
+    worker = null;
+    for (const done of waiting.values()) done(null);
+    waiting.clear();
+  };
+  return worker;
+}
+
+/**
+ * The compiled work for `source`, compiled off the main thread. The same
+ * source asked for again (a run right after `prepare`) gets the same result.
+ */
+export function compile(source: string, name: string): Promise<BuildResult> {
+  if (compiled && compiled.source === source && compiled.name === name) return compiled.result;
+  const target = compileWorker();
+  const result = target
+    ? new Promise<BuildResult | null>((resolve) => {
+        const id = nextId++;
+        waiting.set(id, resolve);
+        target.postMessage({ id, source, name });
+      }).then((done) => done ?? build(source, name))
+    : Promise.resolve().then(() => build(source, name));
+  compiled = { source, name, result };
+  return result;
+}
+
 let running: TessVmHandle | null = null;
 
 export function isRunning(): boolean {
@@ -61,7 +110,7 @@ export async function start(
   onProgress?: (loaded: number, total: number) => void,
   boost = true,
 ): Promise<BuildResult> {
-  const built = build(source, name);
+  const built = await compile(source, name);
   if (!built.project) return built;
   stop();
   installRuntimeStyles();

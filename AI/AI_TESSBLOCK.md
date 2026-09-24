@@ -237,9 +237,21 @@ Blockly 가 `ARG1` 을 찾지 못해 작품 전체가 컴파일되지 않는다.
 ## 8. 실행
 
 ```ts
-const built = build(source, name);              // compileProject(assetUrls: true)
+const built = await compile(source, name);      // 워커에서 compileProject(assetUrls: true), 같은 소스면 이전 결과
 await boot({ project: built.project, container, autoStart: true, kernelUrl: null, scene });
 ```
+
+큰 작품의 실행 시작이 멈추지 않도록(16절):
+
+- 컴파일은 `runtime/compile-worker.ts`(모듈 워커, 워커 안에서도 `initTreeSitterForVite`)에서 한다.
+  `compile()` 은 마지막 소스와 결과(Promise)를 기억해 같은 소스면 그대로 돌려준다. 워커를 만들 수 없거나
+  오류가 나면 메인 스레드 `build()` 로 돌아간다.
+- `ui/source.ts` `prepareRuns()`(StagePanel 에서 시작): `project` 가 바뀌고 700ms 조용하면 소스를 쓰고
+  워커에 미리 컴파일시킨다. 깃발을 누르면 소스가 같아 기다리지 않는다.
+- 소스 쓰기는 블록 상태별 캐시(`codegen/project.ts` `cached`): 상태 참조 + 이름 문맥(식별자 표, 오브젝트
+  키, 오브젝트·모양·소리·신호·장면·변수·테이블 이름, 함수 이름·매개변수)이 같으면 다시 쓰지 않는다.
+  `currentSource()` 는 flush 직후라 열린 오브젝트도 저장된 상태로 캐시를 쓴다(`liveSaved`, 없으면 라이브
+  워크스페이스에서 써서 그 상태에 넣는다). 코드 서랍(`currentSource(false)`)은 라이브 그대로.
 
 `kernelUrl: null` 은 wasm 커널 없이 자바스크립트 커널로 돌린다는 뜻이다. `scene` 은
 **지금 보고 있는 장면의 이름**이다 — 엔트리 편집기처럼 시작하기는 작업 중인 장면에서
@@ -350,6 +362,12 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
 ## 9. 상태와 저장
 
 - 프로젝트 전체는 `model/store.ts` 의 `project` 신호 하나에 있다. 변경은 `update()` 로만.
+- `update()` 는 블록 상태(`object.blocks`·`definition.blocks`)를 **복사하지 않고 공유**한다(`editableCopy`).
+  블록 상태는 통째로 바꾸기만 하고 제자리에서 고치지 않는다는 규칙이 전제다. 함수 매개변수가 바뀔 때
+  호출을 옮기는 `remapProjectCalls` 는 그 함수를 부르는 상태만 복사한 뒤 고친다. 덕분에 편집마다 작품 전체를
+  복제하지 않고, 바뀌지 않은 오브젝트는 같은 상태 참조를 유지해 소스 캐시가 맞는다.
+- 자동 저장·`setObjectBlocks` 비교는 상태별 JSON 캐시(`stateText`, `projectText`)로 바뀐 스크립트만 직렬화한다
+  (결과 문자열은 `JSON.stringify(project)` 와 같다).
 - `localStorage['tessblock.project.v1']` 에 400ms 디바운스로 자동 저장한다. 그림과 소리는
   여기 들어가지 않는다 — 프로젝트에는 `asset:<id>` 참조만 남는다.
 - 자산은 **IndexedDB**(`model/assets.ts`)에 있다. 시작할 때 한 번 읽어 메모리에 데이터
@@ -679,4 +697,34 @@ tessblock 은 npm `blockly` 대신 `packages/blockly` 의 포크를 쓴다.
 
 정지 화면, 선택 윤곽, 필드 호버, 실행 발광, 끼우기 후, 겹친 스택 놓기, 다시 넣기, 비활성화, 놓은 뒤, 되돌리기:
 블록 영역 0 픽셀 차이(실행 발광 필터 1픽셀 ±1). 끄는 중만 위의 합성 레이어 글자 안티앨리어싱 차이.
+
+## 15. 모두 접기·펼치기, 드롭다운 크기, 함수 목록
+
+- **모두 접기/펼치기**: Blockly 는 블록마다 `setTimeout` 을 10ms 간격으로 걸어 하나씩 접는다(1485 블록 스크립트:
+  약 4.5초 동안 87 프레임, 원래 Blockly 는 11초). 포크 `contextmenu_items.ts` `toggleOption_` 은 한 번에
+  바꾸고 한 번 그린다(같은 이벤트 그룹). 같이 고친 O(n²): `childHasWarning`(블록마다 `getDescendants` 두 번),
+  `updateDisabled`(상태가 같아도 체인 끝까지, 블록마다 조상 경로 재계산 → 물려받은 비활성 값을 넘기는
+  `updateDisabledWith`).
+- 숨김은 `display:none` 대신 `visibility:hidden`(필드 `Field.setVisible`·초기화, 숨은 입력의 자식
+  `applyDisplay`). 레이아웃이 남아 펼칠 때 글자를 다시 배치하지 않는다(펼치기 레이아웃 240ms → 4ms).
+  보이지 않는 요소는 히트 테스트·포커스에서 빠지므로 동작은 같다.
+- 글자 폭 캐시 구간에서 같은 SVG·같은 클래스의 글꼴 스타일은 한 번만 `getComputedStyle`(DOM 변경 뒤마다
+  스타일 재계산을 강제하던 것).
+- 측정(1485 블록): 모두 접기 4.5초/87프레임 → 약 0.3초/1프레임, 모두 펼치기 4.5초 → 약 0.16초. 결과 화면은
+  원래 Blockly 와 픽셀 동일.
+- **드롭다운 크기**: 포크 `dropdowndiv.ts` 가 드롭다운을 띄울 때 블록이 그려진 배율을
+  `--blocklyBlockScale` 로 넘기고, `style.css` 가 시작 배율 0.75 대비 비율(`--tess-dd`)로 글자·여백·높이·모서리·
+  체크 표시(`zoom`)를 곱한다. 0.75 에서는 예전과 픽셀 동일.
+- **속성 탭 함수 목록**: `.rec-list` 는 그리드인데 열 너비가 가장 긴 행(줄바꿈 없는 매개변수 목록)의
+  min-content 로 늘어 모든 행의 편집·삭제 버튼이 패널 밖으로 밀렸다. `grid-template-columns: minmax(0, 1fr)`.
+
+## 16. 큰 작품의 실행 시작
+
+- 원래(합성 20만 블록, 오브젝트 120개): 깃발 → 소스 쓰기 4.4초(오브젝트마다 헤드리스 워크스페이스에 불러와
+  생성) + 컴파일 3.1초 + tessvm 부팅 0.4초 ≈ 8초 동안 멈춤.
+- 지금: 소스 26ms(캐시), 컴파일 0(워커가 미리), 부팅 약 0.4초 → 깃발에서 실행까지 약 0.5초, 가장 긴 프레임
+  간격 약 0.4초(부팅: tessvm 이 스크립트를 JS 로 만들고 V8 이 처음 컴파일하는 비용).
+- 편집 직후 바로 누르면 워커 컴파일을 기다리지만 화면은 멈추지 않는다.
+- 검증: 캐시한 소스 = 캐시 없이 새로 쓴 소스(이름 바꾼 뒤 포함), 워커 결과 = 메인 스레드 결과,
+  저장 문자열 = `JSON.stringify`, 되돌리기 동작, 프로덕션 빌드에서 워커·wasm 로드.
 

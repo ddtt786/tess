@@ -674,7 +674,7 @@ export class BlockSvg
     this.applyDisplay();
   }
 
-  /** Hides the flat groups of this subtree that a hidden block contains. */
+  /** Hides this subtree's groups that a hidden block contains. */
   private applyDisplay() {
     let hidden = false;
     for (let parent = this.getParent(); parent; parent = parent.getParent()) {
@@ -686,9 +686,12 @@ export class BlockSvg
     const pending: Array<[BlockSvg, boolean]> = [[this, hidden]];
     while (pending.length) {
       const [block, above] = pending.pop()!;
-      const display = block.flat && above ? 'none' : block.svgDisplay;
-      if (block.svgGroup.style.display !== display) {
-        block.svgGroup.style.display = display;
+      // Hidden with `visibility`, which keeps the layout, so showing the
+      // blocks again (e.g. expanding) does not lay out their text again.
+      const hide = (block.flat && above) || block.svgDisplay === 'none';
+      const visibility = hide ? 'hidden' : '';
+      if (block.svgGroup.style.visibility !== visibility) {
+        block.svgGroup.style.visibility = visibility;
       }
       const inside = above || block.svgDisplay === 'none';
       for (const child of block.childBlocks_) pending.push([child, inside]);
@@ -915,22 +918,14 @@ export class BlockSvg
    * @returns true if any child has a warning, false otherwise.
    */
   private childHasWarning(): boolean {
+    // Walks the blocks inside this one; the blocks after it are not inside.
     const next = this.getNextBlock();
-    const excluded = next ? new Set(next.getDescendants(false)) : null;
-    const descendants = this.getDescendants(false);
-
-    for (const descendant of descendants) {
-      if (descendant === this) {
-        continue;
-      }
-      if (excluded?.has(descendant)) {
-        continue;
-      }
-      if (descendant.getIcon(WarningIcon.TYPE)) {
-        return true;
-      }
+    const pending = this.getChildren(false).filter((child) => child !== next);
+    while (pending.length) {
+      const block = pending.pop()!;
+      if (block.getIcon(WarningIcon.TYPE)) return true;
+      pending.push(...block.getChildren(false));
     }
-
     return false;
   }
 
@@ -1459,19 +1454,30 @@ export class BlockSvg
    * @internal
    */
   updateDisabled() {
-    const disabled = !this.isEnabled() || this.getInheritedDisabled();
+    this.updateDisabledWith(this.getInheritedDisabled());
+  }
 
-    if (this.visuallyDisabled === disabled) {
-      this.getNextBlock()?.updateDisabled();
-      return;
+  /**
+   * Same as `updateDisabled`, given whether an enclosing block is disabled.
+   * The blocks after this one share that value, and the blocks inside a block
+   * inherit its own, so no block looks up its ancestors again.
+   */
+  private updateDisabledWith(inherited: boolean) {
+    for (
+      let block: BlockSvg | null = this;
+      block;
+      block = block.getNextBlock()
+    ) {
+      const disabled = !block.isEnabled() || inherited;
+      if (block.visuallyDisabled === disabled) continue;
+      block.applyColour();
+      block.visuallyDisabled = disabled;
+      const next = block.getNextBlock();
+      for (const child of block.getChildren(false)) {
+        if (child !== next) child.updateDisabledWith(disabled);
+      }
+      block.recomputeAriaContext();
     }
-
-    this.applyColour();
-    this.visuallyDisabled = disabled;
-    for (const child of this.getChildren(false)) {
-      child.updateDisabled();
-    }
-    this.recomputeAriaContext();
   }
 
   /**

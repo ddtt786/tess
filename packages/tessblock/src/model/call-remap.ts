@@ -84,6 +84,25 @@ export function remapProjectCalls(
     oldIds.set(definition.id, old.params.map((param) => param.id));
   }
   if (!changed.size) return;
-  for (const object of draft.objects) remapSavedCalls(object.blocks, changed, oldIds);
-  for (const definition of draft.functions) remapSavedCalls(definition.blocks, changed, oldIds);
+  // States are shared with the history, so a state is copied before it changes.
+  for (const owner of [...draft.objects, ...draft.functions]) {
+    if (!callsAny(owner.blocks, changed)) continue;
+    const copy = structuredClone(owner.blocks);
+    remapSavedCalls(copy, changed, oldIds);
+    owner.blocks = copy;
+  }
+}
+
+/** Whether a saved state calls any of the given functions. */
+function callsAny(state: unknown, functions: Map<string, FunctionDef>): boolean {
+  const pending: Array<BlockJson | undefined> = [...((state as { blocks?: { blocks?: BlockJson[] } } | null)?.blocks?.blocks ?? [])];
+  while (pending.length) {
+    const block = pending.pop();
+    if (!block) continue;
+    const id = calledId(block.type);
+    if (id && functions.has(id)) return true;
+    for (const input of Object.values(block.inputs ?? {})) pending.push(input.block, input.shadow);
+    pending.push(block.next?.block);
+  }
+  return false;
 }
