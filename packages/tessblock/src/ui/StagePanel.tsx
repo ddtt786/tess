@@ -199,10 +199,10 @@ export function StagePanel() {
         </div>
       )}
 
-      <div class="stage-frame">
+      <div class={`stage-frame ${running.value && debugging.value ? 'debugging' : ''}`}>
         {(!running.value || !revealed.value) && <StagePreview />}
         <div
-          class={`stage-host ${revealed.value ? '' : 'concealed'} ${running.value && debugging.value ? 'debugging' : ''}`}
+          class={`stage-host ${revealed.value ? '' : 'concealed'}`}
           ref={host}
           tabIndex={0}
         />

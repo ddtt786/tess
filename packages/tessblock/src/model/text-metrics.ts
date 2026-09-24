@@ -29,3 +29,37 @@ export function measureTextBox(text: TextProps): { boxWidth: number; boxHeight: 
     boxHeight: Math.max(12, Math.ceil(lines.length * text.fontSize * 1.25)),
   };
 }
+
+/** `TEXT_BOX_REPOSITION_OFFSET - TEXT_BOX_WEBGL_OFFSET` in entryjs: a wrapping box's text starts this far below its top. */
+const WRAPPED_TOP = 10 - 5.9;
+
+const shifts = new Map<string, number>();
+
+/** The runner's text engine (PIXI) font metrics for a text box's font. */
+export type RunnerMetrics = (text: TextProps) => { ascent: number; descent: number };
+
+/**
+ * How far below the page's placement the stage draws a text box's letters, in
+ * the box's own pixels. The runner (PIXI) places a line's baseline from font
+ * metrics it measures itself; the page uses the font's own ascent and descent.
+ */
+export function textShift(text: TextProps, runner: RunnerMetrics): number {
+  const weight = text.bold ? 'bold' : 'normal';
+  const style = text.italic ? 'italic' : 'normal';
+  const key = `${style}|${weight}|${text.fontSize}|${text.font}`;
+  let shift = shifts.get(key);
+  if (shift === undefined) {
+    shift = 0;
+    const ruler = measurer();
+    if (ruler) {
+      ruler.font = `${style} ${weight} ${text.fontSize}px "${text.font}", sans-serif`;
+      const page = ruler.measureText('가Hg');
+      const pixi = runner(text);
+      if (page.fontBoundingBoxAscent !== undefined) {
+        shift = (pixi.ascent - pixi.descent) / 2 - (page.fontBoundingBoxAscent - page.fontBoundingBoxDescent) / 2;
+      }
+    }
+    shifts.set(key, shift);
+  }
+  return text.lineBreak ? shift + WRAPPED_TOP : shift;
+}

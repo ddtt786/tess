@@ -719,7 +719,8 @@ function upgradeBlocks<T extends { blocks: unknown }>(owner: T): T {
     const colour = block.fields?.COLOUR;
     if (block.type && COLOUR_SOCKETS.has(block.type) && typeof colour === 'string') {
       delete block.fields!.COLOUR;
-      block.inputs = { ...block.inputs, COLOUR: { shadow: { type: 'calc_colour', fields: { COLOUR: colour } } } };
+      const swatch = { type: 'calc_colour', fields: { COLOUR: colour } };
+      block.inputs = { ...block.inputs, COLOUR: { shadow: swatch, block: { ...swatch } } };
     }
     for (const input of Object.values(block.inputs ?? {})) {
       visit(input.block);

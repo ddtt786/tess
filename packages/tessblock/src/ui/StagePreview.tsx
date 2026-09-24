@@ -15,6 +15,8 @@ import {
   rotate, type HandleKind, type Point,
 } from './stage-geometry.ts';
 import type { TessObject } from '../model/types.ts';
+import { CanvasTextMetrics, TextStyle } from 'pixi.js';
+import { textShift, type RunnerMetrics } from '../model/text-metrics.ts';
 import { PreviewMonitors } from './PreviewMonitors.tsx';
 
 const HANDLES: HandleKind[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -120,6 +122,8 @@ function PreviewObject({ object, toStage }: DragProps) {
             // The runner sets wrapped lines fontSize + 2 apart, from the top of the box.
             lineHeight: text.lineBreak ? `${text.fontSize + 2}px` : undefined,
             overflow: text.lineBreak ? 'hidden' : undefined,
+            // Letters sit where the runner draws them (its own font metrics, a wrapping box's top offset).
+            transform: `translateY(${textShift(text, runnerMetrics)}px)`,
           }}
         >
           {text.content}
@@ -238,3 +242,14 @@ function place(point: Point): Record<string, string> {
 function percent(value: number, total: number): number {
   return Math.round((value / total) * 10000) / 100;
 }
+
+/** Font metrics the way the runner's PIXI text measures them. */
+const runnerMetrics: RunnerMetrics = (text) => {
+  const style = new TextStyle({
+    fontFamily: text.font,
+    fontSize: text.fontSize,
+    fontWeight: text.bold ? 'bold' : 'normal',
+    fontStyle: text.italic ? 'italic' : 'normal',
+  });
+  return CanvasTextMetrics.measureFont(style._fontString ?? `${text.fontSize}px "${text.font}"`);
+};

@@ -749,7 +749,9 @@ function valueInput(node: unknown, shadow: ShadowKind, ctx: ConvertContext): Rec
   if (shadow.kind === 'colour') {
     const literal = literalOf(node);
     if (typeof literal === 'string' && /^#[0-9a-f]{6}$/i.test(literal)) {
-      return { shadow: { type: 'calc_colour', fields: { COLOUR: literal.toLowerCase() } } };
+      // A real colour block over its shadow, so the colour can be taken out.
+      const colour = { type: 'calc_colour', fields: { COLOUR: literal.toLowerCase() } };
+      return { shadow: colour, block: { ...colour } };
     }
   }
   const converted = convertValue(node, ctx);

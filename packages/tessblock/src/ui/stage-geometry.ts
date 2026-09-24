@@ -168,22 +168,30 @@ export function resizeFromHandle(
   };
 }
 
-/** Moves the registration point to a stage position, leaving the picture put. */
-export function centerFromStage(
-  geometry: Geometry,
-  target: Point,
-): Partial<ObjectProps> {
-  const delta = { x: target.x - geometry.origin.x, y: target.y - geometry.origin.y };
-  const local = rotate(delta, -geometry.angle);
+/**
+ * Moves the registration point to a stage position while the picture stays
+ * exactly where it is: the point is rounded to a costume pixel first, and x/y
+ * follow from that rounded point, so rounding never nudges the picture.
+ * `start` is the geometry when the drag began.
+ */
+export function centerFromStage(start: Geometry, target: Point): Partial<ObjectProps> {
+  const scale = { x: start.scale.x || 1, y: start.scale.y || 1 };
+  const local = rotate({ x: target.x - start.origin.x, y: target.y - start.origin.y }, -start.angle);
   const reg = {
-    x: clamp(geometry.reg.x + local.x / (geometry.scale.x || 1), -geometry.size.x, geometry.size.x * 2),
-    y: clamp(geometry.reg.y + local.y / (geometry.scale.y || 1), -geometry.size.y, geometry.size.y * 2),
+    x: Math.round(start.reg.x + local.x / scale.x),
+    y: Math.round(start.reg.y + local.y / scale.y),
   };
+  const moved = rotate({ x: (reg.x - start.reg.x) * scale.x, y: (reg.y - start.reg.y) * scale.y }, start.angle);
+  const origin = { x: start.origin.x + moved.x, y: start.origin.y + moved.y };
   return {
-    center: { x: Math.round(reg.x), y: Math.round(reg.y) },
-    x: Math.round(target.x - STAGE.width / 2),
-    y: Math.round(STAGE.height / 2 - target.y),
+    center: reg,
+    x: round2(origin.x - STAGE.width / 2),
+    y: round2(STAGE.height / 2 - origin.y),
   };
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 /** The angle that points the rotation handle at a stage position. */
@@ -191,8 +199,4 @@ export function angleFromStage(geometry: Geometry, target: Point, snap: boolean)
   const degrees = (Math.atan2(target.y - geometry.origin.y, target.x - geometry.origin.x) * 180) / Math.PI + 90;
   const wrapped = ((Math.round(degrees) % 360) + 360) % 360;
   return snap ? Math.round(wrapped / 15) * 15 % 360 : wrapped;
-}
-
-function clamp(value: number, low: number, high: number): number {
-  return Math.min(high, Math.max(low, value));
 }

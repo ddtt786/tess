@@ -302,7 +302,10 @@ function blockEntry(spec: BlockSpec): FlyoutBlock {
   const inputs: Record<string, unknown> = {};
   for (const arg of spec.args) {
     if (arg.type !== 'value' || arg.shadow.kind === 'none') continue;
-    inputs[arg.name] = { shadow: shadowBlock(arg.shadow) };
+    // A colour comes as a real block over its shadow, so it can be taken out and used elsewhere.
+    inputs[arg.name] = arg.shadow.kind === 'colour'
+      ? { shadow: shadowBlock(arg.shadow), block: shadowBlock(arg.shadow) }
+      : { shadow: shadowBlock(arg.shadow) };
   }
   if (Object.keys(inputs).length) entry.inputs = inputs;
   return entry;

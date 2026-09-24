@@ -438,12 +438,14 @@ export function syncFunctionBlocks(functions: FunctionDef[] = project.peek().fun
 
 function defineCallBlock(definition: FunctionDef, asValue: boolean): void {
   const type = asValue ? valueCallType(definition.id) : callType(definition.id);
-  const args = definition.params.map((param, index) => ({
-    type: 'input_value',
-    name: `ARG${index}`,
-    ...(param.kind === 'boolean' ? { check: 'Boolean' } : {}),
-  }));
-  const message = `${shortLabel(definition.name)}${definition.params.map((_, index) => ` %${index + 1}`).join('')}`;
+  // Past a few arguments the slots wrap onto further rows, so the block stays about as wide as a short one.
+  const wrap = definition.params.length > ARGS_BEFORE_WRAP + 1;
+  const args: Array<Record<string, unknown>> = [];
+  definition.params.forEach((param, index) => {
+    if (wrap && index > 0 && index % ARGS_BEFORE_WRAP === 0) args.push({ type: 'input_end_row', name: `ROW${index}` });
+    args.push({ type: 'input_value', name: `ARG${index}`, ...(param.kind === 'boolean' ? { check: 'Boolean' } : {}) });
+  });
+  const message = `${shortLabel(definition.name)}${args.map((_, index) => ` %${index + 1}`).join('')}`;
   const json: Record<string, unknown> = {
     type,
     message0: message,
@@ -519,6 +521,9 @@ export function refreshCallBlocks(workspace: Blockly.WorkspaceSvg, functions: Fu
     Blockly.Events.setGroup(false);
   }
 }
+
+/** Argument slots on one row of a call block before the rest wrap below. */
+const ARGS_BEFORE_WRAP = 3;
 
 /** Longest name a call block spells out; the palette would otherwise grow as wide as the name. */
 const LABEL_LIMIT = 20;

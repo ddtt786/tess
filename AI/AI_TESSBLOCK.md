@@ -536,8 +536,27 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
   누른 채면 부스트로 돈다. 부스트 실행 중에는 일시정지/계속 단추가 은은하게 타오른다(`.play.pause.boost`).
   `boot({ boost })` 로 넘어가 `boost_mode?` 와 글상자 세로 정렬에 영향.
 - **디버깅 표시** — 더블클릭 실행 중에는 조작 단추 옆에 "디버깅 중 · 오브젝트" 알약(깜박이는 점)과 무대
-  테두리(주황, 캔버스 위에 `::after` 로)를 띄운다.
+  테두리를 띄운다. 테두리는 둥근 `.stage-frame` 자체의 `border-color` + 바깥 `box-shadow`(은은히 맥박)라
+  둥근 모서리를 따라가고 `overflow:hidden` 에 잘리지 않는다.
 - **왼쪽 패널 숨기기** (`ui/Resizer.tsx`) — 너비를 끄는 중 포인터가 최솟값의 절반(`HIDE_BELOW` = 150px)보다
   왼쪽으로 가면 숨길 뜻이 분명하다고 보고 `html.side-hidden` 을 켠다(그 사이는 최솟값 300 에서 멈춤).
   숨기면 첫 열이 0, 손잡이만 10px 띠로 왼쪽 끝에 남고, 그 띠를 끌어내면 다시 보인다. 상태는
   localStorage `tessblock.sideHidden`. 블록 작업 공간은 `EditorTabs` 의 ResizeObserver 로 따라 커진다.
+- **인수 많은 함수와 팔레트 너비** — 호출 블록은 인수가 4개를 넘으면 3개마다 `input_end_row` 로 줄을 바꾼다
+  (입력 이름 `ARGn` 은 그대로라 저장본·`remapSlots` 에 영향 없음). 그래도 넓은 블록에 대비해 팔레트는
+  `blocks/capped-flyout.ts` 의 `CappedFlyout`(플러그인 `flyoutsVerticalToolbox`)가 폭 계산에 쓰는 블록 경계를
+  460(작업 공간 단위)으로 자른다 — 더 넓은 블록은 팔레트 끝에서 잘려 보이고 끌어낼 수는 있다.
+- **미리보기 글자 세로 위치** (`model/text-metrics.ts` `textShift`) — 러너(PIXI)는 한 줄의 기준선을
+  `ascent + (lineHeight − fontSize)/2` 로, 그 ascent·descent 는 자기가 캔버스 픽셀을 훑어 잰 값
+  (`CanvasTextMetrics.measureFont`)으로 놓는다. 페이지는 글꼴 자체의 ascent·descent 를 쓰므로 그 차이
+  `(pixi.a − pixi.d)/2 − (css.a − css.d)/2` 만큼 미리보기 글자를 내린다. 줄바꿈 글상자는 러너가 상자 위에서
+  `10 − 5.9`(entryjs `TEXT_BOX_REPOSITION_OFFSET − TEXT_BOX_WEBGL_OFFSET`)만큼 내려 그리므로 그만큼 더한다.
+  재 보니(헤드리스, 9가지 경우) 그림은 1화면픽셀 이내, 여러 줄·큰 글자는 0, 한 줄 20px 는 1무대픽셀 안팎.
+- **무게중심 옮기기** (`stage-geometry.ts` `centerFromStage`) — 드래그 시작 때의 모양 기준으로 중심을 코스튬
+  픽셀에 반올림한 뒤, 그 반올림된 중심에서 x/y 를 거꾸로 구해 그림이 한 치도 움직이지 않는다(x/y 는 소수
+  둘째 자리). 예전에는 중심을 코스튬 크기 안으로 가뒀는데 x/y 는 포인터를 따라가서, 가둔 뒤로는 그림이
+  끌려갔고, 중심과 x/y 를 따로 반올림해 드래그마다 그림이 떨렸다. 이제 중심은 어디로든 옮길 수 있다.
+- **색 꺼내기** — 색 소켓(붓 색·채우기 색·글자 색·글상자 배경색·`from_hex`)은 팔레트·불러오기·옛 저장본
+  모두 `calc_colour` 그림자 위에 같은 색의 **진짜** `calc_colour` 블록을 얹는다. 끌어내 다른 곳에 쓸 수 있고,
+  빼면 그림자 색이 남는다.
+

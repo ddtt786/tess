@@ -5,6 +5,7 @@
  * mounts it, switching objects swaps the saved state in and out, and every
  * edit is written back to the project.
  */
+import { CappedFlyout } from "../blocks/capped-flyout.ts";
 import * as Blockly from "blockly/core";
 import { CATEGORY_ORDER } from "../blocks/theme.ts";
 import {
@@ -53,7 +54,7 @@ export const WORKSPACE_OPTIONS: Blockly.BlocklyOptions = {
   grid: { spacing: 28, length: 3, colour: "#e2e7f1", snap: false },
   move: { scrollbars: true, drag: true, wheel: true },
   // Long stacks would re-render top to bottom on every move of the insertion marker.
-  plugins: { connectionPreviewer: StackAwarePreviewer },
+  plugins: { connectionPreviewer: StackAwarePreviewer, flyoutsVerticalToolbox: CappedFlyout },
 };
 
 export function mount(host: HTMLElement): void {

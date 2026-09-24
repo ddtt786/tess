@@ -463,6 +463,10 @@ p {
   inset: 0;
   pointer-events: none;
 }
+/* The stage takes focus when it starts so keys reach the work; no ring for that. */
+.stage-host:focus {
+  outline: none;
+}
 .stage-host:not(:empty) {
   pointer-events: auto;
   background: #fff;
@@ -3256,15 +3260,16 @@ button:focus-visible,
   0%, 100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.55); }
   50% { box-shadow: 0 0 0 5px rgba(249, 115, 22, 0); }
 }
-/* Drawn over the canvas: an outline on the host would sit under it. */
-.stage-host.debugging::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border: 2.5px solid #f59e0b;
-  border-radius: inherit;
-  pointer-events: none;
-  z-index: 5;
+/* The stage's own rounded frame takes the colour; a shadow is drawn outside the
+   frame's clipping, so it follows the round corners. */
+.stage-frame.debugging {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 2px #f59e0b, 0 0 16px 2px rgba(245, 158, 11, 0.38);
+  animation: debug-glow 1.6s ease-in-out infinite alternate;
+}
+@keyframes debug-glow {
+  from { box-shadow: 0 0 0 2px #f59e0b, 0 0 10px 1px rgba(245, 158, 11, 0.28); }
+  to { box-shadow: 0 0 0 2px #f59e0b, 0 0 18px 4px rgba(245, 158, 11, 0.45); }
 }
 /* Shift over the flag: it catches fire, and the run starts in boost mode. */
 .flag-btn .flag-plain,
