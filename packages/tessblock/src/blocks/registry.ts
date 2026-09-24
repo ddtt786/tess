@@ -11,7 +11,6 @@ import { Order } from '../codegen/order.ts';
 import { editingFunction } from '../model/function-editing.ts';
 import { project, selectedObjectId } from '../model/store.ts';
 import { installContextMenu } from './context-menu.ts';
-import { installStackDrag } from './stack-drag.ts';
 import { registerColourPicker } from './colour-field.ts';
 import { registerFields } from './fields.ts';
 import { DEFINE_BLOCK, defineFunctionBlocks, callType, returnsValue, syncFunctionBlocks, valueCallType } from './functions.ts';
@@ -48,7 +47,6 @@ export function installBlocks(): void {
   registerColourPicker();
   registerFields();
   installContextMenu();
-  installStackDrag();
 
   const definitions = allSpecs().map(blockDefinition);
   Blockly.common.defineBlocksWithJsonArray(definitions as never[]);

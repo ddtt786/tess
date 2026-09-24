@@ -1,0 +1,19 @@
+{
+  "include": ["core/**/*", "plugins/**/*"],
+  "compilerOptions": {
+    "outDir": "build",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "es2020",
+    "useDefineForClassFields": false,
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "strict": true,
+    "sourceMap": true,
+    "declaration": false,
+    "noEmitOnError": false,
+    "skipLibCheck": true,
+    "incremental": true,
+    "tsBuildInfoFile": "build/.tsbuildinfo",
+    "types": []
+  }
+}
