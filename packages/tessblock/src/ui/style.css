@@ -462,6 +462,9 @@ p {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  /* The running canvas has square corners; clip it to the frame's rounded inside
+     (radius less the 1px border), which overflow:hidden does not do for a GPU layer. */
+  clip-path: inset(0 round calc(var(--r-md) - 1px));
 }
 /* The stage takes focus when it starts so keys reach the work; no ring for that. */
 .stage-host:focus {
