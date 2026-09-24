@@ -1,0 +1,445 @@
+/**
+ * @license
+ * Copyright 2012 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * Object representing an input (value, statement, or dummy).
+ *
+ * @class
+ */
+// Former goog.module ID: Blockly.Input
+
+import type {Block} from '../block.js';
+import {computeFieldRowLabel, getInputLabels} from '../block_aria_composer.js';
+import type {BlockSvg} from '../block_svg.js';
+import type {Connection} from '../connection.js';
+import {ConnectionType} from '../connection_type.js';
+import type {Field} from '../field.js';
+import * as fieldRegistry from '../field_registry.js';
+import {RenderedConnection} from '../rendered_connection.js';
+import {Verbosity} from '../utils/aria.js';
+import * as parsing from '../utils/parsing.js';
+import {Align} from './align.js';
+import {inputTypes} from './input_types.js';
+
+/**
+ * Represents a string or a function that returns a string which can be used as a
+ * custom ARIA string to represent an Input, or null if the default fallback should
+ * be used. See setAriaLabelProvider for more context.
+ */
+export type AriaLabelProvider = ((input: Input) => string | null) | string;
+
+/** Class for an input with optional fields. */
+export class Input {
+  fieldRow: Field[] = [];
+  /** Alignment of input's fields (left, right or centre). */
+  align = Align.LEFT;
+
+  /** Is the input visible? */
+  private visible = true;
+
+  /** The AriaLabelProvider */
+  private ariaLabelProvider: AriaLabelProvider | null = null;
+
+  public readonly type: inputTypes = inputTypes.CUSTOM;
+
+  public connection: Connection | null = null;
+
+  /**
+   * @param name Language-neutral identifier which may used to find this input
+   *     again.
+   * @param sourceBlock The block containing this input.
+   */
+  constructor(
+    public name: string,
+    private sourceBlock: Block,
+  ) {}
+
+  /**
+   * Get the source block for this input.
+   *
+   * @returns The block this input is part of.
+   */
+  getSourceBlock(): Block {
+    return this.sourceBlock;
+  }
+
+  /**
+   * Add a field (or label from string), and all prefix and suffix fields, to
+   * the end of the input's field row.
+   *
+   * @param field Something to add as a field.
+   * @param opt_name Language-neutral identifier which may used to find this
+   *     field again.  Should be unique to the host block.
+   * @returns The input being append to (to allow chaining).
+   */
+  appendField<T>(field: string | Field<T>, opt_name?: string): Input {
+    this.insertFieldAt(this.fieldRow.length, field, opt_name);
+    return this;
+  }
+
+  /**
+   * Inserts a field (or label from string), and all prefix and suffix fields,
+   * at the location of the input's field row.
+   *
+   * @param index The index at which to insert field.
+   * @param field Something to add as a field.
+   * @param opt_name Language-neutral identifier which may used to find this
+   *     field again.  Should be unique to the host block.
+   * @returns The index following the last inserted field.
+   */
+  insertFieldAt<T>(
+    index: number,
+    field: string | Field<T>,
+    opt_name?: string,
+  ): number {
+    if (index < 0 || index > this.fieldRow.length) {
+      throw Error('index ' + index + ' out of bounds.');
+    }
+    // Falsy field values don't generate a field, unless the field is an empty
+    // string and named.
+    if (!field && !(field === '' && opt_name)) {
+      return index;
+    }
+
+    // Generate a FieldLabel when given a plain text field.
+    if (typeof field === 'string') {
+      field = fieldRegistry.fromJson({
+        type: 'field_label',
+        text: field,
+      })!;
+    }
+
+    field.setSourceBlock(this.sourceBlock);
+    if (this.sourceBlock.initialized) this.initField(field);
+    field.name = opt_name;
+    field.setVisible(this.isVisible());
+
+    if (field.prefixField) {
+      // Add any prefix.
+      index = this.insertFieldAt(index, field.prefixField);
+    }
+    // Add the field to the field row.
+    this.fieldRow.splice(index, 0, field as Field);
+    index++;
+    if (field.suffixField) {
+      // Add any suffix.
+      index = this.insertFieldAt(index, field.suffixField);
+    }
+
+    if (this.sourceBlock.rendered) {
+      (this.sourceBlock as BlockSvg).queueRender();
+    }
+    return index;
+  }
+
+  /**
+   * Remove a field from this input.
+   *
+   * @param name The name of the field.
+   * @param opt_quiet True to prevent an error if field is not present.
+   * @returns True if operation succeeds, false if field is not present and
+   *     opt_quiet is true.
+   * @throws {Error} if the field is not present and opt_quiet is false.
+   */
+  removeField(name: string, opt_quiet?: boolean): boolean {
+    for (let i = 0, field; (field = this.fieldRow[i]); i++) {
+      if (field.name === name) {
+        field.dispose();
+        this.fieldRow.splice(i, 1);
+        if (this.sourceBlock.rendered) {
+          (this.sourceBlock as BlockSvg).queueRender();
+        }
+        return true;
+      }
+    }
+    if (opt_quiet) {
+      return false;
+    }
+    throw Error('Field "' + name + '" not found.');
+  }
+
+  /**
+   * Gets whether this input is visible or not.
+   *
+   * @returns True if visible.
+   */
+  isVisible(): boolean {
+    return this.visible;
+  }
+
+  /**
+   * Sets whether this input is visible or not.
+   * Should only be used to collapse/uncollapse a block.
+   *
+   * @param visible True if visible.
+   * @returns List of blocks to render.
+   * @internal
+   */
+  setVisible(visible: boolean): BlockSvg[] {
+    // Note: Currently there are only unit tests for block.setCollapsed()
+    // because this function is package. If this function goes back to being a
+    // public API tests (lots of tests) should be added.
+    let renderList: BlockSvg[] = [];
+    if (this.visible === visible) {
+      return renderList;
+    }
+    this.visible = visible;
+
+    for (let y = 0, field; (field = this.fieldRow[y]); y++) {
+      field.setVisible(visible);
+    }
+    if (this.connection && this.connection instanceof RenderedConnection) {
+      // Has a connection.
+      if (visible) {
+        renderList = this.connection.startTrackingAll();
+      } else {
+        this.connection.stopTrackingAll();
+      }
+      const child = this.connection.targetBlock();
+      if (child) {
+        child.getSvgRoot().style.display = visible ? 'block' : 'none';
+      }
+    }
+    return renderList;
+  }
+
+  /**
+   * Mark all fields on this input as dirty.
+   *
+   * @internal
+   */
+  markDirty() {
+    for (let y = 0, field; (field = this.fieldRow[y]); y++) {
+      field.markDirty();
+    }
+  }
+
+  /**
+   * Change a connection's compatibility.
+   *
+   * @param check Compatible value type or list of value types.  Null if all
+   *     types are compatible.
+   * @returns The input being modified (to allow chaining).
+   */
+  setCheck(check: string | string[] | null): Input {
+    if (!this.connection) {
+      throw Error('This input does not have a connection.');
+    }
+    this.connection.setCheck(check);
+    return this;
+  }
+
+  /**
+   * Change the alignment of the connection's field(s).
+   *
+   * @param align One of the values of Align.  In RTL mode directions
+   *     are reversed, and Align.RIGHT aligns to the left.
+   * @returns The input being modified (to allow chaining).
+   */
+  setAlign(align: Align): Input {
+    this.align = align;
+    if (this.sourceBlock.rendered) {
+      const sourceBlock = this.sourceBlock as BlockSvg;
+      sourceBlock.queueRender();
+    }
+    return this;
+  }
+
+  /**
+   * Changes the connection's shadow block.
+   *
+   * @param shadow DOM representation of a block or null.
+   * @returns The input being modified (to allow chaining).
+   */
+  setShadowDom(shadow: Element | null): Input {
+    if (!this.connection) {
+      throw Error('This input does not have a connection.');
+    }
+    this.connection.setShadowDom(shadow);
+    return this;
+  }
+
+  /**
+   * Returns the XML representation of the connection's shadow block.
+   *
+   * @returns Shadow DOM representation of a block or null.
+   */
+  getShadowDom(): Element | null {
+    if (!this.connection) {
+      throw Error('This input does not have a connection.');
+    }
+    return this.connection.getShadowDom();
+  }
+
+  /** Initialize the fields on this input. */
+  init() {
+    for (const field of this.fieldRow) {
+      field.init();
+    }
+  }
+
+  /**
+   * Sets a custom ARIA label provider for this input, or null if it should be reset
+   * to use the default method.
+   *
+   * Inputs do not compute ARIA contexts directly, so the set provider will be used
+   * in select cases when the Input needs to be represented (such as for parts of a
+   * block label or for connections). Note that overriding this provider will not
+   * recompute any already constructed ARIA labels, and it cannot be assumed that the
+   * provider will be called any particular number of times during label
+   * recomputation. As such, implementations should make sure to provide a
+   * deterministic and idempotent ARIA representation each time the provider is
+   * called for a given input. It's also fine to reuse providers across multiple
+   * Input implementations.
+   *
+   * @param provider The string or function to use to set the ARIA label for the input
+   * @returns The input being modified (to allow chaining).
+   */
+  setAriaLabelProvider(provider: AriaLabelProvider | null): Input {
+    this.ariaLabelProvider = provider;
+    return this;
+  }
+
+  /**
+   * Returns the string from the custom ARIA label provider set, or null if the default label (from the field row) should
+   * be used. See setAriaLabelProvider for more context.
+   */
+  getAriaLabelText(): string | null {
+    if (!this.ariaLabelProvider) {
+      return null;
+    } else if (typeof this.ariaLabelProvider === 'string') {
+      return parsing.replaceMessageReferences(this.ariaLabelProvider);
+    } else {
+      return this.ariaLabelProvider(this);
+    }
+  }
+
+  /**
+   * Initializes the fields on this input for a headless block.
+   *
+   * @internal
+   */
+  public initModel() {
+    for (const field of this.fieldRow) {
+      field.initModel();
+    }
+  }
+
+  /** Initializes the given field. */
+  private initField(field: Field) {
+    if (this.sourceBlock.rendered) {
+      field.init();
+    } else {
+      field.initModel();
+    }
+  }
+
+  /**
+   * Sever all links to this input.
+   */
+  dispose() {
+    for (let i = 0, field; (field = this.fieldRow[i]); i++) {
+      field.dispose();
+    }
+    if (this.connection) {
+      this.connection.dispose();
+    }
+  }
+
+  /**
+   * Constructs a connection based on the type of this input's source block.
+   * Properly handles constructing headless connections for headless blocks
+   * and rendered connections for rendered blocks.
+   *
+   * @returns a connection of the given type, which is either a headless
+   *     or rendered connection, based on the type of this input's source block.
+   */
+  protected makeConnection(type: ConnectionType): Connection {
+    return this.sourceBlock.makeConnection_(type);
+  }
+
+  /**
+   * Returns an ID for the logical "row" this input is part of. A "row" is
+   * bounded by a previous/next connection, a statement input, or a block stack
+   * boundary; all blocks/inputs nested inside of one of those are conceptually
+   * part of its same row.
+   *
+   * @internal
+   */
+  getRowId(): string {
+    const inputs = this.getSourceBlock().inputList;
+
+    // The first visible input shares the block's row id; this also covers
+    // the collapsed-input placeholder, since every other input is hidden.
+    if (this === inputs.find((i) => i.isVisible())) {
+      return (this.getSourceBlock() as BlockSvg).getRowId();
+    }
+
+    // Fallback when inputs[0] itself is hidden.
+    if (this === inputs[0]) {
+      return (this.getSourceBlock() as BlockSvg).getRowId();
+    }
+
+    const inputIndex = inputs.indexOf(this);
+    const precedingStatementInput =
+      inputs[inputIndex - 1].connection?.type === ConnectionType.NEXT_STATEMENT;
+
+    // Each subsequent statement input or value input following a statement
+    // input is on its own row and has its own row ID.
+    if (
+      this.connection?.type === ConnectionType.NEXT_STATEMENT ||
+      precedingStatementInput
+    ) {
+      return `${this.getSourceBlock().id}-input${inputIndex}`;
+    }
+
+    // Value inputs have the same row ID as their preceding input, since
+    // they're all on one row.
+    return inputs[inputIndex - 1].getRowId();
+  }
+
+  /**
+   * Returns a derived accessibility label for this input: field row text plus
+   * labels of any connected child blocks (unless excluded). Does not include
+   * custom labels from {@link getAriaLabelText}; those are used in move-mode
+   * and parent-input context only.
+   *
+   * @internal
+   */
+  getLabel(verbosity = Verbosity.STANDARD, includeChildren = true): string {
+    if (!this.isVisible()) return '';
+
+    const labels = computeFieldRowLabel(this, false, verbosity);
+
+    if (
+      includeChildren &&
+      this.connection?.type === ConnectionType.INPUT_VALUE
+    ) {
+      const childBlock = this.connection.targetBlock();
+      if (childBlock && !childBlock.isInsertionMarker()) {
+        labels.push(
+          getInputLabels(childBlock as BlockSvg, verbosity).join(', '),
+        );
+      }
+    }
+    return labels.join(', ');
+  }
+
+  /**
+   * Returns the index of this input, excluding inputs without connections, on its
+   * source block.
+   *
+   * @internal
+   */
+  getIndex(): number {
+    const noConnectionInputTypes = [inputTypes.DUMMY, inputTypes.END_ROW];
+    const allInputs = this.getSourceBlock().inputList;
+    const allConnectionInputs = allInputs.filter(
+      (input) => !noConnectionInputTypes.includes(input.type),
+    );
+    return allConnectionInputs.indexOf(this);
+  }
+}

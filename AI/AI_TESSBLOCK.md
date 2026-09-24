@@ -31,6 +31,7 @@ Blockly workspace ──(codegen/generator.ts)──▶ Tess 소스 ──(@tess
 | `src/blocks/colour-field.ts` | 팔레트 대신 OS 색 선택기를 여는 `field_colour_picker` |
 | `src/blocks/functions.ts` | 함수 정의 블록 · 매개변수 블록 · 호출 블록 생성 |
 | `src/blocks/theme.ts` | zelos 기반 테마, 카테고리 색, 툴박스 점 색 주입 |
+| `../blockly/` | Blockly 13.3.0 포크(core + field-colour · field-grid-dropdown). 14절 |
 | `src/codegen/generator.ts` | `Blockly.CodeGenerator` 구현 (`expr`/`chain`/`scrub_`) |
 | `src/codegen/project.ts` | 프로젝트 모델 + 워크스페이스 → `.tess` 소스 전체 |
 | `src/codegen/refs.ts` | 블록이 들고 있는 id → 이름·식별자 변환 |
@@ -559,4 +560,70 @@ z-index 90 — Blockly 툴박스가 70이다) 오른쪽 블록은 그대로 보�
 - **색 꺼내기** — 색 소켓(붓 색·채우기 색·글자 색·글상자 배경색·`from_hex`)은 팔레트·불러오기·옛 저장본
   모두 `calc_colour` 그림자 위에 같은 색의 **진짜** `calc_colour` 블록을 얹는다. 끌어내 다른 곳에 쓸 수 있고,
   빼면 그림자 색이 남는다.
+
+## 14. Blockly 포크 (`packages/blockly`)와 긴 스택 드래그
+
+tessblock 은 npm `blockly` 대신 `packages/blockly` 의 포크를 쓴다.
+
+- 내용: Blockly `blockly-v13.3.0` 태그의 `packages/blockly/core` TS 소스 그대로 + 플러그인
+  `field-colour`·`field-grid-dropdown` 소스(`plugins/`, import 를 상대 경로로 바꿈). 라이선스 Apache-2.0.
+- 빌드: `vite.config.ts` 가 시작할 때 `tsc -p ../blockly/tsconfig.json`(증분)을 돌려 `packages/blockly/build`
+  에 ESM 을 만든다(`.gitignore` 의 `build`). 소스가 `import {IBubble}` 뒤 재수출 같은 타입 전용 내보내기를 쓰므로
+  파일 단위 변환(oxc)으로는 안 되고 tsc 가 필요하다. `useDefineForClassFields: false`·`target es2020` 은 Blockly
+  원래 빌드와 같은 클래스 필드 의미를 위해 필수다(켜면 `override decompose?` 같은 선언이 부모 값을 지운다).
+- 연결: vite `resolve.alias` 로 `blockly/core`, `@blockly/field-colour` 를 빌드 결과로 돌린다. 한 인스턴스만
+  쓰기 위해서다(npm field-colour 는 UMD 로 npm `blockly/core` 를 따로 불러온다). 타입 검사는 npm `blockly` 의
+  d.ts 를 그대로 쓴다(공개 API 동일). `blockly/msg/ko` 는 문자열만 있어 npm 것을 쓴다.
+- 포크에서 바꾼 곳: `core/dragging/drag_proxy.ts`(새 파일), `block_svg.ts`(`setDragging(adding, mark)`,
+  `translate`, `start/stopDragProxy`, `canUseDragProxy`, `setDeleteStyle`, `dispose`),
+  `dragging/block_drag_strategy.ts`(`proxied`).
+
+### 원인
+
+- 원래 Blockly 는 드래그마다 스택 전체를 드래그 레이어 `<svg>` 로 옮기고 모든 블록에 `blocklyDragging` 을 붙인다.
+  블록 `<g>` 가 부모 안에 중첩되어, 1485 블록에서 집기·놓기가 각각 약 1초(스타일·레이아웃 재계산)다.
+- 끄는 동안에는 드래그 레이어가 합성되지 않아 **매 프레임 스택 전체를 다시 래스터**한다. 블록마다
+  drop-shadow 필터가 있어 GPU 래스터(헤드리스 `--enable-gpu-rasterization --use-angle=swiftshader`)에서
+  프레임당 약 150ms(초당 6~7 프레임)였다. 체감 렉의 주원인이다.
+
+### 대역(stand-in) 드래그 (`DragProxy`)
+
+포인터로 끄는 40 블록(그림자 포함) 이상 스택에만 쓴다. 키보드 이동·짧은 스택·플라이아웃은 원래 경로다.
+
+- 원본 스택은 블록 캔버스에 그대로 두고 `clip-path: polygon(0 0,0 0,0 0)` 로 가린다(적용 0.2ms, 포커스·선택
+  유지, 히트 테스트에서도 빠짐). 원본에는 `blocklyDragging` 을 붙이지 않고(`setDragging(true, false)`), 드래그
+  중에는 `translate()` 가 DOM 을 건드리지 않는다. 놓을 때 한 번 transform 을 쓰고 클립을 푼다.
+- 인젝션 div 에 합성 오버레이(`div.blocklyDragProxy`, z-index 80, 드래그 레이어 바로 앞 → 말풍선이 위)를 두고,
+  블록 그룹의 **얕은 복사본을 평평하게** 그리는 순서대로 넣는다. 한 블록 그룹의 자식 중 자식 블록 사이 구간을
+  세그먼트로 나눠(원래 칠하는 순서 유지) 각 세그먼트를 같은 클래스의 `<g>` 복사본으로 만든다. 복사본에는
+  `blocklyDragging` 을 붙여 원래 드래그 모양(반투명·그림자·grabbing 커서·삭제 커서)이 그대로 나온다.
+  `id`·`tabindex` 는 지운다.
+- 보이는 영역(+반 화면 여백)에 걸친 블록만 복사하고, 스택이 움직여 새 영역이 들어오면 그때 더 복사한다
+  (순서 번호로 이진 탐색해 제자리에 끼움).
+- 오버레이 이동은 **Web Animation** 의 키프레임을 바꿔서 한다(`animate(...).effect.setKeyframes`). 스타일
+  `transform` 을 바꾸면 합성 레이어라도 Chrome 이 매 프레임 문서 전체를 Layerize(1485 블록 약 20ms)하지만,
+  애니메이션 키프레임 갱신은 Layerize 0 이다.
+- 원본이 드래그 중 바뀌면(`markForeignParams` 가 비활성화 등) `MutationObserver` 가 대역을 다시 만든다.
+- 놓을 때 z 순서: 시작할 때 뒤 형제를 스택 앞으로 옮겨 두므로(`moveSvgRootToFront` 와 같은 방식) 놓을 때
+  `moveOffDragLayer` 가 스택을 다시 붙이지 않는다.
+
+### 쓸 수 없던 것 (측정)
+
+- 원본 숨기기: `opacity:0` 은 합성 레이어가 있을 때 Layerize 가 프레임당 1.4초로 폭증, `visibility:hidden` 은
+  포커스·선택을 잃고 226ms. 드래그 레이어/그 `<svg>`/감싼 `<div>` 를 합성하면 중첩 스택 때문에 Layerize 폭증.
+- 합성하지 않은 대역: 매 프레임 래스터가 그대로라 GPU 기준 137ms.
+
+### 측정 (헤드리스 Chromium, 1485 블록, GPU 래스터 에뮬레이션)
+
+| | 원래 | 대역 |
+| --- | --- | --- |
+| 끄는 중 프레임당 작업(모든 스레드) | 약 200ms (GPU 157) | 약 5ms (메인 2, GPU 0) |
+| 집기 메인 스레드 | 약 1170ms | 약 230ms (그중 누를 때 선택 표시 약 110) |
+| 놓기 메인 스레드 | 약 1170ms | 약 110ms |
+
+### 화면 차이
+
+합성하지 않으면 드래그 중 화면이 원래와 0 픽셀 차이다(대역 구조 검증). 합성하면 Chrome 이 투명 합성 레이어의
+글자에 LCD(서브픽셀) 안티앨리어싱을 쓰지 않아, LCD 글꼴 렌더링을 쓰는 환경(윈도 100% 배율 등)에서 **끄는 동안만**
+블록 글자가 회색조 안티앨리어싱으로 그려진다. 모양·색·그림자·z 순서(팔레트·휴지통·스크롤바 위)는 같다.
 
