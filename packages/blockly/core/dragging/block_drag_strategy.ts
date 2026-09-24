@@ -1232,34 +1232,41 @@ export class BlockDragStrategy implements IDragStrategy {
    * @returns All connections on the block and its children.
    */
   private getAllConnections(block: BlockSvg): RenderedConnection[] {
-    if (block.isShadow()) return [];
-
-    const connections = [];
-
-    if (block.outputConnection) connections.push(block.outputConnection);
-    if (block.previousConnection) connections.push(block.previousConnection);
-
-    if (!block.isCollapsed()) {
-      for (const input of block.inputList) {
-        if (input.connection && input.isVisible()) {
-          connections.push(input.connection);
-          const target = input.connection.targetBlock() as BlockSvg;
-          if (target) {
-            connections.push(...this.getAllConnections(target));
+    // The same connections in the same order as walking down each block's
+    // inputs and next block, with a list rather than recursion.
+    type Item = {connection: RenderedConnection} | {block: BlockSvg};
+    const connections: RenderedConnection[] = [];
+    const pending: Item[] = [{block}];
+    while (pending.length) {
+      const item = pending.pop()!;
+      if ('connection' in item) {
+        connections.push(item.connection);
+        continue;
+      }
+      const each = item.block;
+      if (each.isShadow()) continue;
+      const order: Item[] = [];
+      if (each.outputConnection) order.push({connection: each.outputConnection});
+      if (each.previousConnection) {
+        order.push({connection: each.previousConnection});
+      }
+      if (!each.isCollapsed()) {
+        for (const input of each.inputList) {
+          if (input.connection && input.isVisible()) {
+            order.push({connection: input.connection as RenderedConnection});
+            const target = input.connection.targetBlock() as BlockSvg;
+            if (target) order.push({block: target});
           }
         }
       }
-    }
-    if (block.nextConnection) {
-      connections.push(block.nextConnection);
-
-      const target = block.nextConnection.targetBlock() as BlockSvg;
-      if (target) {
-        connections.push(...this.getAllConnections(target));
+      if (each.nextConnection) {
+        order.push({connection: each.nextConnection});
+        const target = each.nextConnection.targetBlock() as BlockSvg;
+        if (target) order.push({block: target});
       }
+      for (let i = order.length - 1; i >= 0; i--) pending.push(order[i]);
     }
-
-    return connections as RenderedConnection[];
+    return connections;
   }
 
   /**

@@ -728,3 +728,52 @@ tessblock 은 npm `blockly` 대신 `packages/blockly` 의 포크를 쓴다.
 - 검증: 캐시한 소스 = 캐시 없이 새로 쓴 소스(이름 바꾼 뒤 포함), 워커 결과 = 메인 스레드 결과,
   저장 문자열 = `JSON.stringify`, 되돌리기 동작, 프로덕션 빌드에서 워커·wasm 로드.
 
+## 17. 긴 스크립트(수천 블록 한 줄)와 저장된 작품 복원
+
+- **불러오기 실패(데이터 손실)**: `store.ts` 는 모듈을 읽을 때 `project = signal(loadProject())` 를 실행하는데,
+  `loadProject` → `upgradeBlocks` 가 쓰는 `COLOUR_SOCKETS` 가 파일 아래쪽에 선언되어 TDZ 오류가 났다. 예외를
+  삼키고 새 작품으로 시작하므로, 블록이 있는 작품은 새로고침마다 비어 보였고 다음 자동 저장이 원래 작품을
+  덮어썼다. 상수를 `project` 위로 옮겼다. 추가로 `showObject` 가 블록을 다 불러오지 못하면 그 오브젝트는
+  `flush` 하지 않는다(`unreadable`, 저장된 블록을 부분만 불러온 상태로 덮어쓰지 않음).
+- **깊은 중첩**: Blockly JSON 은 다음 블록을 앞 블록의 `next.block` 안에 넣는다(블록 2000개 ≈ 깊이 4000).
+  내장 `JSON.stringify`·`structuredClone`·`postMessage` 는 수준마다 재귀해 2048 블록 한 줄에서
+  "Maximum call stack size exceeded" (`JSON.parse` 는 괜찮다). 저장(`flush`)에서 예외가 나 시작하기가 아무 반응
+  없던 원인이기도 하다.
+  - tessblock `model/json.ts`: `stringify(value, indent)`(`JSON.stringify` 와 같은 문자열, 반복문),
+    `copyDeep`(parse(stringify)). 상태 JSON(`stateText`), 함수 비교, 오브젝트·함수 복제, 호출 재배치 복사,
+    `.tessproj`·폴더 저장, 함수 편집기 복사, `returnsValue` 에 쓴다. `update()` 의 `structuredClone` 은 블록
+    상태를 빼고 복제한다(9절).
+  - 포크 `utils/deep_json.ts` `stringifyDeep`: 휴지통(`Trashcan.onDelete`/`cleanBlockJson`).
+- **재귀를 반복문으로(포크)**: 직렬화 `save`(다음 블록 체인)·`appendPrivate`(체인을 반복으로 만들고 초기화는
+  예전처럼 아래 블록부터), `getDescendants`, `disposeInternal`(뒤 블록들을 먼저 dying 표시한 뒤 끝에서부터),
+  `allInputsFilled`, `setConnectionTracking`, `getHeightWidth`, `setDragging`, `updateComponentLocations`,
+  `bumpNeighbours`(재귀와 같은 순서의 프레임 스택, 같은 스택 판정은 집합), `startTrackingAll`,
+  `BlockDragStrategy.getAllConnections`, `render_management` 의 `renderBlock`·`dequeueBlock`, 평탄화의
+  `lastFlatGroup`. tessblock: 생성기 `scrub_`(다음 블록을 `blockToCode(next, true)` 로 반복), JSON 을 걷는
+  `remapSavedCalls`·`upgradeBlocks`.
+- **O(n²) 제거**: 불러오기에서 블록마다 하위 전체의 연결 추적을 끄던 것(`setConnectionTracking(false, false)`,
+  아래 블록은 이미 처리됨), `queueBlock` 이 이미 표시한 조상에서 멈춤, `getInheritedDisabled` 는 작업 공간에
+  비활성 블록이 없으면 바로 false(`Workspace.disabledBlocks` 개수), `setParent` 의 루트 찾기는 스택 그룹의
+  소유자로(`stackRoot`), 펼칠 때 비활성 갱신은 그 블록과 입력만.
+- 측정(한 줄 스크립트): 2048·5000·20000 블록 모두 불러오기·실행·드래그·모두 접기/펼치기·가운데 빼고 다시
+  붙이기·저장·새로고침·삭제 후 되돌리기가 된다(원래 Blockly 는 약 2500 에서 불러오기부터 넘침). 20000 블록
+  불러오기 35초 → 6.4초.
+
+## 18. 팔레트 첫 끌기, 옆 패널 너비, 실행 준비
+
+- **팔레트에서 첫 끌기가 안 되던 것**: 블록을 누르면 `bringToFront` 가 스택을 맨 앞으로 옮긴다. 평탄화 뒤 "작은
+  쪽 옮기기" 로 스택 그룹 자체를 `appendChild` 하면 포커스가 풀려 선택이 사라지고, Blockly 는 드래그 시작 때
+  `common.getSelected()` 를 끌기 때문에 작업 공간 이동이 되었다(두 번째는 이미 맨 앞이라 정상). 스택 그룹은
+  `moveBefore`(포커스 유지)로 옮기고, 없으면 원래처럼 뒤 형제들을 앞으로 옮긴다.
+- **옆 패널 너비 조절 렉**: (1) SVG 루트 크기가 바뀌면 Chrome 이 안의 모든 요소를 다시 레이아웃한다(블록 1485개
+  약 215ms, 배경의 % 길이·필터와 무관, 중첩 SVG 로도 못 막음). 포크 `svgResize` 는 SVG 요소를 화면 크기 이상으로
+  한 번 키우고 줄이지 않으며, 작업 공간 크기는 캐시 크기(컨테이너)로 둔다. 컨테이너 크기만큼 `clip-path`
+  (다시 칠하기만)로 자르고, 배경 사각형은 컨테이너 크기로 맞춰 가장자리 선이 예전 자리에 그려진다(픽셀 동일).
+  (2) `--side-w` 를 문서 루트에 쓰면 사용자 정의 속성 상속 때문에 블록 요소 전부의 스타일이 다시 계산된다.
+  `@property --side-w { inherits: false }` 로 등록하고 `.workarea` 에만 쓴다. 측정: 구분선 60번 이동의 JS·레이아웃
+  각 14.9초 → 0.4초, 스타일 3.9초 → 0, 가장 긴 프레임 간격 약 500ms → 45ms(원래 Blockly 650ms).
+- **실행 준비(16절 보강)**: 워커 작업은 하나씩 보내고, 기다리는 준비(prepare)는 가장 새 것 하나만 남긴다.
+  실행(urgent)은 버리지 않고, 준비 컴파일이 돌고 있으면 워커를 끝내고 새로 만든다(오래된 준비 뒤에서 기다리지
+  않음). 준비는 먼저 `flush` 해서(`currentSource()`) 저장 안 된 편집이 예전 상태 이름으로 캐시되지 않게 한다.
+  소스 쓰기에서 예외가 나면 알림을 띄운다(예전엔 아무 반응 없음).
+

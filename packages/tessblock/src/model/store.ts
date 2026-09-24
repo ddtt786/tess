@@ -12,8 +12,17 @@ import type {
   BlocklyState, Costume, FunctionDef, ObjectProps, Signal, Sound, TableDef, TessObject, TessProject,
   TextProps, VariableDef, VariableKind,
 } from './types.ts';
+import { copyDeep, stringify } from './json.ts';
 
 const STORAGE_KEY = 'tessblock.project.v1';
+
+/**
+ * Blocks whose colour moved from a field to a socket holding a colour shadow.
+ * Declared before `project`: loading the saved work reads it.
+ */
+const COLOUR_SOCKETS = new Set([
+  'brush_set_colour', 'brush_set_fill', 'text_set_colour', 'text_set_bg_colour', 'calc_from_hex',
+]);
 
 export const project = signal<TessProject>(loadProject());
 export const selectedSceneId = signal<string>(project.value.scenes[0]?.id ?? '');
@@ -55,7 +64,7 @@ function stateText(state: unknown): string {
   if (!state || typeof state !== 'object') return JSON.stringify(state ?? null);
   let text = stateTexts.get(state);
   if (text === undefined) {
-    text = JSON.stringify(state);
+    text = stringify(state);
     stateTexts.set(state, text);
   }
   return text;
@@ -280,7 +289,8 @@ function cloneObject(
   sceneId = source.sceneId,
   swap = new Map<string, string>(),
 ): { object: TessObject; variables: VariableDef[]; functions: FunctionDef[] } {
-  const copy = structuredClone(source) as TessObject;
+  // Scripts nest too deeply for structuredClone; they are copied as text below.
+  const copy = structuredClone({ ...source, blocks: null }) as TessObject;
   copy.id = newId('o');
   copy.name = name;
   copy.sceneId = sceneId;
@@ -300,10 +310,10 @@ function cloneObject(
     .map((definition) => {
       const id = newId('f');
       ids.set(definition.id, id);
-      return { ...structuredClone(definition), id, owner: copy.id };
+      return { ...copyDeep(definition), id, owner: copy.id };
     });
 
-  let blocks = JSON.stringify(copy.blocks ?? null);
+  let blocks = stateText(source.blocks);
   for (const [from, to] of ids) blocks = blocks.split(from).join(to);
   copy.blocks = JSON.parse(blocks) as typeof copy.blocks;
   return { object: copy, variables, functions };
@@ -456,7 +466,7 @@ export function setObjectBlocks(id: string, blocks: BlocklyState, inline?: Funct
   const current = model.objects.find((candidate) => candidate.id === id);
   const declared = model.functions.filter((each) => each.inline && each.owner === id);
   const sameBlocks = !!current && stateText(current.blocks) === stateText(blocks);
-  const sameFunctions = !inline || JSON.stringify(declared) === JSON.stringify(inline);
+  const sameFunctions = !inline || stringify(declared) === stringify(inline);
   if (sameBlocks && sameFunctions) return;
   update((draft) => {
     const object = draft.objects.find((candidate) => candidate.id === id);
@@ -761,29 +771,23 @@ interface BlockState {
   extraState?: { slots?: string[] } & Record<string, unknown>;
 }
 
-/** Blocks whose colour moved from a field to a socket holding a colour shadow. */
-const COLOUR_SOCKETS = new Set([
-  'brush_set_colour', 'brush_set_fill', 'text_set_colour', 'text_set_bg_colour', 'calc_from_hex',
-]);
-
 /** Rewrites block states saved by an older editor in place. */
 function upgradeBlocks<T extends { blocks: unknown }>(owner: T): T {
-  const visit = (block: BlockState | undefined) => {
-    if (!block) return;
+  const state = owner.blocks as { blocks?: { blocks?: BlockState[] } } | null;
+  // A list, not recursion: a long stack nests each block under the one before it.
+  const pending: Array<BlockState | undefined> = [...(state?.blocks?.blocks ?? [])];
+  while (pending.length) {
+    const block = pending.pop();
+    if (!block) continue;
     const colour = block.fields?.COLOUR;
     if (block.type && COLOUR_SOCKETS.has(block.type) && typeof colour === 'string') {
       delete block.fields!.COLOUR;
       const swatch = { type: 'calc_colour', fields: { COLOUR: colour } };
       block.inputs = { ...block.inputs, COLOUR: { shadow: swatch, block: { ...swatch } } };
     }
-    for (const input of Object.values(block.inputs ?? {})) {
-      visit(input.block);
-      visit(input.shadow);
-    }
-    visit(block.next?.block);
-  };
-  const state = owner.blocks as { blocks?: { blocks?: BlockState[] } } | null;
-  for (const top of state?.blocks?.blocks ?? []) visit(top);
+    for (const input of Object.values(block.inputs ?? {})) pending.push(input.block, input.shadow);
+    pending.push(block.next?.block);
+  }
   return owner;
 }
 

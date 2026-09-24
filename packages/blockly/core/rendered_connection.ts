@@ -497,22 +497,26 @@ export class RenderedConnection
    * @returns List of blocks to render.
    */
   startTrackingAll(): BlockSvg[] {
-    this.setTracking(true);
-    // All blocks that are not tracked must start tracking before any
-    // rendering takes place, since rendering requires knowing the dimensions
-    // of lower blocks. Also, since rendering a block renders all its parents,
-    // we only need to render the leaf nodes.
-    let renderList: BlockSvg[] = [];
-    if (
-      this.type !== ConnectionType.INPUT_VALUE &&
-      this.type !== ConnectionType.NEXT_STATEMENT
-    ) {
-      // Only spider down.
-      return renderList;
-    }
-    const block = this.targetBlock();
-    if (block) {
-      let connections;
+    // Walked with a list rather than recursion, for long stacks. Same order
+    // and result as spidering down connection by connection.
+    const renderList: BlockSvg[] = [];
+    /** Starts tracking a connection; returns the connections it spiders into. */
+    const visit = (connection: RenderedConnection): RenderedConnection[] => {
+      connection.setTracking(true);
+      // All blocks that are not tracked must start tracking before any
+      // rendering takes place, since rendering requires knowing the dimensions
+      // of lower blocks. Also, since rendering a block renders all its parents,
+      // we only need to render the leaf nodes.
+      if (
+        connection.type !== ConnectionType.INPUT_VALUE &&
+        connection.type !== ConnectionType.NEXT_STATEMENT
+      ) {
+        // Only spider down.
+        return [];
+      }
+      const block = connection.targetBlock();
+      if (!block) return [];
+      let connections: RenderedConnection[];
       if (block.isCollapsed()) {
         // This block should only be partially revealed since it is collapsed.
         connections = [];
@@ -524,12 +528,34 @@ export class RenderedConnection
         // Show all connections of this block.
         connections = block.getConnections_(true);
       }
-      for (let i = 0; i < connections.length; i++) {
-        renderList.push(...connections[i].startTrackingAll());
+      return connections;
+    };
+    // Each frame: the connection, what it spiders into, and the next index.
+    const frames: Array<{
+      connection: RenderedConnection;
+      children: RenderedConnection[];
+      index: number;
+      found: number;
+    }> = [];
+    const open = (connection: RenderedConnection) => {
+      const children = visit(connection);
+      frames.push({connection, children, index: 0, found: renderList.length});
+    };
+    open(this);
+    while (frames.length) {
+      const frame = frames[frames.length - 1];
+      if (frame.index < frame.children.length) {
+        open(frame.children[frame.index++]);
+        continue;
       }
-      if (!renderList.length) {
+      frames.pop();
+      const block = frame.connection.targetBlock();
+      const spiders =
+        frame.connection.type === ConnectionType.INPUT_VALUE ||
+        frame.connection.type === ConnectionType.NEXT_STATEMENT;
+      if (spiders && block && renderList.length === frame.found) {
         // Leaf block.
-        renderList = [block];
+        renderList.push(block);
       }
     }
     return renderList;

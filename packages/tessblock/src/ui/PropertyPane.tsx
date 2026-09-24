@@ -12,6 +12,7 @@ import { EyeIcon, EyeOffIcon, GripIcon, PencilIcon, PlusIcon, TrashIcon } from '
 import { InlineName } from './InlineName.tsx';
 import { revealFunction } from './blockly-host.ts';
 import { dialog, functionDraft, pickedList, propertyTab, type PropertyTab } from './state.ts';
+import { copyDeep } from '../model/json.ts';
 
 const TABS: Array<[PropertyTab, string]> = [
   ['variable', '변수'],
@@ -623,7 +624,7 @@ function FunctionTable() {
           class="iconbtn plain"
           title="블록 편집"
           aria-label="블록 편집"
-          onClick={() => { functionDraft.value = structuredClone(definition); }}
+          onClick={() => { functionDraft.value = copyDeep(definition); }}
         >
           <PencilIcon size={15} />
         </button>

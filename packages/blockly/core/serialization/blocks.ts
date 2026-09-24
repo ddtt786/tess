@@ -293,16 +293,30 @@ function saveNextBlocks(
   doFullSerialization: boolean,
   saveIds: boolean,
 ) {
-  if (!block.nextConnection) {
-    return;
-  }
-  const connectionState = saveConnection(
-    block.nextConnection,
-    doFullSerialization,
-    saveIds,
-  );
-  if (connectionState) {
-    state['next'] = connectionState;
+  // Walks down the stack in a loop; the same states as saving each next block
+  // with its own next blocks, without recursing once per block.
+  let current = block;
+  let currentState = state;
+  while (current.nextConnection) {
+    const connection = current.nextConnection;
+    const shadow = connection.getShadowState(true);
+    const child = connection.targetBlock();
+    if (!shadow && !child) return;
+    const connectionState = Object.create(null);
+    if (shadow) {
+      connectionState['shadow'] = shadow;
+    }
+    currentState['next'] = connectionState;
+    if (!child || child.isShadow()) return;
+    const childState = save(child, {
+      doFullSerialization,
+      saveIds,
+      addNextBlocks: false,
+    });
+    connectionState['block'] = childState;
+    if (!childState) return;
+    current = child;
+    currentState = childState;
   }
 }
 
@@ -450,6 +464,39 @@ function appendPrivate(
     isShadow = false,
   }: {parentConnection?: Connection; isShadow?: boolean} = {},
 ): Block {
+  // The blocks after this one are loaded in a loop, not by recursing down the
+  // stack: a long stack nests each block's state inside the one before it.
+  // Each block is still initialised after the blocks below it, as before.
+  const first = appendOne(state, workspace, parentConnection, isShadow);
+  const stack: Block[] = [first];
+  let block = first;
+  let blockState = state;
+  while (blockState['next']) {
+    if (!block.nextConnection) {
+      throw new MissingConnection('next', block, blockState);
+    }
+    const connectionState = blockState['next'];
+    if (connectionState['shadow']) {
+      block.nextConnection.setShadowState(connectionState['shadow']);
+    }
+    if (!connectionState['block']) break;
+    blockState = connectionState['block'];
+    block = appendOne(blockState, workspace, block.nextConnection, false);
+    stack.push(block);
+  }
+  for (let i = stack.length - 1; i >= 0; i--) {
+    initBlock(stack[i], workspace.rendered);
+  }
+  return first;
+}
+
+/** Creates one block from its state, up to its inputs: not its next blocks. */
+function appendOne(
+  state: State,
+  workspace: Workspace,
+  parentConnection: Connection | undefined,
+  isShadow: boolean,
+): Block {
   if (!state['type']) {
     throw new MissingBlockType(state);
   }
@@ -463,9 +510,6 @@ function appendPrivate(
   loadIcons(block, state);
   loadFields(block, state);
   loadInputBlocks(block, state);
-  loadNextBlocks(block, state);
-  initBlock(block, workspace.rendered);
-
   return block;
 }
 
@@ -696,22 +740,6 @@ function loadInputBlocks(block: Block, state: State) {
 }
 
 /**
- * Creates any next blocks defined by the given state and attaches them to the
- * given block.
- *
- * @param block The block to attach next blocks to.
- * @param state The state object to reference.
- */
-function loadNextBlocks(block: Block, state: State) {
-  if (!state['next']) {
-    return;
-  }
-  if (!block.nextConnection) {
-    throw new MissingConnection('next', block, state);
-  }
-  loadConnection(block.nextConnection, state['next']);
-}
-/**
  * Applies the state defined by connectionState to the given connection, ie
  * assigns shadows and attaches child blocks.
  *
@@ -747,7 +775,9 @@ function initBlock(block: Block, rendered: boolean) {
     const blockSvg = block as BlockSvg;
     // Adding connections to the connection db is expensive. This defers that
     // operation to decrease load time.
-    blockSvg.setConnectionTracking(false);
+    // The blocks under this one were initialised before it (and stopped
+    // tracking then), so only its own connections are left.
+    blockSvg.setConnectionTracking(false, false);
 
     blockSvg.initSvg();
     blockSvg.queueRender();

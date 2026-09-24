@@ -21,10 +21,8 @@ export function prepareRuns(): () => void {
   let timer: number | undefined;
   const prepare = () => {
     timer = undefined;
-    // The saved state of the open object is current here: edits reach the
-    // project by saving it.
-    const model = project.peek();
-    void compile(buildSource(model, { live: liveWorkspaces(), liveSaved: true }), model.name);
+    // Saved first, so the open object's code is written from its current blocks.
+    void compile(currentSource(), project.peek().name, false);
   };
   const stop = project.subscribe(() => {
     if (timer !== undefined) clearTimeout(timer);

@@ -39,10 +39,14 @@ export class TessGenerator extends Blockly.CodeGenerator {
 
   override scrub_(block: Blockly.Block, code: string, thisOnly?: boolean): string {
     if (thisOnly || this.hatTypes.has(block.type)) return code;
-    const next = block.getNextBlock();
-    if (!next) return code;
-    const produced = this.blockToCode(next);
-    return code + (Array.isArray(produced) ? produced[0] : produced);
+    // The blocks after this one, each on its own, in a loop: writing each with
+    // the rest of the stack would recurse once per block.
+    let written = code;
+    for (let next = block.getNextBlock(); next; next = next.getNextBlock()) {
+      const produced = this.blockToCode(next, true);
+      written += Array.isArray(produced) ? produced[0] : produced;
+    }
+    return written;
   }
 }
 

@@ -364,6 +364,14 @@ p {
 
 /* --- work area ------------------------------------------------------------ */
 
+/* The side panel width is set on .workarea while it is dragged. Not inherited,
+   so a change restyles .workarea alone rather than every block under it. */
+@property --side-w {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 420px;
+}
+
 .workarea {
   display: grid;
   grid-template-columns: var(--side-w, 420px) 5px minmax(0, 1fr);

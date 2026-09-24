@@ -33,12 +33,26 @@ export function build(source: string, name: string): BuildResult {
   };
 }
 
-/** The last source handed to the compiler, and its result. */
-let compiled: { source: string; name: string; result: Promise<BuildResult> } | null = null;
+/** One source to compile, and the promise its result settles. */
+interface Job {
+  source: string;
+  name: string;
+  /** A run waits on it; a prepared one may be dropped for newer work. */
+  urgent: boolean;
+  result: Promise<BuildResult>;
+  settle: (result: BuildResult) => void;
+}
+
+/** The result a dropped job settles with; nothing waits on dropped jobs. */
+const DROPPED: BuildResult = { project: null, errors: [], warnings: [] };
+
+/** The last job asked for; the same source asked for again gets its result. */
+let latest: Job | null = null;
+/** The job the worker is compiling, and the jobs waiting for it: runs, and the newest prepare. */
+let active: Job | null = null;
+const pending: Job[] = [];
 let worker: Worker | null = null;
 let workerFailed = false;
-let nextId = 0;
-const waiting = new Map<number, (result: BuildResult | null) => void>();
 
 function compileWorker(): Worker | null {
   if (worker || workerFailed || typeof Worker === 'undefined') return worker;
@@ -48,37 +62,74 @@ function compileWorker(): Worker | null {
     workerFailed = true;
     return null;
   }
-  worker.onmessage = (event: MessageEvent<{ id: number; result?: BuildResult; error?: string }>) => {
-    const done = waiting.get(event.data.id);
-    waiting.delete(event.data.id);
-    done?.(event.data.result ?? null);
+  worker.onmessage = (event: MessageEvent<{ result?: BuildResult; error?: string }>) => {
+    const job = active;
+    active = null;
+    job?.settle(event.data.result ?? build(job.source, job.name));
+    sendNext();
   };
   worker.onerror = () => {
     // Without a worker the page compiles on the main thread, as before.
     workerFailed = true;
     worker?.terminate();
     worker = null;
-    for (const done of waiting.values()) done(null);
-    waiting.clear();
+    for (const job of [active, ...pending.splice(0)]) job?.settle(build(job.source, job.name));
+    active = null;
   };
   return worker;
 }
 
+function sendNext(): void {
+  if (active || !pending.length) return;
+  const target = compileWorker();
+  const job = pending.shift()!;
+  if (!target) {
+    job.settle(build(job.source, job.name));
+    return;
+  }
+  active = job;
+  target.postMessage({ id: 0, source: job.source, name: job.name });
+}
+
+/** Drops a job no one waits on; a later ask for its source compiles again. */
+function drop(job: Job | null): void {
+  if (!job) return;
+  if (latest === job) latest = null;
+  job.settle(DROPPED);
+}
+
 /**
  * The compiled work for `source`, compiled off the main thread. The same
- * source asked for again (a run right after `prepare`) gets the same result.
+ * source asked for again (a run right after a prepare) gets the same result.
+ * A run (`urgent`) does not wait behind older prepared work: that work is
+ * stopped. A prepare waits for the worker, replacing any prepare still waiting.
  */
-export function compile(source: string, name: string): Promise<BuildResult> {
-  if (compiled && compiled.source === source && compiled.name === name) return compiled.result;
-  const target = compileWorker();
-  const result = target
-    ? new Promise<BuildResult | null>((resolve) => {
-        const id = nextId++;
-        waiting.set(id, resolve);
-        target.postMessage({ id, source, name });
-      }).then((done) => done ?? build(source, name))
-    : Promise.resolve().then(() => build(source, name));
-  compiled = { source, name, result };
+export function compile(source: string, name: string, urgent = true): Promise<BuildResult> {
+  if (latest && latest.source === source && latest.name === name) {
+    latest.urgent ||= urgent;
+    return latest.result;
+  }
+  let settle!: (result: BuildResult) => void;
+  const result = new Promise<BuildResult>((resolve) => { settle = resolve; });
+  const job: Job = { source, name, urgent, result, settle };
+  latest = job;
+  if (!compileWorker()) {
+    job.settle(build(source, name));
+    return result;
+  }
+  // Only the newest prepare is worth compiling; runs are never dropped.
+  for (let index = pending.length - 1; index >= 0; index--) {
+    if (!pending[index]!.urgent) drop(pending.splice(index, 1)[0]!);
+  }
+  pending.push(job);
+  if (active && urgent && !active.urgent) {
+    // Older prepared work is thrown away with the worker compiling it.
+    worker?.terminate();
+    worker = null;
+    drop(active);
+    active = null;
+  }
+  sendNext();
   return result;
 }
 

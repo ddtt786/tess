@@ -167,20 +167,27 @@ function queueBlock(block: BlockSvg) {
   let child = block;
   let parent = block.getParent();
   while (parent) {
+    // A block already on the way to a queued block had its ancestors marked
+    // then; walking on would make queueing every block of a long stack
+    // quadratic.
+    const seen = pathBlocks.has(parent) || dirtyBlocks.has(parent);
     pathBlocks.add(parent);
     // A block's shape does not depend on the block after it (only a value
     // block with a next connection measures it), so a block linked to the
     // changed one through its next connection is not redrawn. Its ancestors
     // through an input still are: a statement input's height depends on the
     // whole stack in it.
-    if (parent.nextConnection?.targetBlock() !== child || parent.outputConnection) {
-      if (dirtyBlocks.has(parent)) return;
+    if (
+      (parent.nextConnection?.targetBlock() !== child || parent.outputConnection) &&
+      !dirtyBlocks.has(parent)
+    ) {
       dirtyBlocks.add(parent);
       eventContexts.set(parent, {
         group: eventUtils.getGroup(),
         recordUndo: eventUtils.getRecordUndo(),
       });
     }
+    if (seen) return;
     child = parent;
     parent = parent.getParent();
   }
@@ -245,24 +252,18 @@ function doRenders(workspace?: WorkspaceSvg) {
 
 /** Removes the given block and children from the render queue. */
 function dequeueBlock(block: BlockSvg) {
-  rootBlocks.delete(block);
-  dirtyBlocks.delete(block);
-  pathBlocks.delete(block);
-  eventContexts.delete(block);
-  for (const child of block.getChildren(false)) {
-    dequeueBlock(child);
+  // Walked with a list rather than recursion, for long stacks.
+  const pending = [block];
+  while (pending.length) {
+    const each = pending.pop()!;
+    rootBlocks.delete(each);
+    dirtyBlocks.delete(each);
+    pathBlocks.delete(each);
+    eventContexts.delete(each);
+    for (const child of each.getChildren(false)) pending.push(child);
   }
 }
 
-/**
- * Returns true if the block should be rendered.
- *
- * No need to render dead blocks.
- *
- * No need to render blocks with parents. A render for the block may have been
- * queued, and the block was connected to a parent, so it is no longer a
- * root block. Rendering will be triggered through the real root block.
- */
 function shouldRenderRootBlock(block: BlockSvg): boolean {
   return !block.isDisposed() && !block.getParent();
 }
@@ -274,13 +275,24 @@ function shouldRenderRootBlock(block: BlockSvg): boolean {
  * @param block The block to rerender.
  */
 function renderBlock(block: BlockSvg) {
-  const dirty = dirtyBlocks.has(block);
-  if (!dirty && !pathBlocks.has(block)) return;
-  if (!block.initialized) return;
-  for (const child of block.getChildren(false)) {
-    renderBlock(child);
+  // Children before their parent, as a recursive walk would, but with a list:
+  // a long stack nests each block under the one before it.
+  const pending: Array<{block: BlockSvg; dirty?: boolean}> = [{block}];
+  while (pending.length) {
+    const {block: each, dirty} = pending.pop()!;
+    if (dirty !== undefined) {
+      // Only on the way to a changed block: its children are placed again.
+      if (dirty) each.renderEfficiently();
+      else each.tightenChildrenEfficiently();
+      continue;
+    }
+    const isDirty = dirtyBlocks.has(each);
+    if (!isDirty && !pathBlocks.has(each)) continue;
+    if (!each.initialized) continue;
+    pending.push({block: each, dirty: isDirty});
+    const children = each.getChildren(false);
+    for (let i = children.length - 1; i >= 0; i--) {
+      pending.push({block: children[i]});
+    }
   }
-  // Only on the way to a changed block: its children are placed again.
-  if (dirty) block.renderEfficiently();
-  else block.tightenChildrenEfficiently();
 }

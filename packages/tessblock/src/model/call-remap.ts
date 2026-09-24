@@ -6,6 +6,7 @@
  * moved to where their parameters now stand. Plain JSON, no Blockly.
  */
 import type { FunctionDef } from './types.ts';
+import { copyDeep } from './json.ts';
 
 /** What a call's slots depend on: the parameters, in order, with their kinds. */
 export function signatureOf(definition: FunctionDef): string {
@@ -47,8 +48,11 @@ export function remapSlots(state: BlockJson, old: string[], definition: Function
 export function remapSavedCalls(state: unknown, changed: Map<string, FunctionDef>, before: Map<string, string[]>): boolean {
   if (!state || !changed.size) return false;
   let touched = false;
-  const visit = (block: BlockJson | undefined) => {
-    if (!block) return;
+  // A list, not recursion: a long stack nests each block under the one before it.
+  const pending: Array<BlockJson | undefined> = [...((state as { blocks?: { blocks?: BlockJson[] } }).blocks?.blocks ?? [])];
+  while (pending.length) {
+    const block = pending.pop();
+    if (!block) continue;
     const id = calledId(block.type);
     const definition = id ? changed.get(id) : undefined;
     if (definition) {
@@ -56,13 +60,9 @@ export function remapSavedCalls(state: unknown, changed: Map<string, FunctionDef
       remapSlots(block, old, definition);
       touched = true;
     }
-    for (const input of Object.values(block.inputs ?? {})) {
-      visit(input.block);
-      visit(input.shadow);
-    }
-    visit(block.next?.block);
-  };
-  for (const top of (state as { blocks?: { blocks?: BlockJson[] } }).blocks?.blocks ?? []) visit(top);
+    for (const input of Object.values(block.inputs ?? {})) pending.push(input.block, input.shadow);
+    pending.push(block.next?.block);
+  }
   return touched;
 }
 
@@ -87,7 +87,7 @@ export function remapProjectCalls(
   // States are shared with the history, so a state is copied before it changes.
   for (const owner of [...draft.objects, ...draft.functions]) {
     if (!callsAny(owner.blocks, changed)) continue;
-    const copy = structuredClone(owner.blocks);
+    const copy = copyDeep(owner.blocks);
     remapSavedCalls(copy, changed, oldIds);
     owner.blocks = copy;
   }

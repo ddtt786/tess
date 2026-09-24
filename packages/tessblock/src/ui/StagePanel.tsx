@@ -45,7 +45,15 @@ export function StagePanel() {
    */
   function run(event?: MouseEvent) {
     const fromFirst = Boolean(event?.altKey);
-    void launch(currentSource(), fromFirst ? '' : currentScene.peek()?.name ?? '', null, Boolean(event?.shiftKey));
+    let source: string;
+    try {
+      source = currentSource();
+    } catch (error) {
+      // Writing the source failed: say so rather than leave the flag doing nothing.
+      notify(error instanceof Error ? `작품을 만들 수 없습니다: ${error.message}` : '작품을 만들 수 없습니다.');
+      return;
+    }
+    void launch(source, fromFirst ? '' : currentScene.peek()?.name ?? '', null, Boolean(event?.shiftKey));
   }
 
   // Shift turns the flag into the boost flag while it is held.

@@ -91,6 +91,14 @@ export class Workspace {
   isClearing = false;
 
   /**
+   * How many blocks here have a reason to be disabled. While none do, no
+   * block inherits being disabled, which spares walking up long stacks.
+   *
+   * @internal
+   */
+  disabledBlocks = 0;
+
+  /**
    * Maximum number of undo events in stack. `0` turns off undo, `Infinity`
    * sets it to unlimited.
    */

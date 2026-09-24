@@ -17,6 +17,7 @@ import { FieldParamName, registerParamField } from './param-field.ts';
 import { DEFINE_BLOCK, PARAM_BOOLEAN, PARAM_TYPES, PARAM_VALUE } from './function-ids.ts';
 import type { FunctionDef, FunctionParam, FunctionParamKind } from '../model/types.ts';
 import { calledId, remapSlots, type BlockJson } from '../model/call-remap.ts';
+import { stringify } from '../model/json.ts';
 
 export { DEFINE_BLOCK, PARAM_BOOLEAN, PARAM_TYPES, PARAM_VALUE } from './function-ids.ts';
 
@@ -41,7 +42,7 @@ export function valueCallType(id: string): string {
 /** A function whose body holds a `return` can be used as a value. */
 export function returnsValue(definition: FunctionDef): boolean {
   if (definition.inline) return !!definition.returns;
-  return JSON.stringify(definition.blocks ?? {}).includes('"func_return"');
+  return stringify(definition.blocks ?? {}).includes('"func_return"');
 }
 
 /** The two buttons on the definition block that add a parameter, shaped like the block each adds. */
