@@ -2181,3 +2181,6 @@ zip 이 훨씬 작은 것은 deflate 때문입니다. 단일 html 은 모듈·�
   반 단위)로 맞추고 이미 있는 글자도 다시 굽는다(`setTextResolution`).
 - 벡터 굽기 하한: `MIN_SVG_SHARPNESS` 3, `MIN_SVG_SIDE` 960.
 - 컴파일러는 `data:` 주소의 형식을 미디어 타입으로 읽는다(`assetExt`) — 경고 없이 `imageType` 도 맞다.
+- `runStack(stack, targetId, extraFunctions)` — 실행 중 작품에 없는 함수(편집기가 새로 컴파일한 도우미)를 함께 받아
+  그 스택의 모듈 안에서만 쓴다. `compileStack` 으로 한 번 컴파일해 두고 `startStack` 으로 여러 번 시작할 수 있고,
+  `startStack` 은 첫걸음을 바로 밟은 뒤 끝나지 않았으면 스레드로 이어 간다.

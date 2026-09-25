@@ -257,6 +257,9 @@ export class BlockSvg
   private stackX = 0;
   private stackY = 0;
 
+  /** Whether this block is hidden for lying outside the view. */
+  private culled = false;
+
   /** The `display` stock Blockly gives this block's group, set by inputs. */
   private svgDisplay = '';
 
@@ -546,6 +549,7 @@ export class BlockSvg
     }
     if (!this.parentBlock_) {
       this.getStackSvgRoot().setAttribute('transform', this.translation);
+      this.workspace.queueCull();
       return;
     }
     if (!this.flat) {
@@ -627,6 +631,36 @@ export class BlockSvg
         block.selectedGroup?.setAttribute('transform', transform);
       }
       for (const child of block.childBlocks_) pending.push([child, x, y]);
+    }
+  }
+
+  /**
+   * Hides this subtree's statement blocks that lie outside the given surface
+   * rectangle, so painting skips them; `null` shows them all.
+   *
+   * @internal
+   */
+  cullStack(view: Rect | null) {
+    const origin = view ? this.getRelativeToSurfaceXY() : null;
+    const pending: BlockSvg[] = [this];
+    while (pending.length) {
+      const block = pending.pop()!;
+      let out = false;
+      if (view && origin && block.flat) {
+        const x = origin.x + block.stackX - this.stackX;
+        const y = origin.y + block.stackY - this.stackY;
+        out =
+          x + block.width < view.left ||
+          x > view.right ||
+          y + block.height < view.top ||
+          y > view.bottom;
+      }
+      if (block.culled !== out) {
+        block.culled = out;
+        if (out) dom.addClass(block.svgGroup, 'blocklyCulled');
+        else dom.removeClass(block.svgGroup, 'blocklyCulled');
+      }
+      for (const child of block.childBlocks_) pending.push(child);
     }
   }
 
@@ -810,6 +844,7 @@ export class BlockSvg
    * @internal
    */
   startDragProxy() {
+    this.cullStack(null);
     if (!this.dragProxy) this.dragProxy = new DragProxy(this);
   }
 
@@ -1206,6 +1241,7 @@ export class BlockSvg
    * @internal
    */
   setDragging(adding: boolean, mark = true) {
+    if (adding) this.cullStack(null);
     // Every block attached under this one, in order, without recursion.
     for (const block of this.getDescendants(false)) {
       block.dragging = adding;

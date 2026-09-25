@@ -4,6 +4,7 @@
  * The painter package draws the canvas; everything around it is built here so
  * it matches the rest of the editor.
  */
+import { beginDrag, dragGhost, SlideReorder, type DragGhost } from './drag.ts';
 import { FONTS } from '../model/fonts.ts';
 import { useSignal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
@@ -294,6 +295,41 @@ function LayerList() {
   const layers = vector.layers;
   const count = layers.length;
   const active = layers.findIndex((layer) => layer.active);
+
+  /** Press on a row: a click picks the layer; a drag moves it to where it is let go. */
+  function pressRow(event: PointerEvent, index: number) {
+    if (event.button !== 0 || (event.target as Element).closest('button, input')) return;
+    const row = event.currentTarget as HTMLElement;
+    const list = row.parentElement;
+    let ghost: DragGhost | null = null;
+    let slide: SlideReorder | null = null;
+    let insertAt: number | null = null;
+    // Rows run top first; layer indices run bottom first.
+    const shownAt = count - 1 - index;
+    beginDrag(event, {
+      onMove(moved) {
+        if (!slide) {
+          slide = new SlideReorder([...(list?.children ?? [])] as HTMLElement[], row);
+          ghost = dragGhost(row, event);
+        }
+        ghost!.follow(moved);
+        const target = slide.targetAt(moved.clientY);
+        slide.show(target);
+        insertAt = target ? (target.before ? target.over : target.over + 1) : null;
+      },
+      onEnd(_up, moved) {
+        ghost?.remove();
+        slide?.clear();
+        if (!moved) {
+          vector!.selectLayer(index);
+          return;
+        }
+        if (insertAt === null) return;
+        const shownTo = insertAt > shownAt ? insertAt - 1 : insertAt;
+        if (shownTo !== shownAt) vector!.moveLayerTo(index, count - 1 - shownTo);
+      },
+    });
+  }
   return (
     <div class="f layers">
       <div class="layers-head">
@@ -306,7 +342,7 @@ function LayerList() {
       </div>
       <ul class="layer-list">
         {layers.map((layer, index) => ({ layer, index })).reverse().map(({ layer, index }) => (
-          <li key={index} class={`layer-row ${layer.active ? 'on' : ''}`} onClick={() => vector.selectLayer(index)}>
+          <li key={index} class={`layer-row ${layer.active ? 'on' : ''}`} onPointerDown={(event) => pressRow(event, index)}>
             <button
               class={`iconbtn plain ${layer.visible ? '' : 'off'}`}
               title={layer.visible ? '숨기기' : '보이기'}

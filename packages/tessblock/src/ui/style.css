@@ -493,6 +493,9 @@ p {
   inset: 0;
   overflow: hidden;
   background: #fff;
+  /* Clicking the stage, twice or more, never selects the page's text. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .preview-stage {
   position: absolute;
@@ -2571,17 +2574,29 @@ button:focus-visible,
   gap: 8px;
 }
 
+/* The items scroll inside their own box, not the whole tab; rows have one height so only those in view are drawn. */
 .item-list {
   list-style: none;
   margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 4px;
+  padding: 0 2px 0 0;
+  max-height: calc(100vh - 300px);
+  min-height: 120px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .item-list li {
   display: flex;
   align-items: center;
   gap: 6px;
+  height: 30px;
+  margin-bottom: 4px;
+}
+.item-list li .input {
+  height: 30px;
+}
+.item-list li.item-room {
+  display: block;
+  margin: 0;
 }
 .item-list .item-no {
   width: 22px;
@@ -3836,4 +3851,8 @@ button:focus-visible,
 .preview-holder.hidden {
   visibility: hidden;
   pointer-events: none;
+}
+.layer-row {
+  user-select: none;
+  touch-action: none;
 }

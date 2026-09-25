@@ -896,3 +896,48 @@ tessblock 은 npm `blockly` 대신 `packages/blockly` 의 포크를 쓴다.
   판정한다 — 위 오브젝트부터 누른 점을 모양 좌표로 되돌려(`stageToLocal`) 그 픽셀이 칠해져 있을 때만(`pixel-hit.ts`
   `paintedAt`, 알파 8 이상) 고른다. 투명한 곳은 아래 오브젝트로 넘어간다. 글상자는 상자 전체. 알파는 화면의 `<img>` 에서
   바로 읽거나 `onLoad` 때 미리 읽어 두고, 다른 출처라 못 읽으면 상자 전체로 본다. 커서도 같은 판정.
+- **디버그 이어 하기 + 도우미 함수**: 합치는 스택이 부르는 함수 중 실행 중 작품에 없는 것(컴파일러 도우미 `[Tess] …`,
+  `scale_x = …` 등)은 id 를 맞춘 사본으로 함께 넘기고(`vm.runStack(…, extraFunctions)`), tessvm 은 그것들을 더한
+  `CompileInput` 으로 스택을 컴파일한다. 예전에는 그 호출이 빈 함수가 되어 가로·세로 정하기가 먹지 않았다.
+- **한 번 눌러 다시 실행**: 더블클릭으로 실행한 스택은 `armed` — 그 스택을 눌렀다가 4px 안에서 떼면(`pointerup` capture,
+  Blockly 클릭 이벤트를 기다리지 않음) 바로 다시 실행한다 — 연타도 누른 만큼 실행한다(걸려 있는 스택에서 난 더블클릭은
+  클릭이 이미 실행했으므로 다시 실행하지 않는다). 다른 블록·빈 작업판·페이지 다른
+  곳을 누르면 풀린다. 합친 스택은 컴파일 결과를 저장해 두고(`joined`: 같은 스택·같은 작품·같은 실행이면 재사용)
+  `vm.startStack` 이 첫걸음을 그 자리에서 밟는다 — 누른 뒤 한 프레임도 기다리지 않는다.
+- 움직임 블록 문구는 `x`·`y` 로 시작하지 않는다 — `좌표 x %1 y %2 위치로 이동하기`, `좌표를 x %1 y %2 만큼 바꾸기`,
+  `좌표 x 를 %1 (으)로 정하기` 식으로 `좌표` 가 앞에 온다(시간이 걸리는 판도 같은 모양).
+- 무대 미리보기(`.preview`)는 `user-select: none`, 두 번째 이후 클릭의 `mousedown` 기본 동작을 막아 빈 곳을 여러 번
+  눌러도 페이지 글자가 선택되지 않는다.
+
+## 25. 레이어 끌기, 리스트 가상화, 화면 밖 블록 숨기기, 값 말풍선 속도
+
+- **레이어 순서 끌기**(`PaintTools.tsx` `LayerList`): 줄을 누르고 움직이면 `beginDrag`/`SlideReorder`/`dragGhost`(오브젝트
+  목록과 같은 끌기), 놓으면 `VectorPainter.moveLayerTo(index, to)`. 움직이지 않고 떼면 그 레이어를 고른다. 목록은 위가
+  맨 위 레이어라 `to = count - 1 - 보이는 자리`.
+- **그림판 확대 메뉴**: `setZoom` 에 기준점이 없으면 보이는 영역 가운데(`clientToScene`/`clientToCanvas`)를 기준으로
+  확대한다 — 예전에는 원점 기준이라 메뉴로 확대하면 그림이 화면 밖으로 밀렸다.
+- **모양 다듬기**: 고른 것의 상자(여백 12px) 밖이나 빈 곳을 눌렀다 떼면 선택을 풀고 선택 도구로 돌아간다(`leaveOnUp`).
+- **리스트 편집기**(`PropertyPane` `ListEditor`): 항목 목록 `.item-list` 가 따로 스크롤된다(`max-height: calc(100vh - 300px)`,
+  `overscroll-behavior: contain`). 보이는 줄만 그린다 — 줄 높이 `ITEM_ROW = 34`(30 + 간격 4), 위아래 `ITEM_MARGIN = 10`
+  줄 더, 나머지는 `li.item-room` 여백. 끌어 옮기기의 자리는 `first + …`. 5만 항목에서 입력 한 번 ~15–50ms.
+- **화면 밖 블록 숨기기**(blockly 포크): 스크롤 중 비용은 JS 가 아니라 페인트·`Layerize` 였다(900 블록 스크립트,
+  프레임 33ms, Layerize 최대 46ms). 문장 블록(평평한 그룹)마다 보이는 영역(+120px)에서 벗어나면 `blocklyCulled`
+  (`visibility: hidden`) 을 붙인다 — 칠하지 않으니 페인트 청크도 생기지 않는다. 값 블록은 부모 그룹 안에 있어 함께 숨는다.
+  - `BlockSvg.cullStack(rect | null)`: 스택 위치 + `stackX/Y`, 자기 `width/height`(C 블록은 안쪽 포함) 로 판정.
+    `null` 은 모두 보이기 — 끌기 시작(`setDragging(true)`, `startDragProxy`) 전에 부른다.
+  - `WorkspaceSvg.cullBlocks()`: `translate` 안에서 바로(스크롤한 그 프레임에 반영), 렌더 끝(`doRenders`), 윗 블록
+    이동·`resize` 뒤 `queueCull`(다음 프레임 한 번). 팔레트·뮤테이터는 하지 않는다. 끄는 중인 스택은 건너뛴다.
+  - 접기의 `visibility`(인라인 스타일)와 따로 놀도록 클래스로 한다.
+  - 결과(3dcheese 1261 블록): 프레임 33→17ms, Layerize 최대 48→7ms, 900 블록 판정 한 번 ~0.3ms.
+- **오브젝트 바꾸기**: 불러오는 동안 `startTextWidthCache`, 포크 `getFastTextWidthWithSizeString` 이 글꼴+글자별 폭을
+  페이지 내내 기억(`measuredWidths`, 5만 개 넘으면 비움, `document.fonts` `loadingdone` 에 비움)하고 같은 글꼴이면
+  `canvasContext.font` 를 다시 넣지 않는다. `returnsValue` 는 저장된 상태별로 기억(`WeakMap`, 상태는 통째로만 바뀜).
+  1261 블록 오브젝트 615 → ~400ms(나머지는 블록 생성 자체).
+- **값 말풍선**(`report-bubble.ts`): 예전엔 누를 때마다 작품 전체 소스(그림 data URL 포함 2MB)를 컴파일(600ms)하고
+  소스마다 새 조용한 Vm 을 만들었다.
+  - 소스는 `buildSource(…, { stubData: true })` — 모양·소리 파일은 `stub:<id>.png|mp3`, 리스트는 빈 채로 쓰고, 컴파일
+    결과에 모델의 리스트 항목을 바로 넣는다(`fillLists`, 이름+주인으로 짝).
+  - 컴파일한 사본은 `(model, 오브젝트, 블록 상태, 함수 정의)` 가 같으면 다시 쓴다(`probe`).
+  - 조용한 Vm 은 모델마다 하나(`quiet.model`), 식은 `idMap`/`remap` 으로 그 Vm 의 id 로 옮겨 계산한다.
+  - 컴파일 전에 한 프레임 쉬어 `…` 가 먼저 보인다.
+  - 결과: 3dcheese 665→55–230ms(다시 누르면 ~10–45ms), 5만 항목 `포함되어 있는가` 596→56ms.

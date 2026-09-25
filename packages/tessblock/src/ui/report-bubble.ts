@@ -12,6 +12,7 @@ import { Vm } from '../../../tessvm/src/runtime/engine.ts';
 import { EntryTranslator } from '../../../tessvm/src/web/translate.ts';
 import type { RawBlock } from '../../../tessvm/src/compile/codegen.ts';
 import type { EntryProject } from '../../../compiler/src/types.ts';
+import type { TessProject } from '../model/types.ts';
 import { DEFINE_BLOCK } from '../blocks/function-ids.ts';
 import { buildSource } from '../codegen/project.ts';
 import { project } from '../model/store.ts';
@@ -46,25 +47,59 @@ async function evaluate(block: Blockly.BlockSvg, objectId: string): Promise<unkn
   const index = model.objects.findIndex((each) => each.id === objectId);
   if (index < 0) throw new Error('오브젝트를 찾을 수 없습니다.');
 
+  const expressionState = Blockly.serialization.blocks.save(block, { addCoordinates: false, addNextBlocks: false }) ?? undefined;
+  // The block may call the object's local functions, declared among its scripts.
+  const scripts = block.isInFlyout ? block.workspace.targetWorkspace : block.workspace;
+  const defines = (scripts?.getTopBlocks(false) ?? [])
+    .filter((each) => each.type === DEFINE_BLOCK)
+    .map((each) => Blockly.serialization.blocks.save(each)!);
+  const key = JSON.stringify([objectId, expressionState, defines]);
+  if (probe?.model !== model || probe.key !== key) {
+    // Lets the `…` bubble paint before compiling.
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => setTimeout(resolve, 0));
+      setTimeout(resolve, 50);
+    });
+    probe = { model, key, ...compileProbe(model, objectId, index, expressionState, defines) };
+  }
+  const { work, expression, object } = probe;
+
+  const live = runningHandle();
+  const running = runningWork();
+  if (live && running) {
+    const ids = idMap(work, running);
+    const target = ids.get(object) ?? object;
+    return live.vm.evaluate(remap(expression, ids) as RawBlock, target);
+  }
+  const quietWork = quietVm(model, work);
+  const ids = idMap(work, quietWork.work);
+  return quietWork.vm.evaluate(remap(expression, ids) as RawBlock, ids.get(object) ?? object);
+}
+
+/** The last compiled probe, reused while the work and the clicked block stay the same. */
+let probe: { model: TessProject; key: string; work: EntryProject; expression: unknown; object: string } | null = null;
+
+/** Compiles a one-script copy of the work whose script says the block's value. */
+function compileProbe(
+  model: TessProject,
+  objectId: string,
+  index: number,
+  expressionState: object | undefined,
+  defines: object[],
+): { work: EntryProject; expression: unknown; object: string } {
   const holder = new Blockly.Workspace();
   let source: string;
   try {
-    const expression = Blockly.serialization.blocks.save(block, { addCoordinates: false, addNextBlocks: false }) ?? undefined;
     Blockly.serialization.blocks.append({
       type: 'start_when_run', x: 0, y: 0,
       next: { block: {
-        type: 'looks_say', inputs: { TEXT: { block: expression } },
+        type: 'looks_say', inputs: { TEXT: { block: expressionState } },
         next: { block: { type: 'looks_say', inputs: { TEXT: { shadow: { type: 'calc_text', fields: { TEXT: PROBE_MARK } } } } } },
       } },
-    }, holder, { recordUndo: false });
-    // The block may call the object's local functions, declared among its scripts.
-    const scripts = block.isInFlyout ? block.workspace.targetWorkspace : block.workspace;
-    for (const define of scripts?.getTopBlocks(false) ?? []) {
-      if (define.type !== DEFINE_BLOCK) continue;
-      Blockly.serialization.blocks.append(Blockly.serialization.blocks.save(define)!, holder, { recordUndo: false });
-    }
+    } as never, holder, { recordUndo: false });
+    for (const define of defines) Blockly.serialization.blocks.append(define as never, holder, { recordUndo: false });
     const quiet = { ...model, objects: model.objects.map((each) => ({ ...each, blocks: null })) };
-    source = buildSource(quiet, { live: new Map([[objectId, holder]]) });
+    source = buildSource(quiet, { live: new Map([[objectId, holder]]), stubData: true });
   } finally {
     holder.dispose();
   }
@@ -72,19 +107,26 @@ async function evaluate(block: Blockly.BlockSvg, objectId: string): Promise<unkn
   const built = build(source, model.name);
   if (!built.project) throw new Error(built.errors[0]?.message ?? '값을 계산할 수 없습니다.');
   const work = built.project;
+  fillLists(work, model);
   const object = work.objects[index];
   if (!object) throw new Error('오브젝트를 찾을 수 없습니다.');
   const expression = probeOf(object.script);
   if (!expression) throw new Error(built.errors[0]?.message ?? '값을 계산할 수 없습니다.');
+  return { work, expression, object: object.id };
+}
 
-  const live = runningHandle();
-  const running = runningWork();
-  if (live && running) {
-    const ids = idMap(work, running);
-    const target = ids.get(object.id) ?? object.id;
-    return live.vm.evaluate(remap(expression, ids) as RawBlock, target);
+/** Puts the model's list items into a work compiled with its lists left empty. */
+function fillLists(work: EntryProject, model: TessProject): void {
+  const owners = new Map(work.objects.map((object, at) => [object.id, model.objects[at]?.id ?? null]));
+  const items = new Map(model.variables
+    .filter((variable) => variable.kind === 'list')
+    .map((variable) => [`${variable.owner ?? ''}\u0000${variable.name}`, variable.array]));
+  for (const variable of work.variables) {
+    if (variable.variableType !== 'list') continue;
+    const owner = variable.object ? owners.get(variable.object) ?? '' : '';
+    const array = items.get(`${owner}\u0000${variable.name}`);
+    if (array) variable.array = array.map((data) => ({ data }));
   }
-  return quietVm(source, work).evaluate(expression as RawBlock, object.id);
 }
 
 /** The value block the probe script says, found by the marker said after it. */
@@ -97,17 +139,17 @@ function probeOf(script: unknown): unknown {
   return null;
 }
 
-/** A loaded, never started copy of the work, kept while the source stays the same. */
-let quiet: { source: string; vm: Vm } | null = null;
+/** A loaded, never started copy of the work, kept while the work stays the same. */
+let quiet: { model: TessProject; work: EntryProject; vm: Vm } | null = null;
 
-function quietVm(source: string, work: EntryProject): Vm {
-  if (quiet?.source !== source) {
+function quietVm(model: TessProject, work: EntryProject): { work: EntryProject; vm: Vm } {
+  if (quiet?.model !== model) {
     // It draws and plays nothing, but answers the api blocks the way a run does.
     const vm = new Vm({ renderer: null, audio: null, translator: new EntryTranslator() } as never);
     vm.load(work as never);
-    quiet = { source, vm };
+    quiet = { model, work, vm };
   }
-  return quiet.vm;
+  return quiet;
 }
 
 // --- pointing the probe at the running work ---------------------------------

@@ -179,6 +179,8 @@ export function showObject(id: string): void {
   Blockly.Events.disable();
   isLoadingWorkspace = true;
   unreadable = null;
+  // Repeated field texts are measured once while the scripts load.
+  Blockly.utils.dom.startTextWidthCache();
   try {
     workspace.clear();
     if (object?.blocks) {
@@ -193,6 +195,7 @@ export function showObject(id: string): void {
     console.error(error);
     notify("이 오브젝트의 블록을 모두 불러오지 못했습니다. 저장된 블록은 그대로 둡니다.");
   } finally {
+    Blockly.utils.dom.stopTextWidthCache();
     isLoadingWorkspace = false;
     Blockly.Events.enable();
   }
@@ -267,8 +270,12 @@ function openFunctionAt(event: MouseEvent): void {
   // A function body only runs when called; its parameters have no values on their own.
   if (block.getRootBlock().type === DEFINE_BLOCK) return;
   event.preventDefault();
+  // Clicking an armed stack fast makes double clicks too; each click already ran it.
+  if (armed?.rootId === block.getRootBlock().id) return;
   // Shift held: the stack runs in boost mode, as Shift does on the flag.
   runStack(block as Blockly.BlockSvg, shown, event.shiftKey);
+  // Until something else is clicked, one click on this stack runs it again.
+  armed = { rootId: block.getRootBlock().id };
 }
 
 /**
@@ -431,6 +438,49 @@ function absorbLiterals(event: Blockly.Events.Abstract): void {
   // A shadow is drawn flatter than a block; the block and the one holding it are laid out again.
   block.queueRender();
   (block.getParent() as Blockly.BlockSvg | null)?.queueRender();
+}
+
+/** The stack a double click ran; a single click on it runs it again. */
+let armed: { rootId: string } | null = null;
+
+/** Where a press on the armed stack began; letting go there without moving runs it again. */
+let armedPress: { x: number; y: number } | null = null;
+/** Moving further than this is a drag, not a click. */
+const CLICK_SLOP_PX = 4;
+
+/**
+ * A press on the armed stack is remembered; any other press lets go of it
+ * (empty canvas, the palette, the rest of the page).
+ */
+function armedPressDown(event: PointerEvent): void {
+  armedPress = null;
+  if (!armed || !workspace) return;
+  const id = (event.target as Element | null)?.closest?.("[data-id]")?.getAttribute("data-id");
+  const block = id ? workspace.getBlockById(id) : null;
+  if (!block || block.getRootBlock().id !== armed.rootId) {
+    armed = null;
+    return;
+  }
+  armedPress = { x: event.clientX, y: event.clientY };
+}
+
+/** Letting go where the press began runs the armed stack at once, without waiting for Blockly's click. */
+function armedPressUp(event: PointerEvent): void {
+  const press = armedPress;
+  armedPress = null;
+  if (!press || !armed || !workspace || !shown) return;
+  if (Math.hypot(event.clientX - press.x, event.clientY - press.y) > CLICK_SLOP_PX) return;
+  const root = workspace.getBlockById(armed.rootId) as Blockly.BlockSvg | null;
+  if (!root || root.outputConnection) {
+    armed = null;
+    return;
+  }
+  runStack(root, shown);
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pointerdown", armedPressDown, true);
+  window.addEventListener("pointerup", armedPressUp, true);
 }
 
 function onValueClick(event: Blockly.Events.Abstract): void {

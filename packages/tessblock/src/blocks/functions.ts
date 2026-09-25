@@ -42,8 +42,18 @@ export function valueCallType(id: string): string {
 /** A function whose body holds a `return` can be used as a value. */
 export function returnsValue(definition: FunctionDef): boolean {
   if (definition.inline) return !!definition.returns;
-  return stringify(definition.blocks ?? {}).includes('"func_return"');
+  const blocks = definition.blocks;
+  if (!blocks || typeof blocks !== 'object') return false;
+  let found = returning.get(blocks);
+  if (found === undefined) {
+    found = stringify(blocks).includes('"func_return"');
+    returning.set(blocks, found);
+  }
+  return found;
 }
+
+/** `returnsValue` by saved state; a state is replaced whole, never changed in place. */
+const returning = new WeakMap<object, boolean>();
 
 /** The two buttons on the definition block that add a parameter, shaped like the block each adds. */
 const ADD_VALUE = paramButton(46, '＋ 값', (w) => `<rect x="1" y="1" width="${w - 2}" height="20" rx="10" />`);

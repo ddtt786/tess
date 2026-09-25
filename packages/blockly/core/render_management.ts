@@ -220,6 +220,7 @@ function doRenders(workspace?: WorkspaceSvg) {
   }
   for (const workspace of workspaces) {
     workspace.resizeContents();
+    workspace.cullBlocks();
     workspace.connectionDBList.forEach((db) => db?.beginBulkUpdates());
   }
   for (const block of blocks) {

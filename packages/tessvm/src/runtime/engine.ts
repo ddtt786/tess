@@ -5,7 +5,7 @@
  * 순서대로 훑으면서 그 오브젝트에 붙은 스레드를 한 번씩 진행시킵니다. 다른 점은 각
  * 스레드가 블록 트리를 해석하는 대신 미리 컴파일해 둔 제너레이터라는 것뿐입니다.
  */
-import { Codegen, type CompileInput, type RawBlock, type ScriptPlan } from '../compile/codegen.ts';
+import { Codegen, type CompileInput, type FunctionEntry, type RawBlock, type ScriptPlan } from '../compile/codegen.ts';
 import { attachJsKernel, attachKernel, CALL_DEPTH_LIMIT, type KernelHandle } from '../kernel/bridge.ts';
 import { planKernel, type KernelPlan } from '../kernel/plan.ts';
 import { CollisionSystem } from '../collision/detect.ts';
@@ -606,20 +606,42 @@ export class Vm implements Project {
    * would: it gets a thread of its own and carries on with everything else.
    * An editor uses it to run a stack in a session that is already going.
    */
-  runStack(stack: RawBlock[], targetId: string): boolean {
+  runStack(stack: RawBlock[], targetId: string, extraFunctions: FunctionEntry[] = []): boolean {
+    const body = this.compileStack(stack, extraFunctions);
+    return body ? this.startStack(body, targetId, String(stack[0]?.id ?? '')) : false;
+  }
+
+  /**
+   * Compiles one stack against the loaded work, once, for `startStack` to run
+   * as often as it is asked. Functions the stack calls that the running work
+   * does not have (the compiler's own helpers, most often) come along.
+   */
+  compileStack(stack: RawBlock[], extraFunctions: FunctionEntry[] = []): CompiledScript['body'] | null {
+    if (!this.compileInput) {
+      return null;
+    }
+    const input = extraFunctions.length
+      ? { ...this.compileInput, functions: [...this.compileInput.functions, ...extraFunctions] }
+      : this.compileInput;
+    const source = new Codegen(input).compileStackProbe(stack);
+    const built = (new Function('R', source) as (runtime: Vm) => { scripts: CompiledScript['body'][] })(this);
+    return built.scripts[0] ?? null;
+  }
+
+  /**
+   * Starts a compiled stack in an object: its first step runs right away,
+   * then it carries on frame by frame with everything else.
+   */
+  startStack(body: CompiledScript['body'], targetId: string, blockId = ''): boolean {
     const target = this.targetOf(targetId);
-    if (!target || !this.compileInput) {
+    if (!target) {
       return false;
     }
-    const source = new Codegen(this.compileInput).compileStackProbe(stack);
-    const built = (new Function('R', source) as (runtime: Vm) => { scripts: CompiledScript['body'][] })(this);
-    const thread = new Thread(target, target.entity, {
-      event: 'probe',
-      filter: null,
-      blockId: String(stack[0]?.id ?? ''),
-      body: built.scripts[0]!,
-    });
-    target.threads.push(thread);
+    const thread = new Thread(target, target.entity, { event: 'probe', filter: null, blockId, body });
+    thread.step();
+    if (!thread.done) {
+      target.threads.push(thread);
+    }
     return true;
   }
 

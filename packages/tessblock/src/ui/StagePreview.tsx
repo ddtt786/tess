@@ -56,7 +56,12 @@ export function StagePreview() {
   }
 
   return (
-    <div class="preview" ref={host}>
+    <div
+      class="preview"
+      ref={host}
+      // A second click would otherwise start selecting words around the stage.
+      onMouseDown={(event) => { if (event.detail > 1) event.preventDefault(); }}
+    >
       {/* Exactly the stage's box, sized and centred as the runner fits its canvas. */}
       <div
         class="preview-stage"

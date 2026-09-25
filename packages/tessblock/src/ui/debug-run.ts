@@ -14,7 +14,8 @@ import { project } from '../model/store.ts';
 import { debugLive, debugRequest, runningStack } from './state.ts';
 import { idMap, remap } from './report-bubble.ts';
 import { build, runningHandle, runningWork } from '../runtime/run.ts';
-import type { RawBlock } from '../../../tessvm/src/compile/codegen.ts';
+import type { FunctionEntry, RawBlock } from '../../../tessvm/src/compile/codegen.ts';
+import type { Vm } from '../../../tessvm/src/runtime/engine.ts';
 
 /** Starts the stage on `block` and the blocks under it; a hat runs its body. `boost` runs it in boost mode. */
 export function runStack(block: Blockly.BlockSvg, objectId: string, boost = false): void {
@@ -51,6 +52,16 @@ export function runStack(block: Blockly.BlockSvg, objectId: string, boost = fals
   }
 }
 
+/** The last stack joined to a session, compiled; a click on it again starts it without compiling. */
+let joined: {
+  key: string;
+  model: object;
+  running: object;
+  object: string;
+  body: NonNullable<ReturnType<Vm['compileStack']>>;
+  target: string;
+} | null = null;
+
 /**
  * Starts the stack inside the running session: written into a one-script copy
  * of the work, compiled, pointed at the running work's records and handed to
@@ -66,6 +77,12 @@ function joinSession(block: Blockly.BlockSvg, objectId: string): boolean {
     Blockly.serialization.blocks.State;
   const body = tess.hatTypes.has(block.type) ? saved.next?.block : saved;
   if (index < 0 || !body) return false;
+
+  // The same stack again, in the same run of the same work: its compiled form is reused.
+  const key = JSON.stringify(body);
+  if (joined && joined.key === key && joined.model === model && joined.running === running && joined.object === objectId) {
+    return live.vm.startStack(joined.body, joined.target, block.id);
+  }
 
   const holder = new Blockly.Workspace();
   let source: string;
@@ -87,5 +104,18 @@ function joinSession(block: Blockly.BlockSvg, objectId: string): boolean {
   const stack = stacks.find((each) => each[0]?.type === 'when_run_button_click');
   if (!stack) return false;
   const ids = idMap(built.project, running);
-  return live.vm.runStack(remap(stack.slice(1), ids) as RawBlock[], ids.get(compiled.id) ?? compiled.id);
+  // Functions the running work lacks (the compiler's helpers for `scale_x = …` and the like) travel with the stack.
+  const extra = built.project.functions
+    .filter((fn) => !ids.has(fn.id))
+    .map((fn) => ({
+      id: fn.id,
+      type: String(fn.type ?? 'normal'),
+      localVariables: (fn.localVariables ?? []) as FunctionEntry['localVariables'],
+      content: JSON.stringify(remap(typeof fn.content === 'string' ? JSON.parse(fn.content) : fn.content, ids)),
+    }));
+  const target = ids.get(compiled.id) ?? compiled.id;
+  const compiledStack = live.vm.compileStack(remap(stack.slice(1), ids) as RawBlock[], extra);
+  if (!compiledStack) return false;
+  joined = { key, model, running, object: objectId, body: compiledStack, target };
+  return live.vm.startStack(compiledStack, target, block.id);
 }

@@ -307,6 +307,22 @@ export function getFastTextWidth(
  * @param fontFamily The font family to use.
  * @returns Width of element.
  */
+/** The font last given to `canvasContext`. */
+let canvasFont = '';
+
+/** Measured widths by font and text, for the page's life; a loaded font clears them. */
+const measuredWidths = new Map<string, number>();
+let watchingFonts = false;
+
+function rememberWidth(key: string, width: number) {
+  if (!watchingFonts && typeof document !== 'undefined' && document.fonts) {
+    watchingFonts = true;
+    document.fonts.addEventListener('loadingdone', () => measuredWidths.clear());
+  }
+  if (measuredWidths.size > 50000) measuredWidths.clear();
+  measuredWidths.set(key, width);
+}
+
 export function getFastTextWidthWithSizeString(
   textElement: SVGTextElement,
   fontSize: string,
@@ -340,8 +356,18 @@ export function getFastTextWidthWithSizeString(
   // Measure the text width using the helper canvas context.
   if (text && canvasContext) {
     // Set the desired font size and family.
-    canvasContext.font = fontWeight + ' ' + fontSize + ' ' + fontFamily;
-    width = Math.ceil(canvasContext.measureText(text).width);
+    const font = fontWeight + ' ' + fontSize + ' ' + fontFamily;
+    const fontKey = font + '\n' + text;
+    width = measuredWidths.get(fontKey);
+    if (width === undefined) {
+      // Assigning a font parses it again, even an unchanged one.
+      if (canvasFont !== font) {
+        canvasContext.font = font;
+        canvasFont = font;
+      }
+      width = Math.ceil(canvasContext.measureText(text).width);
+      rememberWidth(fontKey, width);
+    }
   } else {
     width = 0;
   }

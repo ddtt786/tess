@@ -1158,6 +1158,7 @@ export class WorkspaceSvg
    * trash, zoom, toolbox, etc. (e.g. window resize).
    */
   resize() {
+    this.queueCull();
     if (this.toolbox) {
       this.toolbox.position();
     } else if (this.flyout) {
@@ -1337,7 +1338,50 @@ export class WorkspaceSvg
   translate(x: number, y: number) {
     this.layerManager?.translateLayers(new Coordinate(x, y), this.scale);
     this.grid?.moveTo(x, y);
+    this.cullBlocks();
     this.maybeFireViewportChangeEvent();
+  }
+
+  /** Pending frame for `queueCull`. */
+  private cullFrame = 0;
+
+  /**
+   * Hides the statement blocks outside the view (with a margin), so painting
+   * and compositing skip them.
+   *
+   * @internal
+   */
+  cullBlocks() {
+    if (this.cullFrame) {
+      cancelAnimationFrame(this.cullFrame);
+      this.cullFrame = 0;
+    }
+    if (this.isFlyout || this.isMutator || !this.rendered) return;
+    const view = this.getMetricsManager().getViewMetrics(true);
+    if (!view.width || !view.height) return;
+    const margin = 120 / this.scale;
+    const rect = new Rect(
+      view.top - margin,
+      view.top + view.height + margin,
+      view.left - margin,
+      view.left + view.width + margin,
+    );
+    for (const block of this.getTopBlocks(false)) {
+      if (!block.isDragging()) block.cullStack(rect);
+    }
+  }
+
+  /**
+   * Culls again on the next frame, once for any number of calls.
+   *
+   * @internal
+   */
+  queueCull() {
+    if (this.cullFrame || this.isFlyout) return;
+    this.cullFrame = requestAnimationFrame(() => {
+      this.cullFrame = 0;
+      this.cullBlocks();
+    });
   }
 
   /**

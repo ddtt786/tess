@@ -192,6 +192,11 @@ function ScopeSelect({ variable }: { variable: VariableDef }) {
 
 // --- lists ------------------------------------------------------------------
 
+/** One list item row: a 30px field and the 4px under it. */
+const ITEM_ROW = 34;
+/** Rows drawn beyond the view on each side, so a fast scroll does not show gaps. */
+const ITEM_MARGIN = 10;
+
 function ListEditor() {
   const currentObjId = selectedObjectId.value;
   const currentObj = project.value.objects.find((o) => o.id === currentObjId);
@@ -209,6 +214,7 @@ function ListEditor() {
   }
 
   const itemList = useRef<HTMLOListElement>(null);
+  const itemScroll = useSignal(0);
   const dragFrom = useSignal<number | null>(null);
   const dragTo = useSignal<number | null>(null);
 
@@ -221,16 +227,19 @@ function ListEditor() {
     beginDrag(event, {
       onMove(moved) {
         if (!row) return;
+        // Only the rows drawn take part (the list draws those near the view); each carries its own index.
+        const rows = [...(itemList.current?.querySelectorAll<HTMLElement>('li[data-index]') ?? [])];
         if (!slide) {
-          slide = new SlideReorder([...(itemList.current?.children ?? [])] as HTMLElement[], row);
+          slide = new SlideReorder(rows, row);
           ghost = dragGhost(row, event);
         }
         ghost!.follow(moved);
         const target = slide.targetAt(moved.clientY);
         slide.show(target);
         dragFrom.value = index;
+        const first = Number(rows[0]?.dataset.index ?? 0);
         // The slot before `insertAt`, counted once the item has left its old place.
-        const insertAt = target ? (target.before ? target.over : target.over + 1) : index;
+        const insertAt = target ? first + (target.before ? target.over : target.over + 1) : index;
         dragTo.value = insertAt > index ? insertAt - 1 : insertAt;
       },
       onEnd() {
@@ -363,9 +372,20 @@ function ListEditor() {
               </button>
             </div>
 
-            <ol class="item-list" ref={itemList}>
-              {current.array.map((item, index) => (
-                <li key={index}>
+            <ol
+              class="item-list"
+              ref={itemList}
+              onScroll={(event) => { itemScroll.value = (event.currentTarget as HTMLElement).scrollTop; }}
+            >
+              {/* Only the rows near the view are drawn; the rest is room of the same height. */}
+              {(() => {
+                const view = itemList.current?.clientHeight || 600;
+                const first = Math.max(0, Math.floor(itemScroll.value / ITEM_ROW) - ITEM_MARGIN);
+                const last = Math.min(current.array.length, first + Math.ceil(view / ITEM_ROW) + ITEM_MARGIN * 2);
+                return [
+                  first > 0 && <li key="above" class="item-room" style={{ height: `${first * ITEM_ROW}px` }} />,
+                  ...current.array.slice(first, last).map((item, offset) => [item, first + offset] as const).map(([item, index]) => (
+                <li key={index} data-index={index}>
                   <span
                     class="item-grip"
                     title="끌어서 순서 바꾸기"
@@ -392,7 +412,12 @@ function ListEditor() {
                     <TrashIcon size={14} />
                   </button>
                 </li>
-              ))}
+                  )),
+                  last < current.array.length && (
+                    <li key="below" class="item-room" style={{ height: `${(current.array.length - last) * ITEM_ROW}px` }} />
+                  ),
+                ];
+              })()}
               {!current.array.length && <li class="muted" style="padding:6px 2px">항목이 없습니다.</li>}
             </ol>
 

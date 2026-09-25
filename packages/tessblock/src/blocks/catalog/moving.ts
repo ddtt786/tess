@@ -26,7 +26,7 @@ define(
   {
     type: 'moving_move_xy',
     category: 'moving',
-    message: 'x 좌표를 %1 y 좌표를 %2 만큼 바꾸기',
+    message: '좌표를 x %1 y %2 만큼 바꾸기',
     args: [numIn('X', 10, POS), numIn('Y', 10, POS)],
     shape: 'statement',
     code: (a) => `move ${a.X} ${a.Y}`,
@@ -34,7 +34,7 @@ define(
   {
     type: 'moving_move_xy_time',
     category: 'moving',
-    message: '%1 초 동안 x 좌표를 %2 y 좌표를 %3 만큼 바꾸기',
+    message: '%1 초 동안 좌표를 x %2 y %3 만큼 바꾸기',
     args: [numIn('SECS', 2), numIn('X', 10, POS), numIn('Y', 10, POS)],
     shape: 'statement',
     code: (a) => `move ${a.X} ${a.Y} in ${a.SECS}`,
@@ -42,7 +42,7 @@ define(
   {
     type: 'moving_goto_xy',
     category: 'moving',
-    message: 'x %1 y %2 위치로 이동하기',
+    message: '좌표 x %1 y %2 위치로 이동하기',
     args: [numIn('X', 0, POS), numIn('Y', 0, POS)],
     shape: 'statement',
     code: (a) => `go ${a.X} ${a.Y}`,
@@ -50,7 +50,7 @@ define(
   {
     type: 'moving_goto_xy_time',
     category: 'moving',
-    message: '%1 초 동안 x %2 y %3 위치로 이동하기',
+    message: '%1 초 동안 좌표 x %2 y %3 위치로 이동하기',
     args: [numIn('SECS', 2), numIn('X', 0, POS), numIn('Y', 0, POS)],
     shape: 'statement',
     code: (a) => `go ${a.X} ${a.Y} in ${a.SECS}`,
@@ -122,7 +122,7 @@ define(
   {
     type: 'moving_set_x',
     category: 'moving',
-    message: 'x 좌표를 %1 (으)로 정하기',
+    message: '좌표 x 를 %1 (으)로 정하기',
     args: [numIn('VALUE', 0)],
     shape: 'statement',
     code: (a) => `x = ${a.VALUE}`,
@@ -130,7 +130,7 @@ define(
   {
     type: 'moving_change_x',
     category: 'moving',
-    message: 'x 좌표를 %1 만큼 바꾸기',
+    message: '좌표 x 를 %1 만큼 바꾸기',
     args: [numIn('VALUE', 10)],
     shape: 'statement',
     code: (a) => `x += ${a.VALUE}`,
@@ -138,7 +138,7 @@ define(
   {
     type: 'moving_set_y',
     category: 'moving',
-    message: 'y 좌표를 %1 (으)로 정하기',
+    message: '좌표 y 를 %1 (으)로 정하기',
     args: [numIn('VALUE', 0)],
     shape: 'statement',
     code: (a) => `y = ${a.VALUE}`,
@@ -146,7 +146,7 @@ define(
   {
     type: 'moving_change_y',
     category: 'moving',
-    message: 'y 좌표를 %1 만큼 바꾸기',
+    message: '좌표 y 를 %1 만큼 바꾸기',
     args: [numIn('VALUE', 10)],
     shape: 'statement',
     code: (a) => `y += ${a.VALUE}`,

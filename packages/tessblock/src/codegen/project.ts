@@ -19,6 +19,11 @@ export interface WriteOptions {
   live?: Map<string, Blockly.Workspace>;
   /** The live workspaces were saved into their objects right before this write. */
   liveSaved?: boolean;
+  /**
+   * Costume and sound files are written as stand-ins and lists empty, for a
+   * work that is never drawn and gets its list items filled in afterwards.
+   */
+  stubData?: boolean;
 }
 
 const INDENT = '  ';
@@ -103,7 +108,7 @@ export function buildSource(model: TessProject, options: WriteOptions = {}): str
   lines.push('end', '');
 
   for (const variable of model.variables.filter((candidate) => !candidate.owner)) {
-    lines.push(variableLine(variable, idents));
+    lines.push(variableLine(variable, idents, options));
   }
   for (const table of model.tables) {
     lines.push(...tableLines(table.name, idents.get(table.id) ?? safeIdent(table.name), table.columns, table.rows));
@@ -144,13 +149,13 @@ function nameTable(model: TessProject): Map<string, string> {
   return table;
 }
 
-function variableLine(variable: VariableDef, idents: Map<string, string>): string {
+function variableLine(variable: VariableDef, idents: Map<string, string>, options: WriteOptions): string {
   const ident = idents.get(variable.id) ?? safeIdent(variable.name);
   const scope = variable.scope === 'local' ? '' : `${variable.scope} `;
   const display = ident === variable.name.trim() ? '' : ` as ${quote(variable.name)}`;
   const place = variable.at ? ` at ${num(variable.at.x)} ${num(variable.at.y)}` : '';
   if (variable.kind === 'list') {
-    const items = variable.array.map((item) => literal(item)).join(', ');
+    const items = options.stubData ? '' : variable.array.map((item) => literal(item)).join(', ');
     const size = variable.size ? ` size ${num(variable.size.width)} ${num(variable.size.height)}` : '';
     return `${scope}list ${ident}${display} = [${items}]${variable.visible ? ' visible' : ''}${place}${size}`;
   }
@@ -205,7 +210,7 @@ function objectLines(
     const isDefault = costume.id === object.selectedCostumeId;
     const display = ident === costume.name.trim() ? '' : ` as ${quote(costume.name)}`;
     body.push(
-      `${isDefault ? 'default ' : ''}costume ${ident} ${quote(resolveAsset(costume.url))} `
+      `${isDefault ? 'default ' : ''}costume ${ident} ${quote(options.stubData ? `stub:${costume.id}.png` : resolveAsset(costume.url))} `
       + `size ${num(costume.width)} ${num(costume.height)}${display}`,
     );
   }
@@ -213,7 +218,7 @@ function objectLines(
   for (const sound of object.sounds) {
     const ident = uniqueIdent(sound.name, soundNames);
     const display = ident === sound.name.trim() ? '' : ` as ${quote(sound.name)}`;
-    body.push(`sound ${ident} ${quote(resolveAsset(sound.url))} for ${num(sound.duration)}${display}`);
+    body.push(`sound ${ident} ${quote(options.stubData ? `stub:${sound.id}.mp3` : resolveAsset(sound.url))} for ${num(sound.duration)}${display}`);
   }
 
   const props = object.props;
@@ -246,7 +251,7 @@ function objectLines(
   }
 
   for (const variable of model.variables.filter((candidate) => candidate.owner === object.id)) {
-    body.push(variableLine({ ...variable, scope: 'local' }, idents));
+    body.push(variableLine({ ...variable, scope: 'local' }, idents, options));
   }
 
   const scripts = objectScripts(object, options);

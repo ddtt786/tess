@@ -179,6 +179,10 @@ const content = `
   display: none;
 }
 
+.blocklyCulled {
+  visibility: hidden;
+}
+
 .blocklyDraggable {
   cursor: grab;
   cursor: -webkit-grab;
