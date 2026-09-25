@@ -1,0 +1,51 @@
+{
+  "name": "painter",
+  "version": "0.1.0",
+  "description": "SVG(벡터) / 비트맵 겸용 그림판 라이브러리 — perfect-freehand + SVG.js + clipper2-ts",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./style.css": "./dist/painter.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": [
+    "*.css"
+  ],
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json && node scripts/emit-css.mjs",
+    "typecheck": "tsc --noEmit",
+    "dev": "vite",
+    "preview": "vite preview",
+    "build:types": "tsc -p tsconfig.build.json"
+  },
+  "keywords": [
+    "paint",
+    "svg",
+    "canvas",
+    "bitmap",
+    "drawing",
+    "perfect-freehand",
+    "clipper2"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@svgdotjs/svg.js": "^3.2.8",
+    "clipper2-ts": "^2.0.1-18",
+    "perfect-freehand": "^1.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
+  }
+}
