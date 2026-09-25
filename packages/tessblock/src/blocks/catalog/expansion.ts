@@ -249,15 +249,22 @@ const LIFE_SAFETY_DETAIL: Array<[string, string]> = [
   "일반",
 ].map((name) => [name, name] as [string, string]);
 
+/** Papago's language codes, which is what entry's translate block stores. */
 const LANGUAGE: Array<[string, string]> = [
-  ["한국어", "한국어"],
-  ["영어", "영어"],
-  ["일본어", "일본어"],
-  ["중국어 간체", "중국어 간체"],
-  ["스페인어", "스페인어"],
-  ["프랑스어", "프랑스어"],
-  ["독일어", "독일어"],
-  ["러시아어", "러시아어"],
+  ["한국어", "ko"],
+  ["영어", "en"],
+  ["일본어", "ja"],
+  ["중국어 간체", "zh-CN"],
+  ["중국어 번체", "zh-TW"],
+  ["스페인어", "es"],
+  ["프랑스어", "fr"],
+  ["독일어", "de"],
+  ["러시아어", "ru"],
+  ["포르투갈어", "pt"],
+  ["태국어", "th"],
+  ["베트남어", "vi"],
+  ["인도네시아어", "id"],
+  ["힌디어", "hi"],
 ];
 
 /** Same languages, with the usual target first. */

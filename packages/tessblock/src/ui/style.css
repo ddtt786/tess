@@ -3083,10 +3083,18 @@ button:focus-visible,
   margin-left: 6px;
   font-weight: 500;
 }
-.rec-empty {
-  padding: 6px 4px;
-  font-size: 12px;
+.muted {
   color: var(--muted);
+}
+/* An empty section: a quiet dashed card, the same wherever it appears. */
+.rec-empty {
+  max-width: 560px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
 }
 .rec {
   border: 1px solid var(--line);
@@ -3695,4 +3703,77 @@ button:focus-visible,
   color: var(--muted);
   opacity: 0.7;
   font-weight: 600;
+}
+
+/* --- painter side: only what the tool uses, and the layers ----------------- */
+.paint-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.seg.small {
+  display: flex;
+}
+.seg.small button {
+  flex: 1;
+  height: 24px;
+  padding: 0 6px;
+  font-size: 11.5px;
+}
+.layers {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.layers-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.layers-head .iconbtn {
+  width: 24px;
+  height: 24px;
+  font-size: 9px;
+}
+.layer-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.layer-row:hover {
+  background: var(--bg);
+}
+.layer-row.on {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-weight: 650;
+}
+.layer-row .iconbtn {
+  width: 22px;
+  height: 22px;
+}
+.layer-row .iconbtn.off {
+  opacity: 0.45;
+}
+.layer-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -85,6 +85,19 @@ const LANGUAGE_NAMES: Record<string, string> = {
 };
 
 /**
+ * A language as papago names it. Works written by hand (or by an older editor)
+ * may give the name people read (`한국어`, `중국어 간체`); those become the code.
+ */
+function languageCode(value: string): string {
+  const name = value.replace(/\s+/g, '');
+  if (name === '베트남어') return 'vi';
+  for (const [code, label] of Object.entries(LANGUAGE_NAMES)) {
+    if (label === name) return code;
+  }
+  return value;
+}
+
+/**
  * Holds the script across frames until `answer` settles, the way entry's async
  * blocks hold theirs. A refused answer reads as the fallback.
  */
@@ -1278,7 +1291,9 @@ export function createOps(vm: Vm) {
     // -----------------------------------------------------------------------
     //  Translation
     // -----------------------------------------------------------------------
-    *translate(source: string, text: string, target: string): Generator<number, string> {
+    *translate(sourceName: string, text: string, targetName: string): Generator<number, string> {
+      const source = languageCode(String(sourceName));
+      const target = languageCode(String(targetName));
       // `checkText` — entry answers with the reason rather than a translation.
       if (!text) {
         return NO_SENTENCE;

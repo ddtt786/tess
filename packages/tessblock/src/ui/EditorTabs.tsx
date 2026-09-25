@@ -29,8 +29,9 @@ export function EditorTabs() {
       <div class="tabbar">
         {TABS.map(([key, label]) => (
           <button key={key} class={`tabbtn ${tab === key ? 'on' : ''}`} onClick={() => { editorTab.value = key; }}>
-            {label}
-            {key === 'costumes' && object && <span class="n">{object.costumes.length}</span>}
+            {/* A text box has no costumes; its tab holds the text box settings. */}
+            {key === 'costumes' && object?.kind === 'text' ? '글상자' : label}
+            {key === 'costumes' && object && object.kind !== 'text' && <span class="n">{object.costumes.length}</span>}
             {key === 'sounds' && object && <span class="n">{object.sounds.length}</span>}
           </button>
         ))}

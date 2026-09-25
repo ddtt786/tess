@@ -14,9 +14,24 @@ export function InlineName({ value, onCommit, class: className = '', title }: Pr
   const draft = useSignal(value);
   const field = useRef<HTMLInputElement>(null);
 
+  const label = useRef<HTMLSpanElement>(null);
+
   useEffect(() => {
     if (editing.value) field.current?.select();
   }, [editing.value]);
+
+  // In a record row, a double click anywhere on the row renames, not only on the letters.
+  useEffect(() => {
+    const row = label.current?.closest<HTMLElement>('.rec-row, .rec');
+    if (editing.value || !row) return undefined;
+    const rename = (event: MouseEvent) => {
+      if ((event.target as Element).closest('button, input, select, textarea, a')) return;
+      draft.value = value;
+      editing.value = true;
+    };
+    row.addEventListener('dblclick', rename);
+    return () => row.removeEventListener('dblclick', rename);
+  }, [editing.value, value]);
 
   function commit() {
     editing.value = false;
@@ -27,6 +42,7 @@ export function InlineName({ value, onCommit, class: className = '', title }: Pr
   if (!editing.value) {
     return (
       <span
+        ref={label}
         class={className}
         title={title ?? '두 번 눌러 이름 바꾸기'}
         onDblClick={(event) => {

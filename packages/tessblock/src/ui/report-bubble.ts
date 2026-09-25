@@ -9,6 +9,7 @@
  */
 import * as Blockly from 'blockly/core';
 import { Vm } from '../../../tessvm/src/runtime/engine.ts';
+import { EntryTranslator } from '../../../tessvm/src/web/translate.ts';
 import type { RawBlock } from '../../../tessvm/src/compile/codegen.ts';
 import type { EntryProject } from '../../../compiler/src/types.ts';
 import { DEFINE_BLOCK } from '../blocks/function-ids.ts';
@@ -101,7 +102,8 @@ let quiet: { source: string; vm: Vm } | null = null;
 
 function quietVm(source: string, work: EntryProject): Vm {
   if (quiet?.source !== source) {
-    const vm = new Vm({ renderer: null, audio: null } as never);
+    // It draws and plays nothing, but answers the api blocks the way a run does.
+    const vm = new Vm({ renderer: null, audio: null, translator: new EntryTranslator() } as never);
     vm.load(work as never);
     quiet = { source, vm };
   }

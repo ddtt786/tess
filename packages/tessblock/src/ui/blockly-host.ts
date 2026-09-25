@@ -110,6 +110,7 @@ export function mount(host: HTMLElement): void {
   if (flyout) flyout.autoClose = false;
   // A lone value block, clicked here or in the palette, shows its value.
   workspace.addChangeListener(onValueClick);
+  workspace.addChangeListener(absorbLiterals);
   flyout?.getWorkspace().addChangeListener(onValueClick);
   workspace.getToolbox()?.selectItemByPosition(0);
   // Picking a category is how you leave a search.
@@ -405,6 +406,26 @@ let signatures = "";
 
 /** Pending frame for greying out misplaced parameter blocks. */
 let paramCheck = 0;
+
+/** Literals and record menus that turn back into a socket's own default once dropped in one. */
+const ABSORBED = new Set(["calc_number", "calc_text", "looks_costume_menu", "sound_menu"]);
+
+/**
+ * A literal pulled out of a socket is a real block, drawn a little larger; put
+ * back into a socket it becomes that socket's default again and looks as it did.
+ * One taken out of a socket another way (undo) becomes a real block again.
+ */
+function absorbLiterals(event: Blockly.Events.Abstract): void {
+  if (event.type !== Blockly.Events.BLOCK_MOVE || !workspace) return;
+  const move = event as Blockly.Events.BlockMove;
+  const block = workspace.getBlockById(move.blockId ?? "") as Blockly.BlockSvg | null;
+  if (!block || !ABSORBED.has(block.type)) return;
+  if (move.newParentId && move.newInputName) {
+    if (!block.isShadow() && !block.getChildren(false).length) block.setShadow(true);
+  } else if (!move.newParentId && block.isShadow()) {
+    block.setShadow(false);
+  }
+}
 
 function onValueClick(event: Blockly.Events.Abstract): void {
   if (event.type !== Blockly.Events.CLICK || !workspace || !shown) return;

@@ -11,8 +11,9 @@ import { getPainter, painterVersion, fitStage } from './painter-host.ts';
 import {
   BrushIcon, CircleIcon, CursorIcon, EraserIcon, FillIcon, FitIcon, FlipHIcon, FlipVIcon,
   FrontIcon, BackIcon, GroupIcon, LineIcon, NodeIcon, RectIcon, RedoIcon, TextIcon, TrashIcon,
-  UndoIcon, UngroupIcon, ZoomInIcon, ZoomOutIcon,
+  UndoIcon, UngroupIcon, ZoomInIcon, ZoomOutIcon, PlusIcon, EyeIcon, EyeOffIcon,
 } from './icons.tsx';
+import { InlineName } from './InlineName.tsx';
 
 type ToolName = 'select' | 'reshape' | 'brush' | 'eraser' | 'fill' | 'text' | 'line' | 'ellipse' | 'rect';
 
@@ -48,7 +49,7 @@ function usePainterState(): number {
     const painter = getPainter();
     if (!painter) return undefined;
     const bump = () => { tick.value += 1; };
-    const offs = (['change', 'selectionchange', 'toolchange', 'stylechange', 'historychange', 'modechange', 'viewchange'] as const)
+    const offs = (['change', 'selectionchange', 'toolchange', 'stylechange', 'historychange', 'modechange', 'viewchange', 'layerchange'] as const)
       .map((type) => painter.on(type, bump));
     return () => offs.forEach((off) => off());
   }, [version]);
@@ -117,25 +118,105 @@ export function PaintTools() {
       </div>
 
       <aside class="paint-side">
-        <div class="f">
-          <span>채우기</span>
-          <div class="colour-row">
-            <input
-              class="swatch"
-              type="color"
-              value={style.fill ?? '#000000'}
-              onInput={(event) => painter.setFill((event.target as HTMLInputElement).value)}
-            />
-            <button
-              class={`style-btn ${style.fill === null ? 'on' : ''}`}
-              title="채우기 없음"
-              onClick={() => painter.setFill(style.fill === null ? '#4f46e5' : null)}
-            >
-              없음
-            </button>
-          </div>
-        </div>
+        <SideSettings />
+        {vector && <LayerList />}
+      </aside>
+    </>
+  );
+}
 
+/** What each tool draws with; the side shows only those settings. */
+type Setting = 'fill' | 'stroke' | 'width' | 'brush' | 'font' | 'effects';
+
+const TOOL_SETTINGS: Record<string, Setting[]> = {
+  brush: ['fill', 'brush'],
+  eraser: ['brush'],
+  fill: ['fill'],
+  text: ['fill', 'font'],
+  line: ['stroke', 'width'],
+  rect: ['fill', 'stroke', 'width'],
+  ellipse: ['fill', 'stroke', 'width'],
+};
+
+/** The settings the current tool (or, when selecting, the current selection) uses. */
+function SideSettings() {
+  const painter = getPainter()!;
+  const vector = painter.vector;
+  const style = painter.style;
+  const brush = painter.brush;
+  const text = painter.textStyle;
+  const selecting = painter.tool === 'select' || painter.tool === 'reshape';
+  const selection = vector?.selection ?? [];
+
+  let settings: Setting[];
+  if (selecting) {
+    settings = vector && selection.length ? ['fill', 'stroke', 'width', 'effects'] : [];
+    if (selection.some((node) => node.tagName.toLowerCase() === 'text')) settings.push('font');
+  } else {
+    settings = TOOL_SETTINGS[painter.tool] ?? [];
+  }
+  if (!settings.length) {
+    return <p class="paint-hint">{selecting ? '도형을 고르면 색과 효과를 바꿀 수 있습니다.' : '이 도구는 설정이 없습니다.'}</p>;
+  }
+  const fillLabel = painter.tool === 'brush' ? '붓 색' : painter.tool === 'text' ? '글자 색' : '채우기';
+  const gradient = settings.includes('effects') ? vector?.selectionGradient ?? null : null;
+
+  return (
+    <>
+      {settings.includes('fill') && (
+        <div class="f">
+          <span>{fillLabel}</span>
+          {settings.includes('effects') && (
+            <div class="seg small">
+              <button class={gradient ? '' : 'on'} onClick={() => vector?.setFillGradient(null)}>단색</button>
+              <button
+                class={gradient?.kind === 'linear' ? 'on' : ''}
+                onClick={() => vector?.setFillGradient({ kind: 'linear', from: gradient?.from ?? style.fill ?? '#4f46e5', to: gradient?.to ?? '#ffffff', angle: gradient?.angle ?? 90 })}
+              >
+                선형
+              </button>
+              <button
+                class={gradient?.kind === 'radial' ? 'on' : ''}
+                onClick={() => vector?.setFillGradient({ kind: 'radial', from: gradient?.from ?? style.fill ?? '#4f46e5', to: gradient?.to ?? '#ffffff', angle: 0 })}
+              >
+                원형
+              </button>
+            </div>
+          )}
+          {gradient ? (
+            <div class="colour-row">
+              <input class="swatch" type="color" title="시작 색" value={gradient.from}
+                onInput={(event) => vector?.setFillGradient({ ...gradient, from: (event.target as HTMLInputElement).value })} />
+              <input class="swatch" type="color" title="끝 색" value={gradient.to}
+                onInput={(event) => vector?.setFillGradient({ ...gradient, to: (event.target as HTMLInputElement).value })} />
+            </div>
+          ) : (
+            <div class="colour-row">
+              <input
+                class="swatch"
+                type="color"
+                value={style.fill && style.fill.startsWith('#') ? style.fill : '#000000'}
+                onInput={(event) => painter.setFill((event.target as HTMLInputElement).value)}
+              />
+              {painter.tool !== 'brush' && painter.tool !== 'text' && (
+                <button
+                  class={`style-btn ${style.fill === null ? 'on' : ''}`}
+                  title="채우기 없음"
+                  onClick={() => painter.setFill(style.fill === null ? '#4f46e5' : null)}
+                >
+                  없음
+                </button>
+              )}
+            </div>
+          )}
+          {gradient?.kind === 'linear' && (
+            <Slider label="방향" value={gradient.angle} min={0} max={360}
+              onChange={(angle) => vector?.setFillGradient({ ...gradient, angle })} />
+          )}
+        </div>
+      )}
+
+      {settings.includes('stroke') && (
         <div class="f">
           <span>선</span>
           <div class="colour-row">
@@ -154,43 +235,82 @@ export function PaintTools() {
             </button>
           </div>
         </div>
-
-        <Slider
-          label="선 굵기"
-          value={style.strokeWidth}
-          min={0}
-          max={40}
-          onChange={(value) => painter.setStrokeWidth(value)}
-        />
-        <Slider
-          label="붓 크기"
-          value={brush.size}
-          min={1}
-          max={80}
-          onChange={(value) => painter.setBrushOptions({ size: value })}
-        />
-
-        <div class="f">
-          <span>글꼴</span>
-          <select
-            class="select"
-            value={text.fontFamily}
-            onChange={(event) => painter.setTextStyle({ fontFamily: (event.target as HTMLSelectElement).value })}
-          >
-            {FONTS.map((font) => (
-              <option key={font.family} value={font.family} style={{ fontFamily: font.family }}>{font.label}</option>
-            ))}
-          </select>
-        </div>
-        <Slider
-          label="글자 크기"
-          value={text.fontSize}
-          min={8}
-          max={160}
-          onChange={(value) => painter.setTextStyle({ fontSize: value })}
-        />
-      </aside>
+      )}
+      {settings.includes('width') && (
+        <Slider label="선 굵기" value={style.strokeWidth} min={0} max={40} onChange={(value) => painter.setStrokeWidth(value)} />
+      )}
+      {settings.includes('effects') && vector && (
+        <>
+          <div class="f">
+            <span>선 모양</span>
+            <div class="seg small">
+              {([['solid', '실선'], ['dashed', '점선'], ['dotted', '점']] as const).map(([dash, label]) => (
+                <button class={vector.selectionDash === dash ? 'on' : ''} onClick={() => vector.setDash(dash)}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <Slider label="투명도" value={Math.round((1 - vector.selectionOpacity) * 100)} min={0} max={100}
+            onChange={(value) => vector.setOpacity(1 - value / 100)} />
+        </>
+      )}
+      {settings.includes('brush') && (
+        <Slider label={painter.tool === 'eraser' ? '지우개 크기' : '붓 크기'} value={brush.size} min={1} max={80}
+          onChange={(value) => painter.setBrushOptions({ size: value })} />
+      )}
+      {settings.includes('font') && (
+        <>
+          <div class="f">
+            <span>글꼴</span>
+            <select
+              class="select"
+              value={text.fontFamily}
+              onChange={(event) => painter.setTextStyle({ fontFamily: (event.target as HTMLSelectElement).value })}
+            >
+              {FONTS.map((font) => (
+                <option key={font.family} value={font.family} style={{ fontFamily: font.family }}>{font.label}</option>
+              ))}
+            </select>
+          </div>
+          <Slider label="글자 크기" value={text.fontSize} min={8} max={160} onChange={(value) => painter.setTextStyle({ fontSize: value })} />
+        </>
+      )}
     </>
+  );
+}
+
+/** The drawing's layers, top first: pick one to draw on, hide, rename, reorder. */
+function LayerList() {
+  const vector = getPainter()?.vector;
+  if (!vector) return null;
+  const layers = vector.layers;
+  const count = layers.length;
+  const active = layers.findIndex((layer) => layer.active);
+  return (
+    <div class="f layers">
+      <div class="layers-head">
+        <span>레이어</span>
+        <span class="spacer" />
+        <button class="iconbtn plain" title="레이어 추가" aria-label="레이어 추가" onClick={() => vector.addLayer()}><PlusIcon size={14} /></button>
+        <button class="iconbtn plain" title="위로" aria-label="위로" disabled={active >= count - 1} onClick={() => vector.moveLayer(active, 1)}>▲</button>
+        <button class="iconbtn plain" title="아래로" aria-label="아래로" disabled={active <= 0} onClick={() => vector.moveLayer(active, -1)}>▼</button>
+        <button class="iconbtn plain danger" title="레이어 지우기" aria-label="레이어 지우기" disabled={count < 2} onClick={() => vector.removeLayer(active)}><TrashIcon size={14} /></button>
+      </div>
+      <ul class="layer-list">
+        {layers.map((layer, index) => ({ layer, index })).reverse().map(({ layer, index }) => (
+          <li key={index} class={`layer-row ${layer.active ? 'on' : ''}`} onClick={() => vector.selectLayer(index)}>
+            <button
+              class={`iconbtn plain ${layer.visible ? '' : 'off'}`}
+              title={layer.visible ? '숨기기' : '보이기'}
+              aria-label={layer.visible ? '숨기기' : '보이기'}
+              onClick={(event) => { event.stopPropagation(); vector.setLayerVisible(index, !layer.visible); }}
+            >
+              {layer.visible ? <EyeIcon size={14} /> : <EyeOffIcon size={14} />}
+            </button>
+            <InlineName class="layer-name" value={layer.name} onCommit={(name) => vector.renameLayer(index, name)} />
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

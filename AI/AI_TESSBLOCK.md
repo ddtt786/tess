@@ -839,3 +839,30 @@ tessblock 은 npm `blockly` 대신 `packages/blockly` 의 포크를 쓴다.
 - 글상자(`TextBoxPane`): 제목·설명 없이 미리 보기 → 내용(2줄) → (미리 보기 → 설정 한 줄 → 내용 순) 설정 한 줄(`text-bar`: 글꼴·크기·정렬 아이콘·
   꾸미기·줄바꿈 토글·색 칩). 색은 동그란 `ColourChip`(배경색은 빗금 = 없음, 마우스를 올리면 × 로 없애기). 폭 560px.
 - `sheet-head` 공통: 제목과 설명을 한 줄에(설명은 말줄임), 추가 버튼은 작게, 머리 폭 560px. 소리 목록·빈 영역도 560px.
+
+## 23. 번역 언어 코드, 값 다시 끼우기, 빈 상태, 이름 바꾸기, 그림판 설정·레이어·효과
+
+- **번역**: 블록 언어 값은 파파고 코드(`ko`·`en`·`ja`·`zh-CN`… 14개, 엔트리와 같음). 예전 한글 값은 tessvm
+  `ops.translate` 의 `languageCode` 가 코드로 바꾼다. 값 말풍선용 조용한 VM 에도 `EntryTranslator` 를 준다.
+- **다시 끼운 값**: `absorbLiterals`(blockly-host) — `calc_number`·`calc_text`·메뉴 블록이 소켓에 들어가면
+  (`BLOCK_MOVE` 에 새 부모·입력) `setShadow(true)` 로 그 소켓의 그림자가 되어 원래 모양. 소켓 밖으로
+  나오면(되돌리기 등) 다시 진짜 블록.
+- **빈 상태**: `.muted` 색 정의, `.rec-empty` 는 점선 카드(최대 560px). 리스트·테이블이 하나도 없으면 목록/상세로
+  나누지 않고 카드 하나만(추가 버튼은 머리에만).
+- **이름 바꾸기**: `InlineName` 이 `.rec-row`·`.rec` 안에 있으면 행의 빈 곳을 두 번 눌러도 편집(버튼·입력칸 제외).
+- **그림판 오른쪽**(`SideSettings`): 도구별로 쓰는 것만 — 붓(색·크기), 지우개(크기), 채우기(색), 글자(색·글꼴·
+  크기), 선(선 색·굵기), 사각형·원(채우기·선·굵기). 선택 도구는 고른 도형이 있을 때만 채우기·선·굵기·효과,
+  글자를 골랐으면 글꼴. 아무것도 없으면 안내 한 줄.
+- **효과**(벡터, 고른 도형): 채우기 단색/선형/원형 그라데이션(두 색, 선형은 방향), 선 모양 실선/점선/점, 투명도.
+- **레이어**(벡터): 오른쪽 아래 목록(위가 앞). 고르기·보이기·이름(두 번 눌러)·위/아래·추가·지우기.
+
+### painter 패키지 (packages/painter)
+
+- 레이어: `layersRoot` 안에 레이어마다 `<g class="pt-scene" data-layer>`; `scene` 이 활성 레이어를 가리켜 도구·선택·
+  히트 테스트는 그 레이어만 본다. 스냅샷은 전체 레이어 + 활성 번호. `toSVG` 는 레이어가 하나면 예전처럼 도형만,
+  둘 이상이거나 숨김이면 `<g data-layer>`(숨김은 `display="none"`). `loadSVG` 는 최상위가 모두 레이어 그룹이면 레이어로
+  읽고, 그룹의 `transform`(tessblock `centred` 가 붙이는 이동)을 도형에 옮긴다. 이벤트 `layerchange`.
+- 효과: `setFillGradient`(도형마다 `ptg-<pid>` 그라데이션을 도형 바로 뒤 `<defs>` 에 — 저장 시 같이 간다),
+  `selectionGradient`, `setOpacity`/`selectionOpacity`, `setDash`/`selectionDash`(굵기에 맞춘 `stroke-dasharray`,
+  `data-dash`). `setFill` 은 그라데이션을 지운다.
+- 글상자 오브젝트를 고르면 `모양` 탭 이름이 `글상자` 로 바뀌고 개수 표시가 없다(`EditorTabs`).

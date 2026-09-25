@@ -249,18 +249,31 @@ function ListEditor() {
     });
   }
 
+  const head = (
+    <div class="sheet-head">
+      <div>
+        <h3>리스트</h3>
+        <p class="sub">항목을 한 줄씩 더하고, 순서를 바꾸고, 지울 수 있습니다.</p>
+      </div>
+      <span class="spacer" />
+      <button class="btn primary" onClick={() => { dialog.value = 'list'; }}>
+        <PlusIcon /> 리스트 추가
+      </button>
+    </div>
+  );
+
+  if (!allLists.length) {
+    return (
+      <>
+        {head}
+        <div class="rec-empty">아직 리스트가 없습니다.</div>
+      </>
+    );
+  }
+
   return (
     <>
-      <div class="sheet-head">
-        <div>
-          <h3>리스트</h3>
-          <p class="sub">항목을 한 줄씩 더하고, 순서를 바꾸고, 지울 수 있습니다.</p>
-        </div>
-        <span class="spacer" />
-        <button class="btn primary" onClick={() => { dialog.value = 'list'; }}>
-          <PlusIcon /> 리스트 추가
-        </button>
-      </div>
+      {head}
 
       <div class="split">
         <div class="pick-list-container" style="display:flex; flex-direction:column; gap:12px; width:200px; flex:none;">
@@ -388,7 +401,7 @@ function ListEditor() {
             </button>
           </div>
         ) : (
-          <div class="pick-detail muted">리스트를 만들어 주세요.</div>
+          <div class="rec-empty">왼쪽에서 리스트를 고르세요.</div>
         )}
       </div>
     </>
@@ -423,7 +436,7 @@ function SignalTable() {
             </div>
           </div>
         ))}
-        {!signals.length && <div class="rec-empty">아직 없습니다.</div>}
+        {!signals.length && <div class="rec-empty">아직 신호가 없습니다.</div>}
       </div>
     </>
   );
@@ -457,24 +470,37 @@ function TableEditor() {
     });
   }
 
+  const head = (
+    <div class="sheet-head">
+      <div>
+        <h3>테이블</h3>
+        <p class="sub">자료분석 블록이 읽고 쓰는 표입니다. 칸을 눌러 바로 고칩니다.</p>
+      </div>
+      <span class="spacer" />
+      <button
+        class="btn primary"
+        onClick={() => {
+          addTable(`테이블${tables.length + 1}`);
+          picked.value = '';
+        }}
+      >
+        <PlusIcon /> 테이블 추가
+      </button>
+    </div>
+  );
+
+  if (!tables.length) {
+    return (
+      <>
+        {head}
+        <div class="rec-empty">아직 테이블이 없습니다.</div>
+      </>
+    );
+  }
+
   return (
     <>
-      <div class="sheet-head">
-        <div>
-          <h3>테이블</h3>
-          <p class="sub">자료분석 블록이 읽고 쓰는 표입니다. 칸을 눌러 바로 고칩니다.</p>
-        </div>
-        <span class="spacer" />
-        <button
-          class="btn primary"
-          onClick={() => {
-            addTable(`테이블${tables.length + 1}`);
-            picked.value = '';
-          }}
-        >
-          <PlusIcon /> 테이블 추가
-        </button>
-      </div>
+      {head}
 
       <div class="split">
         <ul class="pick-list">
@@ -486,7 +512,6 @@ function TableEditor() {
               </button>
             </li>
           ))}
-          {!tables.length && <li class="muted" style="padding:8px 10px">아직 없습니다.</li>}
         </ul>
 
         {current ? (
@@ -576,7 +601,7 @@ function TableEditor() {
             </div>
           </div>
         ) : (
-          <div class="pick-detail muted">테이블을 만들어 주세요.</div>
+          <div class="rec-empty">왼쪽에서 테이블을 고르세요.</div>
         )}
       </div>
     </>
@@ -656,7 +681,7 @@ function FunctionTable() {
       <div class="rec-list">
         <div class="rec-group">전역 함수 <span class="muted">모든 오브젝트</span></div>
         {globals.map(fnRow)}
-        {!globals.length && <div class="rec-empty">아직 없습니다.</div>}
+        {!globals.length && <div class="rec-empty">아직 함수가 없습니다.</div>}
 
         <div class="rec-group">지역 함수 <span class="muted">{currentObj ? `${currentObj.name} 전용` : '선택된 오브젝트 없음'}</span></div>
         {locals.map(fnRow)}
@@ -678,3 +703,4 @@ function FunctionTable() {
     </>
   );
 }
+
