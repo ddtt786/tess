@@ -2046,7 +2046,8 @@ button:focus-visible,
   font-size: 11px;
   font-weight: 650;
 }
-.shot-del {
+.shot-del,
+.shot-dup {
   position: absolute;
   top: 4px;
   right: 5px;
@@ -2058,8 +2059,17 @@ button:focus-visible,
   color: var(--muted);
   opacity: 0;
 }
-.shot:hover .shot-del {
+.shot-dup {
+  right: auto;
+  left: 5px;
+}
+.shot:hover .shot-del,
+.shot:hover .shot-dup {
   opacity: 0.85;
+}
+.shot-dup:hover {
+  color: var(--accent);
+  background: var(--accent-weak);
 }
 .shot-del:hover {
   color: var(--danger);
@@ -2148,6 +2158,7 @@ button:focus-visible,
 .paint-side {
   grid-area: side;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 12px;
   padding: 12px;
@@ -2175,7 +2186,9 @@ button:focus-visible,
   align-items: center;
 }
 .slider-row input[type="range"] {
-  flex: 1;
+  /* Zero basis: a range input's own width (129px) would push the number past the panel. */
+  flex: 1 1 0;
+  width: 0;
   min-width: 0;
   accent-color: var(--accent);
 }
@@ -2231,6 +2244,7 @@ button:focus-visible,
   box-shadow: 0 0 0 4px var(--accent-weak);
 }
 .input.tiny {
+  flex: none;
   width: 52px;
   height: 26px;
   padding: 0 6px;
@@ -3855,4 +3869,40 @@ button:focus-visible,
 .layer-row {
   user-select: none;
   touch-action: none;
+}
+
+/* Shift+drag marking on the block canvas. */
+.block-marquee {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  pointer-events: none;
+  border: 1.5px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 4px;
+}
+.tessMarked > .blocklyPath {
+  stroke: #1e1b4b !important;
+  stroke-width: 3px !important;
+}
+
+/* Onion skin: the costume before the open one, under the artwork. */
+.pt-frame > img.onion-skin {
+  position: absolute;
+  opacity: 0.3;
+  pointer-events: none;
+  user-select: none;
+}
+.style-btn.dropper {
+  display: grid;
+  place-items: center;
+  flex: none;
+  min-width: 30px;
+  width: 30px;
+  padding: 0;
+}
+.picking-colour,
+.picking-colour * {
+  cursor: crosshair !important;
 }

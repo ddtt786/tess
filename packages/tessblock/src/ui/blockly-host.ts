@@ -25,6 +25,7 @@ import { newId } from "../model/ids.ts";
 import type { BlocklyState, FunctionDef } from "../model/types.ts";
 import { signatureOf } from "../model/call-remap.ts";
 import { copyDeep } from "../model/json.ts";
+import { installBlockClipboard } from "./block-clipboard.ts";
 
 /** A gap at the top of every palette, so the search strip covers no blocks. */
 const PALETTE_TOP = { kind: "sep", gap: 44 };
@@ -104,6 +105,7 @@ export function mount(host: HTMLElement): void {
     };
   });
   workspace.addChangeListener(onChange);
+  installBlockClipboard(workspace);
   // The palette stays open like entry's: a category swaps its contents instead
   // of toggling a drawer.
   const flyout = workspace.getFlyout();

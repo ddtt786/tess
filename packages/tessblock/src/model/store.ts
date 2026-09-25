@@ -269,7 +269,7 @@ export function addObject(kind: 'sprite' | 'text' = 'sprite'): void {
   const name = freeName(kind === 'sprite' ? '새 그림' : '글상자');
   const object = kind === 'sprite' ? makeSprite(name, scene) : makeTextBox(name, scene);
   if (kind === 'sprite') {
-    const blank: Costume = { id: newId('c'), name: '새 그림', url: blankCostume(240, 180), width: 240, height: 180 };
+    const blank: Costume = { id: newId('c'), name: '기본', url: blankCostume(240, 180), width: 240, height: 180 };
     object.costumes = [blank];
     object.selectedCostumeId = blank.id;
   }
@@ -525,6 +525,18 @@ export function updateCostume(objectId: string, costumeId: string, patch: Partia
     if (index < 0) return;
     const named = patch.name === undefined ? patch : { ...patch, name: uniqueCostumeName(object, patch.name, costumeId) };
     object.costumes[index] = { ...object.costumes[index]!, ...named };
+  });
+}
+
+/** A copy of a costume right after it, chosen. */
+export function duplicateCostume(objectId: string, costumeId: string): void {
+  patchObject(objectId, (object) => {
+    const index = object.costumes.findIndex((costume) => costume.id === costumeId);
+    if (index < 0) return;
+    const source = object.costumes[index]!;
+    const copy: Costume = { ...source, id: newId('c'), name: uniqueCostumeName(object, source.name) };
+    object.costumes.splice(index + 1, 0, copy);
+    object.selectedCostumeId = copy.id;
   });
 }
 

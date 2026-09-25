@@ -8,10 +8,10 @@ import { beginDrag, dragGhost, SlideReorder, type DragGhost } from './drag.ts';
 import { FONTS } from '../model/fonts.ts';
 import { useSignal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
-import { getPainter, painterVersion, fitStage } from './painter-host.ts';
+import { getPainter, painterVersion, fitStage, onionSkin, pickColour, toggleOnionSkin } from './painter-host.ts';
 import {
-  BrushIcon, CircleIcon, CursorIcon, EraserIcon, FillIcon, FitIcon, FlipHIcon, FlipVIcon,
-  FrontIcon, BackIcon, GroupIcon, LineIcon, NodeIcon, RectIcon, RedoIcon, TextIcon, TrashIcon,
+  BrushIcon, CircleIcon, DropperIcon, OnionIcon, CursorIcon, EraserIcon, FillIcon, FitIcon, FlipHIcon, FlipVIcon,
+  FrontIcon, ForwardIcon, BackwardIcon, BackIcon, GroupIcon, LineIcon, NodeIcon, RectIcon, RedoIcon, TextIcon, TrashIcon,
   UndoIcon, UngroupIcon, ZoomInIcon, ZoomOutIcon, PlusIcon, EyeIcon, EyeOffIcon,
 } from './icons.tsx';
 import { InlineName } from './InlineName.tsx';
@@ -88,6 +88,8 @@ export function PaintTools() {
             <button class="iconbtn" title="그룹 만들기" onClick={() => painter.group()}><GroupIcon /></button>
             <button class="iconbtn" title="그룹 풀기" onClick={() => painter.ungroup()}><UngroupIcon /></button>
             <button class="iconbtn" title="맨 앞으로" onClick={() => painter.bringToFront()}><FrontIcon /></button>
+            <button class="iconbtn" title="앞으로" onClick={() => painter.bringForward()}><ForwardIcon /></button>
+            <button class="iconbtn" title="뒤로" onClick={() => painter.sendBackward()}><BackwardIcon /></button>
             <button class="iconbtn" title="맨 뒤로" onClick={() => painter.sendToBack()}><BackIcon /></button>
             <span class="vr" />
           </>
@@ -97,6 +99,14 @@ export function PaintTools() {
         <button class="iconbtn" title="선택한 것 지우기" onClick={() => painter.delete()}><TrashIcon /></button>
 
         <span class="spacer" />
+        <button
+          class={`iconbtn ${onionSkin.value ? 'on' : ''}`}
+          title={onionSkin.value ? '이전 모양 겹쳐 보기 끄기' : '이전 모양 겹쳐 보기 (어니언 스킨)'}
+          aria-pressed={onionSkin.value}
+          onClick={toggleOnionSkin}
+        >
+          <OnionIcon />
+        </button>
         <button class="iconbtn" title="축소" onClick={() => painter.zoomOut()}><ZoomOutIcon /></button>
         <span class="zoom">{Math.round(painter.zoom * 100)}%</span>
         <button class="iconbtn" title="확대" onClick={() => painter.zoomIn()}><ZoomInIcon /></button>
@@ -190,8 +200,10 @@ function SideSettings() {
             <div class="colour-row">
               <input class="swatch" type="color" title="시작 색" value={gradient.from}
                 onInput={(event) => vector?.setFillGradient({ ...gradient, from: (event.target as HTMLInputElement).value })} />
+              <Dropper onPick={(from) => vector?.setFillGradient({ ...gradient, from })} title="시작 색 스포이드" />
               <input class="swatch" type="color" title="끝 색" value={gradient.to}
                 onInput={(event) => vector?.setFillGradient({ ...gradient, to: (event.target as HTMLInputElement).value })} />
+              <Dropper onPick={(to) => vector?.setFillGradient({ ...gradient, to })} title="끝 색 스포이드" />
             </div>
           ) : (
             <div class="colour-row">
@@ -201,6 +213,7 @@ function SideSettings() {
                 value={style.fill && style.fill.startsWith('#') ? style.fill : '#000000'}
                 onInput={(event) => painter.setFill((event.target as HTMLInputElement).value)}
               />
+              <Dropper onPick={(colour) => painter.setFill(colour)} />
               {painter.tool !== 'brush' && painter.tool !== 'text' && (
                 <button
                   class={`style-btn ${style.fill === null ? 'on' : ''}`}
@@ -229,6 +242,7 @@ function SideSettings() {
               value={style.stroke ?? '#000000'}
               onInput={(event) => painter.setStroke((event.target as HTMLInputElement).value)}
             />
+            <Dropper onPick={(colour) => painter.setStroke(colour)} />
             <button
               class={`style-btn ${style.stroke === null ? 'on' : ''}`}
               title="선 없음"
@@ -356,6 +370,32 @@ function LayerList() {
         ))}
       </ul>
     </div>
+  );
+}
+
+/** Picks a colour off the screen (or the sheet) for one colour setting. */
+function Dropper({ onPick, title = '스포이드' }: { onPick: (colour: string) => void; title?: string }) {
+  const picking = useSignal(false);
+  return (
+    <button
+      class={`style-btn dropper ${picking.value ? 'on' : ''}`}
+      title={title}
+      aria-label={title}
+      onClick={async () => {
+        if (picking.value) return;
+        picking.value = true;
+        // Lets this press finish before the pick listens for the next one.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        try {
+          const colour = await pickColour();
+          if (colour) onPick(colour);
+        } finally {
+          picking.value = false;
+        }
+      }}
+    >
+      <DropperIcon size={15} />
+    </button>
   );
 }
 

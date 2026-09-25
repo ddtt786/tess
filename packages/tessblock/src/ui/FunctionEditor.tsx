@@ -6,6 +6,7 @@
  * header — drop one into the empty slot to add it, and throw it away to remove
  * it. The buttons above do the same thing for anyone who would rather click.
  */
+import { installBlockClipboard } from './block-clipboard.ts';
 import { useEffect, useRef } from 'preact/hooks';
 import * as Blockly from 'blockly/core';
 import { DEFINE_BLOCK, PARAM_BOOLEAN, PARAM_VALUE, markForeignParams, readParams, tidyHeader } from '../blocks/functions.ts';
@@ -60,8 +61,10 @@ export function FunctionEditor() {
       created.centerOnBlock(define.id);
     }
     created.addChangeListener(onChange);
+    const removeClipboard = installBlockClipboard(created);
     setTimeout(() => Blockly.svgResize(created), 0);
     return () => {
+      removeClipboard();
       created.dispose();
       workspace.current = null;
       editingFunction.value = null;

@@ -30,6 +30,26 @@ let watches: Array<() => void> = [];
 let shownKey = '';
 /** Bumped when the painter is created or thrown away, so the chrome redraws. */
 export const painterVersion = signal(0);
+/** Whether the costume before the open one shows faintly under it. */
+export const onionSkin = signal(readOnion());
+
+function readOnion(): boolean {
+  try {
+    return localStorage.getItem('tessblock.onion') === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function toggleOnionSkin(): void {
+  onionSkin.value = !onionSkin.value;
+  try {
+    localStorage.setItem('tessblock.onion', onionSkin.value ? '1' : '0');
+  } catch {
+    // The choice lasts for this page only.
+  }
+}
+
 /** Set when the artwork was edited, so viewing a costume never rewrites it. */
 let dirty = false;
 
@@ -45,17 +65,25 @@ export function mountPainter(host: HTMLElement): void {
   ui.setTextStyle({ fontFamily: 'Nanum Gothic' });
   ui.on('change', scheduleSave);
   // A mode switch builds a new sheet, which needs the guide again.
-  ui.on('modechange', markStage);
+  ui.on('modechange', () => {
+    markStage();
+    markOnion();
+  });
   markStage();
   // The canvas follows the selection straight from the store, the same way the
   // block workspace does.
-  watches = [project.subscribe(syncFromStore), selectedObjectId.subscribe(syncFromStore)];
+  watches = [
+    project.subscribe(syncFromStore),
+    selectedObjectId.subscribe(syncFromStore),
+    onionSkin.subscribe(markOnion),
+  ];
   painterVersion.value += 1;
 }
 
 /** Loads whatever costume the selected object is showing, once per change. */
 function syncFromStore(): void {
   if (!ui) return;
+  markOnion();
   const objectId = selectedObjectId.peek();
   const object = project.peek().objects.find((candidate) => candidate.id === objectId);
   if (!object || object.kind === 'text') return;
@@ -109,6 +137,7 @@ export async function loadCostume(nextObjectId: string, next: Costume): Promise<
       await ui.bitmap?.loadImage(resolveAsset(next.url), { fit: true, clear: true });
     }
     markStage();
+    markOnion();
     fitStage();
   } finally {
     loading = false;
@@ -135,6 +164,119 @@ function markStage(): void {
   label.textContent = '실행 화면';
   guide.appendChild(label);
   frame.append(veil, guide);
+}
+
+/**
+ * Shows the costume before the open one, faint, under the artwork. It sits in
+ * the middle of the sheet at its own size, where loading puts a costume.
+ */
+function markOnion(): void {
+  const frame = ui?.surface.viewport.querySelector<HTMLElement>('.pt-frame');
+  if (!frame) return;
+  let image = frame.querySelector<HTMLImageElement>('img.onion-skin');
+  const object = project.peek().objects.find((candidate) => candidate.id === objectId);
+  const index = object?.costumes.findIndex((candidate) => candidate.id === costume?.id) ?? -1;
+  const previous = index > 0 ? object!.costumes[index - 1]! : null;
+  if (!onionSkin.value || !previous || !previous.width || !previous.height) {
+    image?.remove();
+    return;
+  }
+  if (!image) {
+    image = document.createElement('img');
+    image.className = 'onion-skin';
+    image.alt = '';
+    image.draggable = false;
+    // First in the frame, so the artwork paints over it.
+    frame.prepend(image);
+  }
+  const src = resolveAsset(previous.url);
+  if (image.getAttribute('src') !== src) image.src = src;
+  const scale = Math.min(1, SHEET.width / previous.width, SHEET.height / previous.height);
+  const width = (previous.width * scale / SHEET.width) * 100;
+  const height = (previous.height * scale / SHEET.height) * 100;
+  image.style.left = `${50 - width / 2}%`;
+  image.style.top = `${50 - height / 2}%`;
+  image.style.width = `${width}%`;
+  image.style.height = `${height}%`;
+}
+
+/**
+ * Picks a colour: anywhere on screen where the browser has `EyeDropper`,
+ * otherwise from the artwork on the sheet. Null when cancelled or empty.
+ */
+export async function pickColour(): Promise<string | null> {
+  const native = (window as unknown as { EyeDropper?: new () => { open(): Promise<{ sRGBHex: string }> } }).EyeDropper;
+  if (native) {
+    try {
+      return toHex((await new native().open()).sRGBHex);
+    } catch {
+      return null;
+    }
+  }
+  return pickFromSheet();
+}
+
+/** `#rrggbb` from `#rrggbb` or `rgb(r, g, b)`. */
+function toHex(colour: string): string | null {
+  if (/^#[0-9a-f]{6}$/i.test(colour)) return colour.toLowerCase();
+  const channels = colour.match(/\d+/g);
+  if (!channels || channels.length < 3) return null;
+  return `#${channels.slice(0, 3).map((value) => Number(value).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Waits for a press on the sheet and reads the artwork's pixel there. */
+async function pickFromSheet(): Promise<string | null> {
+  const view = ui?.surface.viewport;
+  const frame = view?.querySelector<HTMLElement>('.pt-frame');
+  if (!ui || !view || !frame) return null;
+  const pixels = await rasterize(ui.export());
+  return new Promise((resolve) => {
+    view.classList.add('picking-colour');
+    const finish = (colour: string | null) => {
+      view.classList.remove('picking-colour');
+      window.removeEventListener('pointerdown', press, true);
+      window.removeEventListener('keydown', key, true);
+      resolve(colour);
+    };
+    const press = (event: PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const box = frame.getBoundingClientRect();
+      const inside = event.clientX >= box.left && event.clientX < box.right
+        && event.clientY >= box.top && event.clientY < box.bottom;
+      if (!inside || !pixels) return finish(null);
+      const x = Math.floor(((event.clientX - box.left) / box.width) * SHEET.width);
+      const y = Math.floor(((event.clientY - box.top) / box.height) * SHEET.height);
+      const [r, g, b, a] = pixels.getImageData(x, y, 1, 1).data;
+      finish(a ? toHex(`rgb(${r}, ${g}, ${b})`) : null);
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') finish(null);
+    };
+    window.addEventListener('pointerdown', press, true);
+    window.addEventListener('keydown', key, true);
+  });
+}
+
+/** The artwork (SVG markup or an image URL) drawn onto a sheet-sized canvas. */
+async function rasterize(artwork: string): Promise<CanvasRenderingContext2D | null> {
+  const vector = !artwork.startsWith('data:');
+  const src = vector ? URL.createObjectURL(new Blob([artwork], { type: 'image/svg+xml' })) : artwork;
+  try {
+    const image = new Image();
+    image.src = src;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = SHEET.width;
+    canvas.height = SHEET.height;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context?.drawImage(image, 0, 0, SHEET.width, SHEET.height);
+    return context;
+  } catch {
+    return null;
+  } finally {
+    if (vector) URL.revokeObjectURL(src);
+  }
 }
 
 /** Zooms so the stage guide fills most of the view, and centres it. */

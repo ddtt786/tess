@@ -149,7 +149,7 @@ function PreviewObject({ object, toStage }: DragProps) {
         height: `${geometry.size.y}px`,
         transformOrigin: `${geometry.reg.x}px ${geometry.reg.y}px`,
         transform: `rotate(${geometry.angle}deg) scale(${geometry.scale.x}, ${geometry.scale.y})`,
-        opacity: object.props.visible ? 1 : 0.35,
+        opacity: object.props.visible ? 1 : 0.15,
       }}
       title={object.name}
     >

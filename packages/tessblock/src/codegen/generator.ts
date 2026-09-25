@@ -12,6 +12,9 @@ export class TessGenerator extends Blockly.CodeGenerator {
   /** Types whose stack is written by the block itself, not by `scrub_`. */
   readonly hatTypes = new Set<string>();
 
+  /** While set, a stack is written up to this block only (a copied part of a script). */
+  stopAfter: Blockly.Block | null = null;
+
   constructor() {
     super('Tess');
     this.INDENT = '  ';
@@ -32,6 +35,8 @@ export class TessGenerator extends Blockly.CodeGenerator {
   /** A stack of statements, indented one level. */
   chain(block: Blockly.Block | null): string {
     if (!block) return '';
+    const before = block.getParent();
+    if (before && before === this.stopAfter && before.getNextBlock() === block) return '';
     const produced = this.blockToCode(block);
     const code = Array.isArray(produced) ? produced[0] : produced;
     return code ? this.prefixLines(code, this.INDENT) : '';
@@ -42,7 +47,8 @@ export class TessGenerator extends Blockly.CodeGenerator {
     // The blocks after this one, each on its own, in a loop: writing each with
     // the rest of the stack would recurse once per block.
     let written = code;
-    for (let next = block.getNextBlock(); next; next = next.getNextBlock()) {
+    const after = (each: Blockly.Block) => (each === this.stopAfter ? null : each.getNextBlock());
+    for (let next = after(block); next; next = after(next)) {
       const produced = this.blockToCode(next, true);
       written += Array.isArray(produced) ? produced[0] : produced;
     }

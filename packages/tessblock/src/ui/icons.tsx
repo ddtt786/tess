@@ -132,7 +132,7 @@ export const ArrowDownIcon = (props: IconProps) => (
 
 export const CursorIcon = (props: IconProps) => (
   <Icon {...props}>
-    <path d="M4 3l7.5 9.2-3.4.5-1.5 3.1L4 3Z" />
+    <path d="M3.6 2.4v10.2l2.7-2.5 1.8 3.9 1.9-.9-1.8-3.8h3.7L3.6 2.4Z" />
   </Icon>
 );
 
@@ -226,17 +226,51 @@ export const FlipVIcon = (props: IconProps) => (
   </Icon>
 );
 
+/** Layer order: the chosen shape (filled) beside an arrow; a bar on the arrow means all the way. */
+const LayerShape = () => (
+  <rect x="2.2" y="4.6" width="6.8" height="6.8" rx="1.2" fill="currentColor" stroke="none" />
+);
+
 export const FrontIcon = (props: IconProps) => (
   <Icon {...props}>
-    <rect x="2.6" y="2.6" width="7" height="7" rx="1" />
-    <path d="M6.4 13.4h7v-7" />
+    <LayerShape />
+    <path d="M12.4 13.4V5.2M10.2 7.4l2.2-2.2 2.2 2.2M10 2.6h4.8" />
+  </Icon>
+);
+
+export const ForwardIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <LayerShape />
+    <path d="M12.4 13V3.4M10.2 5.6l2.2-2.2 2.2 2.2" />
+  </Icon>
+);
+
+export const BackwardIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <LayerShape />
+    <path d="M12.4 3v9.6M10.2 10.4l2.2 2.2 2.2-2.2" />
   </Icon>
 );
 
 export const BackIcon = (props: IconProps) => (
   <Icon {...props}>
-    <rect x="6.4" y="6.4" width="7" height="7" rx="1" />
-    <path d="M9.6 2.6h-7v7" />
+    <LayerShape />
+    <path d="M12.4 2.6v8.2M10.2 8.6l2.2 2.2 2.2-2.2M10 13.4h4.8" />
+  </Icon>
+);
+
+export const DropperIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M10.6 2.9a1.9 1.9 0 0 1 2.6 2.6l-1.6 1.6.6.6-1.3 1.3-3.3-3.3 1.3-1.3.6.6Z" fill="currentColor" />
+    <path d="M8.4 6.1 3.6 10.9a1.4 1.4 0 0 0-.4 1V13h1.1a1.4 1.4 0 0 0 1-.4l4.8-4.8" />
+  </Icon>
+);
+
+/** A shape over a faint copy of itself. */
+export const OnionIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="6" cy="8" r="4" stroke-dasharray="1.8 1.6" opacity="0.6" />
+    <circle cx="10" cy="8" r="4" />
   </Icon>
 );
 

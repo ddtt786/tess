@@ -6,7 +6,7 @@ import { FONTS, fontFamily } from '../model/fonts.ts';
 import { useSignal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import {
-  addBlankCostume, addCostume, removeCostume, selectCostume, selectedObject,
+  addBlankCostume, addCostume, duplicateCostume, removeCostume, selectCostume, selectedObject,
   setTextProps, updateCostume,
 } from '../model/store.ts';
 import { COSTUME_LIBRARY } from '../model/defaults.ts';
@@ -15,7 +15,7 @@ import { readDataUrl } from '../model/files.ts';
 import { flushPainter, measure, mountPainter, unmountPainter } from './painter-host.ts';
 import { InlineName } from './InlineName.tsx';
 import { PaintTools } from './PaintTools.tsx';
-import { AlignCenterIcon, AlignLeftIcon, AlignRightIcon, PlusIcon, TrashIcon, UploadIcon, WrapIcon } from './icons.tsx';
+import { AlignCenterIcon, AlignLeftIcon, AlignRightIcon, CopyIcon, PlusIcon, TrashIcon, UploadIcon, WrapIcon } from './icons.tsx';
 import { notify } from './state.ts';
 import type { TessObject, TextAlign, TextProps } from '../model/types.ts';
 
@@ -76,6 +76,17 @@ function PainterPane() {
                 value={costume.name}
                 onCommit={(name) => updateCostume(object.id, costume.id, { name })}
               />
+              <span
+                class="shot-dup"
+                title="모양 복제"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  flushPainter();
+                  duplicateCostume(object.id, costume.id);
+                }}
+              >
+                <CopyIcon size={13} />
+              </span>
               {object.costumes.length > 1 && (
                 <span
                   class="shot-del"

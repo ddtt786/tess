@@ -941,3 +941,45 @@ tessblock 은 npm `blockly` 대신 `packages/blockly` 의 포크를 쓴다.
   - 조용한 Vm 은 모델마다 하나(`quiet.model`), 식은 `idMap`/`remap` 으로 그 Vm 의 id 로 옮겨 계산한다.
   - 컴파일 전에 한 프레임 쉬어 `…` 가 먼저 보인다.
   - 결과: 3dcheese 665→55–230ms(다시 누르면 ~10–45ms), 5만 항목 `포함되어 있는가` 596→56ms.
+
+## 26. 블록 표시(Shift+끌기)와 시스템 클립보드
+
+- `ui/block-clipboard.ts` `installBlockClipboard(workspace)` — 메인 작업판(`mount`)과 함수 편집기에 붙는다.
+- **표시**: 빈 작업판(블록·팔레트·스크롤바·확대 버튼·휴지통이 아닌 곳)에서 Shift+누르기 → 캡처 단계에서 막고
+  `.block-marquee`(fixed) 를 그린다. rAF 마다 사각형(작업판 좌표, `screenToWsCoordinates`)과 겹치는 블록에 `tessMarked`
+  클래스. 대상은 문장 블록과 맨 위 블록(끼워진 값 블록·그림자 제외). C 블록은 머리(첫 문장 입력의 연결 높이까지)만
+  본다 — 안쪽 블록만 둘러도 C 블록이 딸려 오지 않는다. 위치는 포크의 `getRelativeToSurfaceXY`(캐시된 `xy`, O(1)).
+  Shift 없이 누르기·Esc 로 풀린다. Delete/Backspace 는 표시한 블록을 지운다(window 캡처, Blockly 의 Delete 보다 먼저).
+- **복사 단위(run)**: 표시한 블록 중 바로 위(next 로 이어진 부모)가 표시되지 않은 블록부터 표시가 끊길 때까지. 표시한
+  블록의 입력 안에 든 블록은 그 블록에 이미 들어 있어 건너뛴다(`insideMarked`). 표시가 없으면 선택한 블록부터 스택 끝
+  (값 블록은 그 블록만).
+- **클립보드**: Blockly 의 copy/cut/paste 단축키를 등록 해제하고 문서의 `copy`/`cut`/`paste` 이벤트를 쓴다(권한 창 없음).
+  - `text/plain`: Tess 코드. 생성기의 `stopAfter` 로 run 의 마지막 블록에서 멈춘다(`scrub_` 의 다음 블록 순회와 모자
+    블록의 `chain`). 이름 표는 마지막 빌드의 것.
+  - `application/x-tessblock+json`: `{ tessblock: 1, blocks }` — 블록마다 `save(addNextBlocks: false)` 를 `next` 로 이어
+    run 하나, 좌표는 묶음 왼쪽 위 기준.
+  - 붙여넣기는 json 형식을 먼저, 없으면 텍스트가 마지막 복사와 같을 때 그 데이터를 쓴다. 다른 텍스트는 건드리지 않는다
+    (Tess 코드 → 블록 변환은 아직 없음).
+  - 위치: 포인터가 작업판 위면 그 자리, 아니면 보이는 영역 왼쪽 위. 한 이벤트 그룹(되돌리기 한 번), 글자 폭 캐시 안에서
+    `append`, 붙인 블록을 표시한다.
+  - 잘라내기: 복사 후 run 을 아래에서부터 `dispose(true)`(아래 블록은 위에 다시 붙는다).
+- 입력칸·글상자 편집 중이거나 드롭다운이 열려 있거나 작업판이 안 보이면 브라우저 기본 동작에 맡긴다.
+- 측정(3dcheese): 884 블록 스크립트 복사 6ms(텍스트 8KB, json 113KB), 붙여넣기 렌더 포함 358ms, 409 블록 표시 복사 3ms.
+- 그림판 옆 패널: `.paint-side` 는 `minmax(0, 1fr)` 한 칸, 슬라이더는 `flex: 1 1 0; width: 0`(range 의 기본 폭 129px 때문에
+  숫자 칸이 패널 밖으로 밀렸다), 숫자 칸은 `flex: none`.
+
+## 27. 모양 복제, 어니언 스킨, 순서 버튼, 숨긴 오브젝트
+
+- **모양 복제**: 썸네일 왼쪽 위 복사 버튼(`.shot-dup`) → `duplicateCostume` — 바로 뒤에 넣고 고른다. 이름은
+  `uniqueCostumeName`(`기본` → `기본_2`). 그림 주소는 함께 쓴다(그림판 저장은 늘 새 에셋 참조를 만든다).
+- **새 그림 오브젝트**의 빈 모양 이름은 `기본`.
+- **어니언 스킨**: 그림판 막대의 토글(`onionSkin`, localStorage `tessblock.onion`). 열린 모양 바로 앞 모양을
+  `.pt-frame` 첫 자식 `img.onion-skin`(투명도 0.3)으로 시트 가운데에 제 크기로 놓는다 — 불러올 때 모양을 두는 자리와
+  같다. 모양 불러오기·모드 전환·작품 변경·토글 때 `markOnion`. 첫 모양에는 없다.
+- **순서 버튼**: 맨 앞으로 / 앞으로 / 뒤로 / 맨 뒤로(painter `bringToFront`·`bringForward`·`sendBackward`·`sendToBack`).
+  아이콘은 채운 도형 + 화살표, 끝까지는 화살표 끝에 막대.
+- 미리보기에서 숨긴 오브젝트는 투명도 0.15(예전 0.35).
+- **스포이드**: 채우기·선·그라데이션 시작/끝 색 옆 버튼(`Dropper`) → `pickColour()`. 브라우저에 `EyeDropper` 가 있으면
+  화면 어디서나 집는다. 없으면(파이어폭스 등) 그림판 `export()`(SVG 마크업 또는 PNG data URL)를 시트 크기 캔버스에 그려
+  두고, 다음 누르기의 시트 좌표 픽셀을 읽는다(`.picking-colour` 십자 커서, 시트 밖·Esc 는 취소, 투명한 곳은 그대로).
+- 선택 도구 아이콘은 다른 도구처럼 꼬리 달린 외곽선 화살표.
