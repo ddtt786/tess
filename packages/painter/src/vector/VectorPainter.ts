@@ -38,15 +38,16 @@ import {
   JoinType,
   ringsOverlap,
 } from "../core/clipper.js";
-import { ringsToPathData, ringToSmoothPathData } from "../core/freehand.js";
+import { ringsToPathData, ringToPathData } from "../core/freehand.js";
 import { isOpenPathData, shapeToPathData } from "../core/path-data.js";
-import { floodRegion } from "../convert/region.js";
+import { fillPockets, growIntoWall, keepOffRim, labelRegions, regionMask, type Regions } from "../convert/region.js";
 import { traceMask } from "../convert/trace.js";
 import { injectStyles } from "../ui/styles.js";
 import {
   applyStyle,
   boundsIn,
   elementMatrixTo,
+  matrixScale,
   ensurePid,
   isItemNode,
   itemGeometry,
@@ -164,7 +165,34 @@ interface SmartBarrierCache {
   pWall: Uint8Array;
   pOutsideExpanded: Uint8Array;
   pSmartWall: Uint8Array;
+  /** Open areas of `pSmartWall`, labelled on first use. */
+  regions?: Regions;
 }
+
+/** The drawing rasterised as walls for bucket fill, with what is worked out from it. */
+interface BarrierCache {
+  rw: number;
+  rh: number;
+  scale: number;
+  wall: Uint8Array;
+  smartBarriers?: Map<number, SmartBarrierCache>;
+  /** Open areas of `wall`, labelled on first use. */
+  rawRegions?: Regions;
+  /** `wall` at half size, for closing gaps. */
+  half?: { hw: number; hh: number; wall: Uint8Array };
+  /** Traced fills by area and bleed, while the drawing stays the same. */
+  regionResults?: Map<string, { d: string; rings: Array<Array<{ x: number; y: number }>> } | null>;
+}
+
+/** Fill outlines are traced at up to this many pixels per sheet pixel... */
+const FILL_DETAIL = 4;
+/** ...within this many fine pixels for the area's box. */
+const FILL_DETAIL_PIXELS = 6_000_000;
+
+/** How far (scene px) a bucket fill reaches under the lines around it. */
+const FILL_UNDER_LINES = 2.5;
+/** Holes in a fill up to this area (scene px²) are specks or slivers between lines, and get filled. */
+const FILL_POCKET_AREA = 40;
 
 const HANDLE_SIZE = 9;
 const ROTATE_OFFSET = 26;
@@ -203,13 +231,7 @@ export class VectorPainter {
   private activeTool: Tool | null = null;
   private selectedIds: string[] = [];
 
-  private _barrierCache: {
-    rw: number;
-    rh: number;
-    scale: number;
-    wall: Uint8Array;
-    smartBarriers?: Map<number, SmartBarrierCache>;
-  } | null = null;
+  private _barrierCache: BarrierCache | null = null;
   private _previewTargetKey: string | null = null;
   private _previewElement: SVGElement | null = null;
 
@@ -700,6 +722,12 @@ export class VectorPainter {
     });
   }
 
+  /** Fill, outline and width of the selection's first painted part; null with nothing selected. */
+  get selectionStyle(): PaintStyle | null {
+    const first = this.selection.flatMap((node) => this.paintTargets(node))[0];
+    return first ? readStyle(first) : null;
+  }
+
   get selectionDash(): DashStyle {
     const shape = this.selection.flatMap((node) => this.paintTargets(node))[0];
     const dash = shape?.getAttribute("data-dash");
@@ -940,13 +968,7 @@ export class VectorPainter {
   }
 
   private getOrCreateSmartBarrier(
-    barrier: {
-      rw: number;
-      rh: number;
-      scale: number;
-      wall: Uint8Array;
-      smartBarriers?: Map<number, SmartBarrierCache>;
-    },
+    barrier: BarrierCache,
     r: number,
   ): SmartBarrierCache {
     if (!barrier.smartBarriers) {
@@ -955,7 +977,8 @@ export class VectorPainter {
     const existing = barrier.smartBarriers.get(r);
     if (existing) return existing;
 
-    const { rw, rh, wall } = barrier;
+    // Gaps are closed on the half-size wall (see `halfWall`); `r` is in its pixels.
+    const { hw: rw, hh: rh, wall } = halfWall(barrier);
     const pw = rw + 2;
     const ph = rh + 2;
     const pWall = new Uint8Array(pw * ph);
@@ -997,33 +1020,12 @@ export class VectorPainter {
     return created;
   }
 
-  private getOrCreateBarrierMask(): {
-    rw: number;
-    rh: number;
-    scale: number;
-    wall: Uint8Array;
-    smartBarriers?: Map<number, SmartBarrierCache>;
-  } | null {
-    if (this._barrierCache) return this._barrierCache;
-
-    const w = this.width;
-    const h = this.height;
-    if (w <= 0 || h <= 0) return null;
-
-    const maxDim = 2048;
-    const scale = Math.min(1, maxDim / Math.max(w, h));
-    const rw = Math.max(1, Math.round(w * scale));
-    const rh = Math.max(1, Math.round(h * scale));
-
-    const canvas = document.createElement("canvas");
-    canvas.width = rw;
-    canvas.height = rh;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return null;
-
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, rw, rh);
-
+  /**
+   * Draws what walls in a bucket fill, black on the canvas: lines and outlines
+   * (not fills), and brush strokes whole. `scale` is canvas pixels per scene
+   * unit; the canvas may already be moved to show part of the sheet.
+   */
+  private paintBarrier(ctx: CanvasRenderingContext2D, scale: number): void {
     const bg = this.backgroundItem();
     const sceneEl = this.scene.node as SVGGraphicsElement;
 
@@ -1090,6 +1092,30 @@ export class VectorPainter {
       renderItem(item);
     }
 
+  }
+
+  private getOrCreateBarrierMask(): BarrierCache | null {
+    if (this._barrierCache) return this._barrierCache;
+
+    const w = this.width;
+    const h = this.height;
+    if (w <= 0 || h <= 0) return null;
+
+    const maxDim = 2048;
+    const scale = Math.min(1, maxDim / Math.max(w, h));
+    const rw = Math.max(1, Math.round(w * scale));
+    const rh = Math.max(1, Math.round(h * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = rw;
+    canvas.height = rh;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, rw, rh);
+    this.paintBarrier(ctx, scale);
+
     const imageData = ctx.getImageData(0, 0, rw, rh);
     const data = imageData.data;
     const total = rw * rh;
@@ -1136,98 +1162,71 @@ export class VectorPainter {
     seedX = Math.max(0, Math.min(rw - 1, seedX));
     seedY = Math.max(0, Math.min(rh - 1, seedY));
 
-    let region: {
-      mask: Uint8Array;
-      touchedBorder: boolean;
-      area: number;
-    } | null = null;
+    // Open areas are labelled once per drawing, so finding the one under the
+    // pointer is a table read rather than a flood over the whole sheet.
+    const raw = (barrier.rawRegions ??= labelRegions(wall, rw, rh));
+    const enclosed = (label: number, least: number) =>
+      label > 0 && !raw.touched[label] && raw.area[label] >= least;
 
-    // 1. If seed is on empty space, test direct flood on raw wall
-    if (!wall[seedY * rw + seedX]) {
-      const direct = floodRegion(wall, rw, rh, seedX, seedY);
-      if (direct && !direct.touchedBorder && direct.area >= 8) {
-        region = direct;
-      }
+    let found: { key: string; mask: () => Uint8Array } | null = null;
+
+    // 1. The open area under the seed, walled in on every side.
+    const here = raw.labels[seedY * rw + seedX]!;
+    if (!wall[seedY * rw + seedX] && enclosed(here, 8)) {
+      found = { key: `raw:${here}`, mask: () => regionMask(raw, here) };
     }
 
-    // 2. If seed is on a wall stroke, search nearby candidates within radius 1..12
-    if (!region && wall[seedY * rw + seedX]) {
+    // 2. On a wall: the nearest walled-in area within 12 pixels.
+    if (!found && wall[seedY * rw + seedX]) {
       candidateSearch: for (let r = 1; r <= 12; r++) {
         for (let dy = -r; dy <= r; dy++) {
           for (let dx = -r; dx <= r; dx++) {
             if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
             const nx = seedX + dx;
             const ny = seedY + dy;
-            if (
-              nx >= 0 &&
-              nx < rw &&
-              ny >= 0 &&
-              ny < rh &&
-              !wall[ny * rw + nx]
-            ) {
-              const cand = floodRegion(wall, rw, rh, nx, ny);
-              if (cand && !cand.touchedBorder && cand.area >= 8) {
-                region = cand;
-                seedX = nx;
-                seedY = ny;
-                break candidateSearch;
-              }
+            if (nx < 0 || nx >= rw || ny < 0 || ny >= rh || wall[ny * rw + nx]) continue;
+            const label = raw.labels[ny * rw + nx]!;
+            if (enclosed(label, 8)) {
+              found = { key: `raw:${label}`, mask: () => regionMask(raw, label) };
+              seedX = nx;
+              seedY = ny;
+              break candidateSearch;
             }
           }
         }
       }
     }
 
-    // 3. If direct flood leaked or seed was in unclosed shape, use smart gap closer
-    if ((!region || region.touchedBorder) && gapTolerance > 0) {
-      const targetR = Math.max(4, Math.round(gapTolerance * scale));
-      const maxR = Math.min(
-        28,
-        Math.max(8, Math.floor(Math.min(rw, rh) * 0.15)),
-      );
-      const candidateRadii = [
-        targetR,
-        Math.round(targetR * 1.5),
-        Math.round(targetR * 2.2),
-        Math.round(targetR * 3.0),
-      ];
-      const radii = Array.from(
-        new Set(candidateRadii.filter((r) => r <= maxR)),
-      );
+    // 3. Leaking through a gap: close gaps of growing width until the area is walled in.
+    // This works on the half-size wall; the area found is mapped back onto the open pixels.
+    if (!found && gapTolerance > 0) {
+      const half = halfWall(barrier);
+      const targetR = Math.max(2, Math.round((gapTolerance * scale) / 2));
+      const maxR = Math.min(14, Math.max(4, Math.floor(Math.min(half.hw, half.hh) * 0.15)));
+      const candidateRadii = [targetR, Math.round(targetR * 1.5), Math.round(targetR * 2.2), Math.round(targetR * 3.0)];
+      const radii = Array.from(new Set(candidateRadii.filter((r) => r <= maxR)));
       if (!radii.length) radii.push(Math.min(targetR, maxR));
 
-      const pSeedX = seedX + 1;
-      const pSeedY = seedY + 1;
+      const pSeedX = (seedX >> 1) + 1;
+      const pSeedY = (seedY >> 1) + 1;
 
       for (const r of radii) {
         const smart = this.getOrCreateSmartBarrier(barrier, r);
-        const { pw, ph, pWall, pOutsideExpanded, pSmartWall } = smart;
+        const { pw, pWall, pOutsideExpanded, pSmartWall } = smart;
 
         let curSeedX = -1;
         let curSeedY = -1;
-
-        if (
-          !pWall[pSeedY * pw + pSeedX] &&
-          !pOutsideExpanded[pSeedY * pw + pSeedX]
-        ) {
+        if (!pWall[pSeedY * pw + pSeedX] && !pOutsideExpanded[pSeedY * pw + pSeedX]) {
           curSeedX = pSeedX;
           curSeedY = pSeedY;
         } else {
-          // Search nearby candidate within radius 1..24
-          searchNearby: for (let d = 1; d <= 24; d++) {
+          searchNearby: for (let d = 1; d <= 12; d++) {
             for (let dy = -d; dy <= d; dy++) {
               for (let dx = -d; dx <= d; dx++) {
                 if (Math.abs(dx) !== d && Math.abs(dy) !== d) continue;
                 const nx = pSeedX + dx;
                 const ny = pSeedY + dy;
-                if (
-                  nx >= 1 &&
-                  nx <= rw &&
-                  ny >= 1 &&
-                  ny <= rh &&
-                  !pWall[ny * pw + nx] &&
-                  !pOutsideExpanded[ny * pw + nx]
-                ) {
+                if (nx >= 1 && nx <= half.hw && ny >= 1 && ny <= half.hh && !pWall[ny * pw + nx] && !pOutsideExpanded[ny * pw + nx]) {
                   curSeedX = nx;
                   curSeedY = ny;
                   break searchNearby;
@@ -1236,52 +1235,136 @@ export class VectorPainter {
             }
           }
         }
-
         if (curSeedX < 0) continue;
 
-        const pRegion = floodRegion(pSmartWall, pw, ph, curSeedX, curSeedY);
-        if (pRegion && !pRegion.touchedBorder && pRegion.area >= 12) {
-          const mask = new Uint8Array(rw * rh);
-          let area = 0;
-          for (let y = 0; y < rh; y++) {
-            const srcRow = (y + 1) * pw + 1;
-            const dstRow = y * rw;
-            for (let x = 0; x < rw; x++) {
-              if (pRegion.mask[srcRow + x]) {
-                mask[dstRow + x] = 1;
-                area++;
+        const regions = (smart.regions ??= labelRegions(pSmartWall, pw, smart.ph));
+        const label = regions.labels[curSeedY * pw + curSeedX]!;
+        if (!label || regions.touched[label] || regions.area[label] < 3) continue;
+        found = {
+          key: `gap${r}:${label}`,
+          mask: () => {
+            const mask = new Uint8Array(rw * rh);
+            for (let y = 0; y < rh; y++) {
+              const srcRow = ((y >> 1) + 1) * pw + 1;
+              const dstRow = y * rw;
+              for (let x = 0; x < rw; x++) {
+                if (!wall[dstRow + x] && regions.labels[srcRow + (x >> 1)] === label) mask[dstRow + x] = 1;
               }
             }
-          }
-          region = { mask, touchedBorder: false, area };
-          break;
-        }
+            return mask;
+          },
+        };
+        break;
       }
     }
 
-    if (!region || region.touchedBorder) {
-      return null;
+    if (!found) return null;
+    const cache = (barrier.regionResults ??= new Map());
+    const key = `${found.key}:${bleed}`;
+    if (cache.has(key)) return cache.get(key)!;
+    const result = this.traceRegion(found.mask(), barrier, bleed);
+    cache.set(key, result);
+    return result;
+  }
+
+  /**
+   * Outline of a filled area, drawn again finely. The area found on the sheet
+   * raster is re-rasterised on its own box at up to 4x, so the edge follows
+   * the lines to a fraction of a pixel. There it reaches a little under the
+   * lines around it (never past them), takes in specks and slivers between
+   * them, and keeps off their soft outer rim. It meets its lines in every
+   * corner and shows no pixel stairs.
+   */
+  private traceRegion(
+    mask: Uint8Array,
+    barrier: BarrierCache,
+    bleed: number,
+  ): { d: string; rings: Array<Array<{ x: number; y: number }>> } | null {
+    const { rw, rh, scale } = barrier;
+    let minX = rw, minY = rh, maxX = -1, maxY = -1;
+    for (let y = 0; y < rh; y++) {
+      const row = y * rw;
+      for (let x = 0; x < rw; x++) {
+        if (!mask[row + x]) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (maxX < 0) return null;
+
+    // The area's box on the sheet raster, with room for the lines around it.
+    const pad = Math.ceil(FILL_UNDER_LINES * scale) + 3;
+    const x0 = Math.max(0, minX - pad);
+    const y0 = Math.max(0, minY - pad);
+    const cw = Math.min(rw, maxX + pad + 1) - x0;
+    const ch = Math.min(rh, maxY + pad + 1) - y0;
+    const fine = Math.max(1, Math.min(FILL_DETAIL, Math.floor(Math.sqrt(FILL_DETAIL_PIXELS / (cw * ch)))));
+    const hw = cw * fine;
+    const hh = ch * fine;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = hw;
+    canvas.height = hh;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, hw, hh);
+    ctx.translate(-x0 * fine, -y0 * fine);
+    this.paintBarrier(ctx, scale * fine);
+    const pixels = ctx.getImageData(0, 0, hw, hh).data;
+    const wall = new Uint8Array(hw * hh);
+    for (let i = 0; i < wall.length; i++) {
+      wall[i] = (pixels[i * 4] + pixels[i * 4 + 1] + pixels[i * 4 + 2]) / 3 < 200 ? 1 : 0;
     }
 
-    const rawRings = traceMask(region.mask, rw, rh, 0.4);
+    // Kept to the area found (and a little round it), so a gap closed there stays closed.
+    const room = growIntoWall(
+      mask,
+      new Uint8Array(mask.length).fill(1),
+      rw,
+      rh,
+      2,
+    );
+    const confined = new Uint8Array(hw * hh);
+    const hits = new Uint8Array(hw * hh);
+    for (let hy = 0; hy < hh; hy++) {
+      const cy = y0 + ((hy / fine) | 0);
+      for (let hx = 0; hx < hw; hx++) {
+        const cx = x0 + ((hx / fine) | 0);
+        const i = hy * hw + hx;
+        confined[i] = wall[i] || !room[cy * rw + cx] ? 1 : 0;
+        // The middle of each coarse pixel of the area says which fine areas belong.
+        if (mask[cy * rw + cx] && hx % fine === fine >> 1 && hy % fine === fine >> 1) hits[i] = 1;
+      }
+    }
+    const areas = labelRegions(confined, hw, hh);
+    const wanted = new Set<number>();
+    for (let i = 0; i < hits.length; i++) if (hits[i] && areas.labels[i]) wanted.add(areas.labels[i]!);
+    if (!wanted.size) return null;
+    const area = new Uint8Array(hw * hh);
+    for (let i = 0; i < area.length; i++) if (wanted.has(areas.labels[i]!)) area[i] = 1;
+
+    const perUnit = scale * fine;
+    const grown = growIntoWall(area, wall, hw, hh, Math.max(1, Math.round(FILL_UNDER_LINES * perUnit)));
+    keepOffRim(grown, area, wall, hw, hh);
+    fillPockets(grown, hw, hh, Math.max(4, Math.round(FILL_POCKET_AREA * perUnit * perUnit)));
+
+    // Simplified enough that pixel stairs become straight runs, at a fraction of a scene pixel.
+    const rawRings = traceMask(grown, hw, hh, 0.9);
     if (!rawRings.length) return null;
-
-    const rings =
-      scale === 1
-        ? rawRings
-        : rawRings.map((ring) =>
-            ring.map((pt) => ({ x: pt.x / scale, y: pt.y / scale })),
-          );
-
-    const finalRings =
-      bleed > 0 ? inflateRings(rings, bleed, JoinType.Miter) : rings;
+    const rings = rawRings.map((ring) =>
+      ring.map((pt) => ({ x: (pt.x / fine + x0) / scale, y: (pt.y / fine + y0) / scale })));
+    // Already under its lines: only a hair more, which the lines cover.
+    const spread = Math.min(bleed, 0.3);
+    const finalRings = spread > 0 ? inflateRings(rings, spread, JoinType.Miter) : rings;
     if (!finalRings.length) return null;
-
     const d = finalRings
       .filter((r) => r.length > 2)
-      .map((r) => ringToSmoothPathData(r))
+      // Straight runs: at this detail they follow curves closely, and corners stay corners.
+      .map((r) => ringToPathData(r))
       .join(" ");
-
     return d ? { d, rings } : null;
   }
 
@@ -1322,6 +1405,15 @@ export class VectorPainter {
     }
 
     const bg = this.backgroundItem();
+    const same = Array.from(this.scene.node.children).find((child) =>
+      child.getAttribute("data-fill-region") === "true" && child.getAttribute("d") === d && !child.getAttribute("transform"));
+    if (same) {
+      same.setAttribute("fill", fillColor);
+      this.deselect();
+      this.invalidateBarrierCache();
+      this.commit();
+      return true;
+    }
     // All fills should be placed on top of older fills and shapes, but under strokes/outlines
     const firstStroke = Array.from(this.scene.node.children).find((child) => {
       if (child === bg) return false;
@@ -1400,10 +1492,13 @@ export class VectorPainter {
   /** Puts a new fill under the items walling it in, all in one group. */
   private groupFillWith(fill: SVGPathElement, enclosers: SVGGraphicsElement[]): void {
     const only = enclosers.length === 1 ? enclosers[0] : null;
-    // Already one group: the fill joins it, under its lowest child.
+    // Already one group: the fill joins it, over its earlier fills and under its lines.
     if (only && only.tagName.toLowerCase() === "g") {
-      const first = Array.from(only.children).find(isItemNode);
-      only.insertBefore(fill, first ?? null);
+      // The outline is in scene units; a moved or scaled group would move it again.
+      const m = elementMatrixTo(only, this.scene.node as SVGGraphicsElement);
+      const isIdentity = m[0] === 1 && m[1] === 0 && m[2] === 0 && m[3] === 1 && m[4] === 0 && m[5] === 0;
+      if (!isIdentity) fill.setAttribute("transform", matToString(matInvert(m)));
+      this.placeFill(only, fill);
       return;
     }
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -1412,6 +1507,58 @@ export class VectorPainter {
     g.appendChild(fill);
     for (const item of enclosers) g.appendChild(item);
     ensurePid(g);
+  }
+
+  /**
+   * Adds a fill to a container above its earlier fills and under its lines. A
+   * fill with the very same outline is recoloured instead of stacked on.
+   */
+  private placeFill(container: Element, fill: SVGPathElement): void {
+    const children = Array.from(container.children).filter(isItemNode);
+    const same = children.find((child) =>
+      child.getAttribute("data-fill-region") === "true"
+      && child.getAttribute("d") === fill.getAttribute("d")
+      && (child.getAttribute("transform") ?? "") === (fill.getAttribute("transform") ?? ""));
+    if (same) {
+      same.setAttribute("fill", fill.getAttribute("fill") ?? "none");
+      return;
+    }
+    const firstLine = children.find((child) => child.getAttribute("data-fill-region") !== "true");
+    container.insertBefore(fill, firstLine ?? null);
+  }
+
+  /**
+   * Items a selection box picks: those inside it, and those whose outline runs
+   * through it. A shape that only surrounds the box is left alone.
+   */
+  itemsInMarquee(rect: Rect): SVGGraphicsElement[] {
+    const scene = this.scene.node as SVGGraphicsElement;
+    const inside = (p: { x: number; y: number }) =>
+      p.x >= rect.x && p.x <= rect.x + rect.width && p.y >= rect.y && p.y <= rect.y + rect.height;
+    const contained = new Set(this.itemsInRect(rect, true));
+    return this.itemsInRect(rect).filter((item) => {
+      if (contained.has(item)) return true;
+      const leaves = geometryLeaves(item);
+      // Text and images have no outline to follow: their box decides.
+      if (!leaves.length) return true;
+      // Sampled no farther apart than a quarter of the box's short side.
+      const spacing = Math.max(0.5, Math.min(rect.width, rect.height) / 4);
+      return leaves.some((leaf) => {
+        let length = 0;
+        try {
+          length = leaf.getTotalLength();
+        } catch {
+          return true;
+        }
+        const m = elementMatrixTo(leaf, scene);
+        const count = Math.min(4000, Math.max(8, Math.ceil((length * matrixScale(m)) / spacing)));
+        for (let i = 0; i <= count; i++) {
+          const point = leaf.getPointAtLength((length * i) / count);
+          if (inside(matApply(m, point))) return true;
+        }
+        return false;
+      });
+    });
   }
 
   /** Items whose painted bounds intersect (or are contained by) `rect`. */
@@ -2508,6 +2655,22 @@ export class VectorPainter {
   }
 }
 
+/** The wall at half size: a half pixel is wall when any of its four is, so no line drops out. */
+function halfWall(barrier: BarrierCache): { hw: number; hh: number; wall: Uint8Array } {
+  if (barrier.half) return barrier.half;
+  const { rw, rh, wall } = barrier;
+  const hw = Math.ceil(rw / 2);
+  const hh = Math.ceil(rh / 2);
+  const half = new Uint8Array(hw * hh);
+  for (let y = 0; y < rh; y++) {
+    const row = y * rw;
+    const halfRow = (y >> 1) * hw;
+    for (let x = 0; x < rw; x++) if (wall[row + x]) half[halfRow + (x >> 1)] = 1;
+  }
+  barrier.half = { hw, hh, wall: half };
+  return barrier.half;
+}
+
 function dilateMask(
   src: Uint8Array,
   w: number,
@@ -2556,34 +2719,36 @@ function floodBorders(
   height: number,
 ): Uint8Array {
   const mask = new Uint8Array(width * height);
-  const queue: number[] = [];
+  // Every pixel is queued at most once.
+  const queue = new Int32Array(width * height);
+  let tail = 0;
 
   for (let x = 0; x < width; x++) {
     if (!wall[x]) {
       mask[x] = 1;
-      queue.push(x);
+      queue[tail++] = x;
     }
     const b = (height - 1) * width + x;
     if (!wall[b] && !mask[b]) {
       mask[b] = 1;
-      queue.push(b);
+      queue[tail++] = (b);
     }
   }
   for (let y = 0; y < height; y++) {
     const l = y * width;
     if (!wall[l] && !mask[l]) {
       mask[l] = 1;
-      queue.push(l);
+      queue[tail++] = (l);
     }
     const r = l + width - 1;
     if (!wall[r] && !mask[r]) {
       mask[r] = 1;
-      queue.push(r);
+      queue[tail++] = (r);
     }
   }
 
   let head = 0;
-  while (head < queue.length) {
+  while (head < tail) {
     const idx = queue[head++];
     const y = (idx / width) | 0;
     const x = idx % width;
@@ -2591,28 +2756,28 @@ function floodBorders(
       const n = idx - 1;
       if (!wall[n] && !mask[n]) {
         mask[n] = 1;
-        queue.push(n);
+        queue[tail++] = (n);
       }
     }
     if (x < width - 1) {
       const n = idx + 1;
       if (!wall[n] && !mask[n]) {
         mask[n] = 1;
-        queue.push(n);
+        queue[tail++] = (n);
       }
     }
     if (y > 0) {
       const n = idx - width;
       if (!wall[n] && !mask[n]) {
         mask[n] = 1;
-        queue.push(n);
+        queue[tail++] = (n);
       }
     }
     if (y < height - 1) {
       const n = idx + width;
       if (!wall[n] && !mask[n]) {
         mask[n] = 1;
-        queue.push(n);
+        queue[tail++] = (n);
       }
     }
   }

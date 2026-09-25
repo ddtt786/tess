@@ -10,6 +10,7 @@ import { Painter } from '../../../painter/dist/index.js';
 import { resolveAsset, saveAsset } from '../model/assets.ts';
 import { project, selectedObjectId, setObjectProps, updateCostume } from '../model/store.ts';
 import { imageSize } from '../model/files.ts';
+import { embedFonts } from '../model/font-embed.ts';
 import type { Costume } from '../model/types.ts';
 
 /** Drawing sheet: full HD, far more room than the stage shows. */
@@ -30,6 +31,65 @@ let watches: Array<() => void> = [];
 let shownKey = '';
 /** Bumped when the painter is created or thrown away, so the chrome redraws. */
 export const painterVersion = signal(0);
+// --- drawing settings -------------------------------------------------------
+
+/** Colours, widths, brush size, text style and line dash, kept for the next visit. */
+const SETTINGS_KEY = 'tessblock.paint';
+let restoring = false;
+
+interface PaintSettings {
+  fill?: string | null;
+  stroke?: string | null;
+  strokeWidth?: number;
+  brushSize?: number;
+  fontFamily?: string;
+  fontSize?: number;
+  dash?: 'solid' | 'dashed' | 'dotted';
+}
+
+function saveSettings(): void {
+  if (!ui || restoring) return;
+  const settings: PaintSettings = {
+    fill: ui.style.fill,
+    stroke: ui.style.stroke,
+    strokeWidth: ui.style.strokeWidth,
+    brushSize: ui.brush.size,
+    fontFamily: ui.textStyle.fontFamily,
+    fontSize: ui.textStyle.fontSize,
+    dash: ui.vector?.lineDash,
+  };
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    // Kept for this page only.
+  }
+}
+
+/** Puts the saved settings on a fresh sheet (nothing is selected, so no shape changes). */
+function restoreSettings(): void {
+  if (!ui) return;
+  let settings: PaintSettings;
+  try {
+    settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as PaintSettings;
+  } catch {
+    return;
+  }
+  restoring = true;
+  try {
+    if (settings.fill !== undefined) ui.setFill(settings.fill);
+    if (settings.stroke !== undefined) ui.setStroke(settings.stroke);
+    if (typeof settings.strokeWidth === 'number') ui.setStrokeWidth(settings.strokeWidth);
+    if (typeof settings.brushSize === 'number') ui.setBrushOptions({ size: settings.brushSize });
+    const text: { fontFamily?: string; fontSize?: number } = {};
+    if (settings.fontFamily) text.fontFamily = settings.fontFamily;
+    if (typeof settings.fontSize === 'number') text.fontSize = settings.fontSize;
+    if (Object.keys(text).length) ui.setTextStyle(text);
+    if (settings.dash && ui.vector) ui.vector.setDash(settings.dash);
+  } finally {
+    restoring = false;
+  }
+}
+
 /** Whether the costume before the open one shows faintly under it. */
 export const onionSkin = signal(readOnion());
 
@@ -60,12 +120,17 @@ export function mountPainter(host: HTMLElement): void {
     height: SHEET.height,
     mode: 'vector',
     tool: 'select',
+    prepareSVG: embedFonts,
   });
   // Text starts in entry's own default font, which the font menu lists.
   ui.setTextStyle({ fontFamily: 'Nanum Gothic' });
+  restoreSettings();
+  ui.on('stylechange', saveSettings);
   ui.on('change', scheduleSave);
   // A mode switch builds a new sheet, which needs the guide again.
   ui.on('modechange', () => {
+    // The new sheet starts with default colours and sizes.
+    restoreSettings();
     markStage();
     markOnion();
   });
@@ -73,11 +138,49 @@ export function mountPainter(host: HTMLElement): void {
   // The canvas follows the selection straight from the store, the same way the
   // block workspace does.
   watches = [
+    bindMiddlePan(host),
     project.subscribe(syncFromStore),
     selectedObjectId.subscribe(syncFromStore),
     onionSkin.subscribe(markOnion),
   ];
   painterVersion.value += 1;
+}
+
+/** Dragging with the middle button moves the view, whatever tool is in hand. */
+function bindMiddlePan(host: HTMLElement): () => void {
+  const press = (event: PointerEvent) => {
+    const view = ui?.surface.viewport;
+    if (event.button !== 1 || !view || !view.contains(event.target as Node)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const start = { x: event.clientX, y: event.clientY, left: view.scrollLeft, top: view.scrollTop };
+    view.classList.add('panning');
+    const move = (next: PointerEvent) => {
+      view.scrollLeft = start.left - (next.clientX - start.x);
+      view.scrollTop = start.top - (next.clientY - start.y);
+    };
+    const end = () => {
+      view.classList.remove('panning');
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerup', end, true);
+      window.removeEventListener('pointercancel', end, true);
+    };
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerup', end, true);
+    window.addEventListener('pointercancel', end, true);
+  };
+  // No autoscroll circle (mousedown) and no paste on Linux (auxclick) from the middle button.
+  const keep = (event: MouseEvent) => {
+    if (event.button === 1) event.preventDefault();
+  };
+  host.addEventListener('pointerdown', press, true);
+  host.addEventListener('mousedown', keep, true);
+  host.addEventListener('auxclick', keep, true);
+  return () => {
+    host.removeEventListener('pointerdown', press, true);
+    host.removeEventListener('mousedown', keep, true);
+    host.removeEventListener('auxclick', keep, true);
+  };
 }
 
 /** Loads whatever costume the selected object is showing, once per change. */
@@ -177,7 +280,8 @@ function markOnion(): void {
   const object = project.peek().objects.find((candidate) => candidate.id === objectId);
   const index = object?.costumes.findIndex((candidate) => candidate.id === costume?.id) ?? -1;
   const previous = index > 0 ? object!.costumes[index - 1]! : null;
-  if (!onionSkin.value || !previous || !previous.width || !previous.height) {
+  if (!onionSkin.value || !previous) {
+    onionAsk++;
     image?.remove();
     return;
   }
@@ -190,14 +294,69 @@ function markOnion(): void {
     frame.prepend(image);
   }
   const src = resolveAsset(previous.url);
-  if (image.getAttribute('src') !== src) image.src = src;
-  const scale = Math.min(1, SHEET.width / previous.width, SHEET.height / previous.height);
-  const width = (previous.width * scale / SHEET.width) * 100;
-  const height = (previous.height * scale / SHEET.height) * 100;
-  image.style.left = `${50 - width / 2}%`;
-  image.style.top = `${50 - height / 2}%`;
-  image.style.width = `${width}%`;
-  image.style.height = `${height}%`;
+  const shown = image;
+  const asked = ++onionAsk;
+  void onionPlace(src).then((place) => {
+    // A newer costume or setting may have replaced this one meanwhile.
+    if (asked !== onionAsk || !place) return;
+    if (shown.getAttribute('src') !== src) shown.src = src;
+    shown.style.left = `${(place.left / SHEET.width) * 100}%`;
+    shown.style.top = `${(place.top / SHEET.height) * 100}%`;
+    shown.style.width = `${(place.width / SHEET.width) * 100}%`;
+    shown.style.height = `${(place.height / SHEET.height) * 100}%`;
+  });
+}
+
+/** Counts onion updates, so only the newest one places the image. */
+let onionAsk = 0;
+const onionPlaces = new Map<string, Promise<Box | null>>();
+
+interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Where loading would put a costume on the sheet, in sheet pixels: an SVG by
+ * its view box, moved as `centred` moves it; an image at its own size, shrunk
+ * to fit and centred, as the bitmap sheet's `loadImage` does.
+ */
+function onionPlace(src: string): Promise<Box | null> {
+  let place = onionPlaces.get(src);
+  if (!place) {
+    place = measurePlace(src);
+    onionPlaces.set(src, place);
+  }
+  return place;
+}
+
+async function measurePlace(src: string): Promise<Box | null> {
+  const markup = await svgMarkup(src);
+  if (markup) {
+    const root = new DOMParser().parseFromString(markup, 'image/svg+xml').documentElement;
+    if (root.nodeName === 'parsererror') return null;
+    const box = (root.getAttribute('viewBox') ?? '').trim().split(/[\s,]+/).map(Number);
+    const sized = box.length === 4 && box.every(Number.isFinite);
+    const minX = sized ? box[0]! : 0;
+    const minY = sized ? box[1]! : 0;
+    const width = sized ? box[2]! : Number(root.getAttribute('width')) || 0;
+    const height = sized ? box[3]! : Number(root.getAttribute('height')) || 0;
+    if (!width || !height) return null;
+    const dx = Math.round(SHEET.width / 2 - width / 2 - minX);
+    const dy = Math.round(SHEET.height / 2 - height / 2 - minY);
+    return { left: dx + minX, top: dy + minY, width, height };
+  }
+  try {
+    const { width: iw, height: ih } = await imageSize(src);
+    const scale = Math.min(SHEET.width / iw, SHEET.height / ih, 1);
+    const width = iw * scale;
+    const height = ih * scale;
+    return { left: (SHEET.width - width) / 2, top: (SHEET.height - height) / 2, width, height };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -207,13 +366,30 @@ function markOnion(): void {
 export async function pickColour(): Promise<string | null> {
   const native = (window as unknown as { EyeDropper?: new () => { open(): Promise<{ sRGBHex: string }> } }).EyeDropper;
   if (native) {
+    // The press that picks belongs to the eyedropper; none of it may reach the canvas and paint.
+    const release = holdPresses();
     try {
       return toHex((await new native().open()).sRGBHex);
     } catch {
       return null;
+    } finally {
+      requestAnimationFrame(() => setTimeout(release, 0));
     }
   }
   return pickFromSheet();
+}
+
+/** Swallows presses and clicks page-wide until the returned function is called. */
+function holdPresses(): () => void {
+  const types = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click'] as const;
+  const stop = (event: Event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  for (const type of types) window.addEventListener(type, stop, true);
+  return () => {
+    for (const type of types) window.removeEventListener(type, stop, true);
+  };
 }
 
 /** `#rrggbb` from `#rrggbb` or `rgb(r, g, b)`. */
@@ -224,31 +400,42 @@ function toHex(colour: string): string | null {
   return `#${channels.slice(0, 3).map((value) => Number(value).toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** Waits for a press on the sheet and reads the artwork's pixel there. */
-async function pickFromSheet(): Promise<string | null> {
+/**
+ * Waits for a press on the sheet and reads the artwork's pixel there. It
+ * listens from the start (the artwork is drawn meanwhile), and takes the whole
+ * press, so a quick click never reaches the painting tools.
+ */
+function pickFromSheet(): Promise<string | null> {
   const view = ui?.surface.viewport;
   const frame = view?.querySelector<HTMLElement>('.pt-frame');
-  if (!ui || !view || !frame) return null;
-  const pixels = await rasterize(ui.export());
+  if (!ui || !view || !frame) return Promise.resolve(null);
+  const pixels = rasterize(ui.export());
   return new Promise((resolve) => {
     view.classList.add('picking-colour');
+    const release = holdPresses();
+    let done = false;
     const finish = (colour: string | null) => {
+      if (done) return;
+      done = true;
       view.classList.remove('picking-colour');
       window.removeEventListener('pointerdown', press, true);
       window.removeEventListener('keydown', key, true);
+      // The rest of the press (up, click) is still swallowed.
+      requestAnimationFrame(() => setTimeout(release, 0));
       resolve(colour);
     };
     const press = (event: PointerEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
       const box = frame.getBoundingClientRect();
       const inside = event.clientX >= box.left && event.clientX < box.right
         && event.clientY >= box.top && event.clientY < box.bottom;
-      if (!inside || !pixels) return finish(null);
+      if (!inside) return finish(null);
       const x = Math.floor(((event.clientX - box.left) / box.width) * SHEET.width);
       const y = Math.floor(((event.clientY - box.top) / box.height) * SHEET.height);
-      const [r, g, b, a] = pixels.getImageData(x, y, 1, 1).data;
-      finish(a ? toHex(`rgb(${r}, ${g}, ${b})`) : null);
+      void pixels.then((context) => {
+        if (!context) return finish(null);
+        const [r, g, b, a] = context.getImageData(x, y, 1, 1).data;
+        finish(a ? toHex(`rgb(${r}, ${g}, ${b})`) : null);
+      });
     };
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape') finish(null);
@@ -316,8 +503,10 @@ export function flushPainter(): void {
   const target = costume.id;
   const owner = objectId;
   costume = { ...costume, width: cropped.width, height: cropped.height };
+  // Text keeps its font wherever the SVG is drawn as an image.
+  const url = cropped.markup ? embedFonts(cropped.markup).then(svgUrl) : Promise.resolve(cropped.url);
   // The picture goes to the asset store; the project keeps the reference.
-  void saveAsset(cropped.url).then((reference) => {
+  void url.then(saveAsset).then((reference) => {
     updateCostume(owner, target, { url: reference, width: cropped.width, height: cropped.height });
     if (costume?.id === target) costume = { ...costume, url: reference };
   });
@@ -345,6 +534,8 @@ interface Artwork {
   url: string;
   width: number;
   height: number;
+  /** The SVG markup, for a vector costume. */
+  markup?: string;
 }
 
 /**
@@ -397,7 +588,7 @@ function cropVector(markup: string): Artwork | null {
       `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" `
       + `width="${width}" height="${height}" viewBox="${x} ${y} ${width} ${height}">`,
     );
-    return { url: svgUrl(cropped), width, height };
+    return { url: svgUrl(cropped), width, height, markup: cropped };
   } finally {
     holder.remove();
   }

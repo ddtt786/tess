@@ -13,6 +13,16 @@ define(
     code: (a) => [a.NAME, Order.ATOMIC],
   },
   {
+    // A variable read as true or false, for conditions: Tess compares it with TRUE there.
+    type: 'data_variable_true',
+    category: 'data',
+    message: '%1 이(가) 참인가?',
+    args: [pick('NAME', 'variable')],
+    shape: 'boolean',
+    order: Order.ATOMIC,
+    code: (a) => [a.NAME, Order.ATOMIC],
+  },
+  {
     type: 'data_set_variable',
     category: 'data',
     message: '%1 를 %2 (으)로 정하기',

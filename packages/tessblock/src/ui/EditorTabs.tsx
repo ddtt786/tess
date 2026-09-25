@@ -35,7 +35,7 @@ export function EditorTabs() {
             {key === 'sounds' && object && <span class="n">{object.sounds.length}</span>}
           </button>
         ))}
-        <span class="note">{object ? object.name : '오브젝트 없음'}</span>
+        <span class="note">{object ? `${object.folder ? `${object.folder}/` : ''}${object.name}` : '오브젝트 없음'}</span>
       </div>
       <div class="canvas">
         {/* Properties sit beside the blocks, not on top of them. */}

@@ -6,6 +6,7 @@ import type { VectorPainter } from "../VectorPainter.js";
 import type { HandleKind } from "../selection.js";
 import { rotateMatrixFor, scaleMatrixFor } from "../selection.js";
 import type { TextTool } from "./text.js";
+import { paintBoundsIn } from "../scene.js";
 
 type Mode = "idle" | "move" | "scale" | "rotate" | "marquee";
 
@@ -100,9 +101,13 @@ export class SelectTool implements Tool {
       case "move": {
         let mx = dx;
         let my = dy;
-        if (info.shiftKey) {
-          if (Math.abs(dx) > Math.abs(dy)) my = 0;
-          else mx = 0;
+        if (info.shiftKey && !info.altKey) {
+          // Shift: edges and middles catch on those of the other shapes and the canvas.
+          const caught = this.snapToItems(mx, my);
+          this.painter.applyMatrix([...this.base.keys()], [1, 0, 0, 1, caught.mx, caught.my], this.base);
+          this.painter.refreshOverlay();
+          this.drawLines(caught.x, caught.y);
+          break;
         }
         // The selection's middle catches on the canvas middle (Alt moves freely).
         const snapped = info.altKey ? { x: false, y: false } : this.snapToCentre(mx, my);
@@ -173,7 +178,7 @@ export class SelectTool implements Tool {
       this.marquee?.remove();
       this.marquee = null;
       if (rect.width > 1 || rect.height > 1) {
-        const found = this.painter.itemsInRect(rect, info.altKey);
+        const found = info.altKey ? this.painter.itemsInRect(rect, true) : this.painter.itemsInMarquee(rect);
         if (info.shiftKey)
           for (const node of found) this.painter.addToSelection(node);
         else this.painter.setSelection(found);
@@ -261,6 +266,52 @@ export class SelectTool implements Tool {
     };
   }
 
+  /**
+   * The move with the selection's left, middle or right (top, middle, bottom)
+   * pulled onto the nearest such line of another shape or the canvas, per axis,
+   * within reach; and where it caught.
+   */
+  private snapToItems(mx: number, my: number): { mx: number; my: number; x: number | null; y: number | null } {
+    const b = this.startBounds;
+    if (!b) return { mx, my, x: null, y: null };
+    const reach = this.painter.screenToSceneLength(SNAP_PX);
+    const nearest = (anchors: number[], lines: number[], shift: number) => {
+      let best: { delta: number; line: number } | null = null;
+      for (const anchor of anchors) {
+        for (const line of lines) {
+          const delta = line - (anchor + shift);
+          if (Math.abs(delta) <= reach && (!best || Math.abs(delta) < Math.abs(best.delta))) best = { delta, line };
+        }
+      }
+      return best;
+    };
+    const catchX = nearest([b.x, b.x + b.width / 2, b.x + b.width], this.snapLines.xs, mx);
+    const catchY = nearest([b.y, b.y + b.height / 2, b.y + b.height], this.snapLines.ys, my);
+    return {
+      mx: mx + (catchX?.delta ?? 0),
+      my: my + (catchY?.delta ?? 0),
+      x: catchX?.line ?? null,
+      y: catchY?.line ?? null,
+    };
+  }
+
+  /** Full-length guide lines where a Shift move caught. */
+  private drawLines(x: number | null, y: number | null): void {
+    const overlay = this.painter.overlay.node;
+    const line = (x1: number, y1: number, x2: number, y2: number) => {
+      const guide = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      guide.setAttribute("x1", String(x1));
+      guide.setAttribute("y1", String(y1));
+      guide.setAttribute("x2", String(x2));
+      guide.setAttribute("y2", String(y2));
+      guide.setAttribute("class", "pt-guide");
+      guide.setAttribute("stroke-width", String(1 / this.painter.zoom));
+      overlay.appendChild(guide);
+    };
+    if (x !== null) line(x, 0, x, this.painter.height);
+    if (y !== null) line(0, y, this.painter.width, y);
+  }
+
   /** Guide lines through the canvas middle on the axes that caught. */
   private drawGuides(snapped: { x: boolean; y: boolean }): void {
     const overlay = this.painter.overlay.node;
@@ -284,5 +335,21 @@ export class SelectTool implements Tool {
     for (const node of this.painter.selection)
       this.base.set(node, this.painter.itemMatrix(node));
     this.startBounds = this.painter.selectionBounds;
+    // What a Shift move can catch on: the other shapes' edges and middles, and the canvas's.
+    const { width, height } = this.painter;
+    const xs = [0, width / 2, width];
+    const ys = [0, height / 2, height];
+    const scene = this.painter.scene.node as SVGGraphicsElement;
+    const background = this.painter.backgroundItem();
+    for (const item of this.painter.items) {
+      if (item === background || this.base.has(item)) continue;
+      const box = paintBoundsIn(item, scene);
+      if (!Number.isFinite(box.x) || !box.width && !box.height) continue;
+      xs.push(box.x, box.x + box.width / 2, box.x + box.width);
+      ys.push(box.y, box.y + box.height / 2, box.y + box.height);
+    }
+    this.snapLines = { xs, ys };
   }
+
+  private snapLines: { xs: number[]; ys: number[] } = { xs: [], ys: [] };
 }

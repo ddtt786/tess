@@ -17,7 +17,7 @@ import { FieldParamName, registerParamField } from './param-field.ts';
 import { DEFINE_BLOCK, PARAM_BOOLEAN, PARAM_TYPES, PARAM_VALUE } from './function-ids.ts';
 import type { FunctionDef, FunctionParam, FunctionParamKind } from '../model/types.ts';
 import { calledId, remapSlots, type BlockJson } from '../model/call-remap.ts';
-import { stringify } from '../model/json.ts';
+import { allSpecs } from './spec.ts';
 
 export { DEFINE_BLOCK, PARAM_BOOLEAN, PARAM_TYPES, PARAM_VALUE } from './function-ids.ts';
 
@@ -46,11 +46,66 @@ export function returnsValue(definition: FunctionDef): boolean {
   if (!blocks || typeof blocks !== 'object') return false;
   let found = returning.get(blocks);
   if (found === undefined) {
-    found = stringify(blocks).includes('"func_return"');
+    found = !!topReturnState(blocks);
     returning.set(blocks, found);
   }
   return found;
 }
+
+interface StateBlock {
+  type?: string;
+  inputs?: Record<string, { block?: StateBlock }>;
+  next?: { block?: StateBlock };
+}
+
+/** The `return` that counts in a saved function: the last block of its definition's body. */
+function topReturnState(blocks: object): StateBlock | null {
+  const tops = (blocks as { blocks?: { blocks?: StateBlock[] } }).blocks?.blocks ?? [];
+  for (const top of tops) {
+    if (top.type !== DEFINE_BLOCK) continue;
+    for (let block = top.inputs?.BODY?.block; block; block = block.next?.block) {
+      if (block.type === 'func_return') return block;
+    }
+  }
+  return null;
+}
+
+/** The `return` that counts in a definition block: in its body itself, not inside an `if` or a loop. */
+function topReturn(define: Blockly.Block): Blockly.Block | null {
+  for (let block = define.getInputTargetBlock('BODY'); block; block = block.getNextBlock()) {
+    if (block.type === 'func_return') return block;
+  }
+  return null;
+}
+
+/** Block types shaped as a judgement (true/false). */
+let booleanTypes: Set<string> | null = null;
+
+function isBooleanType(type: string | undefined): boolean {
+  booleanTypes ??= new Set([...allSpecs().filter((spec) => spec.shape === 'boolean').map((spec) => spec.type), PARAM_BOOLEAN]);
+  return !!type && booleanTypes.has(type);
+}
+
+/** Whether a function gives back a judgement: its call block is then shaped for conditions. */
+export function returnsBoolean(definition: FunctionDef, depth = 0): boolean {
+  if (definition.inline) return !!definition.returnsBoolean;
+  const blocks = definition.blocks;
+  if (!blocks || typeof blocks !== 'object') return false;
+  let found = judging.get(blocks);
+  if (found === undefined) {
+    const type = topReturnState(blocks)?.inputs?.VALUE?.block?.type;
+    // A call of another function that gives a judgement is one too (not followed round a loop).
+    const called = type?.startsWith('func_value_') && depth < 8
+      ? project.peek().functions.find((each) => valueCallType(each.id) === type)
+      : undefined;
+    found = isBooleanType(type) || (!!called && returnsBoolean(called, depth + 1));
+    judging.set(blocks, found);
+  }
+  return found;
+}
+
+/** `returnsBoolean` by saved state. */
+const judging = new WeakMap<object, boolean>();
 
 /** `returnsValue` by saved state; a state is replaced whole, never changed in place. */
 const returning = new WeakMap<object, boolean>();
@@ -328,7 +383,8 @@ export function inlineDefinitions(workspace: Blockly.Workspace, owner: string): 
       params: readParams(define),
       blocks: null,
       inline: true,
-      returns: define.getDescendants(false).some((each) => each.type === 'func_return'),
+      returns: !!topReturn(define),
+      returnsBoolean: !!topReturn(define)?.getInputTargetBlock('VALUE')?.outputConnection?.getCheck()?.includes('Boolean'),
     });
   }
   return out;
@@ -356,10 +412,24 @@ export function markForeignParams(workspace: Blockly.Workspace): void {
     } else {
       continue;
     }
-    if (block.hasDisabledReason(FOREIGN_PARAM) === !fits) continue;
-    block.setDisabledReason(!fits, FOREIGN_PARAM);
+    if (block.hasDisabledReason(FOREIGN_PARAM) !== !fits) block.setDisabledReason(!fits, FOREIGN_PARAM);
+    if (block.type === 'func_return') placeReturn(block, fits);
   }
 }
+
+/**
+ * An entry function has one result, worked out after its body: `return` fits
+ * only as the last block of the body itself, not inside an `if` or a loop.
+ * (It has no bottom, so nothing can follow it.)
+ */
+function placeReturn(block: Blockly.Block, inFunction: boolean): void {
+  const misplaced = inFunction && block.getSurroundParent()?.type !== DEFINE_BLOCK;
+  if (block.hasDisabledReason(RETURN_PLACE) !== misplaced) block.setDisabledReason(misplaced, RETURN_PLACE);
+  const warning = misplaced ? '돌려주기는 함수 맨 끝에 하나만 둘 수 있습니다. 조건에 따라 다르면 변수에 담아 끝에서 돌려주세요.' : null;
+  if ((block as Blockly.BlockSvg).setWarningText) (block as Blockly.BlockSvg).setWarningText(warning, RETURN_PLACE);
+}
+
+const RETURN_PLACE = 'tess_return_place';
 
 const FOREIGN_PARAM = 'tess_foreign_param';
 
@@ -464,7 +534,7 @@ function defineCallBlock(definition: FunctionDef, asValue: boolean): void {
     style: 'func_blocks',
     inputsInline: true,
   };
-  if (asValue) json.output = 'Value';
+  if (asValue) json.output = returnsBoolean(definition) ? 'Boolean' : 'Value';
   else {
     json.previousStatement = null;
     json.nextStatement = null;
@@ -508,8 +578,11 @@ export function refreshCallBlocks(workspace: Blockly.WorkspaceSvg, functions: Fu
     const definition = byId.get(calledId(block.type) ?? '');
     if (!definition || block.isInFlyout) return false;
     const have = (block as CallBlock).paramIds ?? [];
+    // A value call is rebuilt when its function starts or stops giving a judgement.
+    const shape = block.outputConnection ? (returnsBoolean(definition) ? 'Boolean' : 'Value') : null;
     return have.join(',') !== definition.params.map((param) => param.id).join(',')
-      || block.inputList.filter((input) => input.name.startsWith('ARG')).length !== definition.params.length;
+      || block.inputList.filter((input) => input.name.startsWith('ARG')).length !== definition.params.length
+      || (shape !== null && block.outputConnection!.getCheck()?.[0] !== shape);
   }) as CallBlock[];
   if (!stale.length) return;
   Blockly.Events.setGroup(true);

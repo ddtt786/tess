@@ -265,6 +265,7 @@ function ObjectDetail({ object }: { object: TessObject }) {
             'T'
           )}
         </span>
+        {object.folder && <span class="detail-folder" title={`${object.folder} 폴더 안`}>{object.folder}/</span>}
         <input
           class="input title"
           value={object.name}

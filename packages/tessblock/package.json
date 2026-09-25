@@ -1,6 +1,6 @@
 {
   "name": "@tess/tessblock",
-  "version": "0.3.47",
+  "version": "0.3.53",
   "description": "Blockly 기반 Tess 블록 에디터",
   "license": "MIT",
   "type": "module",
@@ -24,6 +24,7 @@
     "@tess/parser": "workspace:*",
     "@tess/vm": "workspace:*",
     "blockly": "^13.3.0",
+    "opentype.js": "2.0.0",
     "pixi.js": "^8.20.1",
     "preact": "^10.29.8"
   },

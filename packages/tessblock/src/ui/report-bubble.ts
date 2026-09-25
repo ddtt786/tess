@@ -120,7 +120,8 @@ function fillLists(work: EntryProject, model: TessProject): void {
   const owners = new Map(work.objects.map((object, at) => [object.id, model.objects[at]?.id ?? null]));
   const items = new Map(model.variables
     .filter((variable) => variable.kind === 'list')
-    .map((variable) => [`${variable.owner ?? ''}\u0000${variable.name}`, variable.array]));
+    // A `store` list compiles under `@name`.
+    .map((variable) => [`${variable.owner ?? ''}\u0000${variable.scope === 'store' ? '@' : ''}${variable.name}`, variable.array]));
   for (const variable of work.variables) {
     if (variable.variableType !== 'list') continue;
     const owner = variable.object ? owners.get(variable.object) ?? '' : '';

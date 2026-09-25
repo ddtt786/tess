@@ -16,7 +16,7 @@ import {
   tessTheme,
 } from "../blocks/registry.ts";
 import { reportValue } from "./report-bubble.ts";
-import { DEFINE_BLOCK, fnIdOf, inlineDefinitions, markForeignParams, refreshCallBlocks, relabelCalls, returnsValue, tidyHeader } from "../blocks/functions.ts";
+import { DEFINE_BLOCK, fnIdOf, inlineDefinitions, markForeignParams, refreshCallBlocks, relabelCalls, returnsBoolean, returnsValue, tidyHeader } from "../blocks/functions.ts";
 import { StackAwarePreviewer } from "../blocks/previewer.ts";
 import { runStack } from "./debug-run.ts";
 import { project, restored, selectObject, selectedObjectId, setObjectBlocks } from "../model/store.ts";
@@ -374,7 +374,7 @@ function paletteKey(): string {
       object.costumes.map((costume) => [costume.id, costume.name]),
       object.sounds.map((sound) => [sound.id, sound.name]),
     ]),
-    model.functions.map((definition) => [definition.id, definition.name, definition.params, returnsValue(definition)]),
+    model.functions.map((definition) => [definition.id, definition.name, definition.params, returnsValue(definition), returnsBoolean(definition)]),
   ]);
 }
 

@@ -266,6 +266,13 @@ export const DropperIcon = (props: IconProps) => (
   </Icon>
 );
 
+/** Two arrows passing each other: exchange two values. */
+export const SwapIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M5 2.8v10.4M2.6 5.2 5 2.8l2.4 2.4M11 13.2V2.8M8.6 10.8l2.4 2.4 2.4-2.4" />
+  </Icon>
+);
+
 /** A shape over a faint copy of itself. */
 export const OnionIcon = (props: IconProps) => (
   <Icon {...props}>

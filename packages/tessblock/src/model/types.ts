@@ -92,7 +92,8 @@ export interface Scene {
 
 export type VariableKind = 'variable' | 'list';
 
-export type StorageScope = 'local' | 'shared' | 'realtime';
+/** `store`: kept between runs (Entry Save Manager's `@name`). */
+export type StorageScope = 'local' | 'shared' | 'realtime' | 'store';
 
 export interface VariableDef {
   id: string;
@@ -153,6 +154,8 @@ export interface FunctionDef {
   inline?: boolean;
   /** Whether an inline function's body returns a value (it has no `blocks` to look in). */
   returns?: boolean;
+  /** Whether that value is a judgement (true/false), so calls fit conditions. */
+  returnsBoolean?: boolean;
 }
 
 /** Blockly's own serialized workspace. Kept opaque on purpose. */

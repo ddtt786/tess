@@ -26,6 +26,11 @@ export interface PainterOptions extends VectorPainterOptions, Omit<BitmapPainter
   vectorize?: VectorizeOptions;
   /** Supersampling used by vector -> bitmap. */
   rasterScale?: number;
+  /**
+   * Readies the SVG before vector -> bitmap draws it as an image, which cannot
+   * reach the page's fonts (e.g. embeds the fonts its text uses).
+   */
+  prepareSVG?: (markup: string) => Promise<string>;
 }
 
 const VECTOR_DEFAULT: VectorToolName = 'select';
@@ -90,7 +95,8 @@ export class Painter {
     if (this._mode === 'bitmap') return;
     const vector = this.surface_ as VectorPainter;
     const { width, height, zoom } = vector;
-    const markup = vector.toSVG();
+    const raw = vector.toSVG();
+    const markup = this.options.prepareSVG ? await this.options.prepareSVG(raw).catch(() => raw) : raw;
     const scale = this.options.rasterScale ?? 1;
     const canvas = await rasterizeSVG(markup, width, height, scale);
 

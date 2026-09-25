@@ -201,7 +201,7 @@ function MonitorCanvas({ ordered, scene }: { ordered: VariableDef[]; scene: stri
   // What the latest render asked for; the canvas's own callbacks read it here.
   const latest = useRef({ ordered, scene });
   latest.current = { ordered, scene };
-  const idsOf = (list: VariableDef[]) => list.map((def) => `${def.id}:${def.name}:${def.kind}:${def.slide ? 1 : 0}:${def.owner ?? ''}`).join('|');
+  const idsOf = (list: VariableDef[]) => list.map((def) => `${def.id}:${def.name}:${def.kind}:${def.slide ? 1 : 0}:${def.owner ?? ''}:${def.scope}`).join('|');
 
   function draw(): void {
     const current = view.current;
@@ -222,7 +222,8 @@ function MonitorCanvas({ ordered, scene }: { ordered: VariableDef[]; scene: stri
       const kind = def.kind === 'list' ? 'list' : def.slide ? 'slide' : 'variable';
       let variable = kept.current.get(def.id);
       if (!variable) {
-        variable = new Variable(def.id, def.name, def.owner, kind);
+        // A `store` record runs under `@name`, and its monitor says so.
+        variable = new Variable(def.id, def.scope === 'store' ? `@${def.name}` : def.name, def.owner, kind);
         kept.current.set(def.id, variable);
       }
       variable.visible = def.visible;

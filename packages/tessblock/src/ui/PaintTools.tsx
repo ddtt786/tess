@@ -7,10 +7,10 @@
 import { beginDrag, dragGhost, SlideReorder, type DragGhost } from './drag.ts';
 import { fontChoices } from '../model/fonts.ts';
 import { useSignal } from '@preact/signals';
-import { useEffect } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
 import { getPainter, painterVersion, fitStage, onionSkin, pickColour, toggleOnionSkin } from './painter-host.ts';
 import {
-  BrushIcon, CircleIcon, DropperIcon, OnionIcon, CursorIcon, EraserIcon, FillIcon, FitIcon, FlipHIcon, FlipVIcon,
+  BrushIcon, CircleIcon, DropperIcon, OnionIcon, SwapIcon, CursorIcon, EraserIcon, FillIcon, FitIcon, FlipHIcon, FlipVIcon,
   FrontIcon, ForwardIcon, BackwardIcon, BackIcon, GroupIcon, LineIcon, NodeIcon, RectIcon, RedoIcon, TextIcon, TrashIcon,
   UndoIcon, UngroupIcon, ZoomInIcon, ZoomOutIcon, PlusIcon, EyeIcon, EyeOffIcon,
 } from './icons.tsx';
@@ -153,11 +153,12 @@ const TOOL_SETTINGS: Record<string, Setting[]> = {
 function SideSettings() {
   const painter = getPainter()!;
   const vector = painter.vector;
-  const style = painter.style;
   const brush = painter.brush;
   const text = painter.textStyle;
   const selecting = painter.tool === 'select' || painter.tool === 'reshape';
   const selection = vector?.selection ?? [];
+  // With shapes picked, the colours shown are theirs; changing one changes them.
+  const style = (selecting && vector?.selectionStyle) || painter.style;
 
   let settings: Setting[];
   if (selecting) {
@@ -197,33 +198,18 @@ function SideSettings() {
             </div>
           )}
           {gradient ? (
-            <div class="colour-row">
-              <input class="swatch" type="color" title="시작 색" value={gradient.from}
-                onInput={(event) => vector?.setFillGradient({ ...gradient, from: (event.target as HTMLInputElement).value })} />
-              <Dropper onPick={(from) => vector?.setFillGradient({ ...gradient, from })} title="시작 색 스포이드" />
-              <input class="swatch" type="color" title="끝 색" value={gradient.to}
-                onInput={(event) => vector?.setFillGradient({ ...gradient, to: (event.target as HTMLInputElement).value })} />
-              <Dropper onPick={(to) => vector?.setFillGradient({ ...gradient, to })} title="끝 색 스포이드" />
-            </div>
+            <>
+              <ColourField label="시작" value={gradient.from} clearTo="transparent"
+                onChange={(from) => vector?.setFillGradient({ ...gradient, from: from ?? '#00000000' })} />
+              <ColourField label="끝" value={gradient.to} clearTo="transparent"
+                onChange={(to) => vector?.setFillGradient({ ...gradient, to: to ?? '#00000000' })} />
+            </>
           ) : (
-            <div class="colour-row">
-              <input
-                class="swatch"
-                type="color"
-                value={style.fill && style.fill.startsWith('#') ? style.fill : '#000000'}
-                onInput={(event) => painter.setFill((event.target as HTMLInputElement).value)}
-              />
-              <Dropper onPick={(colour) => painter.setFill(colour)} />
-              {painter.tool !== 'brush' && painter.tool !== 'text' && (
-                <button
-                  class={`style-btn ${style.fill === null ? 'on' : ''}`}
-                  title="채우기 없음"
-                  onClick={() => painter.setFill(style.fill === null ? '#4f46e5' : null)}
-                >
-                  없음
-                </button>
-              )}
-            </div>
+            <ColourField
+              value={style.fill}
+              clearTo={painter.tool !== 'brush' && painter.tool !== 'text' ? 'none' : undefined}
+              onChange={(colour) => painter.setFill(colour)}
+            />
           )}
           {gradient?.kind === 'linear' && (
             <Slider label="방향" value={gradient.angle} min={0} max={360}
@@ -232,25 +218,24 @@ function SideSettings() {
         </div>
       )}
 
+      {settings.includes('fill') && settings.includes('stroke') && !gradient && (
+        <button
+          class="swap-colours"
+          title="채우기 색과 선 색 바꾸기"
+          onClick={() => {
+            const { fill, stroke } = style;
+            painter.setFill(stroke);
+            painter.setStroke(fill);
+          }}
+        >
+          <SwapIcon size={14} /> 색 바꾸기
+        </button>
+      )}
+
       {settings.includes('stroke') && (
         <div class="f">
           <span>선</span>
-          <div class="colour-row">
-            <input
-              class="swatch"
-              type="color"
-              value={style.stroke ?? '#000000'}
-              onInput={(event) => painter.setStroke((event.target as HTMLInputElement).value)}
-            />
-            <Dropper onPick={(colour) => painter.setStroke(colour)} />
-            <button
-              class={`style-btn ${style.stroke === null ? 'on' : ''}`}
-              title="선 없음"
-              onClick={() => painter.setStroke(style.stroke === null ? '#16181d' : null)}
-            >
-              없음
-            </button>
-          </div>
+          <ColourField value={style.stroke} clearTo="none" onChange={(colour) => painter.setStroke(colour)} />
         </div>
       )}
       {settings.includes('width') && (
@@ -373,6 +358,192 @@ function LayerList() {
   );
 }
 
+/** `#rrggbb` and an opacity (0–1) from a colour; anything but hex reads as black. */
+function splitAlpha(colour: string | null): { hex: string; alpha: number } {
+  const value = (colour ?? '').trim().toLowerCase();
+  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])([0-9a-f])?$/.exec(value);
+  if (short) {
+    const [, r, g, b, a] = short;
+    return { hex: `#${r}${r}${g}${g}${b}${b}`, alpha: a ? parseInt(a + a, 16) / 255 : 1 };
+  }
+  const long = /^#([0-9a-f]{6})([0-9a-f]{2})?$/.exec(value);
+  if (long) return { hex: `#${long[1]}`, alpha: long[2] ? parseInt(long[2], 16) / 255 : 1 };
+  return { hex: '#000000', alpha: 1 };
+}
+
+/** A colour with its opacity; fully opaque stays plain `#rrggbb`. */
+function joinAlpha(hex: string, alpha: number): string {
+  const a = Math.round(Math.min(1, Math.max(0, alpha)) * 255);
+  return a === 255 ? hex : `${hex}${a.toString(16).padStart(2, '0')}`;
+}
+
+// --- colour field -----------------------------------------------------------
+
+interface Hsva {
+  h: number;
+  s: number;
+  v: number;
+  a: number;
+}
+
+function toHsva(colour: string | null): Hsva {
+  const { hex, alpha } = splitAlpha(colour);
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  let h = 0;
+  if (d) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+  }
+  return { h: (h * 60 + 360) % 360, s: max ? d / max : 0, v: max, a: alpha };
+}
+
+function hsvHex(h: number, s: number, v: number): string {
+  const f = (n: number) => {
+    const k = (n + h / 60) % 6;
+    return Math.round((v - v * s * Math.max(0, Math.min(k, 4 - k, 1))) * 255).toString(16).padStart(2, '0');
+  };
+  return `#${f(5)}${f(3)}${f(1)}`;
+}
+
+/**
+ * One colour setting: a swatch with its code, which opens an editor under it.
+ * Each slider's track shows what it changes (hue, saturation, brightness,
+ * opacity); the eyedropper and "none" sit with them.
+ * `clearTo`: what "none" means here — no paint (`none`), or a see-through
+ * colour (`transparent`, for a gradient's end); left out, there is no "none".
+ */
+function ColourField({ value, onChange, label, clearTo }: {
+  value: string | null;
+  onChange: (colour: string | null) => void;
+  label?: string;
+  clearTo?: 'none' | 'transparent';
+}) {
+  const open = useSignal(false);
+  const box = useRef<HTMLDivElement>(null);
+  // Kept while editing, so hue survives a trip through grey or black.
+  const hsva = useSignal<Hsva>(toHsva(value));
+  const shownHex = hsvHex(hsva.value.h, hsva.value.s, hsva.value.v);
+  const current = joinAlpha(shownHex, hsva.value.a);
+  const none = value === null || (clearTo === 'transparent' && splitAlpha(value).alpha === 0);
+
+  // A colour set from elsewhere (another shape picked, the eyedropper) is shown as it is.
+  useEffect(() => {
+    if (value !== null && value.toLowerCase() !== current) hsva.value = toHsva(value);
+  }, [value]);
+
+  useEffect(() => {
+    if (!open.value) return undefined;
+    const away = (event: PointerEvent) => {
+      if (!box.current?.contains(event.target as Node)) open.value = false;
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') open.value = false;
+    };
+    window.addEventListener('pointerdown', away, true);
+    window.addEventListener('keydown', key, true);
+    return () => {
+      window.removeEventListener('pointerdown', away, true);
+      window.removeEventListener('keydown', key, true);
+    };
+  }, [open.value]);
+
+  const set = (patch: Partial<Hsva>) => {
+    const next = { ...hsva.value, ...patch };
+    hsva.value = next;
+    onChange(joinAlpha(hsvHex(next.h, next.s, next.v), next.a));
+  };
+  const { h, s: sat, v, a } = hsva.value;
+  const opaque = hsvHex(h, sat, v);
+
+  return (
+    <div class={`colour-field ${open.value ? 'open' : ''}`} ref={box}>
+      <button class="colour-chip" onClick={() => { open.value = !open.value; }} aria-expanded={open.value}>
+        {label && <span class="colour-chip-label">{label}</span>}
+        <span class={`colour-chip-swatch ${none ? 'none' : ''}`}>
+          {!none && <span style={{ background: current }} />}
+        </span>
+        <span class="colour-chip-code">{none ? '없음' : a < 1 ? `${shownHex} · ${Math.round(a * 100)}%` : shownHex}</span>
+      </button>
+      {open.value && (
+        <div class="colour-editor">
+          <Channel label="색상" value={Math.round(h)} max={360} unit="°"
+            track="linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)"
+            onInput={(value) => set({ h: value })} />
+          <Channel label="채도" value={Math.round(sat * 100)} max={100} unit="%"
+            track={`linear-gradient(to right, ${hsvHex(h, 0, v)}, ${hsvHex(h, 1, v)})`}
+            onInput={(value) => set({ s: value / 100 })} />
+          <Channel label="밝기" value={Math.round(v * 100)} max={100} unit="%"
+            track={`linear-gradient(to right, #000, ${hsvHex(h, sat, 1)})`}
+            onInput={(value) => set({ v: value / 100 })} />
+          <Channel label="불투명도" value={Math.round(a * 100)} max={100} unit="%" checker
+            track={`linear-gradient(to right, transparent, ${opaque})`}
+            onInput={(value) => set({ a: value / 100 })} />
+          <div class="colour-editor-foot">
+            <input
+              class="input colour-hex"
+              value={shownHex}
+              aria-label="색 코드"
+              maxLength={7}
+              onChange={(event) => {
+                const text = (event.target as HTMLInputElement).value.trim();
+                const hex = text.startsWith('#') ? text : `#${text}`;
+                if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex)) {
+                  const read = toHsva(hex);
+                  set({ h: read.s ? read.h : h, s: read.s, v: read.v });
+                }
+              }}
+            />
+            <Dropper onPick={(colour) => { const read = toHsva(colour); set({ ...read, a: 1 }); }} />
+            {clearTo && (
+              <button
+                class={`style-btn ${none ? 'on' : ''}`}
+                onClick={() => {
+                  if (clearTo === 'none') onChange(none ? opaque : null);
+                  else set({ a: none ? 1 : 0 });
+                }}
+              >
+                없음
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One labelled slider whose track shows the colours it runs through. */
+function Channel({ label, value, max, unit, track, checker = false, onInput }: {
+  label: string;
+  value: number;
+  max: number;
+  unit: string;
+  track: string;
+  checker?: boolean;
+  onInput: (value: number) => void;
+}) {
+  return (
+    <label class="channel">
+      <span class="channel-name">{label}</span>
+      <input
+        class={`channel-range ${checker ? 'checker' : ''}`}
+        type="range"
+        min={0}
+        max={max}
+        value={value}
+        style={{ '--track': track }}
+        onInput={(event) => onInput(Number((event.target as HTMLInputElement).value))}
+      />
+      <span class="channel-value">{value}{unit}</span>
+    </label>
+  );
+}
+
 /** Picks a colour off the screen (or the sheet) for one colour setting. */
 function Dropper({ onPick, title = '스포이드' }: { onPick: (colour: string) => void; title?: string }) {
   const picking = useSignal(false);
@@ -384,8 +555,7 @@ function Dropper({ onPick, title = '스포이드' }: { onPick: (colour: string) 
       onClick={async () => {
         if (picking.value) return;
         picking.value = true;
-        // Lets this press finish before the pick listens for the next one.
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        // Listening starts at once: this press is over (a click comes last), and the next one is the pick's.
         try {
           const colour = await pickColour();
           if (colour) onPick(colour);

@@ -22,14 +22,27 @@ export class FillTool implements Tool {
   }
 
   deactivate(): void {
+    this.dropHover();
     this.painter.clearFillPreview();
   }
 
   cancel(): void {
+    this.dropHover();
     this.painter.clearFillPreview();
   }
 
+  /** Pending frame for the newest hover; pointer moves between frames only replace it. */
+  private hoverFrame = 0;
+  private pendingHover: PointerInfo | null = null;
+
+  private dropHover(): void {
+    if (this.hoverFrame) cancelAnimationFrame(this.hoverFrame);
+    this.hoverFrame = 0;
+    this.pendingHover = null;
+  }
+
   onPointerDown(info: PointerInfo): void {
+    this.dropHover();
     this.painter.clearFillPreview();
 
     // 1. Alt-click: Eyedropper (color sampler)
@@ -158,6 +171,17 @@ export class FillTool implements Tool {
   onPointerUp(): void {}
 
   onPointerHover(info: PointerInfo): void {
+    this.pendingHover = info;
+    if (this.hoverFrame) return;
+    this.hoverFrame = requestAnimationFrame(() => {
+      this.hoverFrame = 0;
+      const latest = this.pendingHover;
+      this.pendingHover = null;
+      if (latest) this.hoverNow(latest);
+    });
+  }
+
+  private hoverNow(info: PointerInfo): void {
     if (info.altKey) {
       this.painter.clearFillPreview();
       const hit = this.painter.hitTest(info.clientX, info.clientY, 6, {

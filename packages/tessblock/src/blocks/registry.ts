@@ -283,8 +283,8 @@ export function flyoutFor(category: Category): FlyoutItem[] {
       // Global functions, then the ones this object keeps to itself.
       const usable = project.value.functions.filter((definition) => !definition.owner || definition.owner === here);
       for (const definition of usable) {
-        items.push(functionCallEntry(definition, false));
-        if (returnsValue(definition)) items.push(functionCallEntry(definition, true));
+        // A function that gives something back is offered as its value (or judgement) only.
+        items.push(functionCallEntry(definition, returnsValue(definition)));
       }
     }
   }
@@ -304,8 +304,7 @@ export function searchFlyout(query: string): FlyoutItem[] {
   for (const definition of project.value.functions) {
     const name = definition.name.toLowerCase();
     if (!terms.every((term) => name.includes(term) || '함수'.includes(term))) continue;
-    items.push(functionCallEntry(definition, false));
-    if (returnsValue(definition)) items.push(functionCallEntry(definition, true));
+    items.push(functionCallEntry(definition, returnsValue(definition)));
   }
   return items.length ? items : [{ kind: 'label', text: '찾는 블록이 없습니다' }];
 }

@@ -213,13 +213,14 @@ async function toModel(
     .filter((variable) => variable.variableType !== 'timer' && variable.variableType !== 'answer')
     .map((variable) => ({
       id: variable.id,
-      name: variable.name,
+      // A global `@name` is Tess's `store` (Entry Save Manager's naming), written without the mark.
+      name: storeName(variable) ?? variable.name,
       kind: variable.variableType === 'list' ? 'list' : 'variable',
       owner: variable.object ?? null,
       value: typeof variable.value === 'number' ? variable.value : String(variable.value ?? 0),
       array: (variable.array ?? []).map((item) => (typeof item.data === 'number' ? item.data : String(item.data ?? ''))),
       visible: Boolean(variable.visible),
-      scope: variable.isRealTime ? 'realtime' : variable.isCloud ? 'shared' : 'local',
+      scope: variable.isRealTime ? 'realtime' : variable.isCloud ? 'shared' : storeName(variable) ? 'store' : 'local',
       // Entry reads a zero as "not placed" and lays the box out itself.
       at: variable.x && variable.y ? { x: Number(variable.x), y: Number(variable.y) } : null,
       size: variable.variableType === 'list' && (Number(variable.width ?? 100) !== 100 || Number(variable.height ?? 120) !== 120)
@@ -264,6 +265,13 @@ async function toModel(
     },
     missed: ctx.missed,
   };
+}
+
+/** The name a global `@name` variable or list has as a `store` record, or null for any other. */
+function storeName(variable: CompiledVariable): string | null {
+  if (variable.object || variable.isCloud || variable.isRealTime) return null;
+  const name = variable.name;
+  return name.length > 1 && name.startsWith('@') && name !== '@확장프로그램' ? name.slice(1) : null;
 }
 
 async function toObject(
