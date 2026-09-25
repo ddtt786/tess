@@ -47,6 +47,24 @@ const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const IMAGE_TYPES: Record<string, string> = { '.png': 'png', '.jpg': 'jpg', '.jpeg': 'jpg', '.gif': 'gif', '.svg': 'svg', '.bmp': 'bmp' };
 const SOUND_TYPES = new Set(['.mp3', '.wav', '.ogg', '.m4a']);
 
+/** Media types a `data:` address may carry, as the extension a file of that kind has. */
+const DATA_TYPES: Record<string, string> = {
+  'image/png': '.png', 'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/gif': '.gif',
+  'image/svg+xml': '.svg', 'image/bmp': '.bmp',
+  'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/wav': '.wav', 'audio/x-wav': '.wav',
+  'audio/wave': '.wav', 'audio/ogg': '.ogg', 'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a',
+};
+
+/**
+ * The extension that says what an asset is. A `data:` address (an editor keeping
+ * files in memory) says it with its media type instead of a file name.
+ */
+function assetExt(file: string): string {
+  const data = /^data:([^;,]+)/i.exec(file);
+  if (data) return DATA_TYPES[data[1]!.toLowerCase()] ?? '';
+  return extname(file).toLowerCase();
+}
+
 /** 
  * 엔트리 리소스 파일명(32자)을 리소스의 키(내용/경로 등)를 기반으로 결정적으로 생성합니다.
  * 
@@ -179,7 +197,7 @@ export function makeAsset(
   ctx: Context,
   node: Node,
 ): EntryAsset {
-  const ext = extname(file).toLowerCase();
+  const ext = assetExt(file);
   const isImage = kind === 'image';
 
   if (isImage && !IMAGE_TYPES[ext]) ctx.warn(node, `'${file}' 은(는) 엔트리가 아는 이미지 형식이 아닙니다.`);

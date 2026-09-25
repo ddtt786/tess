@@ -421,10 +421,16 @@ function absorbLiterals(event: Blockly.Events.Abstract): void {
   const block = workspace.getBlockById(move.blockId ?? "") as Blockly.BlockSvg | null;
   if (!block || !ABSORBED.has(block.type)) return;
   if (move.newParentId && move.newInputName) {
-    if (!block.isShadow() && !block.getChildren(false).length) block.setShadow(true);
+    if (block.isShadow() || block.getChildren(false).length) return;
+    block.setShadow(true);
   } else if (!move.newParentId && block.isShadow()) {
     block.setShadow(false);
+  } else {
+    return;
   }
+  // A shadow is drawn flatter than a block; the block and the one holding it are laid out again.
+  block.queueRender();
+  (block.getParent() as Blockly.BlockSvg | null)?.queueRender();
 }
 
 function onValueClick(event: Blockly.Events.Abstract): void {

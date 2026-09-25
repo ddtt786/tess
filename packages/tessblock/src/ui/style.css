@@ -494,14 +494,22 @@ p {
   overflow: hidden;
   background: #fff;
 }
-.preview-sheet {
+.preview-stage {
   position: absolute;
   left: 50%;
   top: 50%;
+  width: calc(480px * var(--stage-scale, 1));
+  height: calc(270px * var(--stage-scale, 1));
+  transform: translate(-50%, -50%);
+}
+.preview-sheet {
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 480px;
   height: 270px;
-  transform: translate(-50%, -50%) scale(var(--stage-scale, 1));
-  transform-origin: center;
+  transform: scale(var(--stage-scale, 1));
+  transform-origin: 0 0;
 }
 
 /* Variable and list boxes, as the runner draws them (overlay.ts). */
@@ -526,16 +534,19 @@ p {
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
 }
 .pm-value {
+  /* `Overlay.drawValueMonitor`: name 4 in, a 10 gap, a pill 7/8 around the value, 6 after it;
+     the outline sits on the edge, half outside, as the runner strokes it. */
+  margin: -0.5px 0 0 -0.5px;
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 24px;
-  padding: 0 6px 0 4px;
+  height: 25px;
+  padding: 0 5.5px 0 3.5px;
   border-radius: 4px;
 }
 .pm-pill {
   height: 16px;
-  padding: 0 7.5px;
+  padding: 0 8px 0 7px;
   border-radius: 7px;
   background: #4f80ff;
   color: #ffffff;
@@ -543,16 +554,17 @@ p {
   line-height: 16px;
 }
 .pm-list {
+  margin: -0.5px 0 0 -0.5px;
   border-radius: 7px;
   overflow: hidden;
-  padding: 0 12px 0 6px;
 }
 /* The runner's resize corner on a list box. */
 .pm-list::after {
   content: "";
   position: absolute;
-  right: 4px;
-  bottom: 6px;
+  /* At (width - 10, height + 6) of the runner's box, less the border. */
+  right: 6.2px;
+  bottom: 5.2px;
   border-left: 9.8px solid transparent;
   border-bottom: 9.8px solid #4f80ff;
 }
@@ -561,46 +573,47 @@ p {
   line-height: 23px;
   text-align: center;
 }
+/* Offsets are the runner's, less the 1px border the box is measured inside. */
 .pm-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  position: absolute;
+  left: 5px;
   height: 20px;
+  margin-top: -1px;
 }
 .pm-row-no {
-  min-width: 12px;
+  position: absolute;
+  left: 0;
+  top: 4px;
+  height: 17px;
+  line-height: 17px;
   font-size: 13.33px;
 }
 .pm-row-value {
-  flex: 1;
+  position: absolute;
+  left: 18px;
+  top: 4px;
   height: 17px;
-  padding: 0 4px;
-  border-radius: 3px;
+  padding-left: 6px;
+  box-sizing: border-box;
+  border-radius: 2px;
   background: #4f80ff;
   color: #ffffff;
   font-size: 12px;
   line-height: 17px;
   overflow: hidden;
+  white-space: pre;
   text-overflow: ellipsis;
 }
-.pm-list-empty {
-  color: #94a3b8;
-  font-size: 12px;
-  text-align: center;
-}
+/* Objects are picked by the stage from their painted pixels (objectAt), not by their boxes. */
 .po {
   position: absolute;
   display: grid;
   place-items: center;
-  cursor: grab;
-  touch-action: none;
+  pointer-events: none;
 }
 .po.on::after,
 .po:hover::after {
   border-color: transparent;
-}
-.po:active {
-  cursor: grabbing;
 }
 .po img {
   width: 100%;
@@ -608,11 +621,14 @@ p {
   object-fit: contain;
   -webkit-user-drag: none;
 }
+/* Letters drawn as the runner draws them, hung from the object's point (RunnerText). */
 .po-text {
-  display: block;
-  width: 100%;
-  /* Matches the height measureTextBox gives a line. */
-  line-height: 1.25;
+  position: absolute;
+  pointer-events: none;
+}
+.po-text-bg {
+  position: absolute;
+  inset: 0;
 }
 .po::after {
   content: "";
@@ -3776,4 +3792,48 @@ button:focus-visible,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.drawer-sub {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* The runner's own drawing of the monitor boxes, over the objects. */
+.pm-canvas-host {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.pm-canvas {
+  display: block;
+  width: 480px !important;
+  height: 270px !important;
+}
+/* Once drawn there, the DOM boxes only take the pointer. */
+.pm-value.hit,
+.pm-list.hit {
+  opacity: 0;
+  z-index: 2;
+}
+
+/* The list box's resize corner takes the pointer (the runner's handle is drawn there). */
+.pm-resize {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+}
+
+.preview-holder {
+  position: absolute;
+  inset: 0;
+}
+.preview-holder.hidden {
+  visibility: hidden;
+  pointer-events: none;
 }

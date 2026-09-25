@@ -601,6 +601,28 @@ export class Vm implements Project {
     return thread.done ? thread.state.result : undefined;
   }
 
+  /**
+   * Starts one stack of blocks in an object while the work runs, the way a hat
+   * would: it gets a thread of its own and carries on with everything else.
+   * An editor uses it to run a stack in a session that is already going.
+   */
+  runStack(stack: RawBlock[], targetId: string): boolean {
+    const target = this.targetOf(targetId);
+    if (!target || !this.compileInput) {
+      return false;
+    }
+    const source = new Codegen(this.compileInput).compileStackProbe(stack);
+    const built = (new Function('R', source) as (runtime: Vm) => { scripts: CompiledScript['body'][] })(this);
+    const thread = new Thread(target, target.entity, {
+      event: 'probe',
+      filter: null,
+      blockId: String(stack[0]?.id ?? ''),
+      body: built.scripts[0]!,
+    });
+    target.threads.push(thread);
+    return true;
+  }
+
   /** Generated source, for `tessvm build --emit-js` and for debugging. */
   compiledSource(project: EntryProjectLike): string {
     const input: CompileInput = {

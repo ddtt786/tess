@@ -40,6 +40,27 @@ const CATEGORY_ICONS: Record<Category, string> = {
   func: '<path d="M15 4h-1.5A3.5 3.5 0 0 0 10 7.5V20M7 11h7"/><path d="M15 13l4 5M19 13l-4 5"/>',
 };
 
+/**
+ * The same icons filled in, for the category that is picked. The mask reads
+ * only alpha, so holes are cut with `evenodd` rather than painted white.
+ */
+const F = 'fill="#000"';
+const CATEGORY_ICONS_FILLED: Record<Category, string> = {
+  start: `<path d="M6.5 21V4"/><path d="M6.5 4h11l-2 4 2 4h-11z" ${F}/>`,
+  flow: `<circle cx="6" cy="6" r="3" ${F}/><circle cx="18" cy="6" r="3" ${F}/><circle cx="12" cy="18" r="3" ${F}/><path d="M6 8.5v1.5a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V8.5M12 13v2.5"/>`,
+  moving: `<path d="M4 8h11M20 16H9"/><path d="M14 4.5 19.5 8 14 11.5z" ${F}/><path d="M10 12.5 4.5 16l5.5 3.5z" ${F}/>`,
+  looks: `<circle cx="8" cy="8" r="4" ${F}/><path d="M14 20h7l-3.5-6z" ${F}/><rect x="4" y="14" width="6" height="6" rx="1" ${F}/><path d="M15 4h5v5h-5z" ${F}/>`,
+  brush: `<path d="M18.4 3.6a2 2 0 0 1 2.8 2.8L12 15.6 8.4 12z" ${F}/><path d="M8 13c-2.2 0-4 1.8-4 4 0 1.2-.5 2.2-1.5 3 3.5.5 8-.5 8-4z" ${F}/>`,
+  sound: `<path d="M4 9v6h4l5 4V5L8 9z" ${F}/><path d="M17 8.5a5 5 0 0 1 0 7M19.5 6a8.5 8.5 0 0 1 0 12"/>`,
+  judge: '<path d="M4 12.5l5 5L20 6.5" stroke-width="3.4"/>',
+  calc: `<path fill-rule="evenodd" stroke="none" ${F} d="M7 2h10a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4zM7.5 6.5v2h9v-2zM7 11v2h2v-2zM11 11v2h2v-2zM15 11v2h2v-2zM7 15v2h2v-2zM11 15v2h2v-2zM15 15v2h2v-2z"/>`,
+  data: `<ellipse cx="12" cy="6" rx="7" ry="3" ${F}/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6c0 1.7-3.1 3-7 3S5 7.7 5 6z" ${F}/>`,
+  analysis: `<path d="M12 3v9h9a9 9 0 0 0-9-9z" ${F}/><path d="M20.5 15.5A9 9 0 1 1 8.5 3.7"/>`,
+  text: '<path d="M5 6V4h14v2M12 4v16M9 20h6" stroke-width="3.2"/>',
+  expansion: `<path d="M9 4h4v2.5a1.5 1.5 0 0 0 3 0V4h4v6h-2.5a1.5 1.5 0 0 0 0 3H20v7h-6v-2.5a1.5 1.5 0 0 0-3 0V20H4v-7h2.5a1.5 1.5 0 0 0 0-3H4V4z" ${F}/>`,
+  func: '<path d="M15 4h-1.5A3.5 3.5 0 0 0 10 7.5V20M7 11h7" stroke-width="3"/><path d="M15 13l4 5M19 13l-4 5" stroke-width="3"/>',
+};
+
 function iconUrl(paths: string): string {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" '
     + `stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
@@ -127,10 +148,17 @@ export const tessTheme = Blockly.Theme.defineTheme('tess', {
 export function installCategoryStyles(): void {
   const id = 'tess-category-style';
   if (document.getElementById(id)) return;
-  const rules = CATEGORY_ORDER.map((category, index) => {
+  const rules = CATEGORY_ORDER.flatMap((category, index) => {
     const icon = iconUrl(CATEGORY_ICONS[category]);
-    return `.blocklyToolboxCategoryGroup > *:nth-child(${index + 1}) .blocklyToolboxCategoryIcon`
-      + `{background:${CATEGORY_COLOURS[category]};-webkit-mask:${icon} center/contain no-repeat;mask:${icon} center/contain no-repeat;}`;
+    const filled = iconUrl(CATEGORY_ICONS_FILLED[category]);
+    const row = `.blocklyToolboxCategoryGroup > *:nth-child(${index + 1})`;
+    return [
+      `${row} .blocklyToolboxCategoryIcon`
+        + `{background:${CATEGORY_COLOURS[category]};-webkit-mask:${icon} center/contain no-repeat;mask:${icon} center/contain no-repeat;}`,
+      // The picked category shows its icon filled in.
+      `${row} .blocklyToolboxSelected .blocklyToolboxCategoryIcon, ${row}.blocklyToolboxSelected .blocklyToolboxCategoryIcon`
+        + `{-webkit-mask-image:${filled};mask-image:${filled};}`,
+    ];
   });
   const style = document.createElement('style');
   style.id = id;

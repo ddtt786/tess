@@ -151,6 +151,8 @@ interface CompiledVariable {
   maxValue?: number;
   x?: number;
   y?: number;
+  width?: number;
+  height?: number;
 }
 
 interface CompiledFunction {
@@ -220,6 +222,9 @@ async function toModel(
       scope: variable.isRealTime ? 'realtime' : variable.isCloud ? 'shared' : 'local',
       // Entry reads a zero as "not placed" and lays the box out itself.
       at: variable.x && variable.y ? { x: Number(variable.x), y: Number(variable.y) } : null,
+      size: variable.variableType === 'list' && (Number(variable.width ?? 100) !== 100 || Number(variable.height ?? 120) !== 120)
+        ? { width: Number(variable.width ?? 100), height: Number(variable.height ?? 120) }
+        : null,
       slide: variable.variableType === 'slide'
         ? { min: Number(variable.minValue ?? 0), max: Number(variable.maxValue ?? 100) }
         : null,
@@ -268,10 +273,18 @@ async function toObject(
 ): Promise<TessObject> {
   const entity = object.entity;
   const costumes: Costume[] = [];
+  // Entry lets two costumes share a name; here each is told apart with `_2`, `_3`…
+  const names = new Set<string>();
+  const unique = (name: string) => {
+    let next = name;
+    for (let index = 2; names.has(next); index += 1) next = `${name}_${index}`;
+    names.add(next);
+    return next;
+  };
   for (const picture of object.sprite.pictures ?? []) {
     costumes.push({
       id: picture.id,
-      name: picture.name,
+      name: unique(picture.name),
       url: await keep(picture.fileurl, 'image', picture.imageType ?? ''),
       width: picture.dimension?.width ?? 100,
       height: picture.dimension?.height ?? 100,

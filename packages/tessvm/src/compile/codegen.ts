@@ -312,6 +312,15 @@ export class Codegen {
     return this.emitModule();
   }
 
+  /** A module whose only script runs one stack of blocks, for starting it inside a running work. */
+  compileStackProbe(stack: RawBlock[]): string {
+    for (const fn of this.input.functions) {
+      this.functionSources.push(this.compileFunction(fn));
+    }
+    this.bodies.push(`function* (e, th) {\n${this.compileStack(stack)}}`);
+    return this.emitModule();
+  }
+
   private emitModule(): string {
     const parts: string[] = [];
     parts.push('"use strict";');

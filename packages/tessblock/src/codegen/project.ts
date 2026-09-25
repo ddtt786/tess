@@ -58,10 +58,11 @@ function cached<T>(state: BlocklyState | null, read: () => T): T {
   return value;
 }
 
-export function buildSource(model: TessProject, options: WriteOptions = {}): string {
-  const idents = nameTable(model);
-  // Object keys are unique across the whole work, not just inside a scene, and
-  // blocks naming an object must use the same key the object is declared with.
+/**
+ * The key each object is declared under. Keys are unique across the whole
+ * work, not just inside a scene, and blocks naming an object use the same key.
+ */
+function objectKeyTable(model: TessProject): Map<string, string> {
   const objectKeys = new Map<string, string>();
   const keys = new Set<string>();
   for (const scene of model.scenes) {
@@ -69,6 +70,28 @@ export function buildSource(model: TessProject, options: WriteOptions = {}): str
       objectKeys.set(object.id, uniqueKey(object.name, keys));
     }
   }
+  return objectKeys;
+}
+
+/**
+ * The lines of `source` (written by `buildSource` from `model`) that declare one
+ * object, from its header to its `end`; 1-based and inclusive. Null when absent.
+ */
+export function objectRange(source: string, model: TessProject, objectId: string): { from: number; to: number } | null {
+  const object = model.objects.find((each) => each.id === objectId);
+  const key = objectKeyTable(model).get(objectId);
+  if (!object || key === undefined) return null;
+  const header = `${INDENT}${object.kind === 'text' ? 'text' : 'object'} ${quote(key)}:`;
+  const lines = source.split('\n');
+  const start = lines.indexOf(header);
+  if (start < 0) return null;
+  const end = lines.indexOf(`${INDENT}end`, start + 1);
+  return { from: start + 1, to: (end < 0 ? lines.length - 1 : end) + 1 };
+}
+
+export function buildSource(model: TessProject, options: WriteOptions = {}): string {
+  const idents = nameTable(model);
+  const objectKeys = objectKeyTable(model);
   useIdents(idents, objectKeys);
   context = namesContext(idents, objectKeys);
 
@@ -128,7 +151,8 @@ function variableLine(variable: VariableDef, idents: Map<string, string>): strin
   const place = variable.at ? ` at ${num(variable.at.x)} ${num(variable.at.y)}` : '';
   if (variable.kind === 'list') {
     const items = variable.array.map((item) => literal(item)).join(', ');
-    return `${scope}list ${ident}${display} = [${items}]${variable.visible ? ' visible' : ''}${place}`;
+    const size = variable.size ? ` size ${num(variable.size.width)} ${num(variable.size.height)}` : '';
+    return `${scope}list ${ident}${display} = [${items}]${variable.visible ? ' visible' : ''}${place}${size}`;
   }
   const slide = variable.slide ? ` from ${num(variable.slide.min)} to ${num(variable.slide.max)}` : '';
   return `${scope}var ${ident}${display} = ${literal(variable.value)}${slide}${variable.visible ? ' visible' : ''}${place}`;

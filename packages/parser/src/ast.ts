@@ -252,6 +252,8 @@ export interface ListDeclNode extends Base {
   shown: boolean;
   /** `at X Y` — where the box stands; null leaves it to the runner. */
   at: { x: Expr; y: Expr } | null;
+  /** `size W H` — how big the box is; null keeps entry's 100 by 120. */
+  size: { width: Expr; height: Expr } | null;
 }
 
 // ----------------------------------------------------------------------------

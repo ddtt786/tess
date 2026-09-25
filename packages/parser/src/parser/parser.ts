@@ -535,6 +535,12 @@ export class TessParser extends CstParser {
         $.SUBRULE($.posExpr, { LABEL: 'atX' });
         $.SUBRULE2($.posExpr, { LABEL: 'atY' });
       });
+      // 상자의 크기(가로 세로). 안 적으면 엔트리의 100 × 120 이다.
+      $.OPTION5(() => {
+        $.CONSUME(kw.size);
+        $.SUBRULE3($.posExpr, { LABEL: 'sizeW' });
+        $.SUBRULE4($.posExpr, { LABEL: 'sizeH' });
+      });
     });
 
     // ========================================================================

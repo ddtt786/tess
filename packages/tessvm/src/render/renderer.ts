@@ -32,6 +32,7 @@ import {
   FULLSCREEN_CANVAS_WIDTH,
   MAX_SHARPNESS,
   MIN_CANVAS_WIDTH,
+  MIN_TEXT_SHARPNESS,
   svgBudgetScale,
   svgSharpness,
   textSharpness,
@@ -208,6 +209,11 @@ function vectorTextureData(
  * 계단처럼 남습니다(`play.ent` 의 단추). 크기를 박아 두면 브라우저가 처음부터 그 크기로
  * 그리므로 진짜 벡터 화질이 나옵니다 — `viewBox` 는 그대로라 그림은 달라지지 않습니다.
  */
+/** Monitor and dialog text: as fine as one stage pixel is drawn, in half steps, 2× to 8×. */
+function overlayTextResolution(displayScale: number): number {
+  return Math.min(MAX_SHARPNESS, Math.max(MIN_TEXT_SHARPNESS, Math.ceil(displayScale * 2) / 2));
+}
+
 /**
  * Whether a costume url is a vector drawing: a `.svg` file, or an svg data url
  * (what an editor hands over for costumes it keeps in memory). Either way it is
@@ -489,6 +495,7 @@ export class PixiRenderer implements Renderer {
       this.markTextDirty();
       this.fitSvgBudget();
       void this.rebakeVectors();
+      this.overlay?.setTextResolution(overlayTextResolution(stage.scale * resolution));
       // Resizing clears the canvas; drawing now keeps a paused or idle stage from going black.
       this.app.renderer.render(this.app.stage);
     }

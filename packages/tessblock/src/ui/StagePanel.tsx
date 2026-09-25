@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'preact/hooks';
 import { currentScene, project } from '../model/store.ts';
 import { activeThreads, pause, relayout, resume, start, stop } from '../runtime/run.ts';
 import { currentSource, prepareRuns } from './source.ts';
-import { codeOpen, debugRequest, notify, runningStack, stageFullscreen } from './state.ts';
+import { codeOpen, debugLive, debugRequest, notify, runningStack, stageFullscreen } from './state.ts';
 import { StagePreview } from './StagePreview.tsx';
 import { FireFlagIcon, FlagIcon, MaximizeIcon, MinimizeIcon, PauseIcon, PlayIcon, StopIcon } from './icons.tsx';
 
@@ -83,6 +83,7 @@ export function StagePanel() {
     busy.value = true;
     revealed.value = false;
     debugging.value = debugLabel;
+    debugLive.value = Boolean(debugLabel);
     boosted.value = boost;
     if (!debugLabel) runningStack.value = null;
     try {
@@ -147,6 +148,7 @@ export function StagePanel() {
     running.value = false;
     paused.value = false;
     debugging.value = null;
+    debugLive.value = false;
     host.current?.replaceChildren();
   }
 
@@ -209,7 +211,10 @@ export function StagePanel() {
       )}
 
       <div class={`stage-frame ${running.value && debugging.value ? 'debugging' : ''}`}>
-        {(!running.value || !revealed.value) && <StagePreview />}
+        {/* Kept mounted and only hidden while the run shows, so stopping brings it back at once. */}
+        <div class={`preview-holder ${running.value && revealed.value ? 'hidden' : ''}`}>
+          <StagePreview />
+        </div>
         <div
           class={`stage-host ${revealed.value ? '' : 'concealed'}`}
           ref={host}

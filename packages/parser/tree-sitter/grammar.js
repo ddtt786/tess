@@ -244,6 +244,7 @@ module.exports = grammar({
       field('value', $.list_literal),
       optional(field('shown', 'visible')),
       optional(seq('at', field('at_x', $._unary), field('at_y', $._unary))),
+      optional(seq('size', field('size_w', $._unary), field('size_h', $._unary))),
     )),
 
     event_handler: ($) => seq(

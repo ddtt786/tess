@@ -11,13 +11,21 @@ import { buildSource } from '../codegen/project.ts';
 import { tess } from '../codegen/generator.ts';
 import { DEFINE_BLOCK } from '../blocks/functions.ts';
 import { project } from '../model/store.ts';
-import { debugRequest, runningStack } from './state.ts';
+import { debugLive, debugRequest, runningStack } from './state.ts';
+import { idMap, remap } from './report-bubble.ts';
+import { build, runningHandle, runningWork } from '../runtime/run.ts';
+import type { RawBlock } from '../../../tessvm/src/compile/codegen.ts';
 
 /** Starts the stage on `block` and the blocks under it; a hat runs its body. `boost` runs it in boost mode. */
 export function runStack(block: Blockly.BlockSvg, objectId: string, boost = false): void {
   const model = project.peek();
   const object = model.objects.find((candidate) => candidate.id === objectId);
   if (!object) return;
+  // A session already going takes the stack in, with everything as it now stands.
+  if (debugLive.peek() && joinSession(block, objectId)) {
+    runningStack.value = { objectId, blockId: block.id };
+    return;
+  }
   const saved = Blockly.serialization.blocks.save(block, { addNextBlocks: true, addCoordinates: false }) as
     Blockly.serialization.blocks.State;
   const body = tess.hatTypes.has(block.type) ? saved.next?.block : saved;
@@ -41,4 +49,43 @@ export function runStack(block: Blockly.BlockSvg, objectId: string, boost = fals
   } finally {
     holder.dispose();
   }
+}
+
+/**
+ * Starts the stack inside the running session: written into a one-script copy
+ * of the work, compiled, pointed at the running work's records and handed to
+ * its VM as a new thread. False when it cannot, so the caller starts afresh.
+ */
+function joinSession(block: Blockly.BlockSvg, objectId: string): boolean {
+  const live = runningHandle();
+  const running = runningWork();
+  if (!live || !running) return false;
+  const model = project.peek();
+  const index = model.objects.findIndex((each) => each.id === objectId);
+  const saved = Blockly.serialization.blocks.save(block, { addNextBlocks: true, addCoordinates: false }) as
+    Blockly.serialization.blocks.State;
+  const body = tess.hatTypes.has(block.type) ? saved.next?.block : saved;
+  if (index < 0 || !body) return false;
+
+  const holder = new Blockly.Workspace();
+  let source: string;
+  try {
+    Blockly.serialization.blocks.append({ type: 'start_when_run', x: 0, y: 0, next: { block: body } }, holder, { recordUndo: false });
+    for (const define of block.workspace.getTopBlocks(false)) {
+      if (define.type !== DEFINE_BLOCK || define === block) continue;
+      Blockly.serialization.blocks.append(Blockly.serialization.blocks.save(define)!, holder, { recordUndo: false });
+    }
+    const quiet = { ...model, objects: model.objects.map((each) => ({ ...each, blocks: null })) };
+    source = buildSource(quiet, { live: new Map([[objectId, holder]]) });
+  } finally {
+    holder.dispose();
+  }
+  const built = build(source, model.name);
+  const compiled = built.project?.objects[index];
+  if (!built.project || !compiled) return false;
+  const stacks = (typeof compiled.script === 'string' ? JSON.parse(compiled.script) : compiled.script) as RawBlock[][];
+  const stack = stacks.find((each) => each[0]?.type === 'when_run_button_click');
+  if (!stack) return false;
+  const ids = idMap(built.project, running);
+  return live.vm.runStack(remap(stack.slice(1), ids) as RawBlock[], ids.get(compiled.id) ?? compiled.id);
 }

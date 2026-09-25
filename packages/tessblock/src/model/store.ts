@@ -478,10 +478,25 @@ export function setObjectBlocks(id: string, blocks: BlocklyState, inline?: Funct
   });
 }
 
+/**
+ * A costume name no other costume of the object has: a taken one gets `_2`,
+ * `_3`… Blocks and the written source name costumes, so two of one name would
+ * leave one of them out of reach.
+ */
+function uniqueCostumeName(object: TessObject, name: string, except?: string): string {
+  const base = name.trim() || '모양';
+  const taken = new Set(object.costumes.filter((costume) => costume.id !== except).map((costume) => costume.name));
+  if (!taken.has(base)) return base;
+  let index = 2;
+  while (taken.has(`${base}_${index}`)) index += 1;
+  return `${base}_${index}`;
+}
+
 export function addCostume(id: string, index: number): void {
   const template = COSTUME_LIBRARY[index % COSTUME_LIBRARY.length]!;
   patchObject(id, (object) => {
     const costume = costumeFrom(template);
+    costume.name = uniqueCostumeName(object, costume.name);
     object.costumes.push(costume);
     if (!object.selectedCostumeId) object.selectedCostumeId = costume.id;
   });
@@ -491,6 +506,7 @@ export function addCostume(id: string, index: number): void {
 export function addBlankCostume(objectId: string, width = 240, height = 180): string {
   const costume: Costume = { id: newId('c'), name: '새 모양', url: blankCostume(width, height), width, height };
   patchObject(objectId, (object) => {
+    costume.name = uniqueCostumeName(object, costume.name);
     object.costumes.push(costume);
     object.selectedCostumeId = costume.id;
   });
@@ -506,7 +522,9 @@ function blankCostume(width: number, height: number): string {
 export function updateCostume(objectId: string, costumeId: string, patch: Partial<Costume>): void {
   patchObject(objectId, (object) => {
     const index = object.costumes.findIndex((costume) => costume.id === costumeId);
-    if (index >= 0) object.costumes[index] = { ...object.costumes[index]!, ...patch };
+    if (index < 0) return;
+    const named = patch.name === undefined ? patch : { ...patch, name: uniqueCostumeName(object, patch.name, costumeId) };
+    object.costumes[index] = { ...object.costumes[index]!, ...named };
   });
 }
 

@@ -118,7 +118,7 @@ type Named = { id: string; name?: string };
  * Probe ids to the running work's ids. Both works come from the same records,
  * so objects pair by position, and the rest by name within their object.
  */
-function idMap(probe: EntryProject, running: EntryProject): Map<string, string> {
+export function idMap(probe: EntryProject, running: EntryProject): Map<string, string> {
   const ids = new Map<string, string>();
   const byName = (from: Named[] = [], to: Named[] = [], scope = '') => {
     const named = new Map(to.map((each) => [`${scope}\u0000${each.name}`, each.id]));
@@ -161,7 +161,7 @@ function functionLabel(content: unknown): string {
 }
 
 /** Copies a block tree with record ids swapped; literals keep their text. */
-function remap(node: unknown, ids: Map<string, string>): unknown {
+export function remap(node: unknown, ids: Map<string, string>): unknown {
   if (Array.isArray(node)) return node.map((item) => remap(item, ids));
   if (typeof node === 'string') return ids.get(node) ?? node;
   if (!node || typeof node !== 'object') return node;

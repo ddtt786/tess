@@ -37,6 +37,13 @@ const KEY_OPTIONS: Option[] = [
   ...Object.keys(KEY_CODES).filter((name) => !KEY_ORDER.includes(name) && !/^(escape|backslash)$/.test(name)),
 ].map((name) => [keyLabel(name), name] as Option);
 
+/** The key menu's name for a key pressed: the name entry stores that key's code under. */
+function keyNameOf(event: KeyboardEvent): string | null {
+  const code = event.keyCode;
+  const names = KEY_OPTIONS.map(([, name]) => name).filter((name) => KEY_CODES[name] === code);
+  return names[0] ?? null;
+}
+
 function keyLabel(name: string): string {
   const labels: Record<string, string> = {
     space: '스페이스', enter: '엔터', shift: '시프트', ctrl: '컨트롤', alt: '알트',
@@ -139,6 +146,30 @@ export class TessDropdown extends Blockly.FieldDropdown {
   /** Any id is allowed: a deleted record must not wipe the block's choice. */
   protected override doClassValidation_(newValue?: string): string | null {
     return typeof newValue === 'string' ? newValue : null;
+  }
+
+  /** While a key menu is open, the key pressed is the key picked. */
+  private keyPick: ((event: KeyboardEvent) => void) | null = null;
+
+  protected override showEditor_(event?: MouseEvent): void {
+    super.showEditor_(event);
+    if (this.source !== 'key') return;
+    this.keyPick = (pressed: KeyboardEvent) => {
+      const name = keyNameOf(pressed);
+      if (!name) return;
+      // Taken before Blockly's menu sees it: Escape and the arrows pick keys here.
+      pressed.preventDefault();
+      pressed.stopPropagation();
+      this.setValue(name);
+      Blockly.DropDownDiv.hideWithoutAnimation();
+    };
+    window.addEventListener('keydown', this.keyPick, true);
+  }
+
+  protected override dropdownDispose_(): void {
+    if (this.keyPick) window.removeEventListener('keydown', this.keyPick, true);
+    this.keyPick = null;
+    super.dropdownDispose_();
   }
 
   override getText(): string {

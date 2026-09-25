@@ -750,3 +750,9 @@ parse(source); // { ok, ast, errors, warnings } — 문법 + 의미 검사
    한다.
 8. **`test/grammar.test.js`(+ `ast.test.js`, `compile.test.js`)에 케이스를
    추가한다.**
+
+## 리스트 상자 크기 (`size W H`)
+
+`list 이름 = [...] [visible] [at X Y] [size W H]` — 무대에 뜨는 리스트 상자의 크기(엔트리 `width`·`height`, 최소 100).
+안 적으면 100 × 120. chevrotain(`listDecl` 의 `sizeW`·`sizeH`)과 tree-sitter(`size_w`·`size_h`) 둘 다 받고, AST 는
+`ListDeclNode.size`. 디컴파일러는 100 × 120 이 아닐 때만 쓴다.

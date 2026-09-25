@@ -111,6 +111,8 @@ export interface VariableDef {
    * (entry's own numbers). Absent or null lays it out the way entry does.
    */
   at?: { x: number; y: number } | null;
+  /** A list box's size on the stage; absent or null is entry's 100 × 120. */
+  size?: { width: number; height: number } | null;
 }
 
 export interface Signal {

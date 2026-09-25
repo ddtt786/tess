@@ -68,6 +68,15 @@ export function localToStage(geometry: Geometry, local: Point): Point {
   return { x: geometry.origin.x + turned.x, y: geometry.origin.y + turned.y };
 }
 
+/** A point on the stage, in the costume's own pixels (the reverse of `localToStage`). */
+export function stageToLocal(geometry: Geometry, point: Point): Point {
+  const turned = rotate({ x: point.x - geometry.origin.x, y: point.y - geometry.origin.y }, -geometry.angle);
+  return {
+    x: turned.x / (geometry.scale.x || 1) + geometry.reg.x,
+    y: turned.y / (geometry.scale.y || 1) + geometry.reg.y,
+  };
+}
+
 export function rotate(point: Point, degrees: number): Point {
   const radians = (degrees * Math.PI) / 180;
   const cos = Math.cos(radians);

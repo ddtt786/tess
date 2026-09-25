@@ -368,6 +368,7 @@ function listDecl(node: SyntaxNode): AnyNode {
     value: { type: 'ListLiteral', elements: fields(value, 'elements').map(expr), loc: loc(value) },
     shown: has(node, 'shown'),
     at: has(node, 'at_x') ? { x: expr(field(node, 'at_x')!), y: expr(field(node, 'at_y')!) } : null,
+    size: has(node, 'size_w') ? { width: expr(field(node, 'size_w')!), height: expr(field(node, 'size_h')!) } : null,
     loc: loc(node),
   };
 }

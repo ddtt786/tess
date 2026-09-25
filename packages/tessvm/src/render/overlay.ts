@@ -200,6 +200,24 @@ export class Overlay {
   private tableView: TableView | null = null;
   private openTable: TableLike | null = null;
 
+  /**
+   * Texture pixels per text pixel for every box, bubble and table: what one
+   * stage pixel takes on screen (stage scale × canvas resolution), so the text
+   * is baked as fine as it is drawn.
+   */
+  static textResolution = 2;
+
+  /** Bakes the overlay's text again at `resolution`, as the canvas's own resolution moved. */
+  setTextResolution(resolution: number): void {
+    if (Math.abs(resolution - Overlay.textResolution) < 1e-3) return;
+    Overlay.textResolution = resolution;
+    const visit = (node: Container) => {
+      if (node instanceof Text) node.resolution = resolution;
+      for (const child of node.children) visit(child as Container);
+    };
+    visit(this.root);
+  }
+
   constructor(parent: Container) {
     this.root.addChild(this.monitorLayer, this.dialogLayer, this.tableLayer);
     parent.addChild(this.root);
@@ -283,7 +301,7 @@ export class Overlay {
       const title = new Text({
         text: '',
         style: { fontFamily: MONITOR_FAMILY, fontSize: TABLE_FONT + 1, fill: TABLE_TITLE_COLOR },
-        resolution: 2,
+        resolution: Overlay.textResolution,
       });
       root.addChild(frame, title);
       this.tableLayer.addChild(root);
@@ -378,7 +396,7 @@ export class Overlay {
       const cell = new Text({
         text: '',
         style: { fontFamily: MONITOR_FAMILY, fontSize: TABLE_FONT, fill: TABLE_TEXT },
-        resolution: 2,
+        resolution: Overlay.textResolution,
       });
       view.root.addChild(cell);
       view.cells.push(cell);
@@ -464,7 +482,7 @@ export class Overlay {
     const text = new Text({
       text: state.message,
       style: { fontFamily: MONITOR_FAMILY, fontSize: DIALOG_FONT, fill: '#000000' },
-      resolution: 2,
+      resolution: Overlay.textResolution,
     });
     root.addChild(frame, notch, text);
     this.dialogLayer.addChild(root);
@@ -557,7 +575,7 @@ export class Overlay {
     const text = new Text({
       text: '',
       style: { fontFamily: MONITOR_FAMILY, fontSize: size, fill },
-      resolution: 2,
+      resolution: Overlay.textResolution,
     });
     // Centred on the line it is given: the font's own ascent and descent then
     // cannot leave the letters sitting low in their box.

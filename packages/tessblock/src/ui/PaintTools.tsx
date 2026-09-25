@@ -126,14 +126,14 @@ export function PaintTools() {
 }
 
 /** What each tool draws with; the side shows only those settings. */
-type Setting = 'fill' | 'stroke' | 'width' | 'brush' | 'font' | 'effects';
+type Setting = 'fill' | 'stroke' | 'width' | 'dash' | 'brush' | 'font' | 'effects';
 
 const TOOL_SETTINGS: Record<string, Setting[]> = {
   brush: ['fill', 'brush'],
   eraser: ['brush'],
   fill: ['fill'],
   text: ['fill', 'font'],
-  line: ['stroke', 'width'],
+  line: ['stroke', 'width', 'dash'],
   rect: ['fill', 'stroke', 'width'],
   ellipse: ['fill', 'stroke', 'width'],
 };
@@ -151,6 +151,8 @@ function SideSettings() {
   let settings: Setting[];
   if (selecting) {
     settings = vector && selection.length ? ['fill', 'stroke', 'width', 'effects'] : [];
+    // A line's dash shows only while a line is picked.
+    if (vector?.selectionHasLine) settings.push('dash');
     if (selection.some((node) => node.tagName.toLowerCase() === 'text')) settings.push('font');
   } else {
     settings = TOOL_SETTINGS[painter.tool] ?? [];
@@ -239,16 +241,23 @@ function SideSettings() {
       {settings.includes('width') && (
         <Slider label="선 굵기" value={style.strokeWidth} min={0} max={40} onChange={(value) => painter.setStrokeWidth(value)} />
       )}
+      {settings.includes('dash') && vector && (
+        <div class="f">
+          <span>선 모양</span>
+          <div class="seg small">
+            {([['solid', '실선'], ['dashed', '점선'], ['dotted', '점']] as const).map(([dash, label]) => (
+              <button
+                class={(selecting ? vector.selectionDash : vector.lineDash) === dash ? 'on' : ''}
+                onClick={() => vector.setDash(dash)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {settings.includes('effects') && vector && (
         <>
-          <div class="f">
-            <span>선 모양</span>
-            <div class="seg small">
-              {([['solid', '실선'], ['dashed', '점선'], ['dotted', '점']] as const).map(([dash, label]) => (
-                <button class={vector.selectionDash === dash ? 'on' : ''} onClick={() => vector.setDash(dash)}>{label}</button>
-              ))}
-            </div>
-          </div>
           <Slider label="투명도" value={Math.round((1 - vector.selectionOpacity) * 100)} min={0} max={100}
             onChange={(value) => vector.setOpacity(1 - value / 100)} />
         </>

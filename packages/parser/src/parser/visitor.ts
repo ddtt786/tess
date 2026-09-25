@@ -409,6 +409,7 @@ export class TessAstVisitor extends BaseVisitor {
       value: this.visit(ctx.value),
       shown: Boolean(ctx.shown),
       at: ctx.atX ? { x: this.visit(ctx.atX), y: this.visit(ctx.atY) } : null,
+      size: ctx.sizeW ? { width: this.visit(ctx.sizeW), height: this.visit(ctx.sizeH) } : null,
       loc: nodeLoc(node),
     };
   }

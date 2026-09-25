@@ -340,6 +340,8 @@ export class Gesture {
     const state = typeof rule === 'object' ? rule : blocks.save(block, {addCoordinates: false});
     block.setShadow(false);
     if (connection && state) connection.setShadowState(state);
+    // A real block is drawn with its own outline and padding.
+    block.queueRender();
     common.setSelected(block);
   }
 

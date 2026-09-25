@@ -867,8 +867,8 @@ test('벡터가 많은 작품은 텍스처 예산에 맞춰 함께 낮춰 굽는
 test('화질은 화면이 요구하는 만큼 따라 올라가고, 하한 아래로는 내려가지 않는다', () => {
   // 4/3 (stage) × 1 (resolution): a plain window at the default size.
   assert.equal(textSharpness(4 / 3, 1, 100), 2, '작게 그려도 하한 2배');
-  // 긴 변이 하한(`MIN_SVG_SIDE`)을 이미 채우는 그림이라야 배율만 보입니다.
-  assert.equal(svgSharpness(4 / 3, 200, 200), 2.5);
+  // 긴 변 하한(`MIN_SVG_SIDE`)이 걸리지 않는 그림이면, 성긴 화면에서는 배율 하한 3배가 걸립니다.
+  assert.equal(svgSharpness(4 / 3, 400, 400), 3);
   // A retina window, then the same text box scaled to twice its size.
   assert.equal(textSharpness(3, 1, 100), 3);
   assert.equal(textSharpness(3, 2, 100), 6);
@@ -887,8 +887,8 @@ test('작게 저장된 벡터는 긴 변이 하한을 채울 만큼 촘촘히 �
     const longest = Math.max(width, height) * sharp;
     assert.ok(longest >= MIN_SVG_SIDE, `${width}x${height} → ${longest}px`);
   }
-  // 이미 큰 그림은 하한이 건드리지 않습니다.
-  assert.equal(svgSharpness(4 / 3, 480, 270), 2);
+  // 이미 큰 그림은 긴 변 하한이 건드리지 않고, 배율 하한 3배만 걸립니다.
+  assert.equal(svgSharpness(4 / 3, 480, 270), 3);
   // 하한도 작품 전체 예산에 함께 걸립니다.
   assert.ok(svgSharpness(4 / 3, 20, 20, 0.1) < svgSharpness(4 / 3, 20, 20));
 });
@@ -2495,13 +2495,14 @@ test('돌아가는 중에 부스트를 바꾸면 렌더러도 다시 그린다',
  * 늘려 쓰게 되어 흐려집니다.
  */
 test('벡터 모양의 굽는 배율은 실제로 그리는 크기를 따라간다', () => {
-  const plain = svgSharpness(3, 144, 246);
-  const bigger = svgSharpness(3, 144, 246, 1, 1.5);
+  // 긴 변 하한도 픽셀 상한도 걸리지 않는 크기로, 배율만 보이게 합니다.
+  const plain = svgSharpness(3, 400, 400);
+  const bigger = svgSharpness(3, 400, 400, 1, 1.5);
   assert.ok(bigger > plain, `${bigger} > ${plain}`);
   assert.equal(bigger, plain * 1.5);
 
   // 줄여 그리는 모양은 이름 크기 아래로 내려가지 않습니다 — 하한이 그대로 걸립니다.
-  assert.equal(svgSharpness(3, 144, 246, 1, 0.25), plain);
+  assert.equal(svgSharpness(3, 400, 400, 1, 0.25), plain);
 
   // 픽셀 상한은 배율보다 뒤에 걸립니다.
   const huge = svgSharpness(3, 2048, 2048, 1, 4);
@@ -2521,8 +2522,8 @@ test('벡터 화질은 화면이 요구하는 만큼 따라 올라간다', () =>
   // 픽셀 상한은 그 위에 그대로 걸립니다.
   const huge = svgSharpness(8, 960, 540);
   assert.ok(960 * huge <= MAX_TEXTURE_SIDE && 960 * huge * 540 * huge <= 2048 * 2048 * 1.01, String(huge));
-  // 화면이 성겨도 하한 2배 아래로는 내려가지 않습니다.
-  assert.equal(svgSharpness(1, 480, 480), 2);
+  // 화면이 성겨도 하한 3배 아래로는 내려가지 않습니다.
+  assert.equal(svgSharpness(1, 480, 480), 3);
 });
 
 /**

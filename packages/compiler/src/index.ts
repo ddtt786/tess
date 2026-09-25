@@ -342,8 +342,9 @@ function makeVariable(
       value: 0,
       variableType: 'list',
       array: (items as Array<string | number>).map((data) => ({ data })),
-      width: 100,
-      height: 120,
+      // `size W H` — entry keeps a list box no smaller than 100 either way.
+      width: node.size ? Math.max(100, Number(constantOf(node.size.width, ctx) ?? 100)) : 100,
+      height: node.size ? Math.max(100, Number(constantOf(node.size.height, ctx) ?? 120)) : 120,
     };
   }
 

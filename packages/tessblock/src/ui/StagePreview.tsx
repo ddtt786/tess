@@ -11,13 +11,14 @@ import { sceneObjects, selectObject, selectedObjectId, setObjectProps, setTextPr
 import { centerMode } from './state.ts';
 import { resolveAsset } from '../model/assets.ts';
 import { beginDrag } from './drag.ts';
+import { paintedAt, preloadMask } from './pixel-hit.ts';
 import {
   STAGE, angleFromStage, centerFromStage, geometryOf, handleLocal, localToStage, resizeFromHandle,
-  rotate, type HandleKind, type Point,
+  rotate, stageToLocal, type HandleKind, type Point,
 } from './stage-geometry.ts';
-import type { TessObject } from '../model/types.ts';
-import { CanvasTextMetrics, TextStyle } from 'pixi.js';
-import { textShift, type RunnerMetrics } from '../model/text-metrics.ts';
+import type { TessObject, TextProps } from '../model/types.ts';
+import { signal } from '@preact/signals';
+import { CanvasTextGenerator, CanvasTextMetrics, TextStyle } from 'pixi.js';
 import { PreviewMonitors } from './PreviewMonitors.tsx';
 
 const HANDLES: HandleKind[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -27,12 +28,19 @@ const ARM = 26;
 export function StagePreview() {
   const objects = sceneObjects.value;
   const host = useRef<HTMLDivElement>(null);
+  const area = useRef<HTMLDivElement>(null);
   const selected = objects.find((object) => object.id === selectedObjectId.value) ?? null;
 
   useEffect(() => {
     const element = host.current;
     if (!element) return undefined;
-    const fit = () => element.style.setProperty('--stage-scale', String(element.clientWidth / STAGE.width || 1));
+    // The runner's own fit (`renderer.layout`): the smaller of the two ratios,
+    // with the width rounded down to whole pixels, so both draw the same size.
+    const fit = () => {
+      const ratio = Math.min(element.clientWidth / STAGE.width, element.clientHeight / STAGE.height);
+      const width = Math.max(1, Math.floor(STAGE.width * ratio));
+      element.style.setProperty('--stage-scale', String(width / STAGE.width || 1));
+    };
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(element);
@@ -41,7 +49,7 @@ export function StagePreview() {
 
   /** Pointer position in stage pixels. */
   function toStage(event: PointerEvent): Point {
-    const frame = host.current?.getBoundingClientRect();
+    const frame = area.current?.getBoundingClientRect();
     if (!frame) return { x: 0, y: 0 };
     const scale = frame.width / STAGE.width;
     return { x: (event.clientX - frame.left) / scale, y: (event.clientY - frame.top) / scale };
@@ -49,15 +57,69 @@ export function StagePreview() {
 
   return (
     <div class="preview" ref={host}>
-      <div class="preview-sheet">
-        {[...objects].reverse().map((object) => (
-          <PreviewObject key={object.id} object={object} toStage={toStage} />
-        ))}
-        <PreviewMonitors toStage={toStage} />
+      {/* Exactly the stage's box, sized and centred as the runner fits its canvas. */}
+      <div
+        class="preview-stage"
+        ref={area}
+        onPointerDown={(event) => {
+          // Handles, boxes and the object under the pointer each take their own presses.
+          if ((event.target as Element).closest('.transform-box, .pm-value, .pm-list')) return;
+          const hit = objectAt(objects, toStage(event));
+          if (hit) dragObject(hit, event, toStage);
+        }}
+        onPointerMove={(event) => {
+          if (event.buttons || !area.current) return;
+          const over = (event.target as Element).closest('.transform-box, .pm-value, .pm-list');
+          area.current.style.cursor = !over && objectAt(objects, toStage(event)) ? 'grab' : '';
+        }}
+      >
+        <div class="preview-sheet">
+          {[...objects].reverse().map((object) => (
+            <PreviewObject key={object.id} object={object} toStage={toStage} />
+          ))}
+          <PreviewMonitors toStage={toStage} />
+        </div>
+        {selected && <TransformBox object={selected} toStage={toStage} />}
       </div>
-      {selected && <TransformBox object={selected} toStage={toStage} />}
     </div>
   );
+}
+
+/** Picks an object up and moves it with the pointer, unless it is locked. */
+function dragObject(object: TessObject, event: PointerEvent, toStage: (event: PointerEvent) => Point): void {
+  event.preventDefault();
+  selectObject(object.id);
+  if (object.props.lock) return;
+  const start = toStage(event);
+  const originX = object.props.x;
+  const originY = object.props.y;
+  beginDrag(event, {
+    onMove(moved) {
+      const now = toStage(moved);
+      setObjectProps(object.id, {
+        x: Math.round(originX + (now.x - start.x)),
+        y: Math.round(originY - (now.y - start.y)),
+      });
+    },
+  });
+}
+
+/**
+ * The topmost object painted at a stage point. A picture counts only where it
+ * is not see-through, so objects under a big picture's clear parts stay
+ * reachable; a text box counts over its whole box.
+ */
+function objectAt(objects: TessObject[], point: Point): TessObject | null {
+  for (const object of objects) {
+    const geometry = geometryOf(object);
+    const local = stageToLocal(geometry, point);
+    if (local.x < 0 || local.y < 0 || local.x >= geometry.size.x || local.y >= geometry.size.y) continue;
+    if (object.kind === 'text') return object;
+    const costume = object.costumes.find((candidate) => candidate.id === object.selectedCostumeId) ?? object.costumes[0];
+    const shown = document.querySelector<HTMLImageElement>(`.po[data-object="${CSS.escape(object.id)}"] img`);
+    if (!costume || paintedAt(resolveAsset(costume.url), geometry.size.x, geometry.size.y, local, shown)) return object;
+  }
+  return null;
 }
 
 interface DragProps {
@@ -71,27 +133,10 @@ function PreviewObject({ object, toStage }: DragProps) {
     ?? object.costumes[0];
   const text = object.text;
 
-  function drag(event: PointerEvent) {
-    event.preventDefault();
-    selectObject(object.id);
-    if (object.props.lock) return;
-    const start = toStage(event);
-    const originX = object.props.x;
-    const originY = object.props.y;
-    beginDrag(event, {
-      onMove(moved) {
-        const now = toStage(moved);
-        setObjectProps(object.id, {
-          x: Math.round(originX + (now.x - start.x)),
-          y: Math.round(originY - (now.y - start.y)),
-        });
-      },
-    });
-  }
-
   return (
     <div
       class={`po ${object.props.lock ? 'locked' : ''}`}
+      data-object={object.id}
       style={{
         left: `${geometry.origin.x - geometry.reg.x}px`,
         top: `${geometry.origin.y - geometry.reg.y}px`,
@@ -101,36 +146,23 @@ function PreviewObject({ object, toStage }: DragProps) {
         transform: `rotate(${geometry.angle}deg) scale(${geometry.scale.x}, ${geometry.scale.y})`,
         opacity: object.props.visible ? 1 : 0.35,
       }}
-      onPointerDown={drag}
       title={object.name}
     >
       {object.kind === 'text' && text ? (
-        <span
-          class="po-text"
-          style={{
-            color: text.color,
-            background: text.bgColor ?? 'transparent',
-            fontSize: `${text.fontSize}px`,
-            // The runner's canvas falls back on sans-serif for a font it does not have.
-            fontFamily: `"${fontFamily(text.font)}", sans-serif`,
-            fontWeight: text.bold ? 700 : 400,
-            fontStyle: text.italic ? 'italic' : 'normal',
-            textDecoration: [text.underline ? 'underline' : '', text.strike ? 'line-through' : ''].join(' ').trim(),
-            textAlign: text.align,
-            whiteSpace: text.lineBreak ? 'pre-wrap' : 'pre',
-            overflowWrap: text.lineBreak ? 'anywhere' : 'normal',
-            height: text.lineBreak ? '100%' : undefined,
-            // The runner sets wrapped lines fontSize + 2 apart, from the top of the box.
-            lineHeight: text.lineBreak ? `${text.fontSize + 2}px` : undefined,
-            overflow: text.lineBreak ? 'hidden' : undefined,
-            // Letters sit where the runner draws them (its own font metrics, a wrapping box's top offset).
-            transform: `translateY(${textShift(text, runnerMetrics)}px)`,
-          }}
-        >
-          {text.content}
-        </span>
+        <>
+          <div class="po-text-bg" style={{ background: text.bgColor ?? 'transparent' }} />
+          <RunnerText text={text} size={geometry.size} reg={geometry.reg} scale={Math.max(Math.abs(geometry.scale.x), Math.abs(geometry.scale.y))} />
+        </>
       ) : (
-        costume && <img src={resolveAsset(costume.url)} alt="" draggable={false} />
+        costume && (
+          <img
+            src={resolveAsset(costume.url)}
+            alt=""
+            draggable={false}
+            // Its alpha is read now, ahead of the first press on it.
+            onLoad={() => preloadMask(resolveAsset(costume.url), geometry.size.x, geometry.size.y)}
+          />
+        )
       )}
     </div>
   );
@@ -244,13 +276,88 @@ function percent(value: number, total: number): number {
   return Math.round((value / total) * 10000) / 100;
 }
 
-/** Font metrics the way the runner's PIXI text measures them. */
-const runnerMetrics: RunnerMetrics = (text) => {
+
+/** Bumped as web fonts arrive, so letters measured with a fallback face are drawn again. */
+const fontsTick = signal(0);
+if (typeof document !== 'undefined' && document.fonts) {
+  document.fonts.addEventListener('loadingdone', () => { fontsTick.value += 1; });
+  void document.fonts.ready.then(() => { fontsTick.value += 1; });
+}
+
+/** `TEXT_BOX_REPOSITION_OFFSET - TEXT_BOX_WEBGL_OFFSET`: a wrapping box's text starts this far below its top. */
+const WRAPPED_TOP = 10 - 5.9;
+
+/**
+ * A text box's letters drawn the way the runner draws them (`syncTextBox`):
+ * PIXI's own measuring and line layout, the same `fillText`, and the same
+ * anchor — one line hangs from its middle, a wrapping box from its top.
+ */
+function RunnerText(
+  { text, size, reg, scale }:
+  { text: TextProps; size: Point; reg: Point; scale: number },
+) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const fonts = fontsTick.value;
+  const align = text.align;
+  const family = fontFamily(text.font);
   const style = new TextStyle({
-    fontFamily: fontFamily(text.font),
+    fontFamily: family,
     fontSize: text.fontSize,
     fontWeight: text.bold ? 'bold' : 'normal',
     fontStyle: text.italic ? 'italic' : 'normal',
+    align,
+    lineHeight: text.fontSize + 2,
+    wordWrap: text.lineBreak,
+    wordWrapWidth: size.x,
+    breakWords: true,
   });
-  return CanvasTextMetrics.measureFont(style._fontString ?? `${text.fontSize}px "${text.font}"`);
-};
+  const measured = CanvasTextMetrics.measureText(text.content || ' ', style);
+  const width = Math.max(1, measured.width);
+  const height = Math.max(1, measured.height);
+  const anchorX = align === 'left' ? 0 : align === 'right' ? 1 : 0.5;
+  const left = text.lineBreak
+    ? reg.x + (align === 'left' ? -size.x / 2 : align === 'right' ? size.x / 2 : 0) - anchorX * width
+    : reg.x - anchorX * width;
+  // One line: its first line's middle on the point, as the runner (not in boost mode) places it.
+  const top = text.lineBreak ? reg.y - size.y / 2 + WRAPPED_TOP : reg.y - (text.fontSize + 2) / 2;
+  // Canvas pixels per stage pixel: sharp through the object's own scale and a fine screen.
+  const resolution = Math.min(8, Math.max(2, Math.ceil((window.devicePixelRatio || 1) * 2 * Math.max(1, scale) * 2) / 2));
+
+  // PIXI keeps a margin round the letters' texture and draws it that far out.
+  const padding = style._getFinalPadding();
+
+  useEffect(() => {
+    const element = canvas.current;
+    const context = element?.getContext('2d');
+    if (!element || !context) return;
+    // The very canvas the runner's text is uploaded from.
+    style.fill = text.color;
+    const { canvasAndContext, frame } = CanvasTextGenerator.getCanvasAndContext({ text: text.content || ' ', style, resolution });
+    element.width = frame.width;
+    element.height = frame.height;
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, element.width, element.height);
+    context.drawImage(canvasAndContext.canvas as unknown as CanvasImageSource, frame.x, frame.y, frame.width, frame.height, 0, 0, frame.width, frame.height);
+    CanvasTextGenerator.returnCanvasAndContext(canvasAndContext);
+    // Underline and strike as `syncTextBox` draws them: over the measured box, not the margin.
+    const thickness = Math.max(1, text.fontSize / 14);
+    context.setTransform(resolution, 0, 0, resolution, padding * resolution, padding * resolution);
+    context.fillStyle = text.color;
+    if (text.underline) context.fillRect(0, height - thickness, width, thickness);
+    if (text.strike) context.fillRect(0, height / 2 - thickness / 2, width, thickness);
+  });
+  void fonts;
+
+  return (
+    <canvas
+      ref={canvas}
+      class="po-text"
+      style={{
+        left: `${left - padding}px`,
+        top: `${top - padding}px`,
+        width: `${Math.ceil(Math.max(1, width) + padding * 2)}px`,
+        height: `${Math.ceil(Math.max(1, height) + padding * 2)}px`,
+      }}
+    />
+  );
+}

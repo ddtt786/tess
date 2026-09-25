@@ -788,7 +788,11 @@ function declarationLine(info: VarInfo, indentLevel = 0, positions = false): str
     : '';
   if (info.isList) {
     const items = (source.array ?? []).map((item: { data: unknown }) => tessLiteral(item.data));
-    return [`${pad}${scope}list ${info.identifier}${named} = [${items.join(', ')}]${shown}${at}`];
+    // A box resized in entry keeps its size; the default 100 × 120 is left unsaid.
+    const width = Number(source.width ?? 100);
+    const height = Number(source.height ?? 120);
+    const size = width !== 100 || height !== 120 ? ` size ${tessNumber(width)} ${tessNumber(height)}` : '';
+    return [`${pad}${scope}list ${info.identifier}${named} = [${items.join(', ')}]${shown}${at}${size}`];
   }
   // A slide variable keeps the two ends its slider runs between.
   const range = source.variableType === 'slide'

@@ -26,6 +26,8 @@ export const toast = signal<string>('');
 export const debugRequest = signal<{ source: string; scene: string; label: string; boost: boolean } | null>(null);
 /** The double-clicked stack while it is still running, so the canvas can light it up. */
 export const runningStack = signal<{ objectId: string; blockId: string } | null>(null);
+/** A double-clicked stack's session is running; more double-clicks join it rather than start over. */
+export const debugLive = signal(false);
 
 /** A long job the whole editor waits on, with its progress (0–1). Null when idle. */
 export const busy = signal<{ step: string; done: number } | null>(null);

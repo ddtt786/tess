@@ -2172,3 +2172,12 @@ zip 이 훨씬 작은 것은 deflate 때문입니다. 단일 html 은 모듈·�
 (첫 `pointermove` 에서 켜짐) 전에는 월드 (0, 0) — 캔버스 왼쪽 위 — 로 판정한다. `마우스 x/y` 값 블록은
 엔트리와 같이 0 그대로. 테스트: `tessvm.test.ts` "포인터가 무대에 올라온 적이 없으면…".
 
+
+### 편집기용 (`Vm.runStack`, 오버레이 글자 해상도, 굽기 하한)
+
+- `runStack(stack, targetId)` — `Codegen.compileStackProbe` 로 스택 하나를 스크립트로 만들어 그 오브젝트에 새 스레드로
+  넣는다. 편집기가 이미 도는 세션에 스택을 더할 때 쓴다.
+- 오버레이(변수 창·말풍선·표) 글자는 `Overlay.textResolution` — 렌더러가 해상도를 정할 때 `무대 배율 × 해상도`(2~8,
+  반 단위)로 맞추고 이미 있는 글자도 다시 굽는다(`setTextResolution`).
+- 벡터 굽기 하한: `MIN_SVG_SHARPNESS` 3, `MIN_SVG_SIDE` 960.
+- 컴파일러는 `data:` 주소의 형식을 미디어 타입으로 읽는다(`assetExt`) — 경고 없이 `imageType` 도 맞다.

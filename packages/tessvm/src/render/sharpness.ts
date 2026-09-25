@@ -23,7 +23,7 @@ export const MIN_TEXT_SHARPNESS = 2;
  * only reason to keep the vector at all; at 1× it carries the same as the raster
  * beside it and the canvas round trip only loses.
  */
-export const MIN_SVG_SHARPNESS = 2;
+export const MIN_SVG_SHARPNESS = 3;
 /**
  * 벡터에는 "몇 배까지" 라는 고정 상한을 두지 않습니다. 고정 상한은 화면이 그보다 더
  * 촘촘할 때 텍스처를 화면보다 성기게 만들어 버립니다 — 전체 화면이나 큰 창에서는 무대
@@ -41,10 +41,10 @@ export const MAX_SVG_SCALE = 4;
 /**
  * 벡터 텍스처의 긴 변이 못해도 이만큼은 되게 합니다. 배율만으로 정하면 작게 저장된
  * 그림(20×20 아이콘 같은)은 4배를 줘도 80px 이라, 작품이 그것을 조금만 키워도 바로
- * 뭉갭니다. 무대가 480 이므로 그 폭만큼은 담고 있게 두는 것입니다 — 이 하한도 작품
+ * 뭉갭니다. 무대(480)를 두 배로 키워 그려도 버틸 만큼 담고 있게 두는 것입니다 — 이 하한도 작품
  * 전체 예산에 함께 걸리므로, 작은 그림이 많은 작품에서는 예산이 도로 끌어내립니다.
  */
-export const MIN_SVG_SIDE = 480;
+export const MIN_SVG_SIDE = 960;
 /**
  * No texture may go past this on a side. It is the size every webgl
  * implementation is required to allow; asking for more fails the upload, and a

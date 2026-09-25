@@ -866,3 +866,33 @@ tessblock 은 npm `blockly` 대신 `packages/blockly` 의 포크를 쓴다.
   `selectionGradient`, `setOpacity`/`selectionOpacity`, `setDash`/`selectionDash`(굵기에 맞춘 `stroke-dasharray`,
   `data-dash`). `setFill` 은 그라데이션을 지운다.
 - 글상자 오브젝트를 고르면 `모양` 탭 이름이 `글상자` 로 바뀌고 개수 표시가 없다(`EditorTabs`).
+
+## 24. 미리보기 = 실행 화면, 코드 창, 키 고르기, 디버그 이어 하기 등
+
+- **코드 창**: 선택한 오브젝트의 `object "키":` ~ `end` 만 보인다(`objectRange`, 들여쓰기 한 칸 뗌). 문제는 그 범위 것을
+  오브젝트 줄 번호로, 범위 밖 오류는 `전체 N` 으로 함께 보인다. `.tess 저장` 은 작품 전체.
+- **미리보기 크기**: `--stage-scale` 은 실행기 `layout` 과 같게 — 폭·높이 비 중 작은 쪽, 폭은 정수 내림. 무대 상자
+  `.preview-stage` 가 그 크기로 가운데에 있고, 그림과 변형 상자·포인터 좌표(`toStage`)가 모두 그 상자를 기준으로 한다.
+- **변수·리스트 창**: 미리보기에서도 실행기의 `Overlay`(tessvm) 로 그린다(`MonitorCanvas`, 투명 PIXI 캔버스). 변수마다
+  `Variable` 을 한 번 만들어 계속 쓴다(새로 만들면 예전 상자가 남아 끌 때 잔상). 목록·이름이 바뀌면 `Overlay` 를 새로.
+  DOM 상자는 투명하게(`.hit`) 끌기·크기 조절만 받는다. 캔버스는 `destroy({ removeView: true }, { children: true })` 로만
+  정리한다 — `destroy(true)` 는 실행기와 함께 쓰는 PIXI 캐시까지 지워 실행 화면의 글자가 사라졌다.
+- **리스트 크기**: `VariableDef.size`, 글쓰기 `size W H`(문법 추가, 최소 100), 오른쪽 아래 `.pm-resize` 를 끌어 바꾼다.
+- **글상자**: `RunnerText` — PIXI `CanvasTextGenerator` 가 만드는 그 캔버스를 그대로 그리고, 실행기(부스트 아님)와 같은
+  앵커(한 줄: 첫 줄 가운데가 점, 줄바꿈: 윗변 + 4.1)로 놓는다. 밑줄·취소선도 실행기와 같다.
+- **시작·정지**: 미리보기는 늘 붙여 두고 실행 화면이 보일 때만 숨긴다(`.preview-holder.hidden`) — 정지하면 바로 보인다.
+- **키 드롭다운**(`TessDropdown`, source `key`): 열려 있는 동안 누른 키의 `keyCode` 와 같은 코드의 이름을 고르고 닫는다
+  (capture 단계, Esc·화살표 포함).
+- **팔레트**: 고른 카테고리는 채운 아이콘(`CATEGORY_ICONS_FILLED`, 마스크는 알파만 보므로 구멍은 evenodd).
+- **디버그 이어 하기**: 더블클릭 세션이 도는 중(`debugLive`)이면 `joinSession` — 스택을 사본으로 컴파일하고 id 를
+  실행 중 작품에 맞춰(`idMap`/`remap`) `vm.runStack` 으로 새 스레드를 넣는다. 안 되면 예전처럼 새로 시작.
+- **값 다시 끼우기**: 그림자로 되돌린 뒤 블록과 부모를 `queueRender`(메뉴 블록은 그림자일 때 모양이 달라 뚱뚱했다).
+- **모양 이름**: 한 오브젝트 안에서 겹치지 않는다(`uniqueCostumeName`, `_2`…; `.ent` 불러오기도).
+- **레이어**: 선택·모양 다듬기 도구는 보이는 모든 레이어를 위에서부터 찾고, 다른 레이어 것을 누르면 그 레이어로
+  바뀐다(painter `hitTest` 의 `anyLayer`, 커서 판정은 `keepLayer`).
+- **선 모양**: painter `lineDash`(선 도구가 새 선에 `dashShape` 로 적용) + `setDash`(고른 도형과 새 선 모두). 오른쪽 패널의
+  "선 모양"은 선 도구, 또는 고른 것에 선(채우기 없는 외곽선, `selectionHasLine`)이 있을 때만 보인다.
+- **오브젝트 고르기**(미리보기): `.po` 는 포인터를 받지 않고, 무대 상자(`.preview-stage`)가 누른 점을 `objectAt` 으로
+  판정한다 — 위 오브젝트부터 누른 점을 모양 좌표로 되돌려(`stageToLocal`) 그 픽셀이 칠해져 있을 때만(`pixel-hit.ts`
+  `paintedAt`, 알파 8 이상) 고른다. 투명한 곳은 아래 오브젝트로 넘어간다. 글상자는 상자 전체. 알파는 화면의 `<img>` 에서
+  바로 읽거나 `onLoad` 때 미리 읽어 두고, 다른 출처라 못 읽으면 상자 전체로 본다. 커서도 같은 판정.
