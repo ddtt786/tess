@@ -2184,3 +2184,8 @@ zip 이 훨씬 작은 것은 deflate 때문입니다. 단일 html 은 모듈·�
 - `runStack(stack, targetId, extraFunctions)` — 실행 중 작품에 없는 함수(편집기가 새로 컴파일한 도우미)를 함께 받아
   그 스택의 모듈 안에서만 쓴다. `compileStack` 으로 한 번 컴파일해 두고 `startStack` 으로 여러 번 시작할 수 있고,
   `startStack` 은 첫걸음을 바로 밟은 뒤 끝나지 않았으면 스레드로 이어 간다.
+
+- `Vm.onSceneChange: ((id) => void) | null` — `selectScene` 이 실제로 다른 장면으로 옮긴 뒤 부른다(같은 장면 다시 시작은
+  부르지 않음). tessblock 이 실행 중 장면을 따라가는 데 쓴다.
+- `Vm.start()` 가 처음 장면이 아닌 곳에서 시작하면(에디터의 `setStartScene`) `start` 뒤에 `when_scene_start` 도 보낸다.
+  플레이어는 늘 첫 장면에서 시작하므로 그대로다.

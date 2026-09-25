@@ -5,7 +5,7 @@
  * it matches the rest of the editor.
  */
 import { beginDrag, dragGhost, SlideReorder, type DragGhost } from './drag.ts';
-import { FONTS } from '../model/fonts.ts';
+import { fontChoices } from '../model/fonts.ts';
 import { useSignal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
 import { getPainter, painterVersion, fitStage, onionSkin, pickColour, toggleOnionSkin } from './painter-host.ts';
@@ -290,7 +290,7 @@ function SideSettings() {
               value={text.fontFamily}
               onChange={(event) => painter.setTextStyle({ fontFamily: (event.target as HTMLSelectElement).value })}
             >
-              {FONTS.map((font) => (
+              {fontChoices(text.fontFamily).map((font) => (
                 <option key={font.family} value={font.family} style={{ fontFamily: font.family }}>{font.label}</option>
               ))}
             </select>

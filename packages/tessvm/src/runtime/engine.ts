@@ -823,6 +823,8 @@ export class Vm implements Project {
     // manager puts it back every time the work is played.
     this.save.started();
     this.fireEvent('start');
+    // A run the editor starts on a later scene also counts as that scene starting.
+    if (this.currentSceneId !== (this.scenes[0]?.id ?? '')) this.fireEvent('when_scene_start');
   }
 
   stop(): void {
@@ -1107,6 +1109,9 @@ export class Vm implements Project {
     return this.sceneById.has(this.startSceneId) ? this.startSceneId : this.scenes[0]?.id ?? '';
   }
 
+  /** Called with the new scene's id whenever the running work moves to another scene. */
+  onSceneChange: ((id: string) => void) | null = null;
+
   selectScene(id: string): void {
     const scene = this.sceneById.get(id);
     if (!scene || scene.id === this.currentSceneId) {
@@ -1126,6 +1131,7 @@ export class Vm implements Project {
       this.speech?.stop();
     }
     this.renderer?.setScene?.(scene.id);
+    this.onSceneChange?.(scene.id);
   }
 
   /**

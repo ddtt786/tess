@@ -61,11 +61,14 @@ export function InlineName({ value, onCommit, class: className = '', title }: Pr
       ref={field}
       class={`inline-name ${className}`}
       value={draft.value}
+      // The row around it (a drag handle, a button) must not take presses or keys meant for the text.
+      onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
       onDblClick={(event) => event.stopPropagation()}
       onInput={(event) => { draft.value = (event.target as HTMLInputElement).value; }}
       onBlur={commit}
       onKeyDown={(event) => {
+        event.stopPropagation();
         if (event.key === 'Enter') {
           event.preventDefault();
           commit();

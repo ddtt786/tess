@@ -194,7 +194,7 @@ export function ObjectPanel() {
                   'T'
                 )}
               </span>
-              <span class="name">{object.name}</span>
+              <InlineName class="name" value={object.name} onCommit={(name) => renameObject(object.id, name)} />
               {object.kind === 'text' && <span class="tag">글</span>}
               {!object.props.visible && <span class="tag">숨김</span>}
               <div class="actions">

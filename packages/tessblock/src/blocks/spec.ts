@@ -17,7 +17,7 @@ export type Shape = 'hat' | 'statement' | 'value' | 'boolean';
 /** Where a dropdown's entries come from when the project decides them. */
 export type DynamicSource =
   | 'object' | 'target' | 'lookTarget' | 'cloneTarget' | 'signal' | 'scene'
-  | 'costume' | 'sound' | 'variable' | 'list' | 'table' | 'tableColumn' | 'key';
+  | 'costume' | 'sound' | 'variable' | 'list' | 'table' | 'tableColumn' | 'key' | 'font';
 
 export type Arg =
   | { type: 'value'; name: string; fallback: string; order: OrderValue; shadow: ShadowSpec }

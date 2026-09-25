@@ -5,6 +5,7 @@
  * and stores the record's id, so renaming a thing keeps the blocks pointing at
  * it. The Tess writer turns the id back into a name.
  */
+import { FONTS, fontLabel } from '../model/fonts.ts';
 import * as Blockly from 'blockly/core';
 import { KEY_CODES } from '../../../core/src/keycodes.ts';
 import { project, selectedObjectId } from '../model/store.ts';
@@ -107,6 +108,8 @@ function buildOptions(source: DynamicSource): Option[] {
       return model.tables[0]?.columns.map((column) => [column, column] as Option) ?? [];
     case 'key':
       return KEY_OPTIONS;
+    case 'font':
+      return FONTS.map((font) => [font.label, font.family] as Option);
     default:
       return [];
   }
@@ -123,6 +126,7 @@ function visibleVariablesOf(kind: 'variable' | 'list'): Option[] {
 function labelFor(source: DynamicSource, value: string): string {
   if (source === 'key') return keyLabel(value);
   if (source === 'tableColumn') return value;
+  if (source === 'font') return fontLabel(value);
   return `${value.slice(0, 6)} (없음)`;
 }
 

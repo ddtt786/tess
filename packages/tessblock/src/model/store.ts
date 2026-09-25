@@ -192,7 +192,7 @@ function freeName(base: string): string {
 
 export function addScene(): void {
   const scene = makeScene(`장면 ${project.value.scenes.length + 1}`);
-  const object = makeSprite(freeName('로봇'), scene.id);
+  const object = makeDrawing(freeName('새 그림'), scene.id);
   update((draft) => {
     // Right after the scene being worked on.
     const at = draft.scenes.findIndex((candidate) => candidate.id === selectedSceneId.value);
@@ -263,16 +263,20 @@ export function selectScene(id: string): void {
 
 // --- objects ----------------------------------------------------------------
 
+/** A sprite with one empty costume, `기본`, ready for the painter. */
+function makeDrawing(name: string, sceneId: string): TessObject {
+  const object = makeSprite(name, sceneId);
+  const blank: Costume = { id: newId('c'), name: '기본', url: blankCostume(240, 180), width: 240, height: 180 };
+  object.costumes = [blank];
+  object.selectedCostumeId = blank.id;
+  return object;
+}
+
 /** A sprite starts as an empty drawing, ready for the painter. */
 export function addObject(kind: 'sprite' | 'text' = 'sprite'): void {
   const scene = selectedSceneId.value;
   const name = freeName(kind === 'sprite' ? '새 그림' : '글상자');
-  const object = kind === 'sprite' ? makeSprite(name, scene) : makeTextBox(name, scene);
-  if (kind === 'sprite') {
-    const blank: Costume = { id: newId('c'), name: '기본', url: blankCostume(240, 180), width: 240, height: 180 };
-    object.costumes = [blank];
-    object.selectedCostumeId = blank.id;
-  }
+  const object = kind === 'sprite' ? makeDrawing(name, scene) : makeTextBox(name, scene);
   update((draft) => {
     draft.objects.unshift(object);
   });

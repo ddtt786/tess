@@ -983,3 +983,15 @@ tessblock 은 npm `blockly` 대신 `packages/blockly` 의 포크를 쓴다.
   화면 어디서나 집는다. 없으면(파이어폭스 등) 그림판 `export()`(SVG 마크업 또는 PNG data URL)를 시트 크기 캔버스에 그려
   두고, 다음 누르기의 시트 좌표 픽셀을 읽는다(`.picking-colour` 십자 커서, 시트 밖·Esc 는 취소, 투명한 곳은 그대로).
 - 선택 도구 아이콘은 다른 도구처럼 꼬리 달린 외곽선 화살표.
+- **실행 중 장면 따라가기**: `start()` 가 `vm.onSceneChange` 를 걸어, 실행 중 작품이 장면을 옮기면(장면 시작하기·다음·이전)
+  에디터도 그 장면을 고른다(`selectScene`). 컴파일된 장면과 모델 장면은 순서로 짝짓는다.
+- **새 장면의 오브젝트**: `addScene` 도 `addObject('sprite')` 와 같은 `makeDrawing` — 이름 `새 그림`(겹치면 `freeName` 으로
+  `새 그림 2` …), 빈 모양 `기본`. 예전엔 이름만 `로봇`이었다. 첫 작품(`starterProject`)의 로봇은 그대로.
+- 보고 있는 장면이 첫 장면이 아니면 실행 시작 때 "장면이 시작되었을 때" 도 불린다(tessvm `start`).
+- "장면이 시작되었을 때" 모자에 클래퍼보드 아이콘(`SCENE_ICON`, 깃발과 같은 흰 선 방식).
+- **오브젝트 목록 이름**: 줄의 이름이 `InlineName` — 두 번 누르면 그 자리에서 입력칸(이름 전체 선택), Enter·밖 누르기로
+  저장, Esc 취소. `InlineName` 입력칸은 `pointerdown`·`keydown` 을 막아 둘러싼 줄의 끌기·Enter/Space 선택이 가져가지 않는다.
+- **SD 폰트**: 메뉴(`FONTS`)에서 빼고 `RETIRED_FONTS` 로 옮겼다. 스타일시트는 그대로 불러와 이미 쓰는 작품은 그대로 그린다.
+  `fontChoices(current)` 가 메뉴 목록 — 지금 값이 빠진 폰트면 그것만 덧붙인다(글상자·그림판 글꼴). 글꼴 블록은
+  `field_dropdown`(목록 밖 값을 불러오면 버림) 대신 `pick('FONT', 'font')` — `TessDropdown` 이 저장된 값을 받아들이고
+  메뉴에 덧붙인다(`labelFor` → `fontLabel`).

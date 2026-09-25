@@ -1,9 +1,7 @@
 /** Text category: what a text box writes and how it looks. */
-import { colourIn, define, emptyIn, menu, textField, textIn } from '../spec.ts';
+import { colourIn, define, emptyIn, menu, pick, textField, textIn } from '../spec.ts';
 import { quote } from '../../codegen/quote.ts';
-import { FONTS, fontFamily } from '../../model/fonts.ts';
-
-const FONT_MENU: Array<[string, string]> = FONTS.map((font) => [font.label, font.family]);
+import { fontFamily } from '../../model/fonts.ts';
 
 define(
   {
@@ -42,7 +40,7 @@ define(
     type: 'text_set_font',
     category: 'text',
     message: '글꼴을 %1 로 정하기',
-    args: [menu('FONT', FONT_MENU)],
+    args: [pick('FONT', 'font')],
     shape: 'statement',
     code: (a) => `font = ${quote(fontFamily(a.FONT!))}`,
   },

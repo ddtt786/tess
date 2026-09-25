@@ -29,6 +29,13 @@ export const FONTS: FontChoice[] = [
   { label: '나눔고딕코딩', family: 'Nanum Gothic Coding' },
   { label: '제주한라산', family: 'Jeju Hallasan' },
   { label: '코펍바탕', family: 'KoPub Batang' },
+  { label: '바탕체', family: '바탕체' },
+  { label: '고딕체', family: '고딕체' },
+  { label: '궁서체', family: '궁서체' },
+];
+
+/** Fonts no longer offered; a work that already uses one keeps it, and the menus show it for that work. */
+const RETIRED_FONTS: FontChoice[] = [
   { label: 'SD 코믹스텐실', family: 'SDComicStencil' },
   { label: 'SD 차일드펀드코리아', family: 'SDChildfundkorea' },
   { label: 'SD 시네마극장', family: 'SDCinemaTheater' },
@@ -36,10 +43,19 @@ export const FONTS: FontChoice[] = [
   { label: 'SD 샤방', family: 'SDShabang' },
   { label: 'SD 우드카빙', family: 'SDWoodcarving' },
   { label: 'SD 용비', family: 'SDYongbi' },
-  { label: '바탕체', family: '바탕체' },
-  { label: '고딕체', family: '고딕체' },
-  { label: '궁서체', family: '궁서체' },
 ];
+
+/** The menu for a font setting: the offered fonts, plus the current one if it is retired. */
+export function fontChoices(current = ''): FontChoice[] {
+  const family = fontFamily(current);
+  if (!family || FONTS.some((font) => font.family === family)) return FONTS;
+  return [...FONTS, { label: fontLabel(family), family }];
+}
+
+/** What a menu shows for a font family. */
+export function fontLabel(family: string): string {
+  return [...FONTS, ...RETIRED_FONTS].find((font) => font.family === family)?.label ?? family;
+}
 
 /** Names older works stored in place of the family. */
 const OLD_NAMES: Record<string, string> = {

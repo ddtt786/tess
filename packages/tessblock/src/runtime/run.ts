@@ -13,6 +13,7 @@ import { boot, type TessVmHandle } from "../../../tessvm/src/web/boot.ts";
 import { ASK_FIELD_STYLE } from "../../../tessvm/src/web/ask-style.ts";
 import { CHART_WINDOW_STYLE } from "../../../tessvm/src/web/chart-view.ts";
 import { EXTRAS_DIALOG_STYLE } from "../../../tessvm/src/web/extras.ts";
+import { project, selectScene, selectedSceneId } from "../model/store.ts";
 
 export interface BuildResult {
   project: EntryProject | null;
@@ -182,6 +183,13 @@ export async function start(
     waitForAssets: false,
     boost,
   });
+  // The editor follows the work to the scene it moves to; scenes pair by position.
+  const work = built.project;
+  running.vm.onSceneChange = (id) => {
+    const index = work.scenes.findIndex((each) => each.id === id);
+    const target = project.peek().scenes[index];
+    if (target && target.id !== selectedSceneId.peek()) selectScene(target.id);
+  };
   return built;
 }
 

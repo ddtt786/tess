@@ -2,7 +2,7 @@
  * 모양 tab. A sprite gets the painter; a text box gets its own settings, since
  * there is no costume to draw.
  */
-import { FONTS, fontFamily } from '../model/fonts.ts';
+import { fontChoices, fontFamily } from '../model/fonts.ts';
 import { useSignal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import {
@@ -208,7 +208,7 @@ function TextBoxPane({ object }: { object: TessObject }) {
             value={fontFamily(text.font)}
             onChange={(event) => set({ font: (event.target as HTMLSelectElement).value })}
           >
-            {FONTS.map((font) => (
+            {fontChoices(text.font).map((font) => (
               <option key={font.family} value={font.family} style={{ fontFamily: font.family }}>{font.label}</option>
             ))}
           </select>

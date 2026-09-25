@@ -18,6 +18,11 @@ function hat(type: string, message: string, head: (args: CodeArgs) => string, ar
 const FLAG_ICON = '<path d="M3.6 14.2V2.4" stroke-width="1.8" />'
   + '<path d="M3.8 2.8c2.2-1.2 3.8 1 6 0 .9-.4 1.8-.3 2.4.1v5.8c-.6-.4-1.5-.5-2.4-.1-2.2 1-3.8-1.2-6 0z" fill="#fff" />';
 
+/** A clapperboard with a play mark: the scene starting. */
+const SCENE_ICON = '<rect x="2.2" y="6.6" width="11.6" height="7.2" rx="1.3" />'
+  + '<path d="M2.3 5.3 12.8 2.5l.5 1.9L2.8 7.2z" fill="#fff" stroke-width="1.2" />'
+  + '<path d="M6.9 8.6v3.2l2.8-1.6z" fill="#fff" stroke-width="1.1" />';
+
 define(
   { ...hat('start_when_run', '시작하기 버튼을 클릭했을 때', () => 'when start'), icon: FLAG_ICON },
   hat('start_when_key', '%1 키를 눌렀을 때', (a) => `when key ${quote(a.KEY!)}`, [pick('KEY', 'key')]),
@@ -27,7 +32,7 @@ define(
   hat('start_when_stage_click', '마우스를 클릭했을 때', () => 'when stage click'),
   hat('start_when_stage_click_up', '마우스 클릭을 해제했을 때', () => 'when stage click up'),
   hat('start_when_signal', '%1 신호를 받았을 때', (a) => `when signal ${quote(a.SIGNAL!)}`, [pick('SIGNAL', 'signal')]),
-  hat('start_when_scene', '장면이 시작되었을 때', () => 'when scene start'),
+  { ...hat('start_when_scene', '장면이 시작되었을 때', () => 'when scene start'), icon: SCENE_ICON },
   hat('start_when_cloned', '복제본이 처음 생성되었을 때', () => 'when cloned'),
 );
 
