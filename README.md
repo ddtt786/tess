@@ -1,6 +1,6 @@
 # Tess
 
-[Tess](./SPEC.md) 는 엔트리(playentry.org) 작품으로 변환되는 텍스트 프로그래밍 언어입니다.
+[Tess](./tutorial.md) 는 엔트리(playentry.org) 작품으로 변환되는 텍스트 프로그래밍 언어입니다.
 
 ```bash
 git clone https://github.com/ddtt786/tess.git

@@ -9,6 +9,7 @@ import { BOUNCE_THRESHOLD, TOUCH_THRESHOLD } from '../collision/detect.ts';
 import * as cast from './cast.ts';
 import {
   COLLISION,
+  newBrush,
   stage,
   type BrushState,
   type Entity,
@@ -109,7 +110,7 @@ function* settle(answer: Promise<string>, fallback: string): Generator<number, s
     () => { done = true; },
   );
   while (!done) {
-    yield 0;
+    yield 1;
   }
   return value || fallback;
 }
@@ -128,23 +129,6 @@ function roundedDecimals(value: unknown, decimals: number): unknown {
     return value;
   }
   return Number(`${Math.round(Number(`${value}e${decimals}`))}e-${decimals}`);
-}
-
-/** Counts pens as they are made, which is the order their layers stack in. */
-let penOrder = 0;
-
-function newBrush(): BrushState {
-  penOrder += 1;
-  return {
-    color: '#ff0000',
-    thickness: 1,
-    opacity: 0,
-    stop: false,
-    started: penOrder,
-    path: [] as number[],
-    strokes: [] as Stroke[],
-    fill: false,
-  };
 }
 
 /** `Entry.setBasicBrush` / `setBasicPaint` — made idle so it draws nothing yet. */
@@ -588,7 +572,7 @@ export function createOps(vm: Vm) {
         done = true;
       });
       while (!done) {
-        yield 0;
+        yield 1;
       }
     },
 
@@ -806,7 +790,7 @@ export function createOps(vm: Vm) {
       const at = listIndex(raw, list);
       if (at >= 1 && at <= list.array.length) {
         list.array[at - 1] = { data: value as string | number };
-        list.touch();
+        list.touchItem(at - 1);
       }
     },
 
@@ -1280,7 +1264,7 @@ export function createOps(vm: Vm) {
         finished = true;
       });
       while (!finished) {
-        yield 0;
+        yield 1;
       }
     },
 
@@ -1472,12 +1456,16 @@ export function createOps(vm: Vm) {
     },
 
     charAt(text: string, index: number): string {
+      // Entry throws on these bounds and stops the work.
+      if (index - 1 < 0 || index - 1 > text.length - 1) vm.diverge('글자 위치가 범위를 벗어났습니다 (char_at)');
       return text[index - 1] ?? '';
     },
 
     substring(text: string, start: number, end: number): string {
       const from = start - 1;
       const to = end - 1;
+      const last = text.length - 1;
+      if (from < 0 || to < 0 || from > last || to > last) vm.diverge('글자 범위가 벗어났습니다 (substring)');
       return text.substring(Math.min(from, to), Math.max(from, to) + 1);
     },
 

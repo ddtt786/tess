@@ -16,6 +16,27 @@ import type { RawEntity } from '@tess/decompiler';
 /** 되돌린 조각 파일의 내용 — 에셋은 바이트로 담긴다. */
 const utf8 = (data: Uint8Array) => new TextDecoder('utf-8').decode(data);
 
+test('initial values preserve leading zeroes, precision and boolean spelling', () => {
+  const values = ['000190', '030', '01', '1.0', '-0', '9007199254740993',
+    '000001012023024025026027028029002003004005006007008009',
+    'true', 'false', 'TRUE', 'FALSE', '', '12', '-0.5'];
+  const project = minimalProject();
+  project.variables = [
+    ...values.map((value, index) => ({
+      id: `value${index}`, name: `value${index}`, variableType: 'variable', value,
+    })),
+    { id: 'packed', name: 'packed', variableType: 'list', array: values.map((data) => ({ data })) },
+  ];
+  const decompiled = decompileProject(project, [], { inline: true });
+  const compiled = compileProject(decompiled.source);
+  assert.deepEqual(compiled.errors, []);
+  const variables = compiled.project!.variables;
+  values.forEach((value, index) => {
+    assert.equal(String(variables.find((item) => item.name === `value${index}`)!.value), value);
+  });
+  assert.deepEqual(variables.find((item) => item.name === 'packed')!.array!.map((item) => String(item.data)), values);
+});
+
 
 /**
  * 최소한의 스크립트와 스프라이트 하나를 포함하는 project.json 데이터를 생성합니다.

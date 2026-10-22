@@ -78,8 +78,20 @@ function factorial(n: number): number {
   return result;
 }
 
+/**
+ * Which list items a run stored into: a flag per cell, and the lowest and
+ * highest flagged one so clearing and scanning stay inside what was touched.
+ * Plain variables are not marked; a store there stays one assignment.
+ */
+export interface KernelMarks {
+  flags: Uint8Array;
+  span: Int32Array;
+}
+
 /** Builds the helper set the generated javascript reads its world through. */
-export function kernelOps(cells: Float64Array): KernelOps {
+export function kernelOps(cells: Float64Array, marks?: KernelMarks): KernelOps {
+  const flags = marks?.flags;
+  const span = marks?.span;
   const item = (base: number, length: number, index: number): number =>
     index !== Math.trunc(index) || index < 1 || index > length
       ? 0
@@ -92,7 +104,14 @@ export function kernelOps(cells: Float64Array): KernelOps {
     ld_item: item,
     st_item: (base, length, index, value) => {
       if (index === Math.trunc(index) && index >= 1 && index <= length) {
-        cells[base + index - 1] = value;
+        const cell = base + index - 1;
+        cells[cell] = value;
+        // Only an item's first store in a run does any bookkeeping.
+        if (flags && flags[cell] === 0) {
+          flags[cell] = 1;
+          if (cell < span![0]!) span![0] = cell;
+          if (cell > span![1]!) span![1] = cell;
+        }
       }
     },
     ld_tail: item,

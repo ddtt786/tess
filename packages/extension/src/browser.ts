@@ -48,7 +48,7 @@ export const ENABLED_KEY = 'enabled';
 export const SVG_KEY = 'svg';
 /** Whether the `아이디` block hides all but the first two letters. */
 export const MASK_KEY = 'mask';
-/** Whether the runner says which blocks it does not have yet. Off by default. */
+/** Whether the runner notes blocks it lacks and blocks entry stops on. On by default. */
 export const NOTICE_KEY = 'notice';
 
 export interface Settings {
@@ -58,19 +58,19 @@ export interface Settings {
   notice: boolean;
 }
 
-/** The first three are on unless turned off; the notice is off unless asked for. */
+/** Keep original user IDs and report unsupported blocks unless opted out. */
 export async function readSettings(): Promise<Settings> {
   const stored = await api.storage.local.get({
     [ENABLED_KEY]: true,
     [SVG_KEY]: true,
-    [MASK_KEY]: true,
-    [NOTICE_KEY]: false,
+    [MASK_KEY]: false,
+    [NOTICE_KEY]: true,
   });
   return {
     enabled: stored[ENABLED_KEY] !== false,
     svg: stored[SVG_KEY] !== false,
-    mask: stored[MASK_KEY] !== false,
-    notice: stored[NOTICE_KEY] === true,
+    mask: stored[MASK_KEY] === true,
+    notice: stored[NOTICE_KEY] !== false,
   };
 }
 

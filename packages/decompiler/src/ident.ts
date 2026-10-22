@@ -151,11 +151,9 @@ export function tessLiteral(value: unknown): string {
   if (typeof value === 'number') return tessNumber(value);
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   const text = String(value ?? '');
-  // 엔트리에서 참·거짓을 값으로 쓰면 "TRUE"/"FALSE" 가 된다(compiler/expression.ts 참고).
-  // 예전 작품에는 소문자로 적혀 있기도 하므로 둘 다 받아들인다.
-  if (text === 'TRUE' || text === 'true') return 'true';
-  if (text === 'FALSE' || text === 'false') return 'false';
-  if (PLAIN_DECIMAL.test(text)) return text;
+  if (text === 'TRUE') return 'true';
+  if (text === 'FALSE') return 'false';
+  if (isExactNumber(text)) return text;
   return tessString(text);
 }
 

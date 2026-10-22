@@ -37,6 +37,55 @@ import {
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+test('stop and restart restore table cells, field names and shape', () => {
+  const vm = new Vm({ renderer: null, audio: null });
+  vm.load({ scenes: [{ id: 's', name: 's' }], objects: [], variables: [], functions: [], messages: [],
+    tables: [{ id: 't', name: 't', fields: ['field'], origin: [[1]], data: [[99]] }],
+  } as unknown as never);
+  vm.start();
+  const table = vm.tables[0]!;
+  table.replaceValue(1, 1, 9);
+  table.replaceValue(0, 1, 'changed');
+  table.appendRow();
+  table.appendCol();
+  const revision = table.revision;
+  vm.pause();
+  vm.start();
+  assert.equal(table.getValue(1, 1), 9, 'resuming a pause preserves table edits');
+  vm.stop();
+  assert.deepEqual(table.fields, ['field']);
+  assert.deepEqual(table.rows, [[1]]);
+  assert.ok(table.revision > revision);
+  vm.start();
+  table.replaceValue(1, 1, 7);
+  vm.reset();
+  assert.deepEqual(table.rows, [[1]], 'restored rows do not alias the snapshot');
+});
+
+test('clones inherit pen settings with an independent new drawing path', () => {
+  const vm = runVm(wrap('draw_color = #0000ff\ndraw_width = 7\ndraw_alpha = 30\nstart draw\nforward 5\nclone'));
+  vm.tick();
+  const target = vm.targets[0]!;
+  const parent = target.entity;
+  const clone = target.clones[0]!;
+  assert.ok(parent.brush && clone.brush);
+  assert.notEqual(clone.brush, parent.brush);
+  assert.equal(clone.brush.color, '#0000ff');
+  assert.equal(clone.brush.thickness, 7);
+  assert.equal(clone.brush.opacity, parent.brush.opacity);
+  assert.equal(clone.brush.stop, false);
+  assert.ok(clone.brush.started > parent.brush.started);
+  assert.deepEqual(clone.brush.strokes, []);
+  assert.deepEqual(clone.brush.path, [clone.x, clone.y]);
+  clone.brush.color = '#ff0000';
+  clone.brush.path.push(99, 99);
+  assert.equal(parent.brush.color, '#0000ff');
+  assert.notDeepEqual(clone.brush.path, parent.brush.path);
+  parent.brush.stop = true;
+  const stopped = target.addClone(parent);
+  assert.equal(stopped.brush!.stop, true);
+});
+
 /** Compiles Tess source and hands back a started VM. */
 function runVm(source: string): Vm {
   const result = compileProject(source, { path: 'test.tess' });
@@ -46,6 +95,50 @@ function runVm(source: string): Vm {
   vm.start();
   return vm;
 }
+
+test('out-of-range char_at and substring run on and are noted once per object', () => {
+  const vm = runVm(`var s = "ABC"
+var a = 0
+var b = 0
+var c = 0
+object "o":
+  when start do
+    a = s[2]
+    b = slice(s, 1, 3)
+    repeat 3:
+      a = s[4]
+    end
+    b = slice(s, 0, 2)
+    c = 1
+  end
+end`);
+  for (let i = 0; i < 5; i++) vm.tick();
+  assert.equal(valueOf(vm, 'c'), 1);
+  assert.deepEqual(vm.errors, []);
+  assert.deepEqual(vm.divergences.map((note) => note.message), [
+    '글자 위치가 범위를 벗어났습니다 (char_at)',
+    '글자 범위가 벗어났습니다 (substring)',
+  ]);
+  const target = vm.targetOf(vm.divergences[0]!.targetId!);
+  assert.equal(target?.name, 'o');
+});
+
+test('function labels inherited from Object.prototype execute their own bodies', () => {
+  for (const name of ['ordinary', 'constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
+    const vm = runVm(`var out = 0
+function ${name}():
+  return 7
+end
+object "o":
+  when start do
+    out = ${name}()
+  end
+end`);
+    vm.tick();
+    assert.equal(valueOf(vm, 'out'), 7, name);
+    assert.deepEqual(vm.errors, []);
+  }
+});
 
 /**
  * 변수 값을 숫자로 읽습니다. 엔트리의 `변수 바꾸기`·`정하기` 는 값을 문자열로
@@ -1400,11 +1493,10 @@ end`;
   assert.equal(target.getPrevPicture('1')?.name, '세번째');
 });
 
-test('아이디·닉네임은 로그인한 사람을 따르고, 아이디는 앞 두 글자만 남긴다', () => {
+test('user ID remains unchanged unless masking is explicitly enabled', () => {
   /**
-   * 엔트리는 `window.user` 를 읽고, 로그인하지 않았으면 빈 값을 돌려줍니다. 여기서는
-   * 사이트 밖에서도 도는 실행기이므로 로그인하지 않은 자리를 `guest` 로 두고,
-   * 아이디는 `maskUserId` 가 꺼져 있을 때만 그대로 보여 줍니다.
+   * Keep the signed-in ID unless masking is explicitly requested.
+   * The standalone runner uses guest when no user is supplied.
    */
   const source = `
 var 아이디_값 as "아이디 값" = 0
@@ -1434,13 +1526,13 @@ end`;
   assert.deepEqual(read({}), { id: 'guest', nickname: 'guest' }, '로그인하지 않은 자리');
   assert.deepEqual(
     read({ user: { id: 'ddtt786', nickname: '치로' } }),
-    { id: 'dd*****', nickname: '치로' },
-    '아이디만 가려집니다',
+    { id: 'ddtt786', nickname: '치로' },
+    '기본값은 원본 아이디를 유지합니다',
   );
   assert.deepEqual(
-    read({ user: { id: 'ddtt786', nickname: '치로' }, maskUserId: false }),
-    { id: 'ddtt786', nickname: '치로' },
-    '가리기를 끄면 그대로입니다',
+    read({ user: { id: 'ddtt786', nickname: '치로' }, maskUserId: true }),
+    { id: 'dd*****', nickname: '치로' },
+    '명시적으로 켜면 가려집니다',
   );
   // 두 글자 이하는 가릴 것이 없습니다.
   assert.deepEqual(read({ user: { id: 'ab', nickname: 'ab' } }).id, 'ab');

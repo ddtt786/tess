@@ -1236,7 +1236,7 @@ function ttsOption(
   if (node.type !== "String")
     return ctx.error(node, `tts ${label}은(는) 문자열로 적어야 합니다.`);
   const key = node.value.trim().toLowerCase();
-  const value = table[key];
+  const value = Object.hasOwn(table, key) ? table[key] : undefined;
   if (value === undefined) {
     const known = [...new Set(Object.values(table))].join(", ");
     return ctx.error(

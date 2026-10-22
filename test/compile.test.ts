@@ -1252,3 +1252,10 @@ end`;
   assert.equal(second.params[0].type, 'boolean_not');
   assert.equal(second.params[0].params[1].type, 'continue_repeat');
 });
+
+test('names inherited from Object.prototype are not built-in values or calls', () => {
+  for (const body of ['out = constructor', 'out = hasOwnProperty', 'out = toString(1)', 'out = valueOf(1)']) {
+    const result = compileProject(`var out = 0\nobject "o":\n  when start do\n    ${body}\n  end\nend`);
+    assert.ok(result.errors.length > 0, body);
+  }
+});

@@ -195,7 +195,7 @@ export function mountPlayer(
   projectId: string,
   groupId: string | null = null,
   svg = true,
-  maskUserId = true,
+  maskUserId = false,
   showNotice = false,
 ): MountedPlayer {
   ensureStageStyle();
@@ -259,16 +259,20 @@ export function mountPlayer(
    * without the work being loaded again.
    */
   let notice = "";
+  /** Blocks entry would have stopped the work on, one line each. */
+  const divergences: string[] = [];
   const drawNotice = () => {
-    if (!notice || !showNotice) {
+    const text = [notice, ...divergences].filter(Boolean).join("\n");
+    if (!text || !showNotice) {
       errorBox.hidden = true;
       errorBox.textContent = "";
       return;
     }
     errorBox.classList.add("is-notice");
-    errorBox.textContent = notice;
+    errorBox.textContent = text;
     errorBox.hidden = false;
   };
+  const showsError = () => !errorBox.hidden && !errorBox.classList.contains("is-notice");
   const setNotice = (text: string) => {
     notice = text;
     drawNotice();
@@ -512,6 +516,13 @@ export function mountPlayer(
         stop();
       }
     };
+    live.vm.onDivergence = (note) => {
+      const target = note.targetId ? live.vm.targetOf(note.targetId) : null;
+      divergences.push(
+        `${target ? `${target.name}: ` : ""}${note.message} — 엔트리에서는 여기서 작품이 멈춥니다`,
+      );
+      if (!showsError()) drawNotice();
+    };
 
     startButton.onclick = start;
     stopButton.onclick = stop;
@@ -571,7 +582,7 @@ export function mountPlayer(
     setShowNotice(show: boolean) {
       showNotice = show;
       // Only while the row is not carrying a failure — that one is always shown.
-      if (!errorBox.classList.contains("is-notice") && !errorBox.hidden) {
+      if (showsError()) {
         return;
       }
       drawNotice();

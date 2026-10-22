@@ -11,10 +11,190 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compileProject } from '@tess/compiler';
-import { Vm, buildKernel, fingerprint, moonPath, planKernel } from '@tess/vm';
+import { Vm, buildKernel, fingerprint, planKernel } from '@tess/vm';
 import type { KernelPlan } from '@tess/vm';
 
-const hasMoon = moonPath() !== null;
+test('the JS kernel preserves untouched scalar text and falls back without partial writes', () => {
+  const source = `
+var text_value = "000123"
+var flag = 0
+var ret = 0
+var calls = 0
+function f():
+  calls += 1
+  if (flag == 1):
+    text_value += 1
+  end
+  return 0
+end
+object "o":
+  when start do
+    forever:
+      ret = f()
+    end
+  end
+end`;
+  for (const initial of ['000123', '9007199254740993', '-0', '123', '0.50']) {
+    const work = project(source);
+    const plain = new Vm({ renderer: null, audio: null });
+    const optimized = new Vm({ renderer: null, audio: null, kernel: () => null });
+    for (const vm of [plain, optimized]) {
+      vm.load(structuredClone(work));
+      vm.start();
+      vm.variables.find((v) => v.name === 'text_value')!.setValue(initial);
+      vm.tick();
+    }
+    assert.equal(optimized.kernel!.where, 'javascript');
+    assert.equal(snapshot(optimized), snapshot(plain), initial);
+    if (['123', '0.50'].includes(initial)) assert.ok(optimized.kernel!.stats.runs > 0);
+    else assert.ok(optimized.kernel!.stats.fallbacks > 0);
+    for (const vm of [plain, optimized]) {
+      vm.variables.find((v) => v.name === 'text_value')!.setValue('0.50');
+      vm.variables.find((v) => v.name === 'flag')!.setValue(1);
+      vm.tick();
+    }
+    assert.equal(snapshot(optimized), snapshot(plain), `${initial}: next call`);
+  }
+});
+
+test('a root falling back or stepping aside leaves the other roots in the kernel', () => {
+  const source = `
+var text_value = "000123"
+var total = 0
+var ret = 0
+list items = [1, 2]
+function f():
+  return (text_value + items[1])
+end
+function g():
+  total += 1
+  return 0
+end
+object "o":
+  when start do
+    forever:
+      ret = f()
+      ret = g()
+    end
+  end
+end`;
+  const work = project(source);
+  const plain = new Vm({ renderer: null, audio: null });
+  const optimized = new Vm({ renderer: null, audio: null, kernel: () => null });
+  for (const vm of [plain, optimized]) {
+    vm.load(structuredClone(work));
+    vm.start();
+    vm.variables.find((v) => v.name === 'text_value')!.setValue('abc');
+    vm.tick();
+  }
+  const stats = optimized.kernel!.stats;
+  assert.equal(optimized.kernel!.roots.size, 2);
+  assert.ok(stats.fallbacks > 0, 'f falls back on text that is not a number');
+  const runs = stats.runs;
+  assert.ok(runs > 0, 'g still runs in the kernel');
+  for (const vm of [plain, optimized]) {
+    vm.variables.find((v) => v.name === 'text_value')!.setValue('5');
+    const items = vm.variables.find((v) => v.name === 'items')!;
+    items.array.push({ data: 3 });
+    items.touch();
+    vm.tick();
+  }
+  assert.equal(stats.dropped, 1, 'only f steps aside once its list changes length');
+  assert.ok(stats.runs > runs, 'g keeps running in the kernel');
+  assert.equal(snapshot(optimized), snapshot(plain));
+});
+
+/** Loads one work twice, plain and on the javascript kernel, and starts both. */
+function pair(source: string): [Vm, Vm] {
+  const work = project(source);
+  const plain = new Vm({ renderer: null, audio: null });
+  const optimized = new Vm({ renderer: null, audio: null, kernel: () => null });
+  for (const vm of [plain, optimized]) {
+    vm.load(structuredClone(work));
+    vm.start();
+  }
+  return [plain, optimized];
+}
+
+test('a kernel run writes back only the list items it stored', () => {
+  const [plain, optimized] = pair(`
+var ret = 0
+list items = ["5", "6", "7"]
+function f():
+  items[1] = (items[1] + 1)
+  return 0
+end
+object "o":
+  when start do
+    forever:
+      ret = f()
+    end
+  end
+end`);
+  for (let i = 0; i < 3; i++) {
+    plain.tick();
+    optimized.tick();
+  }
+  assert.ok(optimized.kernel!.stats.runs > 0);
+  assert.equal(snapshot(optimized), snapshot(plain));
+  const kinds = (vm: Vm) => vm.variables.find((v) => v.name === 'items')!.array.map((item) => typeof item.data);
+  assert.deepEqual(kinds(optimized), kinds(plain));
+});
+
+test('a list item written from outside crosses alone, not the whole list', () => {
+  const items = Array.from({ length: 2000 }, (_, i) => i).join(', ');
+  const [plain, optimized] = pair(`
+var ret = 0
+var n = 0
+list items = [${items}]
+function f():
+  return (items[1] + items[2])
+end
+object "o":
+  when start do
+    forever:
+      items[2] = n
+      n += 1
+      ret = f()
+    end
+  end
+end`);
+  plain.tick();
+  optimized.tick();
+  const stats = optimized.kernel!.stats;
+  const before = stats.copied;
+  for (let i = 0; i < 50; i++) {
+    plain.tick();
+    optimized.tick();
+  }
+  assert.ok(stats.runs > 0);
+  assert.ok(stats.copied - before < 50 * 10, `copied ${stats.copied - before}`);
+  assert.equal(snapshot(optimized), snapshot(plain));
+});
+
+test('a root that keeps falling back rests instead of trying every call', () => {
+  const calls = Array.from({ length: 100 }, () => '      ret = f()').join('\n');
+  const [plain, optimized] = pair(`
+var ret = 0
+var x = 0
+function f():
+  return (x + 1)
+end
+object "o":
+  when start do
+    forever:
+${calls}
+    end
+  end
+end`);
+  for (const vm of [plain, optimized]) vm.variables.find((v) => v.name === 'x')!.setValue('abc');
+  for (let i = 0; i < 20; i++) {
+    plain.tick();
+    optimized.tick();
+  }
+  assert.ok(optimized.kernel!.stats.fallbacks < 200, `fallbacks ${optimized.kernel!.stats.fallbacks}`);
+  assert.equal(snapshot(optimized), snapshot(plain));
+});
 
 /** Compiles Tess source into the shape `Vm.load` takes. */
 function project(source: string): never {
@@ -31,7 +211,10 @@ function planOf(source: string): KernelPlan {
   return vm.kernelPlan;
 }
 
-/** Runs a work for `ticks` frames, with the kernel or without it. */
+/**
+ * Runs a work for `ticks` frames, with the kernel or without it. Without the
+ * moonbit toolchain no wasm is built and the javascript kernel runs instead.
+ */
 function runWork(source: string, ticks: number, withKernel: boolean): Vm {
   const built = project(source);
   let plan: KernelPlan | null = null;
@@ -244,7 +427,7 @@ test('지문은 같은 소스에 같은 값을 준다', () => {
   assert.notEqual(fingerprint('abc'), fingerprint('abd'));
 });
 
-test('커널이 낸 값은 자바스크립트가 낸 값과 같다 (10진 산술)', { skip: !hasMoon }, () => {
+test('커널이 낸 값은 자바스크립트가 낸 값과 같다 (10진 산술)', () => {
   assertSameAsJavascript(`
 var ret = 0
 var sum = 0
@@ -282,7 +465,7 @@ scene "s":
 end`, 4);
 });
 
-test('커널이 낸 값은 자바스크립트가 낸 값과 같다 (수학 블록)', { skip: !hasMoon }, () => {
+test('커널이 낸 값은 자바스크립트가 낸 값과 같다 (수학 블록)', () => {
   assertSameAsJavascript(`
 var ret = 0
 var i = 0
@@ -319,7 +502,7 @@ scene "s":
 end`, 3);
 });
 
-test('커널이 낸 값은 자바스크립트가 낸 값과 같다 (리스트 범위 밖·조건)', { skip: !hasMoon }, () => {
+test('커널이 낸 값은 자바스크립트가 낸 값과 같다 (리스트 범위 밖·조건)', () => {
   assertSameAsJavascript(`
 var ret = 0
 var i = 0
@@ -356,7 +539,7 @@ scene "s":
 end`, 3);
 });
 
-test('커널이 쓴 변수도 엔트리처럼 글자로 담긴다', { skip: !hasMoon }, () => {
+test('커널이 쓴 변수도 엔트리처럼 글자로 담긴다', () => {
   const vm = assertSameAsJavascript(`
 var ret = 0
 var clock = 0
@@ -386,7 +569,7 @@ end`, 3);
   assert.equal(clock?.getValue(), '0.020');
 });
 
-test('리스트 길이가 달라지면 커널은 물러나고 작품은 그대로 돈다', { skip: !hasMoon }, () => {
+test('리스트 길이가 달라지면 커널은 물러나고 작품은 그대로 돈다', () => {
   const source = `
 var ret = 0
 var i = 0
@@ -474,7 +657,7 @@ test('판단을 담는 리스트도 커널이 가져간다', () => {
   assert.ok(plan.roots.size > 0);
 });
 
-test('판단 리스트는 엔트리처럼 TRUE·FALSE 글자로 남는다', { skip: !hasMoon }, () => {
+test('판단 리스트는 엔트리처럼 TRUE·FALSE 글자로 남는다', () => {
   const vm = assertSameAsJavascript(JUDGED, 6);
   const inside = vm.variables.find((variable) => variable.name === 'inside')!;
   assert.deepEqual(inside.array.map((item) => item.data), ['TRUE', 'TRUE', 'FALSE', 'FALSE']);
@@ -486,7 +669,7 @@ test('판단 리스트는 엔트리처럼 TRUE·FALSE 글자로 남는다', { sk
  * 표를 대신 답해 버려, 그 표가 영영 건너오지 않고 0 으로 읽힙니다 — `3D portal.ent`
  * 의 화면이 검게만 나오던 까닭입니다.
  */
-test('빈 리스트 뒤에 오는 표도 제대로 건너온다', { skip: !hasMoon }, () => {
+test('빈 리스트 뒤에 오는 표도 제대로 건너온다', () => {
   const source = `
 var ret = 0
 var i = 0

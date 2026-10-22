@@ -60,6 +60,8 @@ export class Table {
   charts: ChartSpec[] = [];
   /** 담긴 것이 바뀔 때마다 오른다 — 열려 있는 창이 이것을 보고 다시 그린다. */
   revision = 0;
+  private readonly initialFields: string[];
+  private readonly initialRows: Array<Array<string | number>>;
 
   /**
    * 작품이 저장해 둔 표를 실행이 보는 모양으로 읽습니다.
@@ -86,6 +88,14 @@ export class Table {
     this.name = name;
     this.fields = fields.slice();
     this.rows = data.map((row) => row.slice());
+    this.initialFields = fields.slice();
+    this.initialRows = data.map((row) => row.slice());
+  }
+
+  reset(): void {
+    this.fields = this.initialFields.slice();
+    this.rows = this.initialRows.map((row) => row.slice());
+    this.revision += 1;
   }
 
   /** Row 1 is the field-name row, so data row `i` sits at index `i + 1`. */

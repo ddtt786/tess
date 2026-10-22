@@ -152,6 +152,11 @@ export interface KernelPlan {
   slots: KernelSlot[];
   /** Function table index → the wasm export that takes it, and its arity. */
   roots: Map<number, { name: string; arity: number }>;
+  /**
+   * Root → positions in `slots` its call tree reads or writes, and the ones it
+   * writes. A call copies only those, not every number the kernel holds.
+   */
+  access: Map<number, { touched: number[]; written: number[] }>;
   /** Deepest chain of kernel calls, for the caller's stack budget. */
   depth: number;
   /** f64 slots the shared region needs. */
@@ -924,7 +929,9 @@ export function planKernel(
   });
 
   if (!scans.some((scan) => scan.ok)) {
-    return { source: '', javascript: '', slots: [], roots: new Map(), depth: 0, size: FIRST_SLOT, rejected };
+    return {
+      source: '', javascript: '', slots: [], roots: new Map(), access: new Map(), depth: 0, size: FIRST_SLOT, rejected,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -935,14 +942,23 @@ export function planKernel(
   // that stayed keeps those out of the data the run copies back and forth —
   // and out of the numbers-only rule, which they need not keep.
   const settledKeep = scans.map((scan) => scan.ok);
-  reads.clear();
-  writes.clear();
   changed.clear();
+  // Each function's own reads and writes, for the roots that reach it.
+  const own = new Map<number, { reads: Set<number>; writes: Set<number> }>();
   functions.forEach((fn, index) => {
     if (settledKeep[index]) {
+      reads.clear();
+      writes.clear();
       emit(fn, index);
+      own.set(index, { reads: new Set(reads), writes: new Set(writes) });
     }
   });
+  reads.clear();
+  writes.clear();
+  for (const used of own.values()) {
+    used.reads.forEach((variable) => reads.add(variable));
+    used.writes.forEach((variable) => writes.add(variable));
+  }
 
   const touched = new Set([...reads, ...writes]);
   const slots: KernelSlot[] = [];
@@ -1034,6 +1050,27 @@ export function planKernel(
     roots.set(index, { name: `run${index}`, arity: collectParams(define.params[0]).length });
   });
 
+  const slotAt = new Map(slots.map((slot, at) => [slot.variable, at]));
+  const access = new Map<number, { touched: number[]; written: number[] }>();
+  for (const index of roots.keys()) {
+    const touched = new Set<number>();
+    const written = new Set<number>();
+    const reached = new Set<number>();
+    const visit = (at: number): void => {
+      if (reached.has(at)) return;
+      reached.add(at);
+      const used = own.get(at);
+      used?.reads.forEach((variable) => touched.add(slotAt.get(variable)!));
+      used?.writes.forEach((variable) => {
+        touched.add(slotAt.get(variable)!);
+        written.add(slotAt.get(variable)!);
+      });
+      scans[at]!.calls.forEach(visit);
+    };
+    visit(index);
+    access.set(index, { touched: [...touched].sort((a, b) => a - b), written: [...written].sort((a, b) => a - b) });
+  }
+
   const names = [...roots.values()].map((root) => root.name);
   const write = (target: Dialect): string => {
     dialect = target;
@@ -1048,6 +1085,7 @@ export function planKernel(
     javascript: write(JAVASCRIPT),
     slots,
     roots,
+    access,
     depth,
     size: next,
     rejected,

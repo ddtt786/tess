@@ -8,6 +8,25 @@ const ok = (name: string, code: string, kind?: string) => test(name, () => asser
 const okRaw = (name: string, code: string) => test(name, () => assertParses(code, name));
 const noRaw = (name: string, code: string) => test(name, () => assertRejects(code, name));
 
+for (const declaration of ['var local = 0', 'list local = []']) {
+  for (const name of ['from', 'visible', 'at', 'size']) {
+    for (const assignment of [`${name} = 1`, `${name} += 1`, `${name}[1] = 2`]) {
+      okRaw(`declaration followed by ${assignment}: ${declaration}`,
+        `function f():\n  ${declaration}\n  ${assignment}\nend`);
+    }
+  }
+}
+okRaw('declaration options can still span lines', `
+var a = 0
+  from -1 to 10
+  visible
+  at 1 2
+list b = []
+  visible
+  at 3 4
+  size 100 120
+`);
+
 // --- 3. 프로그램의 뼈대 -------------------------------------------------------
 okRaw('3.1 전역 변수 · 리스트', `
 var total_score = 0

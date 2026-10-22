@@ -337,7 +337,7 @@ export class Codegen {
   private compileFunction(fn: FunctionEntry): string {
     // The save manager's own functions are empty in the work — the extension
     // takes their call. This runner takes it here instead.
-    const saving = SAVE_FUNCTIONS[functionLabel(fn.content)];
+    const saving = pick(SAVE_FUNCTIONS, functionLabel(fn.content));
     if (saving) {
       return saving === 'wait'
         ? 'function* (e, th, P) { yield* O.saveStoreWait(); }'
@@ -365,22 +365,28 @@ export class Codegen {
 
     // Past the depth limit the call runs nothing and gives no value, which is
     // what the caller sees from entry once its stack has run out.
+    const returnsValue = define.type === 'function_create_value';
+    const result = returnsValue ? this.value(define.params[3]).code : '';
+    // On pause, entry hands a value call its result at once: `th.finish` thrown
+    // into the frame skips the rest of the body to the return expression.
     let source =
       `function* (e, th, P) {\n` +
       `  if (th.depth >= ${CALL_DEPTH_LIMIT}) return;\n` +
       `  th.depth += 1;\n` +
       `  try {\n` +
-      `  const L = {${locals}};\n  fn: {\n${body}  }\n`;
-    if (define.type === 'function_create_value') {
-      const result = this.value(define.params[3]);
-      source += `  return ${result.code};\n`;
-    }
+      `  const L = {${locals}};\n`;
+    source += returnsValue
+      ? `  try {\n  fn: {\n${body}  }\n  } catch (x) { if (x !== th.finish) throw x; }\n  return ${result};\n`
+      : `  fn: {\n${body}  }\n`;
     source += '  } finally { th.depth -= 1; }\n}';
 
     this.paramSlots = null;
     this.funcLocals = null;
     this.loopDepth = previousLoopDepth;
-    return source;
+    // Marked once on the prototype, so a call costs nothing extra.
+    return returnsValue
+      ? `((g) => { g.prototype.finishes = true; return g; })(${source})`
+      : source;
   }
 
   /**

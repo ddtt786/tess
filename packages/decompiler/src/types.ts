@@ -132,6 +132,7 @@ export interface FunctionInfo {
   params: string[];
   locals: FunctionLocal[];
   displayLabel: string;
+  returnValue?: unknown;
   /** Set on the save manager's own functions: `save` and `save async`. */
   saveKind?: 'save' | 'async';
 }
@@ -217,6 +218,8 @@ export interface DecompileOptions {
  */
 export interface DecompileContext {
   warnings: Set<string>;
+  identifiers: Set<string>;
+  conditionHelper?: { test: string; empty: string };
   /** Names entry settles when the block runs — nothing is lost from the source. */
   notices: Set<string>;
   allSizes: boolean;

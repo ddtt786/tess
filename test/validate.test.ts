@@ -3,7 +3,34 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parse } from '@tess/parser';
+import { lineAndColumn, parse, validate } from '@tess/parser';
+import type { ProgramNode } from '@tess/parser';
+
+test('diagnostic positions use each included source and retain UTF-16 columns', () => {
+  const sources = new Map([
+    ['one.tess', 'object "one":\nvar local_one = 0\nwhen start do\nwrite "x"\nclear text\nend\nend\nfunction f():\nreturn local_one\nend'],
+    ['two.tess', '# 😀\n\nobject "two":\nvar local_two = 0\nwhen start do\nwrite "😀"\nclear text\nend\nend\nfunction g():\nreturn local_two\nend'],
+  ]);
+  const program: ProgramNode = { type: 'Program', body: [], loc: { start: 0, end: 0 } };
+  for (const [file, source] of sources) {
+    const parsed = parse(source, { validate: false });
+    assert.ok(parsed.ok && parsed.ast);
+    assert.equal((parsed.ast as ProgramNode).type, 'Program');
+    const stamped: ProgramNode = JSON.parse(JSON.stringify(parsed.ast,
+      (key, value) => key === 'loc' ? { ...value, file } : value));
+    program.body.push(...stamped.body);
+  }
+  const result = validate(program, 'fallback', sources);
+  assert.equal(result.errors.length, 4);
+  assert.equal(result.warnings.length, 2);
+  for (const diagnostic of [...result.errors, ...result.warnings]) {
+    const source = sources.get(diagnostic.file!)!;
+    assert.ok(source);
+    const expected = lineAndColumn(source, diagnostic.offset!);
+    assert.equal(diagnostic.line, expected.line);
+    assert.equal(diagnostic.column, expected.column);
+  }
+});
 
 const messages = (source: string) => parse(source).errors.map((e) => e.message);
 const warnings = (source: string) => parse(source).warnings.map((w) => w.message);

@@ -417,6 +417,7 @@ function loadTts(how: 'end' | 'error' | 'blocked' | 'hold', origin = 'https://ex
   const spoken: Array<{ text: string; rate: number; pitch: number }> = [];
   const sandbox: Record<string, unknown> = {
     Audio: FakeAudio,
+    URL,
     URLSearchParams,
     location: { origin },
     setTimeout,
@@ -466,6 +467,44 @@ test('사이트 위에서는 같은 오리진으로 부른다', async () => {
   const { engine, made } = loadTts('end', 'https://playentry.org');
   await engine.speak('안녕', VOICE);
   assert.ok(made[0]!.src.startsWith('/api/expansionBlock/tts/read.mp3?'), made[0]!.src);
+});
+
+test('TTS query text follows Entry encodeURI semantics for dynamic voice parameters', async () => {
+  const { engine, made } = loadTts('end');
+  await engine.speak('아&&pitch=-4.97&speaker=nwoof#', VOICE);
+  const url = new URL(made[0]!.src);
+  assert.equal(url.origin, 'https://playentry.org');
+  assert.equal(url.pathname, '/api/expansionBlock/tts/read.mp3');
+  assert.equal(url.searchParams.get('text'), '아');
+  assert.equal(url.searchParams.get('pitch'), '-4.97');
+  assert.equal(url.searchParams.get('speaker'), 'nwoof');
+});
+
+test('reserved TTS characters match the original query serializer without changing the endpoint', async () => {
+  const { engine, made } = loadTts('end');
+  for (const text of ['가 나+다%26라', 'a&speed=3&pitch=2', '//example.test/a?x=y#fragment']) {
+    await engine.speak(text, VOICE);
+    const expected = encodeURI(Object.entries({ text, ...VOICE }).map(([key, value]) => `${key}=${value}`).join('&'));
+    const actual = new URL(made.at(-1)!.src);
+    const original = new URL(`https://playentry.org/api/expansionBlock/tts/read.mp3?${expected}`);
+    assert.deepEqual([...actual.searchParams], [...original.searchParams]);
+    assert.equal(actual.hash, '');
+    assert.equal(actual.origin, 'https://playentry.org');
+    assert.equal(actual.pathname, '/api/expansionBlock/tts/read.mp3');
+  }
+});
+
+test('TTS effect syntax cannot add unrelated query keys or turn encoded data into parameters', async () => {
+  const { engine, made } = loadTts('end');
+  await engine.speak('hello&admin=true&redirect=https://example.test&pitch=2#', VOICE);
+  const url = new URL(made[0]!.src);
+  assert.deepEqual([...url.searchParams], [['text', 'hello'], ['pitch', '2']]);
+  assert.equal(url.origin, 'https://playentry.org');
+  assert.equal(url.pathname, '/api/expansionBlock/tts/read.mp3');
+  await engine.speak('hello%26pitch=2', VOICE);
+  const encoded = new URL(made[1]!.src);
+  assert.equal(encoded.searchParams.get('text'), 'hello%26pitch=2');
+  assert.equal(encoded.searchParams.get('pitch'), String(VOICE.pitch));
 });
 
 test('빈 문장과 2500 자를 넘는 문장은 읽지 않는다', async () => {

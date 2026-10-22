@@ -263,6 +263,10 @@ export class Vm implements Project {
   errors: VmError[] = [];
   /** Called right after an error is recorded, for the debug panel to report it. */
   onError: ((error: VmError) => void) | null = null;
+  /** Blocks entry stops the work on, where this runner carries on instead. */
+  divergences: VmError[] = [];
+  onDivergence: ((note: VmError) => void) | null = null;
+  private runningThread: Thread | null = null;
 
   /** `Entry.engine.projectTimer` — off until a `초시계 시작하기` block runs. */
   private timerInit = false;
@@ -313,7 +317,7 @@ export class Vm implements Project {
     this.deviceType = options.deviceType ?? 'desktop';
     this.touch = options.touch ?? false;
     this.user = options.user ?? null;
-    this.maskUserId = options.maskUserId ?? true;
+    this.maskUserId = options.maskUserId ?? false;
     this.maxCatchUp = options.maxCatchUp ?? 4;
     this.store = options.store ?? null;
     this.kernelSupply = options.kernel ?? null;
@@ -846,6 +850,9 @@ export class Vm implements Project {
     this.audio?.resume?.();
     this.speech?.resume?.();
     this.clearQuestion();
+    for (const table of this.tables) {
+      table.reset();
+    }
     this.extras.stopped();
   }
 
@@ -856,6 +863,9 @@ export class Vm implements Project {
       // `Entry.engine.togglePause` holds the sounds rather than ending them.
       this.audio?.pause?.();
       this.speech?.pause?.();
+      for (const target of this.targets) {
+        for (const thread of target.threads.slice()) this.runThread(thread, true);
+      }
     }
   }
 
@@ -871,6 +881,9 @@ export class Vm implements Project {
     }
     for (const variable of this.variables) {
       variable.loadSnapshot();
+    }
+    for (const table of this.tables) {
+      table.reset();
     }
     this.answer = '';
     this.errors = [];
@@ -935,6 +948,16 @@ export class Vm implements Project {
     this.onError?.(record);
   }
 
+  /** Records once per object and message a block entry would have stopped on. */
+  diverge(message: string): void {
+    const thread = this.runningThread;
+    const targetId = thread?.target.id ?? null;
+    if (this.divergences.some((note) => note.targetId === targetId && note.message === message)) return;
+    const note: VmError = { message, blockId: thread?.script.blockId ?? null, targetId };
+    this.divergences.push(note);
+    this.onDivergence?.(note);
+  }
+
   /** One engine frame. */
   tick(deltaMs = 1000 / this.frameRate): void {
     this.clock += deltaMs;
@@ -971,9 +994,12 @@ export class Vm implements Project {
     this.flushMessages();
   }
 
-  private runThread(thread: Thread): void {
+  private runThread(thread: Thread, finishingValues = false): void {
+    const previous = this.runningThread;
+    this.runningThread = thread;
     try {
-      thread.step();
+      if (finishingValues) thread.finishValueCalls();
+      else thread.step();
     } catch (error) {
       thread.done = true;
       if (error instanceof ThreadStop) {
@@ -987,6 +1013,8 @@ export class Vm implements Project {
       };
       this.errors.push(record);
       this.onError?.(record);
+    } finally {
+      this.runningThread = previous;
     }
   }
 

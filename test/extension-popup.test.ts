@@ -32,7 +32,7 @@ async function mountPopup(t: any, stored: Record<string, boolean>, saved: unknow
   const source = stripTypeScriptTypes(fs.readFileSync(path.join(POPUP, 'popup.ts'), 'utf-8'), {
     mode: 'strip',
   });
-  const settings = { enabled: true, svg: true, mask: true, notice: false, ...stored };
+  const settings = { enabled: true, svg: true, mask: false, notice: true, ...stored };
   const sandbox: Record<string, unknown> = {
     document: dom.window.document,
     readSettings: () => Promise.resolve(settings),

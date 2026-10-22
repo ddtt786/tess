@@ -3,9 +3,46 @@
  * 알려지지 않은 블록은 자리표시자를 남기고 경고에 기록합니다.
  */
 import { KEY_CODES, STORE_FLAG_ON, STORE_FLAG_VARIABLE } from '@tess/core';
-import { tessNumber, tessString, tessLiteral, ownsResource, isExactNumber } from './ident.ts';
+import { tessNumber, tessString, tessLiteral, ownsResource, isExactNumber, safeIdentifier } from './ident.ts';
 import { expansionBlock } from '@tess/core';
 import type { DecompileContext, RawBlock, ResourceInfo } from './types.ts';
+
+const BOOLEAN_RESULTS = new Set([
+  'True', 'False', 'boolean_basic_operator', 'boolean_equal', 'boolean_bigger',
+  'boolean_smaller', 'boolean_and_or', 'boolean_and', 'boolean_or', 'boolean_not',
+  'is_clicked', 'is_object_clicked', 'is_press_some_key', 'reach_something',
+  'is_type', 'is_boost_mode', 'is_current_device_type', 'is_touch_supported',
+  'is_included_in_list',
+]);
+
+function booleanResult(block: any, ctx: DecompileContext): boolean {
+  const seen = new Set<string>();
+  while (block?.type?.startsWith('func_')) {
+    const id = block.type.slice(5);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    block = ctx.functionsById.get(id)?.returnValue;
+  }
+  return BOOLEAN_RESULTS.has(block?.type) || block?.type?.startsWith('booleanParam_') === true
+    || expansionBlock(block?.type)?.kind === 'boolean';
+}
+
+/** Preserve Entry's numeric condition conversion without changing Tess conditions. */
+export function conditionOf(block: any, ctx: DecompileContext): string {
+  // Entry reads an empty condition slot as false; a Tess literal there is true.
+  if (block === null || block === undefined) return 'false';
+  const expression = exprOf(block, ctx);
+  if (booleanResult(block, ctx)) {
+    return block?.type?.startsWith('func_') ? `(${expression} == true)` : expression;
+  }
+  if (!ctx.conditionHelper) {
+    ctx.conditionHelper = {
+      test: safeIdentifier('entry_condition', ctx.identifiers),
+      empty: safeIdentifier('entry_no_value', ctx.identifiers),
+    };
+  }
+  return `(${ctx.conditionHelper.test}(${expression}) == true)`;
+}
 
 const REVERSE_COMPARE: Record<string, string> = {
   EQUAL: '==', NOT_EQUAL: '!=', GREATER: '>', LESS: '<', GREATER_OR_EQUAL: '>=', LESS_OR_EQUAL: '<=',
@@ -239,7 +276,6 @@ export function exprOf(block: any, ctx: DecompileContext): string {
      */
     case 'number': case 'text': {
       const raw = String(at(0) ?? '');
-      if (raw === 'true' || raw === 'false') return raw;
       if (raw === 'transparent') return 'transparent';
       if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw;
       return isExactNumber(raw) ? raw : tessString(raw);
@@ -319,11 +355,15 @@ export function exprOf(block: any, ctx: DecompileContext): string {
       if (isStoreFlagTest(block, ctx)) return 'can_save';
       return `(${exprOf(at(0), ctx)} ${op} ${exprOf(at(2), ctx)})`;
     }
-    case 'boolean_and_or': return `(${exprOf(at(0), ctx)} ${at(1) === 'AND' ? 'and' : 'or'} ${exprOf(at(2), ctx)})`;
+    case 'boolean_and_or': {
+      // Entry applies Boolean() here, so an empty side is false.
+      const side = (i: number) => at(i) == null ? 'false' : exprOf(at(i), ctx);
+      return `(${side(0)} ${at(1) === 'AND' ? 'and' : 'or'} ${side(2)})`;
+    }
     /** Entry's older and/or pair, kept for works saved before `boolean_and_or`. */
-    case 'boolean_and': return `(${exprOf(at(0), ctx)} and ${exprOf(at(2), ctx)})`;
-    case 'boolean_or': return `(${exprOf(at(0), ctx)} or ${exprOf(at(2), ctx)})`;
-    case 'boolean_not': return `not (${exprOf(at(1), ctx)})`;
+    case 'boolean_and': return `(${conditionOf(at(0), ctx)} and ${conditionOf(at(2), ctx)})`;
+    case 'boolean_or': return `(${conditionOf(at(0), ctx)} or ${conditionOf(at(2), ctx)})`;
+    case 'boolean_not': return `not (${conditionOf(at(1), ctx)})`;
     case 'True': return 'true';
     case 'False': return 'false';
     /**

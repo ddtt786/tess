@@ -92,12 +92,18 @@ export function validate(
 ): ValidationResult {
   const errors: Diagnostic[] = [];
   const warnings: Diagnostic[] = [];
+  const positions = new Map<string, ReturnType<typeof lineIndex>>();
 
   const report = (bucket: Diagnostic[], node: Node | null | undefined, message: string) => {
     // `use` 로 불러온 노드는 자기 파일 기준으로 위치를 계산해야 한다
     const file = node?.loc?.file;
     const text = (file && sources?.get(file)) ?? source;
-    const { line, column } = lineAndColumn(text, node?.loc?.start ?? 0);
+    let locate = positions.get(text);
+    if (!locate) {
+      locate = lineIndex(text);
+      positions.set(text, locate);
+    }
+    const { line, column } = locate(node?.loc?.start ?? 0);
     bucket.push({ line, column, file, message, offset: node?.loc?.start ?? 0 });
   };
   const error = (node: Node, message: string) => report(errors, node, message);

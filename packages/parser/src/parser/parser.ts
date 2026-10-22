@@ -505,21 +505,21 @@ export class TessParser extends CstParser {
       $.SUBRULE($.expr, { LABEL: 'value' });
       // A range makes it entry's slide variable: its box carries a slider, and
       // the value it holds is kept between the two ends.
-      $.OPTION3(() => {
+      $.OPTION3({ GATE: () => $.leads(kw.from), DEF: () => {
         $.CONSUME(kw.from);
         $.SUBRULE2($.expr, { LABEL: 'min' });
         $.CONSUME(kw.to);
         $.SUBRULE3($.expr, { LABEL: 'max' });
-      });
+      } });
       // 무대에 상자를 띄운 채로 시작하는 변수 — 엔트리의 '변수 보이기' 체크다.
-      $.OPTION4(() => $.CONSUME(kw.visible, { LABEL: 'shown' }));
+      $.OPTION4({ GATE: () => $.leads(kw.visible), DEF: () => $.CONSUME(kw.visible, { LABEL: 'shown' }) });
       // 상자가 놓인 자리. 안 적으면 엔트리처럼 알아서 자리를 잡는다. `go x y` 와
       // 같은 자리 표현이라, 앞의 값이 뒤의 값을 빼앗지 않도록 posExpr 을 쓴다.
-      $.OPTION5(() => {
+      $.OPTION5({ GATE: () => $.leads(kw.at), DEF: () => {
         $.CONSUME(kw.at);
         $.SUBRULE($.posExpr, { LABEL: 'atX' });
         $.SUBRULE2($.posExpr, { LABEL: 'atY' });
-      });
+      } });
     });
 
     $.RULE('listDecl', () => {
@@ -529,18 +529,18 @@ export class TessParser extends CstParser {
       $.OPTION2(() => $.SUBRULE($.displayName, { LABEL: 'displayName' }));
       $.CONSUME(Assign);
       $.SUBRULE($.listLiteral, { LABEL: 'value' });
-      $.OPTION3(() => $.CONSUME(kw.visible, { LABEL: 'shown' }));
-      $.OPTION4(() => {
+      $.OPTION3({ GATE: () => $.leads(kw.visible), DEF: () => $.CONSUME(kw.visible, { LABEL: 'shown' }) });
+      $.OPTION4({ GATE: () => $.leads(kw.at), DEF: () => {
         $.CONSUME(kw.at);
         $.SUBRULE($.posExpr, { LABEL: 'atX' });
         $.SUBRULE2($.posExpr, { LABEL: 'atY' });
-      });
+      } });
       // 상자의 크기(가로 세로). 안 적으면 엔트리의 100 × 120 이다.
-      $.OPTION5(() => {
+      $.OPTION5({ GATE: () => $.leads(kw.size), DEF: () => {
         $.CONSUME(kw.size);
         $.SUBRULE3($.posExpr, { LABEL: 'sizeW' });
         $.SUBRULE4($.posExpr, { LABEL: 'sizeH' });
-      });
+      } });
     });
 
     // ========================================================================

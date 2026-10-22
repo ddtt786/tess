@@ -28,8 +28,8 @@ interface Held {
 
 let enabled: boolean | null = null;
 let svg = true;
-let mask = true;
-let notice = false;
+let mask = false;
+let notice = true;
 let injected = false;
 const held: Held[] = [];
 
@@ -196,11 +196,11 @@ api.storage.onChanged.addListener((changes, area) => {
     return;
   }
   if (MASK_KEY in changes) {
-    mask = changes[MASK_KEY]?.newValue !== false;
+    mask = changes[MASK_KEY]?.newValue === true;
     window.postMessage({ __tessvm: 'mask', mask }, location.origin);
   }
   if (NOTICE_KEY in changes) {
-    notice = changes[NOTICE_KEY]?.newValue === true;
+    notice = changes[NOTICE_KEY]?.newValue !== false;
     window.postMessage({ __tessvm: 'notice', notice }, location.origin);
   }
   if (SVG_KEY in changes) {

@@ -55,6 +55,8 @@ test('tree-sitter 와 Chevrotain 의 AST 가 같다', async () => {
   const sources = corpus();
   // Chevrotain results first: once tree-sitter is loaded, parse() goes through it.
   const expected = sources.map(([, source]) => parse(source, { validate: false }));
+  assert.ok(sources.length > SNIPPETS.length, 'the example corpus must be present');
+  assert.ok(expected.slice(0, SNIPPETS.length).every((result) => result.ok), 'all snippets must parse');
   assert.ok(await initTreeSitter());
   let compared = 0;
   sources.forEach(([name, source], at) => {
@@ -68,5 +70,5 @@ test('tree-sitter 와 Chevrotain 의 AST 가 같다', async () => {
     assert.equal(JSON.stringify(tree), JSON.stringify(chevrotain.ast), name);
     compared += 1;
   });
-  assert.ok(compared >= SNIPPETS.length + 20, `compared ${compared}`);
+  assert.equal(compared, expected.filter((result) => result.ok).length);
 });

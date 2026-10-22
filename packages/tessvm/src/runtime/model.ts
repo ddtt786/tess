@@ -118,6 +118,16 @@ export interface Stroke {
   fill: boolean;
 }
 
+let penOrder = 0;
+
+/** Pens keep the order in which their shapes were created. */
+export function newBrush(): BrushState {
+  return {
+    color: '#ff0000', thickness: 1, opacity: 0, stop: false,
+    started: ++penOrder, path: [], strokes: [], fill: false,
+  };
+}
+
 /** What a canvas draws with when it refuses a font string outright. */
 const CANVAS_DEFAULT_FONT = { size: 10, family: 'sans-serif' };
 
@@ -591,6 +601,16 @@ export class Target {
     clone.strike = source.strike;
     clone.textAlign = source.textAlign;
     clone.lineBreak = source.lineBreak;
+    if (source.brush) {
+      clone.brush = {
+        ...newBrush(),
+        color: source.brush.color,
+        thickness: source.brush.thickness,
+        opacity: source.brush.opacity,
+        stop: source.brush.stop,
+        path: [clone.x, clone.y],
+      };
+    }
     this.clones.push(clone);
     // The renderer slots a clone right under the entity it came from, so it
     // needs to know which one that was.
@@ -646,6 +666,15 @@ export class Variable {
    * itself, and whatever reaches into `array` calls `touch`.
    */
   revision = 0;
+  /**
+   * The items written one at a time since the kernel last matched this list,
+   * so it can copy those instead of the whole list. Any other write — a
+   * push, a removal, a new array — counts as the whole list.
+   */
+  private spanFrom = Infinity;
+  private spanTo = -1;
+  private spanAll = true;
+  private syncedAt = -1;
   visible = false;
   x = 0;
   y = 0;
@@ -678,7 +707,7 @@ export class Variable {
   }
 
   setValue(value: string | number): void {
-    this.revision += 1;
+    this.touch();
     if (this.isSlide) {
       const n = num(value);
       this.value = clamp(n, this.minValue, this.maxValue);
@@ -692,6 +721,30 @@ export class Variable {
   /** Says the list behind `array` was written to. */
   touch(): void {
     this.revision += 1;
+    this.spanAll = true;
+  }
+
+  /** Says one item, 0-based, was written in place. */
+  touchItem(at: number): void {
+    this.revision += 1;
+    if (at < this.spanFrom) this.spanFrom = at;
+    if (at > this.spanTo) this.spanTo = at;
+  }
+
+  /** The kernel now holds what this list holds. */
+  synced(): void {
+    this.syncedAt = this.revision;
+    this.spanAll = false;
+    this.spanFrom = Infinity;
+    this.spanTo = -1;
+  }
+
+  /**
+   * Items written in place since `revision`, when that is the revision the
+   * kernel last matched; null when the whole list has to cross again.
+   */
+  changedSince(revision: number): [number, number] | null {
+    return this.syncedAt === revision && !this.spanAll ? [this.spanFrom, this.spanTo] : null;
   }
 
   /** `Entry.Variable.isNumber` — decides whether `change_variable` adds or joins. */
@@ -719,7 +772,7 @@ export class Variable {
     if (!this.isStored) {
       this.value = this.snapshotValue;
       this.array = this.snapshotArray.map((item) => ({ data: item.data }));
-      this.revision += 1;
+      this.touch();
     }
     this.visible = this.snapshotVisible;
   }
@@ -737,13 +790,16 @@ export interface CompiledScript {
 }
 
 /**
- * What compiled code yields: a number ends the frame, a generator is a function
- * call the thread runs first and whose result it sends back.
+ * A number ends the frame (1 holds a promise); a generator is a function call
+ * the thread runs first and whose result it sends back.
  */
 export type Yielded = number | CallFrame;
 
 /** One function call in progress on a thread's call stack. */
-export type CallFrame = Generator<Yielded, unknown, unknown>;
+export type CallFrame = Generator<Yielded, unknown, unknown> & { finishes?: boolean };
+
+/** Thrown into a value call to end it with its return expression. */
+const FINISH = Symbol('finish');
 
 export type ScriptBody = (entity: Entity, thread: Thread) => Generator<Yielded, void, unknown>;
 
@@ -758,6 +814,11 @@ export class Thread {
   iterator: Generator<Yielded, void, unknown>;
   /** The body and the calls nested in it, innermost last. Kept off the JS stack. */
   private frames: CallFrame[];
+  private waitingAsync = false;
+  /** What compiled value calls catch to end early. */
+  get finish(): symbol {
+    return FINISH;
+  }
   done = false;
   /** True while this thread's generator is on the stack. */
   running = false;
@@ -786,19 +847,45 @@ export class Thread {
     }
   }
 
+  /** Entry completes a frame-waiting value call on pause, but keeps promise waits. */
+  finishValueCalls(): void {
+    if (this.done || this.running || this.waitingAsync || !this.frames.some((frame) => frame.finishes)) return;
+    this.running = true;
+    try {
+      this.resume(true);
+    } finally {
+      this.running = false;
+    }
+  }
+
   /** Runs the innermost frame until one yields a number or the body ends. */
-  private resume(): void {
+  private resume(finishingValues = false): void {
     const frames = this.frames;
     let input: unknown;
     let thrown = false;
     let error: unknown;
+    // A call not started yet cannot catch what is thrown into it, and one
+    // already told is evaluating its return expression.
+    let fresh = false;
+    const told = finishingValues ? new Set<CallFrame>() : null;
     for (;;) {
+      if (told && !thrown) {
+        const at = frames.findLastIndex((frame) => frame.finishes && !told.has(frame));
+        if (at !== -1 && !(fresh && at === frames.length - 1)) {
+          while (frames.length > at + 1) frames.pop()!.return(undefined);
+          told.add(frames[at]!);
+          thrown = true;
+          error = FINISH;
+        }
+      }
       const frame = frames[frames.length - 1]!;
       let result: IteratorResult<Yielded, unknown>;
       try {
         result = thrown ? frame.throw(error) : frame.next(input);
         thrown = false;
+        fresh = false;
       } catch (caught) {
+        fresh = false;
         frames.pop();
         if (!frames.length) {
           this.done = true;
@@ -819,9 +906,12 @@ export class Thread {
       }
       const value = result.value;
       if (typeof value === 'number') {
+        this.waitingAsync = value === 1;
+        if (told && !this.waitingAsync && frames.some((frame) => frame.finishes && !told.has(frame))) continue;
         return;
       }
       frames.push(value);
+      fresh = true;
       input = undefined;
     }
   }

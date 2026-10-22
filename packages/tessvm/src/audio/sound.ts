@@ -389,6 +389,7 @@ export class SpeechSynthesisEngine {
 /** Entry's own reading service, and what it refuses to read. */
 const TTS_ORIGIN = 'https://playentry.org';
 const TTS_PATH = '/api/expansionBlock/tts/read.mp3';
+const TTS_QUERY_KEYS = new Set(['text', 'speaker', 'speed', 'pitch', 'volume']);
 /** `checkText` — entry reads neither an empty sentence nor one longer than this. */
 const TTS_MAX_CHARS = 2500;
 
@@ -413,16 +414,21 @@ export class EntryTtsEngine implements SpeechEngine {
   private readonly playing = new Set<Reading>();
 
   private address(text: string, voice: VoiceProps): string {
-    const query = new URLSearchParams({
+    // Entry's effect syntax is parsed first, then serialized as query data.
+    const legacy = encodeURI(Object.entries({
       text,
       speaker: voice.speaker || 'kyuri',
       speed: String(voice.speed || 0),
       pitch: String(voice.pitch || 0),
       volume: String(voice.volume ?? 1),
-    });
+    }).map(([key, value]) => `${key}=${value}`).join('&'));
+    const query = new URL(`${TTS_ORIGIN}${TTS_PATH}?${legacy}`).searchParams;
+    for (const key of [...query.keys()]) {
+      if (!TTS_QUERY_KEYS.has(key)) query.delete(key);
+    }
     // Same origin on the site itself; elsewhere the reading comes from there.
     const here = (globalThis as { location?: Location }).location?.origin;
-    return `${here === TTS_ORIGIN ? '' : TTS_ORIGIN}${TTS_PATH}?${query.toString()}`;
+    return `${here === TTS_ORIGIN ? '' : TTS_ORIGIN}${TTS_PATH}?${query}`;
   }
 
   async speak(text: string, voice: VoiceProps): Promise<void> {

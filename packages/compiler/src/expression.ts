@@ -214,7 +214,7 @@ function compileIdentifier(node: Node & { name: string }, ctx: Context): EntryBl
       ctx.number(STORE_FLAG_ON),
     ]);
   }
-  if (STATE_BLOCKS[name]) {
+  if (Object.hasOwn(STATE_BLOCKS, name)) {
     // 블록마다 파라미터 자리 개수가 다르다 (엔트리 블록 스키마 기준)
     const slots: Record<string, number> = { get_nickname: 0, get_user_name: 0, get_project_timer_value: 2 };
     const count = slots[STATE_BLOCKS[name]!] ?? 1;
@@ -223,7 +223,7 @@ function compileIdentifier(node: Node & { name: string }, ctx: Context): EntryBl
   if (name === 'device') {
     return ctx.error(node, "device 는 홀로 쓸 수 없습니다. device == \"mobile\" 처럼 비교해서 쓰세요.");
   }
-  if (PROPERTY_COORDINATES[name]) {
+  if (Object.hasOwn(PROPERTY_COORDINATES, name)) {
     return ctx.block('coordinate_object', [null, 'self', null, PROPERTY_COORDINATES[name]!]);
   }
   if (name === 'sound_volume') return ctx.block('get_sound_volume', [null]);
@@ -711,7 +711,7 @@ function compileCall(node: CallNode, ctx: Context): EntryBlock | null {
     return ctx.block(`func_${fn.id}`, params);
   }
 
-  if (MATH_OPERATIONS[callee]) {
+  if (Object.hasOwn(MATH_OPERATIONS, callee)) {
     if (!arity(1)) return null;
     const argument = value(0);
     return argument && ctx.block('calc_operation', [null, argument, null, MATH_OPERATIONS[callee]]);
@@ -936,7 +936,7 @@ function compileCall(node: CallNode, ctx: Context): EntryBlock | null {
 
     default:
       if (expansionBlock(callee)) return compileExpansion(node, ctx);
-      if (TABLE_CALCULATIONS[callee]) {
+      if (Object.hasOwn(TABLE_CALCULATIONS, callee)) {
         if (!arity(2)) return null;
         const table = tableArgument(args[0], callee, ctx);
         const column = value(1);

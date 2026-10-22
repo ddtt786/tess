@@ -203,6 +203,16 @@ export function decompileProject(
     }
   }
 
+  if (ctx.conditionHelper) {
+    const { test, empty } = ctx.conditionHelper;
+    // A no-value call distinguishes undefined/null from nonnumeric text. A
+    // judgement stored in a variable is `false` in entry but "FALSE" once
+    // compiled from Tess, so that text reads as false too.
+    lines.push(`function ${empty}():`, 'end', '',
+      `function ${test}(value):`,
+      `  return (((value != 0) and (value != ${empty}())) and (value != "FALSE"))`, 'end', '');
+  }
+
   // Notices are warnings under `strict`, matching compileProject.
   const strict = options.strict === true;
   return {
@@ -407,6 +417,7 @@ function buildContext(
 
   const ctx: DecompileContext = {
     warnings: new Set(),
+    identifiers: usedNames,
     notices: new Set(),
     // Write `size W H` on every costume, not just the ones the compiler cannot measure.
     allSizes: options.sizes === true,
@@ -618,6 +629,7 @@ function buildContext(
       : label === STORE_SAVE_ASYNC_FUNCTION ? 'async' : undefined;
     ctx.functionsById.set(fn.id, {
       id: String(fn.id), name: identifier, params, locals, displayLabel: label, saveKind,
+      returnValue: functionCreateBlock(content)?.params?.[3],
     });
   }
 

@@ -1,139 +1,97 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  GeometryUtils,
-  ClipperHelper,
-  FloodFill,
-  HistoryManager,
+  History,
+  IDENTITY,
+  defaultBrushOptions,
+  differenceRings,
+  floodFill,
+  matApply,
+  matMultiply,
+  matTranslate,
+  parseColor,
+  pointInRings,
+  ringToSmoothPathData,
+  ringsArea,
+  ringsToPathData,
+  strokeCenterline,
+  strokeOutline,
 } from '@tess/painter';
-import type { Point, RectBounds } from '@tess/painter';
+import type { InputPoint, Matrix, Ring } from '@tess/painter';
 
-test('@tess/painter - Stroke smoothing and Catmull-Rom interpolation', () => {
-  const rawPoints = [
+test('painter strokes produce finite smoothed geometry without mutating samples', () => {
+  const points: InputPoint[] = [
     { x: 10, y: 10, pressure: 0.5 },
     { x: 50, y: 20, pressure: 0.6 },
+    { x: 90, y: 70, pressure: 0.7 },
   ];
-
-  // Distance ~41.2px, stepSize = 3px -> ~14 points
-  const interpolated = GeometryUtils.interpolateStrokeSegment(rawPoints, 3);
-  assert.ok(interpolated.length >= 13, 'Should generate dense intermediate points');
-  assert.ok(interpolated[0].x > 10, 'First interpolated point should progress');
-  assert.equal(interpolated[interpolated.length - 1].x, 50);
-  assert.equal(interpolated[interpolated.length - 1].y, 20);
-
-  // 3rd point adds curved progression
-  rawPoints.push({ x: 90, y: 70, pressure: 0.7 });
-  const secondSegment = GeometryUtils.interpolateStrokeSegment(rawPoints, 3);
-  assert.ok(secondSegment.length >= 15);
-  assert.equal(secondSegment[secondSegment.length - 1].x, 90);
+  const before = structuredClone(points);
+  const options = defaultBrushOptions(8);
+  const centerline = strokeCenterline(points, options);
+  const outline = strokeOutline(points, options);
+  assert.ok(centerline.length >= 3);
+  assert.ok(outline.length > points.length);
+  assert.ok(outline.every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)));
+  assert.ok(Math.abs(ringsArea([outline])) > 0);
+  assert.deepEqual(points, before);
+  assert.deepEqual(strokeOutline([], options), []);
 });
 
-test('@tess/painter - SVG bezier path generation without linear polygon faceting', () => {
-  const strokeOutline = [
-    [10, 10],
-    [30, 12],
-    [60, 20],
-    [80, 40],
-    [75, 45],
-    [55, 25],
-    [28, 18],
-    [8, 15],
+test('painter stroke outlines retain quadratic SVG curves', () => {
+  const outline: Ring = [
+    { x: 10, y: 10 }, { x: 30, y: 12 }, { x: 60, y: 20 }, { x: 80, y: 40 },
+    { x: 75, y: 45 }, { x: 55, y: 25 }, { x: 28, y: 18 }, { x: 8, y: 15 },
   ];
-
-  const svgPath = GeometryUtils.getSvgPathFromStroke(strokeOutline, true);
-  assert.ok(svgPath.startsWith('M '), 'Path should start with M');
-  assert.ok(svgPath.includes(' Q '), 'Path should use quadratic bezier Q segments for smooth curve');
-  assert.ok(svgPath.endsWith(' Z'), 'Path should close with Z');
-  assert.ok(!svgPath.includes(' L '), 'Path should NOT be converted into faceted linear L segments');
+  const path = ringToSmoothPathData(outline);
+  assert.ok(path.startsWith('M '));
+  assert.ok(path.includes(' Q'));
+  assert.ok(path.endsWith(' Z'));
+  assert.ok(!path.includes(' L '));
 });
 
-test('@tess/painter - Non-compounding deterministic matrix transformations', () => {
-  const base = GeometryUtils.identityMatrix();
-  let lastM = base;
-
-  // Simulate 50 frames of dragging
-  for (let dx = 1; dx <= 50; dx++) {
-    const transM = { a: 1, b: 0, c: 0, d: 1, e: dx, f: dx * 2 };
-    lastM = GeometryUtils.multiplyMatrices(transM, base);
-  }
-
-  // Displacement must be strictly 50 and 100, not compounding
-  assert.equal(lastM.e, 50);
-  assert.equal(lastM.f, 100);
-  assert.equal(lastM.a, 1);
-  assert.equal(lastM.d, 1);
+test('painter transforms use the drag baseline without compounding displacement', () => {
+  let matrix: Matrix = IDENTITY;
+  for (let dx = 1; dx <= 50; dx++) matrix = matMultiply(matTranslate(dx, dx * 2), IDENTITY);
+  assert.deepEqual(matApply(matrix, { x: 100, y: 200 }), { x: 150, y: 300 });
+  assert.deepEqual(IDENTITY, [1, 0, 0, 1, 0, 0]);
 });
 
-test('@tess/painter - TransformBox drag tracking without acceleration', () => {
-  const initialBounds: RectBounds = { x: 100, y: 200, width: 80, height: 60 };
-  const dragStartPt: Point = { x: 120, y: 220 };
-
-  let currentBoxBounds = { ...initialBounds };
-  for (let frame = 1; frame <= 100; frame++) {
-    const curMousePt: Point = { x: dragStartPt.x + frame, y: dragStartPt.y + frame * 2 };
-    const totalDx = curMousePt.x - dragStartPt.x;
-    const totalDy = curMousePt.y - dragStartPt.y;
-
-    currentBoxBounds = {
-      x: initialBounds.x + totalDx,
-      y: initialBounds.y + totalDy,
-      width: initialBounds.width,
-      height: initialBounds.height,
-    };
-  }
-
-  assert.equal(currentBoxBounds.x, 200);
-  assert.equal(currentBoxBounds.y, 400);
-  assert.equal(currentBoxBounds.width, 80);
-  assert.equal(currentBoxBounds.height, 60);
+test('painter boolean subtraction keeps holes in the result and SVG path', () => {
+  const square: Ring = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
+  const eraser: Ring = [{ x: 40, y: 40 }, { x: 60, y: 40 }, { x: 60, y: 60 }, { x: 40, y: 60 }];
+  const result = differenceRings([square], [eraser]);
+  assert.equal(result.length, 2);
+  assert.equal(Math.abs(ringsArea(result)), 9600);
+  assert.equal(pointInRings({ x: 20, y: 20 }, result), true);
+  assert.equal(pointInRings({ x: 50, y: 50 }, result), false);
+  assert.equal((ringsToPathData(result).match(/M /g) ?? []).length, 2);
 });
 
-test('@tess/painter - Clipper boolean subtraction with hole preservation', () => {
-  // Positive square 0..100
-  const square = [
-    { x: 0, y: 0 },
-    { x: 100, y: 0 },
-    { x: 100, y: 100 },
-    { x: 0, y: 100 },
-  ];
-
-  // Hole inside 20..80
-  const eraser = [
-    { x: 40, y: 40 },
-    { x: 60, y: 40 },
-    { x: 60, y: 60 },
-    { x: 40, y: 60 },
-  ];
-
-  const result = ClipperHelper.subtractWithHoles([square], [eraser]);
-  assert.equal(result.length, 1, 'Should return 1 shape');
-  assert.equal(result[0].holes.length, 1, 'Should preserve 1 negative hole');
-
-  const combined = [result[0].solid, ...result[0].holes];
-  const svgD = ClipperHelper.pathsDToSvgPath(combined);
-  assert.ok(svgD.includes('M'), 'Should produce valid SVG path string');
-  assert.ok(svgD.includes('Z'), 'Should produce closed sub-paths');
+test('painter flood fill respects disconnected regions and makes repeated fills a no-op', () => {
+  const image = { width: 3, height: 1, data: new Uint8ClampedArray([
+    0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255,
+  ]) } as ImageData;
+  const color = parseColor('#6366f1');
+  assert.deepEqual(color, { r: 99, g: 102, b: 241, a: 1 });
+  assert.equal(floodFill(image, 0, 0, color, { tolerance: 0 }), true);
+  assert.deepEqual([...image.data.slice(0, 4)], [99, 102, 241, 255]);
+  assert.deepEqual([...image.data.slice(8)], [0, 0, 0, 255]);
+  assert.equal(floodFill(image, 0, 0, color, { tolerance: 0 }), false);
 });
 
-test('@tess/painter - FloodFill color parsing and HistoryManager stack', () => {
-  const rgba = FloodFill.hexToRgba('#6366f1');
-  assert.equal(rgba.r, 99);
-  assert.equal(rgba.g, 102);
-  assert.equal(rgba.b, 241);
-  assert.equal(rgba.a, 255);
-
-  let undoCount = 0;
-  let redoCount = 0;
-  const history = new HistoryManager<string>(10, (canUndo, canRedo) => {
-    if (canUndo) undoCount++;
-    if (canRedo) redoCount++;
-  });
-
-  history.push('state 1');
-  assert.equal(history.canUndo, true);
-  const undone = history.undo('state 2');
-  assert.equal(undone, 'state 1');
+test('painter history restores snapshots and discards redo after a new edit', () => {
+  const changes: Array<{ canUndo: boolean; canRedo: boolean }> = [];
+  const history = new History<string>({ limit: 10, onChange: (state) => changes.push(state) });
+  history.reset('baseline');
+  assert.equal(history.canUndo, false);
+  history.push('first');
+  history.push('second');
+  assert.equal(history.undo(), 'first');
   assert.equal(history.canRedo, true);
-  const redone = history.redo('state 1');
-  assert.equal(redone, 'state 2');
+  assert.equal(history.redo(), 'second');
+  history.undo();
+  history.push('replacement');
+  assert.equal(history.redo(), null);
+  assert.equal(history.current, 'replacement');
+  assert.deepEqual(changes.at(-1), { canUndo: true, canRedo: false });
 });
