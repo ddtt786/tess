@@ -1,0 +1,235 @@
+{
+  "id": "69b3ef8e0075070c7c1d0aca",
+  "name": "저장 동작 샘플",
+  "scenes": [
+    {
+      "id": "k4ii",
+      "name": "확인"
+    },
+    {
+      "id": "hakf",
+      "name": "선택"
+    },
+    {
+      "id": "5uvt",
+      "name": "그리기"
+    },
+    {
+      "id": "g7jg",
+      "name": "저장"
+    },
+    {
+      "id": "5ge6",
+      "name": "불러오기"
+    }
+  ],
+  "variables": [
+    {
+      "name": "변수",
+      "id": "xtnh",
+      "visible": false,
+      "value": 0,
+      "variableType": "variable",
+      "isCloud": false,
+      "isRealTime": false,
+      "cloudDate": false,
+      "object": null,
+      "x": -230,
+      "y": 67
+    },
+    {
+      "name": "@확장프로그램",
+      "id": "t7hf",
+      "visible": true,
+      "value": 0,
+      "variableType": "variable",
+      "isCloud": false,
+      "isRealTime": false,
+      "cloudDate": false,
+      "object": null,
+      "x": -243.36708860759495,
+      "y": 125.97262335767161
+    },
+    {
+      "name": "방향",
+      "id": "4py7",
+      "visible": false,
+      "value": "0",
+      "variableType": "variable",
+      "isCloud": false,
+      "isRealTime": false,
+      "cloudDate": false,
+      "object": null,
+      "x": -230,
+      "y": -17
+    },
+    {
+      "name": "거리",
+      "id": "a1ce",
+      "visible": false,
+      "value": "0",
+      "variableType": "variable",
+      "isCloud": false,
+      "isRealTime": false,
+      "cloudDate": false,
+      "object": null,
+      "x": -230,
+      "y": -44
+    },
+    {
+      "name": "@마우스좌표y",
+      "id": "hi6c",
+      "visible": false,
+      "value": 0,
+      "variableType": "list",
+      "isCloud": false,
+      "isRealTime": false,
+      "cloudDate": false,
+      "object": null,
+      "x": 120,
+      "y": -91,
+      "width": 100,
+      "height": 120,
+      "array": []
+    },
+    {
+      "name": "@마우스좌표x",
+      "id": "4owz",
+      "visible": false,
+      "value": 0,
+      "variableType": "list",
+      "isCloud": false,
+      "isRealTime": false,
+      "cloudDate": false,
+      "object": null,
+      "x": 120,
+      "y": -115,
+      "width": 100,
+      "height": 120,
+      "array": []
+    },
+    {
+      "name": "초시계",
+      "id": "brih",
+      "visible": false,
+      "value": 0,
+      "variableType": "timer",
+      "isCloud": false,
+      "isRealTime": false,
+      "cloudDate": false,
+      "object": null,
+      "x": 134,
+      "y": -70
+    },
+    {
+      "name": "대답",
+      "id": "1vu8",
+      "visible": false,
+      "value": "0",
+      "variableType": "answer",
+      "isCloud": false,
+      "isRealTime": false,
+      "cloudDate": false,
+      "object": null,
+      "x": 150,
+      "y": -100
+    }
+  ],
+  "messages": [],
+  "functions": [
+    {
+      "id": "9hs9",
+      "type": "normal",
+      "localVariables": [],
+      "useLocalVariables": false,
+      "content": "[[{\"id\": \"n341\", \"type\": \"function_create\", \"params\": [{\"id\": \"1ad2\", \"type\": \"function_field_label\", \"params\": [\"@저장\", null], \"statements\": []}, null], \"statements\": [[]]}]]"
+    }
+  ],
+  "thumb": null,
+  "objects": [
+    {
+      "id": "jkp6",
+      "name": "확장 프로그램 설치 확인 ",
+      "scene": "k4ii",
+      "objectType": "sprite",
+      "entity": {
+        "x": -142.87,
+        "y": -45.78,
+        "regX": 81,
+        "regY": 168,
+        "scaleX": 0.44371962306979734,
+        "scaleY": 0.44371962306979756,
+        "rotation": 0,
+        "direction": 90,
+        "width": 162,
+        "height": 336,
+        "font": "undefinedpx ",
+        "visible": true
+      },
+      "script": "[[{\"id\": \"vgrl\", \"type\": \"when_run_button_click\", \"params\": [null], \"statements\": []}, {\"id\": \"v9dz\", \"type\": \"wait_until_true\", \"params\": [{\"id\": \"4mqu\", \"type\": \"boolean_basic_operator\", \"params\": [{\"id\": \"9eky\", \"type\": \"text\", \"params\": [\"1\"], \"statements\": []}, \"EQUAL\", {\"id\": \"fa9r\", \"type\": \"get_variable\", \"params\": [\"t7hf\", null], \"statements\": []}], \"statements\": []}, null], \"statements\": []}, {\"id\": \"4ein\", \"type\": \"wait_second\", \"params\": [{\"id\": \"cu0u\", \"type\": \"number\", \"params\": [\"0.5\"], \"statements\": []}, null], \"statements\": []}, {\"id\": \"zcw3\", \"type\": \"if_else\", \"params\": [{\"id\": \"x5cn\", \"type\": \"boolean_basic_operator\", \"params\": [{\"id\": \"gydq\", \"type\": \"length_of_list\", \"params\": [null, \"hi6c\", null], \"statements\": []}, \"GREATER\", {\"id\": \"o1dz\", \"type\": \"text\", \"params\": [\"1\"], \"statements\": []}], \"statements\": []}, null, null], \"statements\": [[{\"id\": \"ibwi\", \"type\": \"start_scene\", \"params\": [\"hakf\", null], \"statements\": []}], [{\"id\": \"eaux\", \"type\": \"start_scene\", \"params\": [\"5uvt\", null], \"statements\": []}]]}]]"
+    },
+    {
+      "id": "gtty",
+      "name": "결과보기 버튼",
+      "scene": "k4ii",
+      "objectType": "sprite",
+      "entity": {
+        "x": 106.78,
+        "y": -78.38,
+        "regX": 81.5,
+        "regY": 51,
+        "scaleX": 0.7949055963309996,
+        "scaleY": 0.7949055963310001,
+        "rotation": 0,
+        "direction": 90,
+        "width": 163,
+        "height": 102,
+        "font": "undefinedpx ",
+        "visible": true
+      },
+      "script": "[[{\"id\": \"ua11\", \"type\": \"when_object_click\", \"params\": [null], \"statements\": []}, {\"id\": \"1qr1\", \"type\": \"start_scene\", \"params\": [\"5uvt\", null], \"statements\": []}], [{\"id\": \"rahi\", \"type\": \"when_run_button_click\", \"params\": [null], \"statements\": []}, {\"id\": \"hskn\", \"type\": \"wait_until_true\", \"params\": [{\"id\": \"mfgn\", \"type\": \"boolean_basic_operator\", \"params\": [{\"id\": \"qg9v\", \"type\": \"text\", \"params\": [\"1\"], \"statements\": []}, \"EQUAL\", {\"id\": \"fhjn\", \"type\": \"get_variable\", \"params\": [\"t7hf\", null], \"statements\": []}], \"statements\": []}, null], \"statements\": []}, {\"id\": \"kjt4\", \"type\": \"hide\", \"params\": [null], \"statements\": []}]]"
+    },
+    {
+      "id": "pxpm",
+      "name": "저장 아이콘",
+      "scene": "5uvt",
+      "objectType": "sprite",
+      "entity": {
+        "x": 185.7,
+        "y": -83.41,
+        "regX": 60,
+        "regY": 60,
+        "scaleX": 0.8333333333333334,
+        "scaleY": 0.8333333333333334,
+        "rotation": 0,
+        "direction": 90,
+        "width": 120,
+        "height": 120,
+        "font": "undefinedpx ",
+        "visible": false
+      },
+      "script": "[[{\"id\": \"upiw\", \"type\": \"when_scene_start\", \"params\": [null], \"statements\": []}, {\"id\": \"pfe6\", \"type\": \"_if\", \"params\": [{\"id\": \"v8wm\", \"type\": \"boolean_basic_operator\", \"params\": [{\"id\": \"1t47\", \"type\": \"text\", \"params\": [\"1\"], \"statements\": []}, \"EQUAL\", {\"id\": \"c8i9\", \"type\": \"get_variable\", \"params\": [\"t7hf\", null], \"statements\": []}], \"statements\": []}, null], \"statements\": [[{\"id\": \"mysz\", \"type\": \"wait_second\", \"params\": [{\"id\": \"0dot\", \"type\": \"number\", \"params\": [\"2\"], \"statements\": []}, null], \"statements\": []}, {\"id\": \"qytj\", \"type\": \"show\", \"params\": [null], \"statements\": []}]]}], [{\"id\": \"iigs\", \"type\": \"when_object_click\", \"params\": [null], \"statements\": []}, {\"id\": \"iscm\", \"type\": \"hide\", \"params\": [null], \"statements\": []}, {\"id\": \"nota\", \"type\": \"func_9hs9\", \"params\": [null], \"statements\": []}, {\"id\": \"tr4p\", \"type\": \"wait_second\", \"params\": [{\"id\": \"pquv\", \"type\": \"number\", \"params\": [\"2\"], \"statements\": []}, null], \"statements\": []}, {\"id\": \"lbl6\", \"type\": \"start_scene\", \"params\": [\"g7jg\", null], \"statements\": []}]]"
+    },
+    {
+      "id": "av8t",
+      "name": "마우스 보정",
+      "scene": "5uvt",
+      "objectType": "sprite",
+      "entity": {
+        "x": 0,
+        "y": 0,
+        "regX": 72,
+        "regY": 123,
+        "scaleX": 0.5128205128205128,
+        "scaleY": 0.5128205128205128,
+        "rotation": 0,
+        "direction": 90,
+        "width": 144,
+        "height": 246,
+        "font": "undefinedpx ",
+        "visible": false
+      },
+      "script": "[[{\"id\": \"x0kn\", \"type\": \"when_run_button_click\", \"params\": [null], \"statements\": []}], [{\"id\": \"tyyj\", \"type\": \"when_scene_start\", \"params\": [null], \"statements\": []}, {\"id\": \"nrwp\", \"type\": \"_if\", \"params\": [{\"id\": \"rj79\", \"type\": \"boolean_basic_operator\", \"params\": [{\"id\": \"up6b\", \"type\": \"text\", \"params\": [\"1\"], \"statements\": []}, \"EQUAL\", {\"id\": \"65yu\", \"type\": \"get_variable\", \"params\": [\"t7hf\", null], \"statements\": []}], \"statements\": []}, null], \"statements\": [[{\"id\": \"kvz3\", \"type\": \"repeat_inf\", \"params\": [null, null], \"statements\": [[{\"id\": \"jrbm\", \"type\": \"_if\", \"params\": [{\"id\": \"n29a\", \"type\": \"is_clicked\", \"params\": [null], \"statements\": []}, null], \"statements\": [[{\"id\": \"i7at\", \"type\": \"add_value_to_list\", \"params\": [{\"id\": \"b8ps\", \"type\": \"coordinate_object\", \"params\": [null, \"self\", null, \"x\"], \"statements\": []}, \"4owz\", null], \"statements\": []}, {\"id\": \"ie7k\", \"type\": \"add_value_to_list\", \"params\": [{\"id\": \"i7dh\", \"type\": \"coordinate_object\", \"params\": [null, \"self\", null, \"y\"], \"statements\": []}, \"hi6c\", null], \"statements\": []}]]}]]}]]}], [{\"id\": \"7o06\", \"type\": \"when_scene_start\", \"params\": [null], \"statements\": []}, {\"id\": \"7163\", \"type\": \"repeat_inf\", \"params\": [null, null], \"statements\": [[{\"id\": \"ztg0\", \"type\": \"see_angle_object\", \"params\": [\"mouse\", null], \"statements\": []}, {\"id\": \"83ny\", \"type\": \"move_direction\", \"params\": [{\"id\": \"x4r5\", \"type\": \"calc_basic\", \"params\": [{\"id\": \"z1k5\", \"type\": \"distance_something\", \"params\": [null, \"mouse\", null], \"statements\": []}, \"DIVIDE\", {\"id\": \"plwj\", \"type\": \"number\", \"params\": [\"20\"], \"statements\": []}], \"statements\": []}, null], \"statements\": []}]]}]]"
+    }
+  ]
+}

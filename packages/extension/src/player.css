@@ -5,9 +5,20 @@
  */
 /* Laid over the emptied entry frame, so the page's own sizing rules still decide
    how big the player is. */
-.tessvm-host {
+.tess-host,
+.tessvm-host,
+.tessvm-host-view {
   position: absolute;
   inset: 0;
+}
+
+#esm-runtime-notice {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
 }
 
 .tessvm-player {

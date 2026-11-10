@@ -6,7 +6,12 @@
  */
 import { mountPlayer, type MountedPlayer } from './player.ts';
 
-const HOST_SELECTOR = '[data-tessvm-project]';
+// Prevent conflict with Entry Save Manager by ensuring its inject.js exits early.
+try {
+  (window as any).__entrySaveManagerLoaded = true;
+} catch (_) {}
+
+const HOST_SELECTOR = '[data-tess-project], [data-tessvm-project]';
 const players = new Map<HTMLElement, MountedPlayer>();
 
 function scan(): void {
@@ -17,7 +22,7 @@ function scan(): void {
     }
   }
   for (const host of document.querySelectorAll<HTMLElement>(HOST_SELECTOR)) {
-    const id = host.dataset.tessvmProject;
+    const id = host.dataset.tessProject || host.dataset.tessvmProject;
     if (players.has(host) || !id) {
       continue;
     }

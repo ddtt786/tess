@@ -530,6 +530,7 @@ export function mountPlayer(
       coords.textContent = `X: ${Math.round(live.vm.mouseX)}  Y: ${Math.round(live.vm.mouseY)}`;
     };
     const start = () => {
+      if (disposed) return;
       clearError();
       seen.clear();
       live.start();

@@ -13,6 +13,14 @@
  */
 import { api, readSettings, ENABLED_KEY, SVG_KEY, MASK_KEY, NOTICE_KEY } from './browser.ts';
 
+// Prevent conflict with Entry Save Manager by ensuring its inject.js exits early.
+try {
+  const initScript = document.createElement('script');
+  initScript.textContent = 'window.__entrySaveManagerLoaded = true;';
+  (document.head || document.documentElement).appendChild(initScript);
+  initScript.remove();
+} catch (_) {}
+
 const IFRAME_MARK = '/iframe/';
 /** `data-tessvm-held` — set on a frame this has already taken over. */
 const HELD = 'tessvmHeld';
@@ -38,8 +46,13 @@ function idOf(src: string): string | null {
 }
 
 function hostAfter(frame: HTMLIFrameElement): HTMLElement | null {
-  const next = frame.nextElementSibling;
-  return next instanceof HTMLElement && next.dataset.tessvmProject ? next : null;
+  const parent = frame.parentElement;
+  if (!parent) return null;
+  return (
+    parent.querySelector<HTMLElement>(':scope > [data-tess-project]') ??
+    parent.querySelector<HTMLElement>(':scope > [data-tessvm-project]') ??
+    null
+  );
 }
 
 /** Loads the page-side runner once, into the page's own world. */
@@ -85,9 +98,13 @@ function mount(item: Held): void {
     parent.style.position = 'relative';
     item.positioned = true;
   }
+  const anchor = document.createElement('span');
+  anchor.className = 'tess-frame-anchor';
+  anchor.style.display = 'none';
+
   const host = document.createElement('div');
-  host.className = 'tessvm-host';
-  host.dataset.tessvmProject = item.id;
+  host.className = 'tess-host tessvm-host-view';
+  host.dataset.tessProject = item.id;
   const group = new URLSearchParams(location.search).get('groupId');
   if (group) {
     host.dataset.tessvmGroup = group;
@@ -95,13 +112,14 @@ function mount(item: Held): void {
   host.dataset.tessvmSvg = svg ? '1' : '0';
   host.dataset.tessvmMask = mask ? '1' : '0';
   host.dataset.tessvmNotice = notice ? '1' : '0';
-  item.frame.after(host);
+  item.frame.after(anchor, host);
   inject();
   window.postMessage({ __tessvm: 'scan' }, location.origin);
 }
 
 function release(item: Held): void {
   hostAfter(item.frame)?.remove();
+  item.frame.parentElement?.querySelector(':scope > .tess-frame-anchor')?.remove();
   if (item.positioned) {
     item.frame.parentElement?.style.removeProperty('position');
     item.positioned = false;
@@ -156,7 +174,15 @@ function hold(frame: HTMLIFrameElement): void {
   }
 }
 
+function removeNoticeBanner(): void {
+  const notice = document.getElementById('esm-runtime-notice');
+  if (notice) {
+    notice.remove();
+  }
+}
+
 function sweep(node: Node): void {
+  removeNoticeBanner();
   if (node instanceof HTMLIFrameElement) {
     hold(node);
     return;
@@ -171,6 +197,7 @@ function sweep(node: Node): void {
 // The frame is written by the page's own view code, and its address can be set
 // either with it or a moment after, so both are watched.
 const observer = new MutationObserver((records) => {
+  removeNoticeBanner();
   for (const record of records) {
     if (record.type === 'attributes') {
       if (record.target instanceof HTMLIFrameElement) {
@@ -238,7 +265,8 @@ window.addEventListener('message', (event) => {
     return;
   }
   const data = event.data as { __tessvm?: string; id?: number } | null;
-  if (!data || typeof data !== 'object' || !String(data.__tessvm).startsWith('store-')) {
+  if (!data || typeof data !== 'object'
+      || (data.__tessvm !== 'store-read' && data.__tessvm !== 'store-write')) {
     return;
   }
   const reply = (answer: unknown) => {

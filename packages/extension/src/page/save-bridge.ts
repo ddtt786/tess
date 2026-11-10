@@ -63,10 +63,12 @@ export function bridgeSaveStore(work: string, title: string): SaveHost {
   return {
     async read() {
       const answer = await ask({ __tessvm: "store-read", work });
+      if (answer.error) throw new Error('Save storage is unavailable');
       return answer.values ?? {};
     },
     async write(values) {
-      await ask({ __tessvm: "store-write", work, title, values });
+      const answer = await ask({ __tessvm: "store-write", work, title, values });
+      if (answer.error) throw new Error('Save storage is unavailable');
     },
   };
 }

@@ -1,12 +1,4 @@
-/**
- * `store` — 실행 사이에 남는 이름들을 확인합니다.
- *
- * 규약은 엔트리 확장 프로그램 Entry Save Manager 의 것입니다. 전역 변수·리스트 이름이
- * `@` 로 시작하면 그 확장이 값을 맡아 두고, 작품이 `@저장` 함수를 부르면 써 두며
- * (`@비동기저장` 은 기다리지 않습니다), 확장이 있는 동안 `@확장프로그램` 이 1 입니다.
- * Tess 는 같은 자리를 `store var` · `store list` · `save` · `save async` · `can_save`
- * 로 적고, 컴파일·되돌리기가 그 이름들을 오갑니다.
- */
+/** Verifies persistent names, save calls, and save availability. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compileProject } from '@tess/compiler';
@@ -54,7 +46,7 @@ function blockTypes(script: unknown, found: string[] = []): string[] {
   return found;
 }
 
-/** 함수 머리에 적힌 이름 — 세이브 매니저가 알아보는 자리입니다. */
+/** Reads function titles from their definition blocks. */
 function functionLabels(project: RawEntity): string[] {
   return (project.functions as RawEntity[]).map((fn) => {
     const create = (JSON.parse(String(fn.content)) as RawEntity[][])[0]![0]!;
@@ -174,7 +166,7 @@ function fakeHost(values: Record<string, unknown> = {}) {
 
 /** 작품을 싣고 저장소를 붙인 실행기. */
 async function runWith(host: unknown, source = WORK) {
-  const vm = new Vm({ renderer: null, audio: null });
+  const vm = new Vm({ renderer: null, audio: null, kernel: () => null });
   vm.load(build(source) as never);
   vm.save.host = host as never;
   await vm.save.load();
@@ -256,4 +248,56 @@ end`,
   vm.tick();
   // 엔트리의 '변수 정하기' 는 값을 글자로 담으므로 숫자로 맞춰서 봅니다.
   assert.equal(Number(valueOf(vm, '@횟수')), 1);
+});
+
+test('숫자 커널이 켜져 있어도 저장을 감싼 함수는 실제 쓰기가 끝날 때까지 기다린다', async () => {
+  let finish!: () => void;
+  let writes = 0;
+  const vm = await runWith({
+    read: async () => ({}),
+    write: () => { writes++; return new Promise<void>((resolve) => { finish = resolve; }); },
+  }, `store var 점수 = 3
+var 진행 = 0
+function 기록():
+  save
+  진행 = 1
+end
+scene "s":
+  object "o":
+    when start do
+      기록()
+      진행 = 2
+    end
+  end
+end`);
+  vm.tick();
+  assert.equal(writes, 1);
+  assert.equal(Number(valueOf(vm, '진행')), 0);
+  finish();
+  await new Promise((done) => setTimeout(done, 0));
+  vm.tick();
+  assert.equal(Number(valueOf(vm, '진행')), 2);
+});
+
+test('숫자 커널이 켜져 있어도 비동기 저장은 실제 쓰기를 시작하고 다음 문장으로 진행한다', async () => {
+  let finish!: () => void;
+  let writes = 0;
+  const vm = await runWith({
+    read: async () => ({}),
+    write: () => { writes++; return new Promise<void>((resolve) => { finish = resolve; }); },
+  }, `store var 점수 = 3
+var 진행 = 0
+scene "s":
+  object "o":
+    when start do
+      save async
+      진행 = 1
+    end
+  end
+end`);
+  vm.tick();
+  assert.equal(writes, 1);
+  assert.equal(Number(valueOf(vm, '진행')), 1);
+  finish();
+  await new Promise((done) => setTimeout(done, 0));
 });
