@@ -285,3 +285,45 @@ test('실행 버튼은 저장소를 다시 기다리지 않고 즉시 시작하�
     dom.window.close();
   }
 });
+
+test('공백이 포함된 @저장 함수나 변수가 없는 저장 시도도 정상 전달되어 작업자에 기록된다', async () => {
+  const saved = new Map<string, Values>();
+  const s = setup(saved);
+  try {
+    const rawWork = {
+      id: 'work-whitespace',
+      name: '여백 함수 작품',
+      objects: [{
+        id: 'o',
+        name: 'o',
+        scene: 's',
+        script: JSON.stringify([[{ id: 'b1', type: 'when_run_button_click', params: [] }, { id: 'b2', type: 'func_f', params: [null] }]]),
+      }],
+      scenes: [{ id: 's', name: 's' }],
+      variables: [
+        { id: 'v', name: ' @골드 ', variableType: 'variable', value: 500, object: null },
+      ],
+      messages: [],
+      functions: [{
+        id: 'f',
+        content: JSON.stringify([[{
+          id: 'c', type: 'function_create', params: [{ type: 'function_field_label', params: ['@저장 ', null] }, null], statements: [[]],
+        }]]),
+      }],
+    };
+    const decomp = decompileProject(rawWork as never, [], { inline: true });
+    const built = compileProject(decomp.source, { path: 'w.tess' });
+    const runner = new Vm({ renderer: null, audio: null, kernel: () => null });
+    runner.load({ ...built.project!, id: 'work-whitespace' } as never);
+    runner.save.host = s.make('work-whitespace', '여백 함수 작품');
+    await runner.save.load();
+    runner.start();
+    runner.tick();
+    await s.drain();
+    assert.deepEqual(saved.get('work-whitespace'), { '@골드': 500 });
+    runner.stop();
+  } finally {
+    s.close();
+  }
+});
+

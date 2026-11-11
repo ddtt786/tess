@@ -25,11 +25,39 @@ export const STORE_PREFIX = '@';
 /** Set to 1 while the values can be kept, so a work can ask before it saves. */
 export const STORE_FLAG = '@확장프로그램';
 export const STORE_FLAG_ON = 1;
+export const STORE_SAVE_FUNCTION = '@저장';
+export const STORE_SAVE_ASYNC_FUNCTION = '@비동기저장';
+
 /** Function names the work calls to save, and whether the call waits. */
 export const SAVE_FUNCTIONS: Record<string, 'wait' | 'async'> = {
   '@저장': 'wait',
   '@비동기저장': 'async',
 };
+
+/** Whether an entry variable or list name is one the save manager keeps. */
+export function isStoreName(name: unknown): boolean {
+  if (typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  return trimmed.startsWith(STORE_PREFIX) && !isStoreFlag(trimmed);
+}
+
+/** Whether a variable name is the save manager's availability flag. */
+export function isStoreFlag(name: unknown): boolean {
+  if (typeof name !== 'string') return false;
+  return name.replace(/\s+/g, '') === STORE_FLAG;
+}
+
+/**
+ * Normalizes save function names, handling whitespace and call syntax.
+ * Maps variations of `@저장` to `wait` and `@비동기저장` to `async`.
+ */
+export function saveFunctionKind(name: unknown): 'wait' | 'async' | undefined {
+  if (typeof name !== 'string') return undefined;
+  const clean = name.trim().replace(/\s*\([^)]*\)\s*$/, '').replace(/^@\s+/, '@');
+  if (clean === STORE_SAVE_FUNCTION) return 'wait';
+  if (clean === STORE_SAVE_ASYNC_FUNCTION) return 'async';
+  return undefined;
+}
 
 /** One name's value: a variable's own, or a list's items. */
 export type StoredValue = string | number | Array<{ data: string | number }>;
@@ -65,18 +93,20 @@ export class SaveStore {
   }
 
   /** Picks the names out of a work that has just been loaded. */
-  bind(): void {
+  bind(functions: Array<{ content?: unknown }> = []): void {
+    const hasSaveFunction = functions.some((fn) =>
+      saveFunctionKind(functionLabel(fn.content)) !== undefined,
+    );
     this.kept = this.vm.variables.filter(
       (variable) =>
         variable.objectId === null &&
-        variable.name.startsWith(STORE_PREFIX) &&
-        variable.name !== STORE_FLAG,
+        isStoreName(variable.name),
     );
     this.flag =
       this.vm.variables.find(
-        (variable) => variable.objectId === null && variable.name === STORE_FLAG,
+        (variable) => variable.objectId === null && isStoreFlag(variable.name),
       ) ?? null;
-    this.used = this.kept.length > 0 || this.flag !== null;
+    this.used = this.kept.length > 0 || this.flag !== null || hasSaveFunction;
     this.values = {};
   }
 
@@ -102,9 +132,10 @@ export class SaveStore {
    * the page refuses is not an error the work is told about.
    */
   async write(): Promise<void> {
-    if (!this.host || !this.used) {
+    if (!this.host) {
       return;
     }
+    this.used = true;
     const values: Record<string, StoredValue> = {};
     for (const variable of this.kept) {
       values[variable.name] = variable.isList
@@ -121,7 +152,7 @@ export class SaveStore {
       return;
     }
     for (const variable of this.kept) {
-      const saved = this.values[variable.name];
+      const saved = this.values[variable.name] ?? this.values[variable.name.trim()];
       if (saved === undefined) {
         continue;
       }
@@ -152,7 +183,11 @@ export function functionLabel(content: unknown): string {
   if (field?.type !== 'function_field_label') {
     return '';
   }
-  return String(field.params?.[0] ?? '');
+  const raw = String(field.params?.[0] ?? '').trim();
+  const kind = saveFunctionKind(raw);
+  if (kind === 'wait') return STORE_SAVE_FUNCTION;
+  if (kind === 'async') return STORE_SAVE_ASYNC_FUNCTION;
+  return raw;
 }
 
 function safeParse(text: string): unknown {

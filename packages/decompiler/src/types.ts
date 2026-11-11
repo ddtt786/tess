@@ -134,6 +134,8 @@ export interface FunctionInfo {
   displayLabel: string;
   /** Set on the save manager's own functions: `save` and `save async`. */
   saveKind?: 'save' | 'async';
+  /** Keeps authored statements after the built-in save operation. */
+  saveBody?: boolean;
 }
 
 /**

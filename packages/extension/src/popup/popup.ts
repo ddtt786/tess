@@ -164,6 +164,9 @@ async function paintSaves(): Promise<void> {
 }
 
 void paintSaves();
+if (typeof window !== 'undefined') {
+  window.addEventListener('focus', () => void paintSaves());
+}
 
 // ---------------------------------------------------------------------------
 //  파일로 내보내기 · 파일에서 가져오기

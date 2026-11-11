@@ -23,6 +23,27 @@ export const STORE_FLAG_VARIABLE = '@확장프로그램';
 export const STORE_FLAG_ON = 1;
 
 /** Whether an entry variable or list name is one the save manager keeps. */
-export function isStoreName(name: string): boolean {
-  return name.startsWith(STORE_PREFIX) && name !== STORE_FLAG_VARIABLE;
+export function isStoreName(name: unknown): boolean {
+  if (typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  return trimmed.startsWith(STORE_PREFIX) && !isStoreFlag(trimmed);
 }
+
+/** Whether a variable name is the save manager's availability flag. */
+export function isStoreFlag(name: unknown): boolean {
+  if (typeof name !== 'string') return false;
+  return name.replace(/\s+/g, '') === STORE_FLAG_VARIABLE;
+}
+
+/**
+ * Normalizes save function names, handling whitespace and call syntax.
+ * Maps variations of `@저장` to `wait` and `@비동기저장` to `async`.
+ */
+export function saveFunctionKind(name: unknown): 'wait' | 'async' | undefined {
+  if (typeof name !== 'string') return undefined;
+  const clean = name.trim().replace(/\s*\([^)]*\)\s*$/, '').replace(/^@\s+/, '@');
+  if (clean === STORE_SAVE_FUNCTION) return 'wait';
+  if (clean === STORE_SAVE_ASYNC_FUNCTION) return 'async';
+  return undefined;
+}
+

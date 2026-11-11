@@ -12,6 +12,8 @@ import {
   STORE_FLAG_VARIABLE,
   STORE_SAVE_ASYNC_FUNCTION,
   STORE_SAVE_FUNCTION,
+  isStoreFlag,
+  saveFunctionKind,
 } from '@tess/core';
 import type { Context } from './context.ts';
 import type {
@@ -229,7 +231,9 @@ export function requireSaveFunction(async: boolean, ctx: Context): CompiledFunct
 
   const name = async ? STORE_SAVE_ASYNC_FUNCTION : STORE_SAVE_FUNCTION;
   // 작품이 그 함수를 이미 들고 있으면(되돌린 작품 등) 그것을 부릅니다.
-  const declared = ctx.functions.find((fn) => fn.name === name);
+  const declared = ctx.functions.find(
+    (fn) => fn.name === name || saveFunctionKind(fn.name) === (async ? 'async' : 'wait'),
+  );
   if (declared) {
     ctx.runtimeFunctions.set(key, declared);
     return declared;
@@ -268,7 +272,7 @@ export function requireSaveFunction(async: boolean, ctx: Context): CompiledFunct
  */
 export function requireStoreFlag(ctx: Context): EntryVariable {
   const existing = ctx.variables.find(
-    (variable) => variable.name === STORE_FLAG_VARIABLE && variable.object === null,
+    (variable) => isStoreFlag(String(variable.name ?? '')) && variable.object === null,
   );
   if (existing) return existing;
   const variable: EntryVariable = {

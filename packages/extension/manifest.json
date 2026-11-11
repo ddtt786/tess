@@ -18,6 +18,9 @@
     }
   },
   "permissions": ["storage"],
+  "host_permissions": [
+    "https://playentry.org/*"
+  ],
   "background": {
     "scripts": ["background.js"],
     "type": "module"

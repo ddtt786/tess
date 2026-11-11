@@ -4,4 +4,5 @@ packages:
 
 allowBuilds:
   core-js: true
+  esbuild: true
   tree-sitter-cli: true

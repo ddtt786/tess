@@ -301,3 +301,191 @@ end`);
   finish();
   await new Promise((done) => setTimeout(done, 0));
 });
+
+test('본문이 있는 저장 함수는 저장을 완료한 뒤 작품의 알림 코드도 실행한다', async () => {
+  const project = build(`store var 점수 = 42
+var 알림 = 0
+scene "s":
+  object "o":
+    when start do
+      save
+    end
+    when signal "저장중" do
+      알림 = 1
+    end
+  end
+end`);
+  const fn = project.functions[0];
+  const content = JSON.parse(fn.content);
+  content[0][0].statements = [[{
+    id: 'notify', type: 'message_cast', params: [project.messages[0].id, null], statements: [],
+  }]];
+  fn.content = JSON.stringify(content);
+  const back = decompileProject(project, [], { inline: true });
+  const rebuilt = build(back.source);
+  for (const work of [project, rebuilt]) {
+    let finish!: () => void;
+    const writes: unknown[] = [];
+    const runner = new Vm({ renderer: null, audio: null, kernel: () => null });
+    runner.load(work as never);
+    runner.save.host = {
+      read: async () => ({}),
+      write: (values) => { writes.push(values); return new Promise<void>(resolve => { finish = resolve; }); },
+    };
+    await runner.save.load();
+    runner.start();
+    runner.tick();
+    assert.equal(writes.length, 1);
+    assert.equal(Number(valueOf(runner, '알림')), 0);
+    finish();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    for (let i = 0; i < 3; i++) runner.tick();
+    assert.equal(Number(valueOf(runner, '알림')), 1);
+    assert.equal(writes.length, 1);
+    runner.stop();
+  }
+});
+
+test('공백이나 괄호가 붙은 @저장 함수 이름도 저장으로 인식한다', async () => {
+  const variations = ['@저장 ', ' @저장', '@저장()', '@저장 ()', '@ 저장', '@비동기저장 ', '@비동기저장()'];
+  for (const label of variations) {
+    const raw = {
+      objects: [{
+        id: 'obj',
+        name: 'obj',
+        scene: 's1',
+        script: JSON.stringify([[{
+          id: 'b1', type: 'when_run_button_click', params: [],
+        }, {
+          id: 'b2', type: 'func_fn1', params: [null],
+        }]]),
+      }],
+      scenes: [{ id: 's1', name: '장면 1' }],
+      variables: [
+        { id: 'v1', name: '@점수', variableType: 'variable', value: 99, object: null },
+      ],
+      messages: [],
+      functions: [{
+        id: 'fn1',
+        content: JSON.stringify([[{
+          id: 'c1',
+          type: 'function_create',
+          params: [{ type: 'function_field_label', params: [label, null] }, null],
+          statements: [[]],
+        }]]),
+      }],
+    };
+
+    const decomp = decompileProject(raw as never, [], { inline: true });
+    assert.ok(decomp.source.includes('save'), `Decompiled source must contain save statement for label ${label}`);
+    const rebuilt = compileProject(decomp.source, { path: 'test.tess' });
+    assert.deepEqual(rebuilt.errors, []);
+
+    for (const work of [raw, rebuilt.project!]) {
+      const writes: unknown[] = [];
+      const runner = new Vm({ renderer: null, audio: null, kernel: () => null });
+      runner.load(work as never);
+      runner.save.host = {
+        read: async () => ({}),
+        write: async (values) => { writes.push(values); },
+      };
+      await runner.save.load();
+      runner.start();
+      runner.tick();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.equal(writes.length, 1, `Write must be triggered for label ${label}`);
+      assert.deepEqual((writes[0] as Record<string, unknown>)['@점수'], 99);
+      runner.stop();
+    }
+  }
+});
+
+test('공백이 섞인 @변수와 @확장프로그램 이름도 정상 감지하고 저장한다', async () => {
+  const raw = {
+    objects: [{
+      id: 'obj',
+      name: 'obj',
+      scene: 's1',
+      script: JSON.stringify([[{
+        id: 'b1', type: 'when_run_button_click', params: [],
+      }, {
+        id: 'b2', type: 'func_fn1', params: [null],
+      }]]),
+    }],
+    scenes: [{ id: 's1', name: '장면 1' }],
+    variables: [
+      { id: 'v1', name: ' @점수 ', variableType: 'variable', value: 77, object: null },
+      { id: 'v2', name: '@확장 프로그램', variableType: 'variable', value: 0, object: null },
+    ],
+    messages: [],
+    functions: [{
+      id: 'fn1',
+      content: JSON.stringify([[{
+        id: 'c1',
+        type: 'function_create',
+        params: [{ type: 'function_field_label', params: ['@저장', null] }, null],
+        statements: [[]],
+      }]]),
+    }],
+  };
+
+  const writes: unknown[] = [];
+  const runner = new Vm({ renderer: null, audio: null, kernel: () => null });
+  runner.load(raw as never);
+  runner.save.host = {
+    read: async () => ({}),
+    write: async (values) => { writes.push(values); },
+  };
+  await runner.save.load();
+  runner.start();
+  runner.tick();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(writes.length, 1);
+  assert.equal(runner.save.used, true);
+  assert.equal(runner.variables.find((v) => v.name === '@확장 프로그램')?.getValue(), 1);
+  runner.stop();
+});
+
+test('@ 변수가 없는 작품이라도 @저장을 실행하면 빈 기록이라도 호스트에 전달한다', async () => {
+  const raw = {
+    objects: [{
+      id: 'obj',
+      name: 'obj',
+      scene: 's1',
+      script: JSON.stringify([[{
+        id: 'b1', type: 'when_run_button_click', params: [],
+      }, {
+        id: 'b2', type: 'func_fn1', params: [null],
+      }]]),
+    }],
+    scenes: [{ id: 's1', name: '장면 1' }],
+    variables: [
+      { id: 'v1', name: '일반변수', variableType: 'variable', value: 123, object: null },
+    ],
+    messages: [],
+    functions: [{
+      id: 'fn1',
+      content: JSON.stringify([[{
+        id: 'c1',
+        type: 'function_create',
+        params: [{ type: 'function_field_label', params: ['@저장', null] }, null],
+        statements: [[]],
+      }]]),
+    }],
+  };
+
+  const writes: unknown[] = [];
+  const runner = new Vm({ renderer: null, audio: null, kernel: () => null });
+  runner.load(raw as never);
+  runner.save.host = {
+    read: async () => ({}),
+    write: async (values) => { writes.push(values); },
+  };
+  await runner.save.load();
+  runner.start();
+  runner.tick();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0], {});
+  runner.stop();
+});

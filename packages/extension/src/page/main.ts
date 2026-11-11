@@ -1,76 +1,55 @@
-/**
- * @fileoverview Page-side entry point, loaded into playentry.org as a module.
- *
- * The content script marks where a player belongs; a runner is mounted there and
- * taken down again when the page drops that mount point.
- */
+/** Mounts one player per host and follows host settings across page navigation. */
 import { mountPlayer, type MountedPlayer } from './player.ts';
 
-// Prevent conflict with Entry Save Manager by ensuring its inject.js exits early.
-try {
-  (window as any).__entrySaveManagerLoaded = true;
-} catch (_) {}
-
 const HOST_SELECTOR = '[data-tess-project], [data-tessvm-project]';
-const players = new Map<HTMLElement, MountedPlayer>();
+interface Mounted {
+  id: string;
+  svg: boolean;
+  mask: boolean;
+  notice: boolean;
+  player: MountedPlayer;
+}
+const players = new Map<HTMLElement, Mounted>();
 
 function scan(): void {
-  for (const [host, player] of players) {
-    if (!host.isConnected) {
-      player.dispose();
+  for (const [host, mounted] of players) {
+    const id = host.dataset.tessProject || host.dataset.tessvmProject;
+    if (!host.isConnected || mounted.id !== id || mounted.svg !== (host.dataset.tessvmSvg !== '0')) {
+      mounted.player.dispose();
       players.delete(host);
     }
   }
   for (const host of document.querySelectorAll<HTMLElement>(HOST_SELECTOR)) {
     const id = host.dataset.tessProject || host.dataset.tessvmProject;
-    if (players.has(host) || !id) {
+    if (!id) continue;
+    const svg = host.dataset.tessvmSvg !== '0';
+    const mask = host.dataset.tessvmMask !== '0';
+    const notice = host.dataset.tessvmNotice === '1';
+    const mounted = players.get(host);
+    if (mounted) {
+      if (mounted.mask !== mask) mounted.player.setMaskUserId(mask);
+      if (mounted.notice !== notice) mounted.player.setShowNotice(notice);
+      mounted.mask = mask;
+      mounted.notice = notice;
       continue;
     }
-    players.set(
-      host,
-      mountPlayer(
-        host,
-        id,
-        host.dataset.tessvmGroup ?? null,
-        host.dataset.tessvmSvg !== '0',
-        host.dataset.tessvmMask !== '0',
-        host.dataset.tessvmNotice === '1',
-      ),
-    );
+    players.set(host, {
+      id, svg, mask, notice,
+      player: mountPlayer(host, id, host.dataset.tessvmGroup ?? null, svg, mask, notice),
+    });
   }
 }
 
-function unmountAll(): void {
-  for (const player of players.values()) {
-    player.dispose();
-  }
-  players.clear();
-}
-
-window.addEventListener('message', (event) => {
-  if (event.source !== window) {
-    return;
-  }
-  const data = event.data as { __tessvm?: string; mask?: boolean; notice?: boolean } | null;
-  if (!data || typeof data !== 'object') {
-    return;
-  }
-  if (data.__tessvm === 'scan') {
-    scan();
-  } else if (data.__tessvm === 'unmount') {
-    unmountAll();
-  } else if (data.__tessvm === 'mask') {
-    // Read each time the block runs, so a work already going follows the switch.
-    for (const [host, player] of players) {
-      host.dataset.tessvmMask = data.mask ? '1' : '0';
-      player.setMaskUserId(Boolean(data.mask));
-    }
-  } else if (data.__tessvm === 'notice') {
-    for (const [host, player] of players) {
-      host.dataset.tessvmNotice = data.notice ? '1' : '0';
-      player.setShowNotice(Boolean(data.notice));
-    }
-  }
+const observer = new MutationObserver((records) => {
+  const changed = records.some(record => record.type === 'attributes'
+    || [...record.addedNodes, ...record.removedNodes].some(node =>
+      node instanceof Element && (node.matches(HOST_SELECTOR) || node.querySelector(HOST_SELECTOR))));
+  if (changed) scan();
 });
-
+observer.observe(document.documentElement, {
+  childList: true,
+  subtree: true,
+  attributes: true,
+  attributeFilter: ['data-tess-project', 'data-tessvm-project', 'data-tessvm-svg', 'data-tessvm-mask', 'data-tessvm-notice'],
+});
 scan();

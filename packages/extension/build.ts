@@ -260,6 +260,14 @@ function checkManifest(targetDir = DIST): void {
       }
     }
   }
+  const contentMatches = (manifest.content_scripts ?? []).flatMap(
+    (script: { matches?: string[] }) => script.matches ?? [],
+  );
+  for (const match of contentMatches) {
+    if (!manifest.host_permissions?.includes(match)) {
+      throw new Error(`manifest.json 의 host_permissions 에 content_scripts 매칭 주소가 빠졌습니다: ${match}`);
+    }
+  }
 }
 
 /** The folder an installed package sits in, wherever the store put it. */

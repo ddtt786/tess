@@ -54,7 +54,8 @@ function ask(message: Record<string, unknown>): Promise<Answer> {
       window.clearTimeout(timer);
       done(answer);
     });
-    window.postMessage({ ...message, id }, location.origin);
+    const targetOrigin = location.origin === 'null' ? '*' : location.origin;
+    window.postMessage({ ...message, id }, targetOrigin);
   });
 }
 

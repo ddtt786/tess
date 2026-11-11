@@ -338,7 +338,13 @@ export function mountPlayer(
     }
   });
 
-  void load();
+  void load().catch((error) => {
+    if (disposed) return;
+    status.textContent = "";
+    showError(error instanceof Error ? error.message : String(error));
+    cloudStore?.dispose();
+    cloudStore = null;
+  });
 
   async function load(): Promise<void> {
     let work;
@@ -442,6 +448,7 @@ export function mountPlayer(
       handle?.vm.readStore();
     });
     await cloud.connect();
+    if (disposed) return;
 
     try {
       handle = await boot({

@@ -20,10 +20,12 @@ export interface StoreRequest {
 /** Answers one request. Anything else is left to whoever it was meant for. */
 export function answer(message: StoreRequest): Promise<unknown> | undefined {
   if (message?.__tessvm === 'store-read') {
-    return readWork(message.work).then((values) => ({ values }));
+    return readWork(String(message.work)).then((values) => ({ values }));
   }
   if (message?.__tessvm === 'store-write') {
-    return writeWork(message.work, message.title ?? '', message.values ?? {}).then(() => ({
+    const work = String(message.work);
+    const title = String(message.title || work);
+    return writeWork(work, title, message.values ?? {}).then(() => ({
       ok: true,
     }));
   }

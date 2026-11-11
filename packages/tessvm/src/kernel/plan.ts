@@ -23,7 +23,7 @@ import {
   type RawBlock,
 } from '../compile/codegen.ts';
 import type { Variable } from '../runtime/model.ts';
-import { SAVE_FUNCTIONS, functionLabel } from '../runtime/save.ts';
+import { SAVE_FUNCTIONS, functionLabel, saveFunctionKind } from '../runtime/save.ts';
 
 /** Slot 0 carries the flag that makes the bridge throw the run away. */
 export const BAIL_SLOT = 0;
@@ -817,7 +817,7 @@ export function planKernel(
     const define = stackBlocks?.[0];
     const scan: Scan = { ok: false, reason: '', calls: new Set(), valued: false };
     // Save functions execute runtime I/O even when their block bodies are empty.
-    if (Object.hasOwn(SAVE_FUNCTIONS, functionLabel(fn.content))) {
+    if (saveFunctionKind(functionLabel(fn.content)) !== undefined) {
       scan.reason = 'runtime save';
       return { scan, body: null };
     }

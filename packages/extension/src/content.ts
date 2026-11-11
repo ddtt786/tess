@@ -13,14 +13,6 @@
  */
 import { api, readSettings, ENABLED_KEY, SVG_KEY, MASK_KEY, NOTICE_KEY } from './browser.ts';
 
-// Prevent conflict with Entry Save Manager by ensuring its inject.js exits early.
-try {
-  const initScript = document.createElement('script');
-  initScript.textContent = 'window.__entrySaveManagerLoaded = true;';
-  (document.head || document.documentElement).appendChild(initScript);
-  initScript.remove();
-} catch (_) {}
-
 const IFRAME_MARK = '/iframe/';
 /** `data-tessvm-held` — set on a frame this has already taken over. */
 const HELD = 'tessvmHeld';
@@ -32,6 +24,10 @@ interface Held {
   id: string;
   /** Set when the frame's parent had to be made a positioning root. */
   positioned: boolean;
+  parent: HTMLElement | null;
+  host: HTMLElement | null;
+  anchor: HTMLElement | null;
+  visibility: string;
 }
 
 let enabled: boolean | null = null;
@@ -40,19 +36,14 @@ let mask = true;
 let notice = false;
 let injected = false;
 const held: Held[] = [];
+const byFrame = new WeakMap<HTMLIFrameElement, Held>();
 
 function idOf(src: string): string | null {
   return /\/iframe\/([^/?#]+)/.exec(src)?.[1] ?? null;
 }
 
 function hostAfter(frame: HTMLIFrameElement): HTMLElement | null {
-  const parent = frame.parentElement;
-  if (!parent) return null;
-  return (
-    parent.querySelector<HTMLElement>(':scope > [data-tess-project]') ??
-    parent.querySelector<HTMLElement>(':scope > [data-tessvm-project]') ??
-    null
-  );
+  return byFrame.get(frame)?.host ?? null;
 }
 
 /** Loads the page-side runner once, into the page's own world. */
@@ -90,10 +81,14 @@ function capture(item: Held): void {
 
 function mount(item: Held): void {
   capture(item);
-  if (hostAfter(item.frame)) {
+  if (item.parent !== item.frame.parentElement) removeHost(item);
+  if (item.host?.isConnected && item.host.parentElement === item.frame.parentElement) {
+    updateHost(item.host);
     return;
   }
+  removeHost(item);
   const parent = item.frame.parentElement;
+  item.parent = parent;
   if (parent && getComputedStyle(parent).position === 'static') {
     parent.style.position = 'relative';
     item.positioned = true;
@@ -109,22 +104,37 @@ function mount(item: Held): void {
   if (group) {
     host.dataset.tessvmGroup = group;
   }
-  host.dataset.tessvmSvg = svg ? '1' : '0';
-  host.dataset.tessvmMask = mask ? '1' : '0';
-  host.dataset.tessvmNotice = notice ? '1' : '0';
+  item.host = host;
+  item.anchor = anchor;
+  updateHost(host);
   item.frame.after(anchor, host);
   inject();
-  window.postMessage({ __tessvm: 'scan' }, location.origin);
+}
+
+function updateHost(host: HTMLElement): void {
+  for (const [key, value] of Object.entries({ tessvmSvg: svg, tessvmMask: mask, tessvmNotice: notice })) {
+    const text = value ? '1' : '0';
+    if (host.dataset[key] !== text) host.dataset[key] = text;
+  }
+}
+
+/** Removes only the nodes and layout changes owned by this frame. */
+function removeHost(item: Held): void {
+  item.host?.remove();
+  item.anchor?.remove();
+  item.host = null;
+  item.anchor = null;
+  if (item.positioned) {
+    item.parent?.style.removeProperty('position');
+    item.positioned = false;
+  }
+  item.parent = null;
 }
 
 function release(item: Held): void {
-  hostAfter(item.frame)?.remove();
-  item.frame.parentElement?.querySelector(':scope > .tess-frame-anchor')?.remove();
-  if (item.positioned) {
-    item.frame.parentElement?.style.removeProperty('position');
-    item.positioned = false;
-  }
-  item.frame.style.removeProperty('visibility');
+  removeHost(item);
+  if (item.visibility) item.frame.style.visibility = item.visibility;
+  else item.frame.style.removeProperty('visibility');
   if (item.frame.getAttribute('src') !== item.src) {
     item.frame.setAttribute('src', item.src);
   }
@@ -134,10 +144,15 @@ function applyAll(): void {
   for (let i = held.length - 1; i >= 0; i -= 1) {
     const item = held[i]!;
     if (!item.frame.isConnected) {
+      release(item);
+      byFrame.delete(item.frame);
+      delete item.frame.dataset[HELD];
       held.splice(i, 1);
       continue;
     }
-    if (enabled) {
+    if (enabled === null) {
+      capture(item);
+    } else if (enabled) {
       mount(item);
     } else {
       release(item);
@@ -151,10 +166,32 @@ function applyAll(): void {
  * loading entry cannot be un-loaded, and putting its address back costs nothing.
  */
 function hold(frame: HTMLIFrameElement): void {
-  if (frame.dataset[HELD]) {
+  const previous = byFrame.get(frame);
+  const src = frame.getAttribute('src') ?? '';
+  if (previous) {
+    if (src !== 'about:blank' && src !== previous.src) {
+      const id = idOf(src);
+      if (!id) {
+        removeHost(previous);
+        if (previous.visibility) frame.style.visibility = previous.visibility;
+        else frame.style.removeProperty('visibility');
+        byFrame.delete(frame);
+        held.splice(held.indexOf(previous), 1);
+        delete frame.dataset[HELD];
+        return;
+      }
+      previous.src = src;
+      if (previous.id !== id) {
+        previous.id = id;
+        removeHost(previous);
+      }
+    }
+    if (enabled !== false) {
+      if (enabled === null) capture(previous);
+      else mount(previous);
+    }
     return;
   }
-  const src = frame.getAttribute('src') ?? '';
   if (!src.includes(IFRAME_MARK)) {
     return;
   }
@@ -163,8 +200,12 @@ function hold(frame: HTMLIFrameElement): void {
     return;
   }
   frame.dataset[HELD] = '1';
-  const item: Held = { frame, src, id, positioned: false };
+  const item: Held = {
+    frame, src, id, positioned: false, parent: null, host: null, anchor: null,
+    visibility: frame.style.visibility,
+  };
   held.push(item);
+  byFrame.set(frame, item);
   if (enabled === null) {
     capture(item);
   } else if (enabled) {
@@ -174,15 +215,7 @@ function hold(frame: HTMLIFrameElement): void {
   }
 }
 
-function removeNoticeBanner(): void {
-  const notice = document.getElementById('esm-runtime-notice');
-  if (notice) {
-    notice.remove();
-  }
-}
-
 function sweep(node: Node): void {
-  removeNoticeBanner();
   if (node instanceof HTMLIFrameElement) {
     hold(node);
     return;
@@ -197,7 +230,6 @@ function sweep(node: Node): void {
 // The frame is written by the page's own view code, and its address can be set
 // either with it or a moment after, so both are watched.
 const observer = new MutationObserver((records) => {
-  removeNoticeBanner();
   for (const record of records) {
     if (record.type === 'attributes') {
       if (record.target instanceof HTMLIFrameElement) {
@@ -209,14 +241,15 @@ const observer = new MutationObserver((records) => {
       sweep(node);
     }
   }
+  applyAll();
 });
-observer.observe(document.documentElement, {
+observer.observe(document, {
   childList: true,
   subtree: true,
   attributes: true,
   attributeFilter: ['src'],
 });
-sweep(document.documentElement);
+if (document.documentElement) sweep(document.documentElement);
 
 api.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') {
@@ -224,25 +257,19 @@ api.storage.onChanged.addListener((changes, area) => {
   }
   if (MASK_KEY in changes) {
     mask = changes[MASK_KEY]?.newValue !== false;
-    window.postMessage({ __tessvm: 'mask', mask }, location.origin);
   }
   if (NOTICE_KEY in changes) {
     notice = changes[NOTICE_KEY]?.newValue === true;
-    window.postMessage({ __tessvm: 'notice', notice }, location.origin);
   }
   if (SVG_KEY in changes) {
     svg = changes[SVG_KEY]?.newValue !== false;
     // The runner reads this when it starts, so the players have to be built again.
-    window.postMessage({ __tessvm: 'unmount' }, location.origin);
     for (const item of held) {
-      hostAfter(item.frame)?.remove();
+      removeHost(item);
     }
   }
   if (ENABLED_KEY in changes) {
     enabled = changes[ENABLED_KEY]?.newValue !== false;
-  }
-  if (!enabled) {
-    window.postMessage({ __tessvm: 'unmount' }, location.origin);
   }
   applyAll();
 });
@@ -252,6 +279,9 @@ void readSettings().then((settings) => {
   svg = settings.svg;
   mask = settings.mask;
   notice = settings.notice;
+  applyAll();
+}).catch(() => {
+  enabled = true;
   applyAll();
 });
 
@@ -270,9 +300,16 @@ window.addEventListener('message', (event) => {
     return;
   }
   const reply = (answer: unknown) => {
-    window.postMessage({ __tessvm: 'store-answer', id: data.id, answer }, location.origin);
+    const targetOrigin = location.origin === 'null' ? '*' : location.origin;
+    window.postMessage({ __tessvm: 'store-answer', id: data.id, answer }, targetOrigin);
   };
-  const sent = api.runtime.sendMessage?.(data);
+  let sent: Promise<unknown> | undefined;
+  try {
+    sent = api.runtime.sendMessage?.(data);
+  } catch {
+    reply({ error: true });
+    return;
+  }
   if (!sent) {
     reply({ error: true });
     return;

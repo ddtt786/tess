@@ -418,7 +418,7 @@ export class Vm implements Project {
 
     this.compile(project);
     this.extras.bind();
-    this.save.bind();
+    this.save.bind(project.functions ?? []);
     this.snapshot();
     this.renderer?.attach?.(this.targets, this.scenes);
     for (const target of this.targets) {

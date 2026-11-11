@@ -7,6 +7,7 @@ import { autoParamName } from '@tess/core';
 import { blocksToLines, commentLines, indent, functionDeclarationLines, colorExpr } from './stmt.ts';
 import {
   KEY_CODES, STORE_PREFIX, STORE_SAVE_ASYNC_FUNCTION, STORE_SAVE_FUNCTION,
+  isStoreName, saveFunctionKind,
   tableRowCells, tableRows,
 } from '@tess/core';
 import type {
@@ -191,7 +192,7 @@ export function decompileProject(
     // 한 오브젝트 것만 건드리는 함수는 그 오브젝트 조각 파일에 이미 들어갔다
     if (ctx.functionOwnerById.has(fn.id)) continue;
     // 세이브 매니저가 가로채는 빈 함수는 Tess 에서 `save` 문장이므로 선언하지 않는다.
-    if (entry.saveKind) continue;
+    if (entry.saveKind && !entry.saveBody) continue;
     try {
       const content = JSON.parse(fn.content ?? '[]');
       const createBlock = functionCreateBlock(content);
@@ -541,8 +542,9 @@ function buildContext(
     const isList = entry.variableType === 'list';
     // `@이름` 은 세이브 매니저가 맡는 자리다. Tess 이름은 `@` 를 뗀 쪽이고, 선언에
     // `store` 가 붙으면 컴파일할 때 다시 `@` 가 붙는다.
-    const store = !entry.object && String(entry.name ?? '').startsWith(STORE_PREFIX);
-    const label = store ? String(entry.name).slice(STORE_PREFIX.length) : entry.name;
+    const rawVarName = String(entry.name ?? '');
+    const store = !entry.object && isStoreName(rawVarName);
+    const label = store ? rawVarName.trim().replace(/^@\s*/, '') : entry.name;
     const identifier = safeIdentifier(label, usedNames, isList ? 'list' : 'var');
     // A local whose object is gone has nowhere to be declared. Writing it as a
     // global keeps it in the work instead of dropping it without a trace.
@@ -571,7 +573,9 @@ function buildContext(
 
     // 맨 앞 라벨만 함수 이름이 된다 (src/function-params.ts 참고)
     const first = fields[0];
-    const label = first?.kind === 'label' ? first.text : fn.id;
+    const rawLabel = first?.kind === 'label' ? first.text : fn.id;
+    const saveType = saveFunctionKind(rawLabel);
+    const label = saveType === 'wait' ? STORE_SAVE_FUNCTION : saveType === 'async' ? STORE_SAVE_ASYNC_FUNCTION : rawLabel;
     const identifier = safeIdentifier(label, usedNames, 'func');
 
     const params: string[] = [];
@@ -613,11 +617,12 @@ function buildContext(
     }
 
     // 세이브 매니저는 이 이름의 함수 호출을 가로챈다. 그 호출이 Tess 의 `save` 다.
-    const saveKind = label === STORE_SAVE_FUNCTION
+    const saveKind = saveType === 'wait'
       ? 'save'
-      : label === STORE_SAVE_ASYNC_FUNCTION ? 'async' : undefined;
+      : saveType === 'async' ? 'async' : undefined;
     ctx.functionsById.set(fn.id, {
       id: String(fn.id), name: identifier, params, locals, displayLabel: label, saveKind,
+      saveBody: !!saveKind && !!functionCreateBlock(content)?.statements?.[0]?.length,
     });
   }
 
@@ -778,7 +783,7 @@ function declarationLine(info: VarInfo, indentLevel = 0, positions = false): str
   else if (source.isCloud) scope = 'shared ';
   else if (source.isRealTime) scope = 'realtime ';
   // `store` 가 `@` 를 붙여 주므로, 이름이 남는지는 그것을 뗀 쪽으로 따진다.
-  const entryName = info.store ? String(source.name).slice(STORE_PREFIX.length) : source.name;
+  const entryName = info.store ? String(source.name).trim().replace(/^@\s*/, '') : source.name;
   const named = displayNamePart(info.identifier, entryName);
   // 엔트리에서 '보이기'로 체크해 둔 변수·리스트는 무대에 상자를 띄운 채로 시작한다.
   const shown = source.visible ? ' visible' : '';
