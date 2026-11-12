@@ -315,6 +315,7 @@ export function mountPlayer(
       dispose();
       return;
     }
+    if (handle) syncUser(handle);
     onTick?.();
   }, 100);
 
@@ -517,7 +518,15 @@ export function mountPlayer(
     );
   }
 
+  function syncUser(live: TessVmHandle): void {
+    const user = signedInUser();
+    if (live.vm.user?.id !== user?.id || live.vm.user?.nickname !== user?.nickname) {
+      live.vm.user = user;
+    }
+  }
+
   function ready(live: TessVmHandle): void {
+    syncUser(live);
     const seen = new Set<string>();
     let shown = "";
 
@@ -538,6 +547,7 @@ export function mountPlayer(
     };
     const start = () => {
       if (disposed) return;
+      syncUser(live);
       clearError();
       seen.clear();
       live.start();

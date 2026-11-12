@@ -288,21 +288,28 @@ VM은 브라우저와 같은 `kernel: () => null` 설정으로 실행합니다. 
 넘겨 `boot({ svg })` 까지 갑니다. 이 값은 실행기를 만들 때 읽으므로, 스위치를 바꾸면
 내용 스크립트가 마운트 지점을 지우고 다시 만듭니다.
 
-### 아이디·닉네임 — `__NEXT_DATA__`
+### 아이디·닉네임 — 현재 계정 상태
 
-`아이디`·`닉네임` 블록은 엔트리에서 `window.user.username`·`.nickname` 을 읽습니다.
-확장의 실행기는 같은 페이지에 있지만 같은 스크립트가 아니라 그 변수를 볼 수 없으므로,
-페이지가 렌더될 때 심어 둔 next.js 꾸러미에서 같은 기록을 꺼냅니다.
+`signed-in.ts`는 `#__next`의 React 루트에서 Redux Provider의 `store.getState()`를
+읽어 `common.user.username`·`nickname`을 VM의 `id`·`nickname`으로 변환합니다.
+React 18의 `__reactContainer$…` 루트와 이전 `_reactRootContainer` 루트를 지원하며,
+현재 트리의 노드를 최대 100개 탐색합니다. 계정의 이름 필드만 VM으로 전달하고
+추가 네트워크 요청이나 로그인 응답 가로채기를 수행하지 않습니다.
 
-```
-JSON.parse(document.getElementById('__NEXT_DATA__').textContent)
-  .props.pageProps.initialState.common.user
-```
+React 루트가 아직 준비되지 않았거나 저장소를 읽을 수 없는 경우에만 서버 렌더링
+자료인 `__NEXT_DATA__.props.pageProps.initialState.common.user`를 사용합니다.
+현재 저장소에 `user` 항목이 있으면 `null`·`undefined`·빈 객체도 현재 로그아웃 상태로
+처리하여 서버 자료의 이전 계정으로 되돌아가지 않습니다. 두 이름이 모두 없으면
+VM에는 `null`을 전달하고 두 블록은 `guest`를 반환합니다.
 
-`signed-in.ts` 가 이 길을 한 칸씩 확인하며 내려갑니다 — 사이트가 언제든 바꿀 수 있는
-모양이고 next.js 가 렌더하지 않은 페이지에는 아예 없으므로, 중간에 하나만 어긋나도
-**로그인하지 않은 것**으로 봅니다. 그때 두 블록은 `guest` 를 돌려줍니다(엔트리는 빈
-칸을 돌려주지만, 사이트 밖에서도 도는 실행기라 자기가 누구인지 밝히는 쪽을 택했습니다).
+`player.ts`는 기존 100ms 관리 주기에서 계정을 다시 읽고 변경된 이름을 `vm.user`에
+반영합니다. 실행기 준비 직후와 시작 버튼 처리 직전에도 동기화하므로 에셋을 읽는
+동안의 로그인과 다음 관리 주기 이전의 계정 변경도 반영합니다. 실행기를 다시 만들거나
+작품의 실행 상태를 초기화하지 않으며, 정리 시 기존 타이머와 함께 갱신이 중단됩니다.
+
+React 루트나 Redux Provider 구조가 바뀌면 현재 상태를 찾지 못하고 서버 자료를
+사용할 수 있습니다. `test/extension-user.test.ts`는 두 루트 형식, 로그인·닉네임 변경·
+계정 전환·로그아웃, 저장소 오류 시 대체 읽기, 실행 중 및 시작 직전의 동기화를 검사합니다.
 
 **아이디는 앞 두 글자만 남깁니다** — `ddtt786` → `dd*****`. 팝업의 '아이디 가리기'
 스위치로 끌 수 있고, `chrome.storage` 에 남아 `data-tessvm-mask` 로 넘어가

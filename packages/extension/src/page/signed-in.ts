@@ -1,49 +1,70 @@
-/**
- * @fileoverview Who is signed in to playentry.org, for the `아이디` · `닉네임` blocks.
- *
- * Entry's own runner reads `window.user`, which the site fills in for its own
- * page. The runner here lives in the same page but not in the same script, so
- * it takes the same record from the next.js payload the page was rendered with.
- */
+/** Reads the current Entry account for the ID and nickname blocks. */
 import type { EntryUser } from '../../../tessvm/src/runtime/engine.ts';
 
-const PAYLOAD_ID = '__NEXT_DATA__';
-
-interface NextPayload {
-  props?: {
-    pageProps?: {
-      initialState?: {
-        common?: {
-          user?: { username?: unknown; nickname?: unknown } | null;
-        };
-      };
-    };
+interface AccountState {
+  common?: {
+    user?: { username?: unknown; nickname?: unknown } | null;
   };
 }
 
-/**
- * The signed-in reader, or null when nobody is. The payload is missing on pages
- * next.js did not render and its shape is the site's to change, so every step
- * is treated as absent rather than trusted.
- */
+interface NextPayload {
+  props?: { pageProps?: { initialState?: AccountState } };
+}
+
+interface ReactNode {
+  child?: ReactNode | null;
+  sibling?: ReactNode | null;
+  stateNode?: { current?: ReactNode };
+  memoizedProps?: { store?: { getState?: () => AccountState } };
+}
+
+/** Finds the page's Redux state through its mounted React provider. */
+function liveState(): AccountState | undefined {
+  const root = document.getElementById('__next') as (HTMLElement & {
+    _reactRootContainer?: { _internalRoot?: { current?: ReactNode } };
+    [key: string]: unknown;
+  }) | null;
+  if (!root) return undefined;
+  const key = Object.keys(root).find(key => key.startsWith('__reactContainer$'));
+  const container = key ? root[key] as ReactNode | undefined : undefined;
+  const current = container?.stateNode?.current ?? root._reactRootContainer?._internalRoot?.current;
+  const pending = current ? [current] : [];
+  const seen = new Set<ReactNode>();
+  while (pending.length && seen.size < 100) {
+    const node = pending.pop()!;
+    if (seen.has(node)) continue;
+    seen.add(node);
+    const store = node.memoizedProps?.store;
+    if (typeof store?.getState === 'function') {
+      const state = store.getState();
+      if (state && typeof state === 'object' && state.common && 'user' in state.common) return state;
+    }
+    if (node.sibling) pending.push(node.sibling);
+    if (node.child) pending.push(node.child);
+  }
+  return undefined;
+}
+
+/** Uses live account state, with the server payload as a pre-hydration fallback. */
 export function signedInUser(): EntryUser | null {
-  const payload = document.getElementById(PAYLOAD_ID)?.textContent;
-  if (!payload) {
-    return null;
-  }
-  let data: NextPayload;
+  let state: AccountState | undefined;
   try {
-    data = JSON.parse(payload) as NextPayload;
+    state = liveState();
   } catch {
-    return null;
+    // Unsupported React roots fall back to the server payload.
   }
-  const user = data.props?.pageProps?.initialState?.common?.user;
-  if (!user) {
-    return null;
+  if (!state) {
+    const payload = document.getElementById('__NEXT_DATA__')?.textContent;
+    if (!payload) return null;
+    try {
+      state = (JSON.parse(payload) as NextPayload | null)?.props?.pageProps?.initialState;
+    } catch {
+      return null;
+    }
   }
+  const user = state?.common?.user;
+  if (!user) return null;
   const id = typeof user.username === 'string' ? user.username : '';
   const nickname = typeof user.nickname === 'string' ? user.nickname : '';
-  // A record with neither name is nobody — the site leaves an empty one behind
-  // on a page it rendered before the sign-in was known.
   return id || nickname ? { id, nickname } : null;
 }
