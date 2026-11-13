@@ -116,6 +116,7 @@ interface MenuItem {
 function mountMenu(
   root: HTMLElement,
   lines: () => Array<MenuItem | null>,
+  requiresControl: () => boolean,
 ): { close(): void; dispose(): void } {
   const menu = el("div", "tessvm-menu", root);
   menu.hidden = true;
@@ -156,6 +157,10 @@ function mountMenu(
   const onContext = (event: Event) => {
     event.preventDefault();
     const pointer = event as MouseEvent;
+    if (requiresControl() && !pointer.ctrlKey) {
+      close();
+      return;
+    }
     open(pointer.clientX, pointer.clientY);
   };
   // Anywhere outside takes it down, including a press the page around us gets.
@@ -616,7 +621,7 @@ export function mountPlayer(
           run: () => fullButton.click(),
         },
       ];
-    });
+    }, () => live.vm.extras.uses.mouseButtons);
 
     // The work can stop itself, so the bar follows the vm rather than clicks.
     onTick = showState;

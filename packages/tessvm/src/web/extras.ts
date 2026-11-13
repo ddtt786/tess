@@ -606,6 +606,26 @@ export function bindExtras(
     { passive: false },
   );
 
+  let buttonsHeld = false;
+  const readButtons = (event: MouseEvent) => {
+    if (!extras.uses.mouseButtons) return;
+    buttonsHeld = event.buttons !== 0;
+    extras.buttonsChanged(event.buttons);
+  };
+  const clearButtons = () => {
+    buttonsHeld = false;
+    extras.buttonsChanged(0);
+  };
+  // Mouse events report each button change, including chorded presses.
+  on(view, 'mousedown', raw => readButtons(raw as MouseEvent));
+  on(view, 'mousemove', raw => readButtons(raw as MouseEvent));
+  on(window, 'mouseup', raw => {
+    if (buttonsHeld) readButtons(raw as MouseEvent);
+  });
+  on(window, 'blur', clearButtons);
+  on(view, 'pointercancel', clearButtons);
+  cleanups.push(clearButtons);
+
   on(document, 'pointerlockchange', () => {
     extras.lockChanged(document.pointerLockElement === view);
   });

@@ -15,6 +15,7 @@
  * | `$CURSOR`     | write     | a css cursor keyword for the stage          |
  * | `$MOUSE_LOCK` | both      | `1` holds the pointer, `0` gives it back    |
  * | `$M_LOCK`     | both      | the same name, inside entry's ten letters   |
+ * | `$MOUSE_BUTTONS` / `$M_BUTTONS` | read | pressed buttons as a bitmask     |
  * | `$DELTA_X/Y`  | read      | pointer movement of the frame, stage units  |
  * | `$SCROLL_X/Y` | read      | wheel movement of the frame                 |
  * | `$SCROLL`     | signal    | raised in a frame the viewer scrolled in    |
@@ -32,13 +33,14 @@ import type { Vm } from './engine.ts';
 /**
  * Variable names this runner knows, by the part each one plays. Entry's own
  * name box takes ten characters, so a name over that carries a short one beside
- * it — either may be used, and a work holding both is read by the first.
+ * it. Writable aliases use the first matching variable; button aliases update together.
  */
 export const EXTRA_VARIABLES = {
   tessvm: ['$TESSVM'],
   clipboard: ['$CLIPBOARD'],
   cursor: ['$CURSOR'],
   mouseLock: ['$MOUSE_LOCK', '$M_LOCK'],
+  mouseButtons: ['$MOUSE_BUTTONS', '$M_BUTTONS'],
   deltaX: ['$DELTA_X'],
   deltaY: ['$DELTA_Y'],
   scrollX: ['$SCROLL_X'],
@@ -84,6 +86,7 @@ export interface ExtrasUse {
   clipboard: boolean;
   cursor: boolean;
   mouseLock: boolean;
+  mouseButtons: boolean;
   scroll: boolean;
 }
 
@@ -94,11 +97,14 @@ export class Extras {
     clipboard: false,
     cursor: false,
     mouseLock: false,
+    mouseButtons: false,
     scroll: false,
   };
 
   private readonly vm: Vm;
   private readonly slots = new Map<Slot, Variable>();
+  private buttonVariables: Variable[] = [];
+  private buttons = 0;
   private scrollId: string | null = null;
   /** Watched names the work has written to since the last frame was read. */
   private readonly dirty = new Set<Slot>();
@@ -119,19 +125,21 @@ export class Extras {
     for (const [slot, names] of Object.entries(EXTRA_VARIABLES) as Array<
       [Slot, readonly string[]]
     >) {
-      const found = this.vm.variables.find(
+      const found = this.vm.variables.filter(
         (variable) =>
           !variable.isList && variable.objectId === null && names.includes(variable.name),
       );
-      if (found) {
-        this.slots.set(slot, found);
+      if (found[0]) {
+        this.slots.set(slot, found[0]);
       }
+      if (slot === 'mouseButtons') this.buttonVariables = found;
     }
     this.scrollId =
       this.vm.messages.find((message) => message.name === SCROLL_MESSAGE)?.id ?? null;
     this.uses.clipboard = this.slots.has('clipboard');
     this.uses.cursor = this.slots.has('cursor');
     this.uses.mouseLock = this.slots.has('mouseLock');
+    this.uses.mouseButtons = this.slots.has('mouseButtons');
     this.uses.scroll = this.scrollId !== null || this.slots.has('scrollX') || this.slots.has('scrollY');
     // A write is what acts, not a change: the same text written to `$CLIPBOARD`
     // twice is a work asking to copy it twice.
@@ -141,14 +149,15 @@ export class Extras {
         variable.onWrite = () => this.dirty.add(slot);
       }
     }
-    // The one name that answers before the work has run a block. Set before the
-    // snapshot is taken, so stopping the work leaves it answering.
+    // Initialize read-only slots before the project snapshot.
     this.slots.get('tessvm')?.setValue(1);
+    this.buttonsChanged(0);
     this.dirty.clear();
   }
 
   /** The work started: what it holds now is the baseline, not a write. */
   started(): void {
+    this.writeButtons();
     this.locked = false;
     this.moveX = 0;
     this.moveY = 0;
@@ -160,12 +169,14 @@ export class Extras {
 
   /** The work stopped — nothing of it is left on the page. */
   stopped(): void {
+    this.buttonsChanged(0);
     this.locked = false;
     this.host?.release();
   }
 
   /** End of a tick: what came in from the page goes in, what the work wrote goes out. */
   frame(): void {
+    this.writeButtons();
     this.pushWheel();
     this.pushMove();
     for (const slot of WATCHED) {
@@ -176,6 +187,12 @@ export class Extras {
   // -------------------------------------------------------------------------
   //  From the page
   // -------------------------------------------------------------------------
+  /** Updates both button aliases from MouseEvent.buttons. */
+  buttonsChanged(buttons: number): void {
+    this.buttons = buttons;
+    this.writeButtons();
+  }
+
   /** The viewer pasted. Writing it back is not a write the work made. */
   pasted(text: string): void {
     const slot = this.slots.get('clipboard');
@@ -240,6 +257,12 @@ export class Extras {
   private pushMove(): void {
     if (this.locked) {
       this.writeMove();
+    }
+  }
+
+  private writeButtons(): void {
+    for (const variable of this.buttonVariables) {
+      if (variable.getValue() !== this.buttons) variable.setValue(this.buttons);
     }
   }
 
