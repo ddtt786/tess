@@ -2618,10 +2618,30 @@ test('글상자 색은 달라질 때만 PIXI 에 넣는다', () => {
     source.indexOf('private syncTextBox'),
     source.indexOf('private textResolution'),
   );
-  assert.match(block, /if \(view\.colour !== entity\.colour\) \{/, '색이 달라질 때만 넣습니다');
-  const fills = block.match(/style\.fill = \{/g) ?? [];
-  assert.equal(fills.length, 1, '넣는 자리는 그 안 한 군데뿐입니다');
+  assert.doesNotMatch(block, /style\.\w+ = /, '프레임마다 스타일 속성을 건드리지 않습니다');
+  assert.match(block, /if \(text\.style !== style\) \{\s*text\.style = style;/, '모양이 달라질 때만 갈아 끼웁니다');
   assert.match(block, /view\.colour = entity\.colour;/, '넣은 색을 적어 둡니다');
+});
+
+/**
+ * PIXI v8 은 글자 텍스처를 `글:style.uid-tick:배율` 로 찾으므로, 생김새가 같아도 스타일
+ * 객체가 다르면 따로 굽습니다. `night.ent` 는 같은 글상자 복제본 135개가 크기 배율이 0.5 단위를
+ * 넘거나 글이 바뀌는 프레임마다 128장을 새로 구웠습니다(그 프레임 8–16ms → 1–4ms).
+ */
+test('생김새가 같은 글상자는 스타일 하나를 같이 쓴다', () => {
+  const source = fs.readFileSync(
+    path.join(root, 'packages/tessvm/src/render/renderer.ts'),
+    'utf-8',
+  );
+  const shared = source.slice(
+    source.indexOf('private sharedTextStyle'),
+    source.indexOf('private styleFor'),
+  );
+  assert.match(shared, /this\.textStyles\.get\(key\)/, '같은 생김새는 만든 것을 돌려줍니다');
+  const fills = shared.match(/fill: \{/g) ?? [];
+  assert.equal(fills.length, 1, '색은 스타일을 만들 때 한 번만 넣습니다');
+  const fonts = source.slice(source.indexOf('async waitForFonts'), source.indexOf('Pen, stamps, layering'));
+  assert.match(fonts, /this\.textStyles\.clear\(\)/, '글꼴이 오면 새 스타일로 다시 재고 그립니다');
 });
 
 /**

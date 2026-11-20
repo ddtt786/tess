@@ -111,6 +111,10 @@ function usableColor(value: unknown): Ink | null {
 
 /** How many costume files to fetch at the same time. */
 const LOAD_CONCURRENCY = 12;
+/** Texture pixels `preload` sends to the GPU ahead of the first frame (128M px ≈ 512MB). */
+const UPLOAD_PIXEL_BUDGET = 128 * 1024 * 1024;
+/** Distinct text looks kept before the shared style cache starts over. */
+const TEXT_STYLE_LIMIT = 512;
 /** `TEXT_BOX_REPOSITION_OFFSET - TEXT_BOX_WEBGL_OFFSET` in entryjs. */
 const TEXT_BOX_TOP_OFFSET = 10 - 5.9;
 
@@ -123,7 +127,7 @@ interface EntityView {
   decoration: Graphics | null;
   filter: ColorMatrixFilter | null;
   pictureId: string | null;
-  /** 글상자에 마지막으로 넣은 글자색. 같은 색을 다시 넣지 않으려고 들고 있습니다. */
+  /** Last readable text colour; an unreadable one keeps this. */
   colour: string | null;
   /** Pen strokes and fills, each drawn just under the entity that made them. */
   brush: PenView | null;
@@ -311,6 +315,8 @@ export class PixiRenderer implements Renderer {
   private lastResolution = 0;
   /** How far vector sharpness is scaled so the work's textures fit together. */
   private svgBudget = 1;
+  /** Texture pixels `upload` has sent to the GPU so far. */
+  private uploadedPixels = 0;
   /** Nominal size of every vector costume the work carries, for that budget. */
   private svgSizes: Array<{ id: string; width: number; height: number }> = [];
   /** Objects whose draw already failed once; the console is told only then. */
@@ -322,6 +328,8 @@ export class PixiRenderer implements Renderer {
   /** 그 배율이 커져서 다시 구울 것이 있는가 — `flush` 끝에서 한 번만 봅니다. */
   private svgScaleGrew = false;
   private readonly measureStyle = new TextStyle();
+  /** Text styles shared by look; see `sharedTextStyle`. */
+  private readonly textStyles = new Map<string, TextStyle>();
   /**
    * 이미 그어 끝난 획을 잘라 둔 결과. 한 번 `strokes` 에 들어간 획은 다시 바뀌지 않으므로
    * 프레임마다 다시 자를 이유가 없습니다 — 그리는 중인 획만 매번 새로 잽니다(그 획은
@@ -913,10 +921,28 @@ export class PixiRenderer implements Renderer {
     this.setSvgBudget(targets);
     const one = async (picture: Picture) => {
       await this.loadPicture(picture);
+      this.upload(picture.id);
       onLoaded?.();
     };
     await pool(inScene, LOAD_CONCURRENCY, one);
     await pool(rest, LOAD_CONCURRENCY, one);
+  }
+
+  /**
+   * Sends a loaded costume to the GPU now, so the frame that first shows it does
+   * not pay for the upload and mipmaps. Unused ones are freed by pixi's GC.
+   */
+  private upload(pictureId: string): void {
+    const source = this.textures.get(pictureId)?.source;
+    if (!this.ready || !source || source === Texture.EMPTY.source) {
+      return;
+    }
+    const pixels = source.pixelWidth * source.pixelHeight;
+    if (this.uploadedPixels + pixels > UPLOAD_PIXEL_BUDGET) {
+      return;
+    }
+    this.uploadedPixels += pixels;
+    this.app.renderer.texture.initSource(source);
   }
 
   /** How many costumes `preload` will work through. */
@@ -1207,38 +1233,16 @@ export class PixiRenderer implements Renderer {
     const text = view.text!;
     const background = view.background!;
     const decoration = view.decoration!;
-    const style = text.style;
     const align: 'center' | 'left' | 'right' =
       entity.textAlign === 1 ? 'left' : entity.textAlign === 2 ? 'right' : 'center';
-    // Entry hands the canvas one family name (`20px DungGeunMo`) and lets the
-    // browser fall back on its own. Adding a fallback list here changes the
-    // measured line height, and text box sizes are read by other blocks.
-    style.fontFamily = entity.fontFamily;
-    style.fontSize = entity.fontSize;
     // An unreadable colour leaves the letters as they were, the way the canvas
     // does for entry.
-    // `style.fill` 은 PIXI 가 **객체 동일성**으로만 거릅니다(`value === this._originalFill`).
-    // 다른 속성은 값이 같으면 그냥 넘어가는데 이것만 새 객체를 넣을 때마다 글을 통째로
-    // 다시 재고 다시 그립니다 — 글이 길수록 그 값이 커져서, 2만 자짜리 글상자를 여러 벌
-    // 복제하는 작품(`dizzy.ent` 의 장면 2)은 프레임마다 그 일을 복제본 수만큼 합니다.
-    // 색이 실제로 달라질 때만 넣습니다.
-    if (view.colour !== entity.colour) {
-      const fill = usableColor(entity.colour);
-      if (fill !== null) {
-        style.fill = { color: fill.color, alpha: fill.alpha };
-      }
+    if (view.colour !== entity.colour && usableColor(entity.colour) !== null) {
       view.colour = entity.colour;
     }
-    style.fontWeight = entity.fontBold ? 'bold' : 'normal';
-    style.fontStyle = entity.fontItalic ? 'italic' : 'normal';
-    style.align = align;
-    style.lineHeight = entity.fontSize + 2;
-    if (entity.lineBreak) {
-      style.wordWrap = true;
-      style.wordWrapWidth = entity.width;
-      style.breakWords = true;
-    } else {
-      style.wordWrap = false;
+    const style = this.sharedTextStyle(entity, align, view.colour);
+    if (text.style !== style) {
+      text.style = style;
     }
     if (text.text !== entity.text) {
       text.text = entity.text;
@@ -1317,6 +1321,50 @@ export class PixiRenderer implements Renderer {
     const scale = Math.max(Math.abs(entity.scaleX), Math.abs(entity.scaleY));
     const longest = Math.max(drawn?.width ?? entity.width, drawn?.height ?? entity.height);
     return textSharpness(this.displayScale(), scale, longest);
+  }
+
+  /**
+   * One TextStyle per distinct look. PIXI keys text textures by style identity,
+   * so text boxes that look alike share one bake instead of one each.
+   */
+  private sharedTextStyle(
+    entity: Entity,
+    align: 'center' | 'left' | 'right',
+    colour: string | null,
+  ): TextStyle {
+    const wrap = entity.lineBreak ? entity.width : -1;
+    const key = [
+      entity.fontFamily,
+      entity.fontSize,
+      colour ?? '',
+      entity.fontBold ? 1 : 0,
+      entity.fontItalic ? 1 : 0,
+      align,
+      wrap,
+    ].join('\u0000');
+    let style = this.textStyles.get(key);
+    if (!style) {
+      if (this.textStyles.size >= TEXT_STYLE_LIMIT) {
+        this.textStyles.clear();
+      }
+      const ink = usableColor(colour) ?? { color: 0x000000, alpha: 1 };
+      style = new TextStyle({
+        // Entry hands the canvas one family name (`20px DungGeunMo`); a fallback
+        // list would change the measured line height that other blocks read.
+        fontFamily: entity.fontFamily,
+        fontSize: entity.fontSize,
+        fill: { color: ink.color, alpha: ink.alpha },
+        fontWeight: entity.fontBold ? 'bold' : 'normal',
+        fontStyle: entity.fontItalic ? 'italic' : 'normal',
+        align,
+        lineHeight: entity.fontSize + 2,
+        wordWrap: wrap >= 0,
+        wordWrapWidth: Math.max(wrap, 0),
+        breakWords: wrap >= 0,
+      });
+      this.textStyles.set(key, style);
+    }
+    return style;
   }
 
   /** The style a text box is drawn with — also what it is measured with. */
@@ -1400,11 +1448,10 @@ export class PixiRenderer implements Renderer {
       return;
     }
     CanvasTextMetrics.clearMetrics();
+    // Fresh style objects make PIXI measure and draw every text box again.
+    this.textStyles.clear();
     for (const [entity, view] of this.views) {
       if (entity.type === 'textBox' && view.text) {
-        // Nudge the family so the style really changes; `syncTextBox` puts the
-        // right one back and PIXI measures again from scratch.
-        view.text.style.fontFamily = 'sans-serif';
         // 글꼴이 바뀐 것이 아니라 같은 글을 다시 재는 자리이므로 폭만 고칩니다.
         entity.measure(false);
         entity.dirty = true;
