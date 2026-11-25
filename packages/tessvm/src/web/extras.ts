@@ -165,10 +165,20 @@ export const EXTRAS_DIALOG_STYLE = `
 
 .tessvm-ask-permission .tessvm-permit-keep[hidden] { display: none !important; }
 
+/* Restores the native box: playentry.org resets every input to appearance: none. */
 .tessvm-ask-permission .tessvm-permit-keep input {
+  -webkit-appearance: checkbox;
+  -moz-appearance: checkbox;
+  appearance: auto;
+  display: inline-block;
+  position: static;
+  flex: none;
   width: 15px;
   height: 15px;
   margin: 0;
+  padding: 0;
+  opacity: 1;
+  visibility: visible;
   accent-color: #4f80ff;
   cursor: pointer;
 }
