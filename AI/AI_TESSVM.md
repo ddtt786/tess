@@ -522,6 +522,34 @@ tessvm run game.ent --stage 960x540      # 명령줄에서
 - 단일 줄 글상자의 히트박스/경계 상자(`entityBounds`, `touchingMouse`) 또한 렌더링에 맞춰
   `textAlign` 에 따라 이동합니다(왼쪽 정렬: `[0, width]`, 오른쪽 정렬: `[-width, 0]`, 가운데 정렬/줄바꿈: `[-width/2, width/2]`).
 
+### 글자의 세로 자리 — `middle` 기준선
+
+엔트리는 두 렌더러 모두 줄마다 `textBaseline: 'middle'` 로, **줄의 한가운데**에 글자를
+그립니다(`PIXIHelper.text`, createjs `Text`). 줄 높이는 `글자크기 + 2`(`setLineHeight`)입니다.
+PIXI v8 은 줄 위쪽에서 `max(0, (줄높이 - (ascent+descent)) / 2) + ascent` 아래에
+alphabetic 기준선을 두는데, `ascent`·`descent` 는 `'|ÉqÅM'` 을 실제로 재어 반올림한
+값이라 글꼴·크기마다 달라집니다. 작게 쓴 글꼴(`bold 8px`)을 배율로 키운 글상자에서 그
+차이가 배율만큼 커져 글자가 아래로 처졌습니다.
+
+`syncTextBox` 는 `anchor.y = 0` 으로 두고 `text.y = 첫 줄 가운데 + baselineShift` 로 놓습니다.
+
+| 값 | 식 |
+| --- | --- |
+| `baselineShift` | `middleToAlphabetic(글꼴) - PIXI 기준선` |
+| `middleToAlphabetic` | `textBaseline = 'middle'` 에서 `-measureText('M').alphabeticBaseline` (글꼴 문자열마다 캐시, 글꼴 도착 시 비움) |
+| 첫 줄 가운데 · 부스트 · 줄바꿈 없음 | `-(줄 수 × 줄높이)/2 + 줄높이/2` (`anchor.y = 0.5`, 덩어리 높이 = 줄 수 × 줄높이) |
+| 첫 줄 가운데 · 부스트 · 줄바꿈 | `-높이/2 + (10 - 5.9) + 줄높이/2` (`anchor.y = 0`) |
+| 첫 줄 가운데 · 캔버스 · 줄바꿈 없음 | `0` |
+| 첫 줄 가운데 · 캔버스 · 줄바꿈 | `d = M폭×1.2/2 - 높이/2 + 5` 이 `|d| > 10` 일 때만 `d`(`Nanum Gothic Coding`·`SDMapssi` 는 +10), 아니면 `0` |
+
+`hambuger.ent` 를 엔트리(WebGL)와 나란히 찍어 글자 행을 비교하면 수정 전 1–3px(960 폭) 아래,
+수정 후 0–1px 입니다.
+
+캔버스 줄바꿈의 `|d| > 10` 조건은 `alignTextBox` 의 `TEXT_BOX_REPOSITION_THRESHOLD` 입니다. 글자는
+`y = 0` 에서 시작하고 그보다 크게 어긋날 때만 옮겨지므로, 높이가 낮은 줄바꿈 글상자(`햄버거 팔기`,
+높이 16)는 상자 정중앙에 남습니다. 부스트를 끈 `hambuger.ent` 에서 이 조건 없이는 약 6px(960 폭)
+아래였습니다.
+
 ## 7. 스스로를 멈추는 블록
 
 엔트리에서 `복제본 삭제하기` 는 그 복제본의 **모든 실행기**를 끝냅니다

@@ -2465,7 +2465,8 @@ test('부스트 모드는 채우기를 칠하는 방식까지 고른다', () => 
 /**
  * 부스트를 끈 엔트리는 글상자를 `textBaseline: middle` 로 `y = 0` 에 놓아 첫 줄이 상자
  * 가운데에 오고, 폭은 줄을 쪼개지 않고 글 전체를 잰 값입니다. 켠 엔트리는 `anchor.y`
- * 가 0.5 라 글 덩어리 전체가 가운데에 옵니다.
+ * 가 0.5 라 글 덩어리 전체가 가운데에 옵니다. 어느 쪽이든 줄마다 `middle` 기준선으로
+ * 그리므로, PIXI 가 재는 ascent 대신 그 기준선에서 줄을 놓습니다.
  */
 test('글상자의 세로 정렬과 폭도 부스트 모드를 따라간다', () => {
   const source = fs.readFileSync(
@@ -2476,8 +2477,15 @@ test('글상자의 세로 정렬과 폭도 부스트 모드를 따라간다', ()
     source.indexOf('private syncTextBox'),
     source.indexOf('private textResolution'),
   );
-  assert.match(block, /this\.options\.boost === false/, '세로 정렬이 부스트를 봅니다');
-  assert.match(block, /text\.anchor\.set\(anchorX, 0\.5\)/, '부스트 모드는 가운데 정렬입니다');
+  assert.match(block, /this\.firstLineMiddle\(entity, style\) \+ this\.baselineShift\(/, '첫 줄 가운데에 기준선을 맞춥니다');
+  const middle = source.slice(
+    source.indexOf('private firstLineMiddle'),
+    source.indexOf('private baselineShift'),
+  );
+  assert.match(middle, /this\.options\.boost === false/, '세로 정렬이 부스트를 봅니다');
+  assert.match(middle, /Math\.abs\(desired\) <= TEXT_BOX_REPOSITION_THRESHOLD/, '캔버스는 10 넘게 차이 날 때만 옮깁니다');
+  assert.match(middle, /\(-lines \* lineHeight\) \/ 2 \+ lineHeight \/ 2/, '부스트 모드는 덩어리 전체가 가운데입니다');
+  assert.match(source, /context\.textBaseline = 'middle'/, '엔트리의 기준선을 잽니다');
   const measure = source.slice(
     source.indexOf('measureTextBox(entity: Entity)'),
     source.indexOf('private measureWhole'),

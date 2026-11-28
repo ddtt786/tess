@@ -14,6 +14,7 @@ import {
   CanvasTextGenerator,
   CanvasTextMetrics,
   Color,
+  fontStringFromTextStyle,
   TextStyle,
   ColorMatrixFilter,
   Container,
@@ -118,6 +119,10 @@ const UPLOAD_PIXEL_BUDGET = 128 * 1024 * 1024;
 const TEXT_STYLE_LIMIT = 512;
 /** `TEXT_BOX_REPOSITION_OFFSET - TEXT_BOX_WEBGL_OFFSET` in entryjs. */
 const TEXT_BOX_TOP_OFFSET = 10 - 5.9;
+/** Fonts entry's canvas path drops another 10 below a line-breaking box's top. */
+const FONT_PADDING_TOP_EXCEPTIONS = ['Nanum Gothic Coding', 'SDMapssi'];
+/** `TEXT_BOX_REPOSITION_THRESHOLD` in entryjs. */
+const TEXT_BOX_REPOSITION_THRESHOLD = 10;
 
 interface InkMask {
   text: string;
@@ -338,6 +343,8 @@ export class PixiRenderer implements Renderer {
   /** 그 배율이 커져서 다시 구울 것이 있는가 — `flush` 끝에서 한 번만 봅니다. */
   private svgScaleGrew = false;
   private readonly measureStyle = new TextStyle();
+  /** `middleToAlphabetic` per font string. */
+  private readonly baselineDrops = new Map<string, number>();
   /** Alpha of each text box's drawn letters, rebuilt when its text or style changes. */
   private readonly inkMasks = new WeakMap<Text, InkMask>();
   /** Text styles shared by look; see `sharedTextStyle`. */
@@ -1267,24 +1274,13 @@ export class PixiRenderer implements Renderer {
     // `setTextAlign` moves the anchor, not the text: left-aligned text grows
     // to the right of the object's own x, centred text grows both ways.
     const anchorX = align === 'left' ? 0 : align === 'right' ? 1 : 0.5;
-    if (entity.lineBreak) {
-      // The block sits inside the author's box, pinned to its top edge.
-      text.anchor.set(anchorX, 0);
-      text.position.set(
-        align === 'left' ? -entity.width / 2 : align === 'right' ? entity.width / 2 : 0,
-        -entity.height / 2 + TEXT_BOX_TOP_OFFSET,
-      );
-    } else if (this.options.boost === false) {
-      // 캔버스로 그리는 엔트리는 글상자를 `textBaseline: middle` 로 `y = 0` 에 놓으므로
-      // **첫 줄**이 상자 가운데에 오고 나머지가 아래로 흐릅니다. 줄이 하나면 가운데
-      // 정렬과 같은 자리라 보통 글상자는 달라지지 않습니다.
-      text.anchor.set(anchorX, 0);
-      text.position.set(0, -(entity.fontSize + 2) / 2);
-    } else {
-      // 부스트 모드(PIXI)는 `anchor.y = 0.5` — 글 덩어리 전체가 가운데에 옵니다.
-      text.anchor.set(anchorX, 0.5);
-      text.position.set(0, 0);
-    }
+    text.anchor.set(anchorX, 0);
+    text.position.set(
+      entity.lineBreak
+        ? align === 'left' ? -entity.width / 2 : align === 'right' ? entity.width / 2 : 0
+        : 0,
+      this.firstLineMiddle(entity, style) + this.baselineShift(style),
+    );
 
     background.clear();
     const bg = entity.bgColor?.startsWith('#') ? usableColor(entity.bgColor) : null;
@@ -1319,6 +1315,73 @@ export class PixiRenderer implements Renderer {
           .fill({ color: ink.color, alpha: ink.alpha });
       }
     }
+  }
+
+  /** Where entry puts the middle of a text box's first line (`alignTextBox`), in box coordinates. */
+  private firstLineMiddle(entity: Entity, style: TextStyle): number {
+    const lineHeight = entity.fontSize + 2;
+    if (this.options.boost === false) {
+      if (!entity.lineBreak) {
+        return 0;
+      }
+      // createjs measures its line height as the width of "M" × 1.2.
+      const context = this.measureContext();
+      if (context) {
+        context.font = fontStringFromTextStyle(style);
+      }
+      const measured = (context?.measureText('M').width ?? entity.fontSize) * 1.2;
+      const desired = measured / 2 - entity.height / 2 + 5;
+      // Entry moves the text off y = 0 only when it is more than 10 away.
+      if (Math.abs(desired) <= TEXT_BOX_REPOSITION_THRESHOLD) {
+        return 0;
+      }
+      return FONT_PADDING_TOP_EXCEPTIONS.includes(entity.fontFamily) ? desired + 10 : desired;
+    }
+    if (entity.lineBreak) {
+      return -entity.height / 2 + TEXT_BOX_TOP_OFFSET + lineHeight / 2;
+    }
+    const lines = (entity.text || ' ').split(/\r\n|\r|\n/).length;
+    return (-lines * lineHeight) / 2 + lineHeight / 2;
+  }
+
+  /**
+   * Offset from a line's middle to the top PIXI lays that line out from. Entry
+   * draws each line with `textBaseline: middle`; PIXI puts the alphabetic
+   * baseline `ascent` below the line top, with `ascent` measured from glyphs.
+   */
+  private baselineShift(style: TextStyle): number {
+    const fontString = fontStringFromTextStyle(style);
+    const font = CanvasTextMetrics.measureFont(fontString);
+    const lineHeight = style.lineHeight || font.fontSize;
+    const pixiBaseline = Math.max(0, (lineHeight - font.fontSize) / 2) + font.ascent;
+    return this.middleToAlphabetic(fontString) - pixiBaseline;
+  }
+
+  /** How far the alphabetic baseline sits below the `middle` baseline for a font. */
+  private middleToAlphabetic(font: string): number {
+    let drop = this.baselineDrops.get(font);
+    if (drop !== undefined) {
+      return drop;
+    }
+    const context = this.measureContext();
+    if (context) {
+      context.font = font;
+      context.textBaseline = 'middle';
+      const middle = context.measureText('M');
+      context.textBaseline = 'alphabetic';
+      drop = Number.isFinite(middle.alphabeticBaseline)
+        ? -middle.alphabeticBaseline
+        : (middle.fontBoundingBoxAscent - middle.fontBoundingBoxDescent) / 2;
+    }
+    if (drop === undefined || !Number.isFinite(drop)) {
+      drop = Number(/(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? 10) * 0.25;
+    }
+    this.baselineDrops.set(font, drop);
+    return drop;
+  }
+
+  private measureContext(): CanvasRenderingContext2D | null {
+    return (this.measureCanvas ??= document.createElement('canvas').getContext('2d'));
   }
 
   /**
@@ -1488,9 +1551,7 @@ export class PixiRenderer implements Renderer {
    * 셉니다. 잴 곳이 없으면 `null` 이라 부르는 쪽이 PIXI 쪽 값을 씁니다.
    */
   private measureWhole(entity: Entity): number | null {
-    const context = (this.measureCanvas ??= document
-      .createElement('canvas')
-      .getContext('2d'));
+    const context = this.measureContext();
     if (!context) {
       return null;
     }
@@ -1522,6 +1583,7 @@ export class PixiRenderer implements Renderer {
       return;
     }
     CanvasTextMetrics.clearMetrics();
+    this.baselineDrops.clear();
     // Fresh style objects make PIXI measure and draw every text box again.
     this.textStyles.clear();
     for (const [entity, view] of this.views) {
