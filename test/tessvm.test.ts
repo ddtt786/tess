@@ -2482,7 +2482,7 @@ test('글상자의 세로 정렬과 폭도 부스트 모드를 따라간다', ()
     source.indexOf('private firstLineMiddle'),
     source.indexOf('private baselineShift'),
   );
-  assert.match(middle, /this\.options\.boost === false/, '세로 정렬이 부스트를 봅니다');
+  assert.match(middle, /this\.options\.boost !== true/, '세로 정렬이 부스트를 봅니다');
   assert.match(middle, /Math\.abs\(desired\) <= TEXT_BOX_REPOSITION_THRESHOLD/, '캔버스는 10 넘게 차이 날 때만 옮깁니다');
   assert.match(middle, /\(-lines \* lineHeight\) \/ 2 \+ lineHeight \/ 2/, '부스트 모드는 덩어리 전체가 가운데입니다');
   assert.match(source, /context\.textBaseline = 'middle'/, '엔트리의 기준선을 잽니다');
@@ -2490,7 +2490,7 @@ test('글상자의 세로 정렬과 폭도 부스트 모드를 따라간다', ()
     source.indexOf('measureTextBox(entity: Entity)'),
     source.indexOf('private measureWhole'),
   );
-  assert.match(measure, /this\.options\.boost === false/, '폭도 부스트를 봅니다');
+  assert.match(measure, /this\.options\.boost !== true/, '폭도 부스트를 봅니다');
 });
 
 /**
@@ -2513,16 +2513,16 @@ test('돌아가는 중에 부스트를 바꾸면 렌더러도 다시 그린다',
     audio: null,
   });
 
-  assert.equal(vm.boost, true, '기본은 켬입니다');
-  vm.boost = false;
-  assert.equal(vm.boost, false);
-  assert.deepEqual(told, [false], '렌더러에게 한 번 알립니다');
-
-  vm.boost = false;
-  assert.deepEqual(told, [false], '같은 값이면 다시 그리지 않습니다');
+  assert.equal(vm.boost, false, '기본은 끔입니다');
+  vm.boost = true;
+  assert.equal(vm.boost, true);
+  assert.deepEqual(told, [true], '렌더러에게 한 번 알립니다');
 
   vm.boost = true;
-  assert.deepEqual(told, [false, true]);
+  assert.deepEqual(told, [true], '같은 값이면 다시 그리지 않습니다');
+
+  vm.boost = false;
+  assert.deepEqual(told, [true, false]);
 });
 
 /**

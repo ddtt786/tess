@@ -163,7 +163,7 @@ export async function serveVm(options: ServeOptions): Promise<RunningServer> {
         stats: options.stats ?? true,
         reload: options.reload ?? false,
         autoStart: options.autoStart ?? false,
-        boost: options.boost ?? true,
+        boost: options.boost ?? false,
         svg: options.svg ?? true,
         kernel: options.kernel !== false,
         stageWidth: options.stageWidth ?? DEFAULT_STAGE_WIDTH,

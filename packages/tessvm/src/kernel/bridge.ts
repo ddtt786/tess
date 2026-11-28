@@ -40,6 +40,8 @@ export interface KernelHandle {
    * runner because the crossing cost more than it saved.
    */
   readonly stats: { runs: number; fallbacks: number; copied: number; dropped: number };
+  /** False once the kernel has stopped for good: every later call is javascript's. */
+  readonly live: boolean;
 }
 
 /**
@@ -247,6 +249,9 @@ function marshal(
     roots: plan.roots,
     depth: plan.depth,
     stats,
+    get live() {
+      return live;
+    },
     run(root: number, args: number[]): number | null {
       const fn = live && !dropped.has(root) ? entries.get(root) : undefined;
       if (!fn) {

@@ -39,7 +39,7 @@ const USAGE = `사용법
   --no-open         브라우저를 열지 않는다
   --no-stats        무대 아래 프레임 표시를 끈다 (run 만 — 내보낸 페이지에는 없다)
   --start           페이지를 열자마자 작품을 시작한다 (기본은 시작 단추를 눌러야 돈다)
-  --no-boost        부스트 모드를 끈다 (기본은 켬). 엔트리에서 이 값은 렌더러를 고르는
+  --boost           부스트 모드를 켠다 (기본은 끔). 엔트리에서 이 값은 렌더러를 고르는
                     스위치이기도 하다 — 끄면 '부스트 모드인가?' 가 거짓이 되고, 채우기와
                     글상자를 캔버스 쪽 규칙으로 그린다
   --no-kernel       숫자 함수를 커널로 내리지 않는다. 기본은 내림 — 프레임을 넘기지
@@ -82,7 +82,7 @@ function parseArgs(argv: string[]): { options: Options; rest: string[] } {
     open: true,
     stats: true,
     autoStart: false,
-    boost: true,
+    boost: false,
     svg: true,
     kernel: true,
     html: false,

@@ -30,6 +30,7 @@ import type { AlphaMask } from '../collision/mask.ts';
 import { Overlay, type TableLike } from './overlay.ts';
 import { fillParts } from './fill.ts';
 import { isSegment, SegmentBatch, SEGMENT_FLOOR } from './segments.ts';
+import { FillBatch, FILL_FLOOR } from './fill-batch.ts';
 import {
   FULLSCREEN_CANVAS_WIDTH,
   MAX_SHARPNESS,
@@ -171,6 +172,8 @@ interface PenGroup {
   graphics: Graphics;
   /** Plain two-point lines of this group, drawn as quads instead of a path. */
   segments: SegmentBatch | null;
+  /** An opaque run made only of fills, drawn as one vertex-coloured mesh. */
+  fills: FillBatch | null;
   /** What was drawn last time, so an unchanged group is left alone. */
   drawn: string;
 }
@@ -280,7 +283,7 @@ export interface RendererOptions {
   /**
    * 부스트 모드 — 엔트리에서 이것은 **WebGL 렌더러를 고르는 스위치**입니다
    * (`Entry.setBasicPaint` 의 `GEHelper.isWebGL`). 켜면 채우기가 PIXI 로 가고,
-   * 끄면 캔버스로 가는데 둘은 자기교차 경로를 다르게 칠합니다. VM 과 같이 기본은 켬입니다.
+   * 끄면 캔버스로 가는데 둘은 자기교차 경로를 다르게 칠합니다. VM 과 같이 기본은 끔입니다.
    */
   boost?: boolean;
 }
@@ -355,6 +358,8 @@ export class PixiRenderer implements Renderer {
    * `redrawPen` 이 프레임마다 새 객체로 만들므로 여기에 걸리지 않습니다).
    */
   private fillCache = new WeakMap<Stroke, { boost: boolean; parts: number[][] | null }>();
+  /** Set for works written for this runner (`VmOptions.fastPaths`). */
+  private fastPaths = false;
 
   /** `measureWhole` 이 쓰는 2D 컨텍스트. 처음 필요할 때 만듭니다. */
   private measureCanvas: CanvasRenderingContext2D | null | undefined;
@@ -1320,7 +1325,7 @@ export class PixiRenderer implements Renderer {
   /** Where entry puts the middle of a text box's first line (`alignTextBox`), in box coordinates. */
   private firstLineMiddle(entity: Entity, style: TextStyle): number {
     const lineHeight = entity.fontSize + 2;
-    if (this.options.boost === false) {
+    if (this.options.boost !== true) {
       if (!entity.lineBreak) {
         return 0;
       }
@@ -1542,7 +1547,7 @@ export class PixiRenderer implements Renderer {
     // 가장 긴 줄이 아니라 글 전체 폭으로 남는 자리입니다. 부스트 모드(PIXI)는 줄을
     // 쪼개고 가장 긴 줄을 가져갑니다(엔트리가 갈아 끼운 `TextMetrics.measureText`).
     const whole =
-      this.options.boost === false && !entity.lineBreak ? this.measureWhole(entity) : null;
+      this.options.boost !== true && !entity.lineBreak ? this.measureWhole(entity) : null;
     return { width: whole ?? metrics.width, height: metrics.height };
   }
 
@@ -1627,7 +1632,7 @@ export class PixiRenderer implements Renderer {
     const node = new Container();
     node.addChild(graphics);
     pen.root.addChild(node);
-    const group: PenGroup = { node, graphics, segments: null, drawn: '' };
+    const group: PenGroup = { node, graphics, segments: null, fills: null, drawn: '' };
     pen.groups[index] = group;
     return group;
   }
@@ -1636,6 +1641,7 @@ export class PixiRenderer implements Renderer {
   private clearGroup(group: PenGroup): void {
     group.graphics.clear();
     group.segments?.hide();
+    group.fills?.hide();
     group.drawn = '';
     if (group.node.isCachedAsTexture) {
       group.node.cacheAsTexture(false);
@@ -1650,6 +1656,10 @@ export class PixiRenderer implements Renderer {
    * which is what a work that draws a few thousand vertices a frame feels as a
    * stall. The rebuild waits for `flush`, which runs once a frame anyway.
    */
+  setFastPaths(on: boolean): void {
+    this.fastPaths = on;
+  }
+
   penChanged(entity: Entity): void {
     this.penDirty.add(entity);
   }
@@ -1768,7 +1778,14 @@ export class PixiRenderer implements Renderer {
     group.segments?.hide();
     const graphics = group.graphics;
     graphics.clear();
-    const boost = this.options.boost !== false;
+    const boost = this.options.boost === true;
+    if (this.fastPaths && onlyFills(pieces, from, to) >= FILL_FLOOR) {
+      group.fills ??= new FillBatch(group.node);
+      group.fills.set(pieces, from, to, usableColor, !boost);
+      this.finishPenGroup(group, 1);
+      return;
+    }
+    group.fills?.hide();
     for (let at = from; at < to; ) {
       const style = pieces[at]!;
       let end = at;
@@ -1892,7 +1909,7 @@ export class PixiRenderer implements Renderer {
       this.finishPenGroup(group, alpha);
       return;
     }
-    this.tracePenGroup(graphics, style, pieces, from, to, this.options.boost !== false);
+    this.tracePenGroup(graphics, style, pieces, from, to, this.options.boost === true);
     this.finishPenGroup(group, alpha);
   }
 
@@ -2150,4 +2167,20 @@ function multiply(a: number[], b: number[]): number[] {
       a[base + 4]!;
   }
   return out;
+}
+
+/** How many drawable pieces of `pieces[from…to)` there are, or 0 if any is not a fill. */
+function onlyFills(pieces: Stroke[], from: number, to: number): number {
+  let count = 0;
+  for (let at = from; at < to; at += 1) {
+    const piece = pieces[at]!;
+    if (piece.points.length < 4) {
+      continue;
+    }
+    if (!piece.fill) {
+      return 0;
+    }
+    count += 1;
+  }
+  return count;
 }

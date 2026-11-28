@@ -33,7 +33,7 @@ export interface BootOptions {
   /** Overrides the project's own `speed`; leave unset to follow it. */
   fps?: number;
   showStats?: boolean;
-  /** What `boost_mode?` answers. On by default — the renderer is WebGL anyway. */
+  /** What `boost_mode?` answers. Off by default. */
   boost?: boolean;
   /** Stage size in entry units. Entry's own stage is 480×270. */
   stageWidth?: number;
@@ -281,7 +281,7 @@ export async function boot(options: BootOptions = {}): Promise<TessVmHandle> {
   view.appendChild(frame);
 
   // 엔트리에서 부스트 모드는 그리는 방식까지 바꾸므로 렌더러도 같이 받습니다.
-  const boost = options.boost ?? true;
+  const boost = options.boost ?? false;
   const renderer = new PixiRenderer({
     parent: frame,
     quality: options.quality ?? 1,

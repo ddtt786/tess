@@ -750,6 +750,9 @@ export type ScriptBody = (entity: Entity, thread: Thread) => Generator<Yielded, 
 /** One compiled `함수 정의하기`, as the generated module's `F` array holds it. */
 export type CompiledFunction = (entity: Entity, thread: Thread, args: unknown[]) => CallFrame;
 
+/** A function compiled as plain javascript: it runs to its end in one call. */
+export type DirectFunction = (entity: Entity, thread: Thread, args: unknown[]) => unknown;
+
 /** One running script — entry's `Entry.Executor`. */
 export class Thread {
   readonly target: Target;

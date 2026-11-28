@@ -1353,6 +1353,11 @@ export function createOps(vm: Vm) {
       return vm.frame;
     },
 
+    /** What a plain function throws when one of its loops will not end inside a frame. */
+    spinOut(): Error {
+      return new Error('한 프레임 안에서 끝나지 않는 반복이 있어 이 코드를 멈췄습니다');
+    },
+
     // -----------------------------------------------------------------------
     //  Calculation
     // -----------------------------------------------------------------------

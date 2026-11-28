@@ -308,7 +308,7 @@ function build(options: ExportOptions): Built {
       quality: options.quality ?? 1,
       fps: options.fps ?? null,
       autoStart: options.autoStart ?? false,
-      boost: options.boost ?? true,
+      boost: options.boost ?? false,
       svg: options.svg ?? true,
       stageWidth: options.stageWidth ?? DEFAULT_STAGE_WIDTH,
       stageHeight: options.stageHeight ?? DEFAULT_STAGE_HEIGHT,

@@ -234,7 +234,7 @@ export function mountPlayer(
   boostText.textContent = "부스트모드";
   const boostInput = document.createElement("input");
   boostInput.type = "checkbox";
-  boostInput.checked = true;
+  boostInput.checked = false;
   boostLabel.appendChild(boostInput);
   el("span", "tessvm-switch", boostLabel);
   const fullButton = iconButton(
@@ -466,7 +466,7 @@ export function mountPlayer(
         container: view,
         autoStart: false,
         keyTarget: root,
-        boost: true,
+        boost: false,
         svg,
         user: signedInUser(),
         maskUserId,

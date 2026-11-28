@@ -31,6 +31,8 @@ export interface CompileInput {
   scenes: Array<{ id: string }>;
   messages: Array<{ id: string }>;
   tables: Array<{ id: string }>;
+  /** Compiles functions that never give up a frame and never recurse as plain functions. */
+  directCalls?: boolean;
 }
 
 export interface ScriptPlan {
@@ -79,6 +81,9 @@ const RESERVED_PARAM = /^(string|boolean)Param_/;
  */
 const SPIN_LIMIT = 10_000_000;
 
+/** Ceiling for a loop in a plain function, which cannot give the frame up; past it the script ends. */
+const DIRECT_SPIN_LIMIT = 1_000_000_000;
+
 /**
  * How deep function calls may nest before one stops running.
  *
@@ -96,6 +101,9 @@ const SPIN_LIMIT = 10_000_000;
  * the engine's stack size.
  */
 const CALL_DEPTH_LIMIT = 1000000;
+
+/** Longest chain of direct calls allowed, which bounds the javascript stack they use. */
+const DIRECT_CALL_DEPTH = 256;
 
 type Kind = 'num' | 'str' | 'bool' | 'any';
 
@@ -233,6 +241,12 @@ export class Codegen {
   private readonly plans: ScriptPlan[] = [];
   private readonly bodies: string[] = [];
   private readonly functionSources: string[] = [];
+  /** Plain bodies of the functions in `direct`, by function index. */
+  private readonly directSources = new Map<number, string>();
+  /** Functions called as plain javascript, settled before any body is emitted. */
+  private direct: Set<number> | null = null;
+  /** Set while compiling a plain body: the functions it calls. */
+  private directPass: { callees: Set<number> } | null = null;
   readonly unknown = new Map<string, number>();
 
   /** Names bound inside the function body currently being compiled. */
@@ -267,9 +281,7 @@ export class Codegen {
   }
 
   compile(): CompiledProgram {
-    for (const fn of this.input.functions) {
-      this.functionSources.push(this.compileFunction(fn));
-    }
+    this.compileFunctions();
     this.input.objects.forEach((object, targetIndex) => {
       const script = parseScript(object.script);
       for (const stack of script) {
@@ -304,9 +316,7 @@ export class Codegen {
    * `th.state.result`: what an editor shows when a reporter is clicked.
    */
   compileProbe(block: RawBlock): string {
-    for (const fn of this.input.functions) {
-      this.functionSources.push(this.compileFunction(fn));
-    }
+    this.compileFunctions();
     const result = this.value(block);
     this.bodies.push(`function* (e, th) {\n  th.state.result = ${result.code};\n}`);
     return this.emitModule();
@@ -314,9 +324,7 @@ export class Codegen {
 
   /** A module whose only script runs one stack of blocks, for starting it inside a running work. */
   compileStackProbe(stack: RawBlock[]): string {
-    for (const fn of this.input.functions) {
-      this.functionSources.push(this.compileFunction(fn));
-    }
+    this.compileFunctions();
     this.bodies.push(`function* (e, th) {\n${this.compileStack(stack)}}`);
     return this.emitModule();
   }
@@ -326,15 +334,90 @@ export class Codegen {
     parts.push('"use strict";');
     parts.push('const O = R.ops, V = R.variables, T = R.targets, C = R.cast;');
     parts.push('const n = C.num, s = C.str, b = C.bool, nf = C.field;');
-    parts.push('const F = [];');
+    parts.push('const F = [], FP = [];');
     this.functionSources.forEach((source, index) => {
       parts.push(`F[${index}] = ${source};`);
     });
-    parts.push(`return { scripts: [\n${this.bodies.join(',\n')}\n], functions: F };`);
+    for (const [index, source] of this.directSources) {
+      parts.push(`FP[${index}] = ${source};`);
+    }
+    parts.push(`return { scripts: [\n${this.bodies.join(',\n')}\n], functions: F, direct: FP };`);
     return parts.join('\n');
   }
 
-  private compileFunction(fn: FunctionEntry): string {
+  /** Fills `functionSources`, and `directSources` when direct calls are on. */
+  private compileFunctions(): void {
+    const functions = this.input.functions;
+    if (this.input.directCalls) {
+      this.direct = this.settleDirect();
+    }
+    functions.forEach((fn, index) => {
+      if (this.direct?.has(index)) {
+        // Callers outside the compiled code still reach the function through `F`.
+        this.functionSources.push(`function* (e, th, P) { return FP[${index}](e, th, P); }`);
+      } else {
+        this.functionSources.push(this.compileFunction(fn));
+      }
+    });
+  }
+
+  /**
+   * Functions with no `yield`, no recursion and only such callees, at most
+   * `DIRECT_CALL_DEPTH` calls deep.
+   */
+  private settleDirect(): Set<number> {
+    const functions = this.input.functions;
+    const unknown = new Map(this.unknown);
+    const plain: Array<{ source: string; callees: Set<number> } | null> = functions.map((fn) => {
+      const pass = { callees: new Set<number>() };
+      this.directPass = pass;
+      const source = this.compileFunction(fn, true);
+      this.directPass = null;
+      return /\byield\b/.test(source) ? null : { source, callees: pass.callees };
+    });
+    this.unknown.clear();
+    for (const [type, count] of unknown) {
+      this.unknown.set(type, count);
+    }
+
+    // Kahn's order over the call graph: a function settles once every callee
+    // has, so members of a cycle and their callers never do.
+    const callers = functions.map(() => [] as number[]);
+    const waiting = functions.map(() => 0);
+    const depth = functions.map(() => 1);
+    const ready: number[] = [];
+    plain.forEach((entry, index) => {
+      if (!entry) {
+        return;
+      }
+      for (const callee of entry.callees) {
+        callers[callee]!.push(index);
+      }
+      waiting[index] = entry.callees.size;
+      if (!entry.callees.size) {
+        ready.push(index);
+      }
+    });
+    const settled = new Set<number>();
+    while (ready.length) {
+      const index = ready.pop()!;
+      settled.add(index);
+      this.directSources.set(index, plain[index]!.source);
+      for (const caller of callers[index]!) {
+        if (!plain[caller]) {
+          continue;
+        }
+        depth[caller] = Math.max(depth[caller]!, depth[index]! + 1);
+        waiting[caller]! -= 1;
+        if (waiting[caller] === 0 && depth[caller]! <= DIRECT_CALL_DEPTH) {
+          ready.push(caller);
+        }
+      }
+    }
+    return settled;
+  }
+
+  private compileFunction(fn: FunctionEntry, plain = false): string {
     // Save hooks run before the function's authored statements.
     const saving = saveFunctionKind(functionLabel(fn.content));
     const save = saving === 'wait' ? '  yield* O.saveStoreWait();\n'
@@ -343,7 +426,7 @@ export class Codegen {
     const stack = findFunctionDefine(content);
     const define = stack?.[0];
     if (!define) {
-      return 'function* () {}';
+      return plain ? 'function () {}' : 'function* () {}';
     }
     const params = collectParams(define.params[0]);
     this.paramSlots = new Map(params.map((name, index) => [name, index]));
@@ -362,7 +445,7 @@ export class Codegen {
     // Past the depth limit the call runs nothing and gives no value, which is
     // what the caller sees from entry once its stack has run out.
     let source =
-      `function* (e, th, P) {\n` +
+      `${plain ? 'function' : 'function*'} (e, th, P) {\n` +
       `  if (th.depth >= ${CALL_DEPTH_LIMIT}) return;\n` +
       `  th.depth += 1;\n` +
       `  try {\n` + save +
@@ -759,10 +842,21 @@ export class Codegen {
   private spinGuard(depth: number, ind: string): string {
     const spins = `s${depth}`;
     const mark = `m${depth}`;
+    if (this.directPass) {
+      return `${ind}  if ((${spins} += 1) >= ${DIRECT_SPIN_LIMIT}) { throw O.spinOut(); }\n`;
+    }
     return (
       `${ind}  if (${mark} !== O.frame()) { ${mark} = O.frame(); ${spins} = 0; }\n` +
       `${ind}  else if ((${spins} += 1) >= ${SPIN_LIMIT}) { ${spins} = 0; yield 0; ${mark} = O.frame(); }\n`
     );
+  }
+
+  /** The frame a loop round ends on; a plain body drops it when the round always jumps first. */
+  private loopTail(inner: string, ind: string): string {
+    if (this.directPass && /(?:^|\n)\s*(?:continue|break(?: fn)?);\n$/.test(inner)) {
+      return '';
+    }
+    return `${ind}  yield 0;\n`;
   }
 
   private repeatBasic(block: RawBlock, ind: string): string {
@@ -780,7 +874,7 @@ export class Codegen {
       `${ind}while (${varName} !== 0 && !(${varName} < 0)) { ${varName}--;\n` +
       (spins ? this.spinGuard(depth, ind) : '') +
       inner +
-      `${ind}  yield 0;\n${ind}} }\n`
+      `${this.loopTail(inner, ind)}${ind}} }\n`
     );
   }
 
@@ -799,7 +893,7 @@ export class Codegen {
     const inner = this.compileStack(body, `${ind}  `);
     const spins = (this.spinning.pop() ?? false) || frameless;
     this.loopDepth -= 1;
-    const tail = frameless ? '' : `${ind}  yield 0;\n`;
+    const tail = frameless ? '' : this.loopTail(inner, ind);
     if (!spins) {
       return `${ind}${header}\n${inner}${tail}${ind}}\n`;
     }
@@ -1202,8 +1296,17 @@ export class Codegen {
     // body reads them by declaration index (`register.params[paramMap[type]]`).
     // Dropping empty slots would shift every argument after them.
     const args = block.params.map((param) => this.raw(param));
-    // The thread runs the yielded call on its own stack, so depth costs no JS stack.
-    const call = `(yield F[${index}](e, th, [${args.join(', ')}]))`;
+    // A plain function is called directly. Any other call is yielded so the
+    // thread runs it on its own stack, which costs no JS stack.
+    let call: string;
+    if (this.directPass) {
+      this.directPass.callees.add(index);
+      call = `FP[${index}](e, th, [${args.join(', ')}])`;
+    } else if (this.direct?.has(index)) {
+      call = `FP[${index}](e, th, [${args.join(', ')}])`;
+    } else {
+      call = `(yield F[${index}](e, th, [${args.join(', ')}]))`;
+    }
     return { code: asValue ? call : `${ind}${call};\n` };
   }
 

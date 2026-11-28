@@ -22,6 +22,7 @@ import {
   type VariableKind,
   type VoiceProps,
   type CompiledFunction,
+  type DirectFunction,
   type CompiledScript,
   type Picture,
   type Project,
@@ -81,6 +82,8 @@ export interface TextMeasurer {
 export interface Renderer extends RendererLike, Partial<TextMeasurer> {
   /** Called once per project load, before any entity is added. */
   attach?(targets: Target[], scenes: Scene[]): void;
+  /** Turns the renderer's fast paths on or off for the work being loaded. */
+  setFastPaths?(on: boolean): void;
   /** `FRONT` · `BACK` · `FORWARD` · `BACKWARD`, as the block names them. */
   moveEntity?(entity: Entity, location: string): void;
   /**
@@ -157,10 +160,8 @@ export interface VmOptions {
   stageWidth?: number;
   stageHeight?: number;
   /**
-   * What `boost_mode?` answers. On by default: boost mode is entry's switch
-   * between its 2D and WebGL renderers, and tessvm only has the WebGL one, so
-   * the flag is the whole of it here. Works that check it do so to tell the
-   * player to turn it on.
+   * What `boost_mode?` answers, and whether fills and text follow entry's WebGL
+   * rules. Off by default.
    */
   boost?: boolean;
   deviceType?: 'desktop' | 'tablet' | 'mobile';
@@ -185,6 +186,11 @@ export interface VmOptions {
    * unset to keep every function on the block runner's own path.
    */
   kernel?: KernelSupply | null;
+  /**
+   * Plain-function calls and batched pen fills. `auto` (the default) turns them
+   * on only for works that declare `$TESSVM`.
+   */
+  fastPaths?: boolean | 'auto';
 }
 
 /** What turns a kernel plan into a module this run can instantiate. */
@@ -279,6 +285,9 @@ export class Vm implements Project {
   private scripts: CompiledScript[] = [];
   /** Builds the wasm kernel for a work, when the run was given one. */
   private kernelSupply: KernelSupply | null;
+  private readonly fastPathsOption: boolean | 'auto';
+  /** Whether the loaded work runs on the fast paths (see `VmOptions.fastPaths`). */
+  fastPaths = false;
   /** What the last `load` found it could move to wasm, for `tessvm check`. */
   kernelPlan: KernelPlan | null = null;
   /** The running kernel, or null when the work stayed on javascript. */
@@ -311,7 +320,7 @@ export class Vm implements Project {
     if (options.stageWidth && options.stageHeight) {
       setStageSize(options.stageWidth, options.stageHeight);
     }
-    this.boostOn = options.boost ?? true;
+    this.boostOn = options.boost ?? false;
     this.deviceType = options.deviceType ?? 'desktop';
     this.touch = options.touch ?? false;
     this.user = options.user ?? null;
@@ -319,6 +328,7 @@ export class Vm implements Project {
     this.maxCatchUp = options.maxCatchUp ?? 4;
     this.store = options.store ?? null;
     this.kernelSupply = options.kernel ?? null;
+    this.fastPathsOption = options.fastPaths ?? 'auto';
     this.masks = new MaskStore(
       (key, width, height) => this.renderer?.maskFor?.(key, width, height) ?? null,
     );
@@ -420,6 +430,8 @@ export class Vm implements Project {
       this.targetById.set(target.id, target);
     });
 
+    this.fastPaths = this.wantsFastPaths();
+    this.renderer?.setFastPaths?.(this.fastPaths);
     this.compile(project);
     this.extras.bind();
     this.save.bind(project.functions ?? []);
@@ -494,6 +506,7 @@ export class Vm implements Project {
       scenes: this.scenes,
       messages: this.messages,
       tables: this.tables,
+      directCalls: this.fastPaths,
     };
     this.compileInput = input;
     const codegen = new Codegen(input);
@@ -501,9 +514,9 @@ export class Vm implements Project {
     this.unknownBlocks = program.unknown;
     const factory = new Function('R', program.source) as (
       runtime: Vm,
-    ) => { scripts: CompiledScript['body'][]; functions: CompiledFunction[] };
+    ) => { scripts: CompiledScript['body'][]; functions: CompiledFunction[]; direct: DirectFunction[] };
     const built = factory(this);
-    this.installKernel(input, built.functions);
+    this.installKernel(input, built.functions, built.direct);
     this.plans = program.plans;
     this.scripts = program.plans.map((plan) => ({
       event: plan.event,
@@ -526,7 +539,7 @@ export class Vm implements Project {
    * finish the same way entry would leaves its mark, and the javascript body
    * runs instead on data the kernel never wrote to.
    */
-  private installKernel(input: CompileInput, table: CompiledFunction[]): void {
+  private installKernel(input: CompileInput, table: CompiledFunction[], direct: DirectFunction[]): void {
     this.kernelPlan = null;
     this.kernel = null;
     if (!this.kernelSupply) {
@@ -547,12 +560,36 @@ export class Vm implements Project {
       return;
     }
     this.kernel = handle;
+    const directOnly = Boolean(input.directCalls);
     for (const [index, root] of handle.roots) {
+      const plain = direct[index];
+      if (plain) {
+        // A kernel that has stopped for good hands the slot back to javascript.
+        direct[index] = (entity, thread, args) => {
+          if (!handle.live) {
+            direct[index] = plain;
+          } else if (thread.depth + handle.depth < CALL_DEPTH_LIMIT) {
+            const numbers = kernelArgs(args, root.arity);
+            if (numbers) {
+              const result = handle.run(index, numbers);
+              if (result !== null) {
+                return result;
+              }
+            }
+          }
+          return plain(entity, thread, args);
+        };
+        continue;
+      }
       const javascript = table[index];
       if (!javascript) {
         continue;
       }
       table[index] = function* (entity, thread, args) {
+        if (directOnly && !handle.live) {
+          table[index] = javascript;
+          return yield javascript(entity, thread, args);
+        }
         // Entry ends a call chain this deep, and the kernel's own chain has to
         // fit inside what is left of it.
         if (thread.depth + handle.depth < CALL_DEPTH_LIMIT) {
@@ -576,6 +613,16 @@ export class Vm implements Project {
         return yield javascript(entity, thread, args);
       };
     }
+  }
+
+  /** The option, or on `auto` whether the work declares `$TESSVM`. */
+  private wantsFastPaths(): boolean {
+    if (this.fastPathsOption !== 'auto') {
+      return this.fastPathsOption;
+    }
+    return this.variables.some(
+      (variable) => !variable.isList && variable.objectId === null && variable.name === '$TESSVM',
+    );
   }
 
   /**
@@ -667,6 +714,7 @@ export class Vm implements Project {
       scenes: this.scenes,
       messages: this.messages,
       tables: this.tables,
+      directCalls: this.wantsFastPaths(),
     };
     return new Codegen(input).compile().source;
   }
@@ -1347,4 +1395,17 @@ function cloneVariable(source: Variable): Variable {
   copy.minValue = source.minValue;
   copy.maxValue = source.maxValue;
   return copy;
+}
+
+/** A kernel call's arguments as numbers, or null when one of them is not a number. */
+function kernelArgs(args: unknown[] | undefined, arity: number): number[] | null {
+  const numbers: number[] = [];
+  for (let at = 0; at < arity; at += 1) {
+    const raw = args?.[at];
+    if (typeof raw === 'number' ? !Number.isFinite(raw) : !cast.isNumber(raw)) {
+      return null;
+    }
+    numbers.push(cast.num(raw));
+  }
+  return numbers;
 }
