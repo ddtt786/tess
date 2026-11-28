@@ -138,14 +138,20 @@ export function rectsOverlap(r1: Rect, r2: Rect): boolean {
   return intersect(r1, r2, intersection) !== null;
 }
 
+/** Whether a text box's letters cover a point of its box; null when nothing drew them. */
+export type TextInk = (entity: Entity, x: number, y: number) => boolean | null;
+
 export class CollisionSystem {
   private readonly masks: MaskStore;
   /** Bumped every tick so cached answers never outlive the frame. */
   private frame = 0;
   private readonly memo = new Map<string, boolean>();
 
-  constructor(masks: MaskStore) {
+  private readonly textInk: TextInk;
+
+  constructor(masks: MaskStore, textInk: TextInk = () => null) {
     this.masks = masks;
+    this.textInk = textInk;
   }
 
   beginFrame(): void {
@@ -286,12 +292,16 @@ export class CollisionSystem {
       const halfW = entity.width / 2;
       const halfH = entity.height / 2;
       const offset = textBoxOffset(entity);
-      return (
+      const inBox =
         localX >= offset - halfW &&
         localX < offset + halfW &&
         localY >= -halfH &&
-        localY < halfH
-      );
+        localY < halfH;
+      // A transparent background is not hit; only the letters are (entry's pixelPerfect text).
+      if (entity.bgColor?.startsWith('#')) {
+        return inBox;
+      }
+      return this.textInk(entity, localX, localY) ?? inBox;
     }
     if (localX < 0 || localX >= entity.width || localY < 0 || localY >= entity.height) {
       return false;

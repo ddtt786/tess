@@ -11,6 +11,7 @@
 import {
   Application,
   Assets,
+  CanvasTextGenerator,
   CanvasTextMetrics,
   Color,
   TextStyle,
@@ -117,6 +118,15 @@ const UPLOAD_PIXEL_BUDGET = 128 * 1024 * 1024;
 const TEXT_STYLE_LIMIT = 512;
 /** `TEXT_BOX_REPOSITION_OFFSET - TEXT_BOX_WEBGL_OFFSET` in entryjs. */
 const TEXT_BOX_TOP_OFFSET = 10 - 5.9;
+
+interface InkMask {
+  text: string;
+  style: TextStyle;
+  padding: number;
+  width: number;
+  height: number;
+  alpha: Uint8ClampedArray;
+}
 
 interface EntityView {
   entity: Entity;
@@ -328,6 +338,8 @@ export class PixiRenderer implements Renderer {
   /** 그 배율이 커져서 다시 구울 것이 있는가 — `flush` 끝에서 한 번만 봅니다. */
   private svgScaleGrew = false;
   private readonly measureStyle = new TextStyle();
+  /** Alpha of each text box's drawn letters, rebuilt when its text or style changes. */
+  private readonly inkMasks = new WeakMap<Text, InkMask>();
   /** Text styles shared by look; see `sharedTextStyle`. */
   private readonly textStyles = new Map<string, TextStyle>();
   /**
@@ -1307,6 +1319,68 @@ export class PixiRenderer implements Renderer {
           .fill({ color: ink.color, alpha: ink.alpha });
       }
     }
+  }
+
+  /**
+   * Whether a text box's letters cover this point of its own box (centre origin,
+   * y down). Null when the box is not drawn here.
+   */
+  textInkAt(entity: Entity, x: number, y: number): boolean | null {
+    const text = this.views.get(entity)?.text;
+    if (!text) {
+      return null;
+    }
+    if (!text.text) {
+      return false;
+    }
+    const mask = this.inkMaskOf(text);
+    const left = text.x - mask.width * text.anchor.x;
+    const top = text.y - mask.height * text.anchor.y;
+    const px = Math.floor(x - left + mask.padding);
+    const py = Math.floor(y - top + mask.padding);
+    const stride = Math.ceil(mask.width + mask.padding * 2);
+    const rows = Math.ceil(mask.height + mask.padding * 2);
+    if (px < 0 || py < 0 || px >= stride || py >= rows) {
+      return false;
+    }
+    return mask.alpha[py * stride + px]! > 1;
+  }
+
+  /** Draws the text once at 1× the way PIXI bakes it and keeps its alpha. */
+  private inkMaskOf(text: Text): InkMask {
+    const style = text.style as TextStyle;
+    const cached = this.inkMasks.get(text);
+    if (cached && cached.text === text.text && cached.style === style) {
+      return cached;
+    }
+    const measured = CanvasTextMetrics.measureText(text.text || ' ', style);
+    const padding = style.padding ?? 0;
+    const stride = Math.ceil(Math.max(1, measured.width) + padding * 2);
+    const rows = Math.ceil(Math.max(1, measured.height) + padding * 2);
+    const { canvasAndContext } = CanvasTextGenerator.getCanvasAndContext({
+      text: text.text,
+      style,
+      resolution: 1,
+    });
+    const alpha = new Uint8ClampedArray(stride * rows);
+    try {
+      const pixels = canvasAndContext.context.getImageData(0, 0, stride, rows).data;
+      for (let i = 0; i < alpha.length; i++) {
+        alpha[i] = pixels[i * 4 + 3]!;
+      }
+    } finally {
+      CanvasTextGenerator.returnCanvasAndContext(canvasAndContext);
+    }
+    const mask: InkMask = {
+      text: text.text,
+      style,
+      padding,
+      width: measured.width,
+      height: measured.height,
+      alpha,
+    };
+    this.inkMasks.set(text, mask);
+    return mask;
   }
 
   /**

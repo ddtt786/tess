@@ -99,6 +99,8 @@ export interface Renderer extends RendererLike, Partial<TextMeasurer> {
   hideQuestion?(): void;
   answerSubmitted?(): string | null;
   maskFor?(pictureId: string, width: number, height: number): AlphaMask | null;
+  /** Whether a text box's drawn letters cover a point of its box; null when unknown. */
+  textInkAt?(entity: Entity, x: number, y: number): boolean | null;
   reset?(): void;
   setScene?(sceneId: string): void;
   /** 부스트 모드가 바뀌었다 — 그리는 방식이 달라지므로 다시 그려야 한다. */
@@ -320,7 +322,9 @@ export class Vm implements Project {
     this.masks = new MaskStore(
       (key, width, height) => this.renderer?.maskFor?.(key, width, height) ?? null,
     );
-    this.collision = new CollisionSystem(this.masks);
+    this.collision = new CollisionSystem(this.masks, (entity, x, y) =>
+      this.renderer?.textInkAt?.(entity, x, y) ?? null,
+    );
     this.ops = createOps(this);
   }
 

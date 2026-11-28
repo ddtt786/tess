@@ -1671,6 +1671,33 @@ test('렌더러가 없으면 선언한 순서로 찾는다', () => {
   );
 });
 
+/** 배경이 투명한 글상자는 글자가 그려진 자리만 클릭을 받는다. */
+test('투명 배경 글상자는 글자 없는 자리의 클릭을 뒤로 넘긴다', () => {
+  const covered = (bg: string) => `scene "s":
+  text "가림막":
+    text_content = "가림막"
+    bg_color = ${bg}
+  end
+  text "재료":
+    text_content = "재료"
+    bg_color = #000000
+  end
+end`;
+  const pick = (bg: string, ink: boolean) => {
+    const result = compileProject(covered(bg), { path: 'test.tess' });
+    assert.ok(result.project, result.errors[0]?.message ?? '컴파일 실패');
+    const view = { ...fakeStage(), textInkAt: () => ink };
+    const machine = new Vm({ renderer: view as never, audio: null });
+    machine.load(result.project as unknown as never);
+    machine.start();
+    machine.tick();
+    return machine.entityAtPoint(stage.worldWidth / 2, stage.worldHeight / 2)?.target.name;
+  };
+  assert.equal(pick('transparent', false), '재료', '글자 없는 자리는 뒤의 재료가 받습니다');
+  assert.equal(pick('transparent', true), '가림막', '글자 위는 가림막이 받습니다');
+  assert.equal(pick('#ffffff', false), '가림막', '배경이 있으면 상자 전체가 받습니다');
+});
+
 /**
  * 말풍선은 오버레이가 엔티티별로 들고 있습니다. 복제본이 사라질 때 오버레이에
  * 말하지 않으면 주인 없는 말풍선이 남아, 작품을 껐다 켜도 화면에 그대로 섭니다.
